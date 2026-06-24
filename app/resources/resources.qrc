@@ -1,0 +1,64 @@
+<RCC>
+    <qresource prefix="/icons/default">
+        <file alias="button_add_24.png">icons/button_add_24.png</file>
+        <file alias="button_back_24.png">icons/button_back_24.png</file>
+        <file alias="button_cancel_24.png">icons/button_cancel_24.png</file>
+        <file alias="button_clipboard_24.png">icons/button_clipboard_24.png</file>
+        <file alias="button_exit_24.png">icons/button_exit_24.png</file>
+        <file alias="button_pencil_24.png">icons/button_pencil_24.png</file>
+        <file alias="button_recycle_bin_24.png">icons/button_recycle_bin_24.png</file>
+        <file alias="button_reset_24.png">icons/button_reset_24.png</file>
+        <file alias="button_save_24.png">icons/button_save_24.png</file>
+        <file alias="button_save_as_24.png">icons/button_save_as_24.png</file>
+        <file alias="button_update_24.png">icons/button_update_24.png</file>
+        <file alias="button_update_all_24.png">icons/button_update_all_24.png</file>
+        <file alias="state_update_16.png">icons/state_update_16.png</file>
+        <file alias="state_update_blue_16.png">icons/state_update_blue_16.png</file>
+        <file alias="state_update_yellow_16.png">icons/state_update_yellow_16.png</file>
+        <file alias="state_no_update_16.png">icons/state_no_update_16.png</file>
+        <file alias="state_update_orange_16.png">icons/state_update_orange_16.png</file>
+        <file alias="button_pencil_16.png">icons/button_pencil_16.png</file>
+        <file alias="doc_excel_16.png">icons/doc_excel_16.png</file>
+        <file alias="doc_excel_image_16.png">icons/doc_excel_image_16.png</file>
+        <file alias="doc_pdf_16.png">icons/doc_pdf_16.png</file>
+        <file alias="doc_pdf_image_16.png">icons/doc_pdf_image_16.png</file>
+        <file alias="doc_word_16.png">icons/doc_word_16.png</file>
+        <file alias="doc_word_image_16.png">icons/doc_word_image_16.png</file>
+        <file alias="menu_folder_open_16.png">icons/menu_folder_open_16.png</file>
+        <file alias="negativ_development_16.png">icons/negativ_development_16.png</file>
+        <file alias="neutral_development_16.png">icons/neutral_development_16.png</file>
+        <file alias="positiv_development_16.png">icons/positiv_development_16.png</file>
+        <file alias="doc_excel_24.png">icons/doc_excel_24.png</file>
+        <file alias="doc_excel_image_24.png">icons/doc_excel_image_24.png</file>
+        <file alias="doc_pdf_24.png">icons/doc_pdf_24.png</file>
+        <file alias="doc_pdf_image_24.png">icons/doc_pdf_image_24.png</file>
+        <file alias="doc_word_24.png">icons/doc_word_24.png</file>
+        <file alias="doc_word_image_24.png">icons/doc_word_image_24.png</file>
+        <file alias="menu_about_24.png">icons/menu_about_24.png</file>
+        <file alias="menu_eventlog_24.png">icons/menu_eventlog_24.png</file>
+        <file alias="menu_file_add2_24.png">icons/menu_file_add2_24.png</file>
+        <file alias="menu_file_add3_24.png">icons/menu_file_add3_24.png</file>
+        <file alias="menu_file_add_24.png">icons/menu_file_add_24.png</file>
+        <file alias="menu_flag_german_24.png">icons/menu_flag_german_24.png</file>
+        <file alias="menu_flag_usa_24.png">icons/menu_flag_usa_24.png</file>
+        <file alias="menu_folder_add_24.png">icons/menu_folder_add_24.png</file>
+        <file alias="menu_folder_open_24.png">icons/menu_folder_open_24.png</file>
+        <file alias="menu_key_24.png">icons/menu_key_24.png</file>
+        <file alias="menu_settings_24.png">icons/menu_settings_24.png</file>
+        <file alias="menu_sound_24.png">icons/menu_sound_24.png</file>
+        <file alias="negativ_normal_development_24.png">icons/negativ_normal_development_24.png</file>
+        <file alias="negativ_strong_development_24.png">icons/negativ_strong_development_24.png</file>
+        <file alias="neutral_development_24.png">icons/neutral_development_24.png</file>
+        <file alias="positiv_normal_development_24.png">icons/positiv_normal_development_24.png</file>
+        <file alias="positiv_strong_development_24.png">icons/positiv_strong_development_24.png</file>
+        <file alias="search_failed_24.png">icons/search_failed_24.png</file>
+        <file alias="search_failed_2_24.png">icons/search_failed_2_24.png</file>
+        <file alias="search_info_24.png">icons/search_info_24.png</file>
+        <file alias="search_ok_24.png">icons/search_ok_24.png</file>
+        <file alias="show_window_24.png">icons/show_window_24.png</file>
+    </qresource>
+    <qresource prefix="/sounds">
+        <file>sounds/Error.wav</file>
+        <file>sounds/UpdateFinished.wav</file>
+    </qresource>
+</RCC>

@@ -1,0 +1,141 @@
+#---------------------------------------------------------------------------
+# SharePortfolioManager — Doxygen Configuration
+# Theme: Doxygen Awesome (https://jothepro.github.io/doxygen-awesome-css/)
+#
+# Alle Pfade sind relativ zu docs/doxygen/ (dem Verzeichnis, aus dem
+# doxygen aufgerufen wird — siehe generate-docs.sh).
+#---------------------------------------------------------------------------
+
+#---------------------------------------------------------------------------
+# Project
+#---------------------------------------------------------------------------
+PROJECT_NAME           = "Share Portfolio Manager"
+PROJECT_NUMBER         = 1.0.0
+PROJECT_BRIEF          = "Qt/C++ Cross-Applikation"
+PROJECT_LOGO           =
+
+OUTPUT_DIRECTORY       = ../../build/docs
+CREATE_SUBDIRS         = NO
+OUTPUT_LANGUAGE        = English
+
+#---------------------------------------------------------------------------
+# Input
+#---------------------------------------------------------------------------
+INPUT                  = mainpage.dox \
+                         ../../docs/architecture/ARCHITECTURE.md \
+                         ../../docs/testing/TESTING.md \
+                         ../../libs/logger/src \
+                         ../../libs/parser/src \
+                         ../../app/core         \
+                         ../../app/models       \
+                         ../../app/repositories \
+                         ../../app/config       \
+                         ../../app/forms        \
+                         ../../tests
+
+RECURSIVE              = YES
+FILE_PATTERNS          = *.h *.cpp *.md *.dox
+EXCLUDE_PATTERNS       = *_autogen* \
+                         */build/*  \
+                         *moc_*     \
+                         *qrc_*
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+
+#---------------------------------------------------------------------------
+# Markdown
+#---------------------------------------------------------------------------
+MARKDOWN_SUPPORT       = YES
+TOC_INCLUDE_HEADINGS   = 4
+
+#---------------------------------------------------------------------------
+# Source browsing
+#---------------------------------------------------------------------------
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+STRIP_CODE_COMMENTS    = NO
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+
+#---------------------------------------------------------------------------
+# HTML output — Doxygen Awesome theme
+# https://jothepro.github.io/doxygen-awesome-css/
+#---------------------------------------------------------------------------
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_FILE_EXTENSION    = .html
+
+HTML_HEADER            = theme/header.html
+HTML_FOOTER            = theme/footer.html
+
+HTML_EXTRA_STYLESHEET  = theme/doxygen-awesome.css \
+                         theme/doxygen-awesome-sidebar-only.css
+
+HTML_EXTRA_FILES       = theme/doxygen-awesome-interactive-toc.js \
+                         theme/doxygen-awesome-paragraph-link.js \
+                         theme/doxygen-awesome-darkmode-toggle.js
+
+HTML_COLORSTYLE        = LIGHT
+HTML_DYNAMIC_SECTIONS  = YES
+HTML_INDEX_NUM_ENTRIES = 100
+
+DISABLE_INDEX          = NO
+GENERATE_TREEVIEW      = YES
+FULL_SIDEBAR           = NO
+TREEVIEW_WIDTH         = 280
+
+#---------------------------------------------------------------------------
+# Diagrams — requires Graphviz (dot)
+#   Linux:   sudo apt install graphviz
+#   Windows: https://graphviz.org/download/
+#---------------------------------------------------------------------------
+HAVE_DOT               = YES
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = YES
+INCLUDE_GRAPH          = YES
+INCLUDED_BY_GRAPH      = YES
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+DOT_GRAPH_MAX_NODES    = 50
+MAX_DOT_GRAPH_DEPTH    = 3
+
+#---------------------------------------------------------------------------
+# LaTeX / other outputs (disabled)
+#---------------------------------------------------------------------------
+GENERATE_LATEX         = NO
+GENERATE_RTF           = NO
+GENERATE_MAN           = NO
+GENERATE_XML           = NO
+
+#---------------------------------------------------------------------------
+# Preprocessing
+#---------------------------------------------------------------------------
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = NO
+PREDEFINED             = Q_OBJECT \
+                         Q_ENUM(x)= \
+                         Q_DECLARE_FLAGS(x,y)= \
+                         Q_DECLARE_OPERATORS_FOR_FLAGS(x)=
+
+#---------------------------------------------------------------------------
+# Warnings
+#---------------------------------------------------------------------------
+QUIET                  = NO
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = YES
+WARN_LOGFILE           = doxygen_warnings.log
+
+#---------------------------------------------------------------------------
+# Aliases — shortcuts for common doc patterns
+#---------------------------------------------------------------------------
+ALIASES               += "csharp=\par C# equivalent:\n"
+ALIASES               += "qtimprovement=\par Qt improvement over C# original:\n"
+ALIASES               += "thread_safe=\par Thread safety:\n This function is thread-safe."
+ALIASES               += "not_thread_safe=\par Thread safety:\n This function is NOT thread-safe."

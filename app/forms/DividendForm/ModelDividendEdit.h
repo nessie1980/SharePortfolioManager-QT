@@ -1,0 +1,35 @@
+// MIT License
+// Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
+#pragma once
+
+#include "IModelDividendEdit.h"
+#include "../../repositories/DividendRepository.h"
+#include "../../repositories/ShareRepository.h"
+
+/**
+ * @brief Concrete model for the "Dividenden" dialog.
+ *
+ * Delegates persistence to DividendRepository.
+ */
+class ModelDividendEdit : public IModelDividendEdit
+{
+public:
+    ModelDividendEdit() = default;
+
+    QList<DividendObject> loadDividends(const QString& shareGuid) const override;
+    ShareObject           loadShare(const QString& shareGuid)     const override;
+
+    bool addDividend(const DividendObject& dividend)    override;
+    bool updateDividend(const DividendObject& dividend) override;
+    bool removeDividend(const QString& dividendGuid)    override;
+
+    bool documentExists(const QString& document,
+                        const QString& excludeGuid = QString()) const override;
+
+    QString lastError() const override { return m_lastError; }
+
+private:
+    DividendRepository m_dividendRepo;
+    ShareRepository    m_shareRepo;
+    mutable QString    m_lastError;
+};
