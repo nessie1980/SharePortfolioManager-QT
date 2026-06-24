@@ -1,0 +1,1957 @@
+// MIT License
+// Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
+#include "MainWindow.h"
+#include "../../config/AppSettings.h"
+#include "../../config/WebSitesConfig.h"
+#include "../../config/DocumentsConfig.h"
+#include "../../core/Database.h"
+#include "../LoggerSettingsForm/LoggerSettingsForm.h"
+#include "../SoundSettingsForm/SoundSettingsForm.h"
+#include "../AboutForm/AboutForm.h"
+#include "../ApiSettingsForm/ApiSettingsForm.h"
+#include "../../repositories/ShareRepository.h"
+#include "../../repositories/DailyValuesRepository.h"
+#include "../../models/ShareObject.h"
+#include "../../utils/ShareCalculator.h"
+#include "../../IconProvider.h"
+
+#include <QApplication>
+#include <QCoreApplication>
+#include <QMenuBar>
+#include <QStatusBar>
+#include <QHeaderView>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QSizePolicy>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QFile>
+#include <QDir>
+#include <QDateTime>
+#include "../OwnMessageBoxForm/OwnMessageBox.h"
+#include "../BackupProgressForm/BackupProgressDialog.h"
+#include <QTime>
+#include <QLocale>
+#include <QTextCursor>
+#include <QDebug>
+#include "../../../libs/parser/src/Parser.h"
+#include "../../../libs/parser/src/DataTypes.h"
+
+// ── Constructor ───────────────────────────────────────────────────────────────
+
+MainWindow::MainWindow(QWidget* parent)
+    : QMainWindow(parent)
+{
+    setWindowTitle(tr("Share Portfolio Manager"));
+    setMinimumSize(900, 600);
+
+    // Activate the configured icon set (default for now)
+    IconProvider::setIconSet(QStringLiteral("default"));
+
+    setupActions();
+    setupMenuBar();
+    setupToolBar();
+    setupCentralWidget();
+    setupStatusBar();
+    restoreWindowGeometry();
+
+    // Show startup info in status message area
+    addStatusMessage(tr("Anwendung gestartet."), MessageType::Info);
+
+    // Load and validate all configuration files
+    // If any fail, all controls are disabled except Quit
+    if (!checkAndLoadConfigurations())
+        return;
+
+    const QString portfolioPath = AppSettings::instance().portfolioPath();
+    if (portfolioPath.isEmpty()) {
+        // No portfolio configured yet — normal first start
+        addStatusMessage(tr("Kein Portfolio konfiguriert. Bitte legen Sie ein neues Portfolio an oder öffnen Sie ein vorhandenes."),
+                         MessageType::Warning);
+        updateStatusBarPortfolio(QString());
+    } else if (!QFileInfo::exists(portfolioPath)) {
+        // Configured portfolio file no longer exists — do NOT create a new one
+        addStatusMessage(tr("Portfolio nicht gefunden: %1").arg(portfolioPath),
+                         MessageType::FatalError);
+        addStatusMessage(tr("Bitte legen Sie ein neues Portfolio an oder öffnen Sie ein vorhandenes."),
+                         MessageType::Warning);
+        // Clear the invalid path from settings
+        AppSettings::instance().setPortfolioPath(QString());
+        updateStatusBarPortfolio(QString());
+    } else {
+        // Portfolio loaded successfully by AppStartup — create backup first
+        createBackup(portfolioPath);
+        addStatusMessage(tr("Portfolio geladen: %1").arg(portfolioPath),
+                         MessageType::Success);
+        updateStatusBarPortfolio(portfolioPath);
+        populatePortfolioTables();
+    }
+}
+
+// ── setupActions ──────────────────────────────────────────────────────────────
+
+void MainWindow::setupActions()
+{
+    // ── File ──────────────────────────────────────────────────────────────
+    m_actionNew = new QAction(IconProvider::icon(IconProvider::MenuFileAdd),
+                              tr("&Neu"), this);
+    m_actionNew->setShortcut(QKeySequence::New);
+    m_actionNew->setStatusTip(tr("Neues Portfolio erstellen"));
+    connect(m_actionNew, &QAction::triggered, this, &MainWindow::onNewPortfolio);
+
+    m_actionOpen = new QAction(IconProvider::icon(IconProvider::MenuFolderOpen),
+                               tr("&Öffnen..."), this);
+    m_actionOpen->setShortcut(QKeySequence::Open);
+    m_actionOpen->setStatusTip(tr("Vorhandenes Portfolio öffnen"));
+    connect(m_actionOpen, &QAction::triggered, this, &MainWindow::onOpenPortfolio);
+
+    m_actionSaveAs = new QAction(IconProvider::icon(IconProvider::ButtonSaveAs),
+                                 tr("Speichern &unter..."), this);
+    m_actionSaveAs->setShortcut(QKeySequence::SaveAs);
+    m_actionSaveAs->setStatusTip(tr("Portfolio unter neuem Namen speichern"));
+    connect(m_actionSaveAs, &QAction::triggered, this, &MainWindow::onSaveAsPortfolio);
+
+    m_actionQuit = new QAction(IconProvider::icon(IconProvider::ButtonExit),
+                               tr("&Beenden"), this);
+    m_actionQuit->setShortcut(QKeySequence::Quit);
+    m_actionQuit->setStatusTip(tr("Anwendung beenden"));
+    connect(m_actionQuit, &QAction::triggered, qApp, &QApplication::quit);
+
+    // ── Share ─────────────────────────────────────────────────────────────
+    m_actionAdd = new QAction(IconProvider::icon(IconProvider::ButtonAdd),
+                              tr("&Hinzufügen"), this);
+    m_actionAdd->setStatusTip(tr("Neue Aktie hinzufügen"));
+    m_actionAdd->setEnabled(false);
+    connect(m_actionAdd, &QAction::triggered, this, &MainWindow::onAddShare);
+
+    m_actionEdit = new QAction(IconProvider::icon(IconProvider::ButtonEdit),
+                               tr("&Editieren"), this);
+    m_actionEdit->setStatusTip(tr("Ausgewählte Aktie bearbeiten"));
+    m_actionEdit->setEnabled(false);
+    connect(m_actionEdit, &QAction::triggered, this, &MainWindow::onEditShare);
+
+    m_actionDelete = new QAction(IconProvider::icon(IconProvider::ButtonDelete),
+                                 tr("En&tfernen"), this);
+    m_actionDelete->setStatusTip(tr("Ausgewählte Aktie entfernen"));
+    m_actionDelete->setEnabled(false);
+    connect(m_actionDelete, &QAction::triggered, this, &MainWindow::onDeleteShare);
+
+    m_actionRefresh = new QAction(IconProvider::icon(IconProvider::ButtonUpdate),
+                                  tr("&Aktualisieren"), this);
+    m_actionRefresh->setStatusTip(tr("Kurs der ausgewählten Aktie aktualisieren"));
+    m_actionRefresh->setEnabled(false);
+    connect(m_actionRefresh, &QAction::triggered, this, &MainWindow::onRefreshShare);
+
+    m_actionRefreshAll = new QAction(IconProvider::icon(IconProvider::ButtonUpdateAll),
+                                     tr("Alle &aktualisieren"), this);
+    m_actionRefreshAll->setStatusTip(tr("Kurse aller Aktien aktualisieren"));
+    m_actionRefreshAll->setEnabled(false);
+    connect(m_actionRefreshAll, &QAction::triggered, this, &MainWindow::onRefreshAll);
+
+    // ── Parser setup ──────────────────────────────────────────────────────
+    connect(&m_parserMarketValues, &ParserLib::Parser::parserUpdated,
+            this, &MainWindow::onMarketValuesUpdated);
+    connect(&m_parserDailyValues, &ParserLib::Parser::parserUpdated,
+            this, &MainWindow::onDailyValuesUpdated);
+
+    // ── Settings ──────────────────────────────────────────────────────────
+    m_actionLanguage = new QAction(IconProvider::icon(IconProvider::MenuFlagGerman),
+                                   tr("&Sprache..."), this);
+    m_actionLogger   = new QAction(IconProvider::icon(IconProvider::MenuEventLog),
+                                   tr("&Logger..."), this);
+    connect(m_actionLogger, &QAction::triggered, this, [this]() {
+        LoggerSettingsForm dialog(this);
+        dialog.exec();
+    });
+    m_actionSound    = new QAction(IconProvider::icon(IconProvider::MenuSound),
+                                   tr("S&ound..."), this);
+    connect(m_actionSound, &QAction::triggered, this, [this]() {
+        SoundSettingsForm dialog(this);
+        dialog.exec();
+    });
+
+    // ── API Settings ──────────────────────────────────────────────────────
+    m_actionApiKeyYahoo = new QAction(IconProvider::icon(IconProvider::MenuKey),
+                                      tr("&Yahoo Finance..."), this);
+    connect(m_actionApiKeyYahoo, &QAction::triggered, this, [this]() {
+        ApiSettingsForm dialog(
+            QStringLiteral("ApiYahoo"),
+            AppSettings::instance().apiKeyYahoo(),
+            this);
+        if (dialog.exec() == QDialog::Accepted)
+            AppSettings::instance().setApiKeyYahoo(dialog.apiKey());
+    });
+
+    // ── Help ──────────────────────────────────────────────────────────────
+    m_actionAbout = new QAction(IconProvider::icon(IconProvider::MenuAbout),
+                                tr("&Über..."), this);
+    connect(m_actionAbout, &QAction::triggered, this, [this]() {
+        AboutForm dialog(this);
+        dialog.exec();
+    });
+}
+
+// ── setupMenuBar ──────────────────────────────────────────────────────────────
+
+void MainWindow::setupMenuBar()
+{
+    QMenu* fileMenu = menuBar()->addMenu(tr("&Datei"));
+    fileMenu->addAction(m_actionNew);
+    fileMenu->addAction(m_actionOpen);
+    fileMenu->addAction(m_actionSaveAs);
+    fileMenu->addSeparator();
+    fileMenu->addAction(m_actionQuit);
+
+    QMenu* settingsMenu = menuBar()->addMenu(tr("&Einstellungen"));
+    settingsMenu->addAction(m_actionLanguage);
+    settingsMenu->addSeparator();
+    settingsMenu->addAction(m_actionLogger);
+    settingsMenu->addAction(m_actionSound);
+
+    QMenu* apiMenu = menuBar()->addMenu(tr("&API-Einstellung"));
+    apiMenu->addAction(m_actionApiKeyYahoo);
+
+    QMenu* helpMenu = menuBar()->addMenu(tr("&Hilfe"));
+    helpMenu->addAction(m_actionAbout);
+}
+
+// ── setupToolBar ──────────────────────────────────────────────────────────────
+
+void MainWindow::setupToolBar()
+{
+    m_toolBar = addToolBar(tr("Hauptleiste"));
+    m_toolBar->setObjectName(QStringLiteral("MainToolBar"));
+    m_toolBar->setMovable(false);
+    m_toolBar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_toolBar->setIconSize(QSize(24, 24));
+
+    m_toolBar->addAction(m_actionNew);
+    m_toolBar->addAction(m_actionOpen);
+    m_toolBar->addSeparator();
+    m_toolBar->addAction(m_actionRefreshAll);
+    m_toolBar->addAction(m_actionRefresh);
+    m_toolBar->addSeparator();
+    m_toolBar->addAction(m_actionAdd);
+    m_toolBar->addAction(m_actionEdit);
+    m_toolBar->addAction(m_actionDelete);
+
+    // Separators: same color and thickness as toolbar top/bottom border lines.
+    // QPalette::Light matches the highlight border Qt draws around toolbars.
+    const QString borderColor = palette().color(QPalette::Light).name();
+    m_toolBar->setStyleSheet(QStringLiteral(
+        "QToolBar::separator {"
+        "  background: transparent;"
+        "  border-left: 2px solid %1;"
+        "  width: 2px;"
+        "  margin: 2px 6px;"
+        "}").arg(borderColor));
+}
+
+// ── setupCentralWidget ────────────────────────────────────────────────────────
+
+void MainWindow::setupCentralWidget()
+{
+    // ── Portfolio label ───────────────────────────────────────────────────
+    m_portfolioLabel = new QLabel(
+        tr("Portfolio-Übersicht ( Einträge: 0 ) / Letzte Aktualisierung: -"));
+
+    // ── Tab widget ────────────────────────────────────────────────────────
+    m_portfolioTabs = new QTabWidget();
+
+    auto setupTable = [](QTableWidget* tbl) {
+        tbl->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+        tbl->verticalHeader()->setVisible(false);
+        tbl->setSelectionBehavior(QAbstractItemView::SelectRows);
+        tbl->setSelectionMode(QAbstractItemView::SingleSelection);
+        tbl->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        tbl->setAlternatingRowColors(true);
+        tbl->setSortingEnabled(false); // disabled while inserting; enabled after load
+        tbl->setShowGrid(false);
+    };
+
+    auto setupFooter = [](QTableWidget* tbl) {
+        tbl->horizontalHeader()->setVisible(false);
+        tbl->verticalHeader()->setVisible(false);
+        tbl->setEditTriggers(QAbstractItemView::NoEditTriggers);
+        tbl->setSelectionMode(QAbstractItemView::NoSelection);
+        tbl->setFocusPolicy(Qt::NoFocus);
+        tbl->setShowGrid(false);
+        tbl->setFixedHeight(tbl->verticalHeader()->defaultSectionSize() * 3 + 4);
+    };
+
+    // ── Depotwert-Tab ─────────────────────────────────────────────────────
+    m_finalValueTable = new QTableWidget(0, static_cast<int>(FinalValueColumn::Count));
+    m_finalValueTable->setHorizontalHeaderLabels({
+        QStringLiteral(""),          // Icon
+        tr("WKN"),
+        tr("Name"),
+        tr("Anteile"),
+        tr("Kosten /\nDividenden"),
+        tr("Preis"),
+        QStringLiteral(""),          // PrevDay chart icon
+        tr("Vortag"),
+        tr("Aktuelle\nEntwicklung"),
+        tr("Einzahlung\nMarktwert"),
+        QStringLiteral(""),          // Complete chart icon
+        tr("Komplette\nEntwicklung"),
+        tr("Kpl. Einzahlung\nKpl. Marktwert")
+    });
+    setupTable(m_finalValueTable);
+    m_finalValueTable->horizontalHeader()->setStretchLastSection(false);
+    m_finalValueTable->horizontalHeader()->setSectionResizeMode(
+        static_cast<int>(FinalValueColumn::Name), QHeaderView::Stretch);
+
+    // Icon columns — fixed width
+    m_finalValueTable->setColumnWidth(static_cast<int>(FinalValueColumn::Icon),         20);
+    m_finalValueTable->setColumnWidth(static_cast<int>(FinalValueColumn::PrevDayChart), 32);
+    m_finalValueTable->setColumnWidth(static_cast<int>(FinalValueColumn::CompleteChart),32);
+
+    m_finalValueFooter = new QTableWidget(3, static_cast<int>(FinalValueColumn::Count));
+    setupFooter(m_finalValueFooter);
+    // Mirror column widths from main table — done after population
+
+    auto* finalContainer = new QWidget();
+    auto* finalLayout    = new QVBoxLayout(finalContainer);
+    finalLayout->setContentsMargins(0, 0, 0, 0);
+    finalLayout->setSpacing(0);
+    finalLayout->addWidget(m_finalValueTable, 1);
+    finalLayout->addWidget(m_finalValueFooter, 0);
+
+    // ── Marktwert-Tab ─────────────────────────────────────────────────────
+    m_marketValueTable = new QTableWidget(0, static_cast<int>(MarketValueColumn::Count));
+    m_marketValueTable->setHorizontalHeaderLabels({
+        QStringLiteral(""),          // Icon
+        tr("WKN"),
+        tr("Name"),
+        tr("Anteile"),
+        tr("Preis"),
+        QStringLiteral(""),          // PrevDay chart icon
+        tr("Vortag"),
+        tr("Aktuelle\nEntwicklung"),
+        tr("Einzahlung\nMarktwert")
+    });
+    setupTable(m_marketValueTable);
+    m_marketValueTable->horizontalHeader()->setStretchLastSection(false);
+    m_marketValueTable->horizontalHeader()->setSectionResizeMode(
+        static_cast<int>(MarketValueColumn::Name), QHeaderView::Stretch);
+
+    m_marketValueTable->setColumnWidth(static_cast<int>(MarketValueColumn::Icon),         20);
+    m_marketValueTable->setColumnWidth(static_cast<int>(MarketValueColumn::PrevDayChart), 32);
+
+    m_marketValueFooter = new QTableWidget(3, static_cast<int>(MarketValueColumn::Count));
+    setupFooter(m_marketValueFooter);
+
+    auto* marketContainer = new QWidget();
+    auto* marketLayout    = new QVBoxLayout(marketContainer);
+    marketLayout->setContentsMargins(0, 0, 0, 0);
+    marketLayout->setSpacing(0);
+    marketLayout->addWidget(m_marketValueTable, 1);
+    marketLayout->addWidget(m_marketValueFooter, 0);
+
+    m_portfolioTabs->addTab(finalContainer,  tr("Kompletter Depotwert"));
+    m_portfolioTabs->addTab(marketContainer, tr("Kompletter Marktwert"));
+
+    // Install two-line delegates
+    setupTableDelegates();
+
+    // Enable Edit / Delete / Refresh when a row is selected
+    auto enableShareActions = [this]() {
+        const bool hasSelection =
+            m_finalValueTable->selectionModel()->hasSelection() ||
+            m_marketValueTable->selectionModel()->hasSelection();
+        m_actionEdit->setEnabled(hasSelection);
+        m_actionDelete->setEnabled(hasSelection);
+        m_actionRefresh->setEnabled(hasSelection);
+    };
+    connect(m_finalValueTable->selectionModel(),
+            &QItemSelectionModel::selectionChanged,
+            this, enableShareActions);
+    connect(m_marketValueTable->selectionModel(),
+            &QItemSelectionModel::selectionChanged,
+            this, enableShareActions);
+
+    // ── Main layout: portfolio (expands) + bottom panel (fixed) ──────────
+    auto* centralWidget = new QWidget(this);
+    auto* mainLayout    = new QVBoxLayout(centralWidget);
+    mainLayout->setContentsMargins(4, 4, 4, 4);
+    mainLayout->setSpacing(4);
+
+    // Top area — label + tabs — takes all available space
+    auto* topWidget = new QWidget();
+    auto* topLayout = new QVBoxLayout(topWidget);
+    topLayout->setContentsMargins(0, 0, 0, 0);
+    topLayout->setSpacing(2);
+    // Indent the portfolio label slightly from the left edge
+    m_portfolioLabel->setContentsMargins(6, 2, 0, 2);
+    topLayout->addWidget(m_portfolioLabel);
+    topLayout->addWidget(m_portfolioTabs);
+
+    mainLayout->addWidget(topWidget, 1);   // stretch = 1 → takes all remaining space
+
+    // ── Bottom panel — left: Status-Meldungen ─────────────────────────────
+    m_statusMessageGroup = new QGroupBox(tr("  Status-Meldungen"));
+    m_statusMessageText  = new QTextEdit();
+    m_statusMessageText->setReadOnly(true);
+    m_statusMessageText->setAcceptRichText(true);
+    // Transparent background so theme colors don't override text colors
+    m_statusMessageText->setStyleSheet(
+        QStringLiteral("QTextEdit { background-color: transparent; border: none; }"));
+    auto* statusLayout = new QVBoxLayout(m_statusMessageGroup);
+    statusLayout->setContentsMargins(8, 8, 4, 4);
+    statusLayout->addWidget(m_statusMessageText);
+
+    // ── Bottom panel — right: Document capture (compact) ──────────────────
+    m_documentCaptureGroup = new QGroupBox(tr("  Direkte Dokumentenerfassung"));
+    m_documentCaptureEdit  = new QLineEdit();
+    m_documentCaptureEdit->setReadOnly(true);
+    auto* captureLayout = new QVBoxLayout(m_documentCaptureGroup);
+    captureLayout->setContentsMargins(8, 8, 4, 4);
+    captureLayout->addWidget(m_documentCaptureEdit);
+    m_documentCaptureGroup->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+
+    // ── Bottom panel — right: Aktualisierungs-Status ──────────────────────
+    m_updateStateGroup      = new QGroupBox(tr("  Aktualisierungs-Status"));
+    m_marketValueStateLabel = new QLabel(tr("Marktwert:"));
+    m_marketValueProgress   = new QProgressBar();
+    m_marketValueProgress->setRange(0, 100);
+    m_marketValueProgress->setValue(0);
+    m_marketValueProgress->setMinimumHeight(24);
+    m_dailyValuesStateLabel = new QLabel(tr("Tageswerte:"));
+    m_dailyValuesProgress   = new QProgressBar();
+    m_dailyValuesProgress->setRange(0, 100);
+    m_dailyValuesProgress->setValue(0);
+    m_dailyValuesProgress->setMinimumHeight(24);
+
+    auto* updateLayout = new QVBoxLayout(m_updateStateGroup);
+    updateLayout->setContentsMargins(8, 8, 4, 4);
+    updateLayout->setSpacing(6);
+    updateLayout->addWidget(m_marketValueStateLabel);
+    updateLayout->addWidget(m_marketValueProgress);
+    updateLayout->addWidget(m_dailyValuesStateLabel);
+    updateLayout->addWidget(m_dailyValuesProgress);
+
+    // Right column: document capture (fixed height) on top,
+    // update state expands to fill remaining space — flush with left groupbox bottom
+    auto* rightWidget = new QWidget();
+    auto* rightLayout = new QVBoxLayout(rightWidget);
+    rightLayout->setContentsMargins(0, 0, 0, 0);
+    rightLayout->setSpacing(4);
+    rightLayout->addWidget(m_documentCaptureGroup, 0); // fixed height
+    rightLayout->addWidget(m_updateStateGroup,     1); // expands to fill remaining
+
+    // Bottom row: status messages left (~75%) + right column (~25%)
+    auto* bottomWidget = new QWidget();
+    bottomWidget->setFixedHeight(200);
+    auto* bottomLayout = new QHBoxLayout(bottomWidget);
+    bottomLayout->setContentsMargins(0, 0, 0, 0);
+    bottomLayout->setSpacing(4);
+    bottomLayout->addWidget(m_statusMessageGroup, 3);
+    bottomLayout->addWidget(rightWidget, 1);
+
+    mainLayout->addWidget(bottomWidget, 0);  // stretch = 0 → fixed height
+
+    setCentralWidget(centralWidget);
+}
+
+// ── setupStatusBar ────────────────────────────────────────────────────────────
+
+void MainWindow::setupStatusBar()
+{
+    m_statusLabel = new QLabel(tr("Bereit"), this);
+    statusBar()->addWidget(m_statusLabel, 1);
+
+    m_portfolioPathLabel = new QLabel(this);
+    m_portfolioPathLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_portfolioPathLabel->setContentsMargins(0, 0, 6, 0);
+    statusBar()->addPermanentWidget(m_portfolioPathLabel);
+    updateStatusBarPortfolio(QString());
+}
+
+// ── restoreWindowGeometry ─────────────────────────────────────────────────────
+
+void MainWindow::restoreWindowGeometry()
+{
+    const auto& settings = AppSettings::instance();
+    if (settings.windowSize().isValid())
+        resize(settings.windowSize());
+    if (!settings.windowPos().isNull())
+        move(settings.windowPos());
+    if (settings.windowState() == QStringLiteral("Maximized"))
+        showMaximized();
+}
+
+// ── Configuration loading ─────────────────────────────────────────────────────
+
+bool MainWindow::checkAndLoadConfigurations()
+{
+    bool allOk = true;
+    const QString appDir = QCoreApplication::applicationDirPath();
+
+    // ── settings.ini ──────────────────────────────────────────────────────
+    // Already loaded by AppStartup — just verify it is accessible
+    const QString settingsPath = AppSettings::instance().settingsPath();
+    if (!QFileInfo::exists(settingsPath)) {
+        addStatusMessage(tr("Einstellungsdatei nicht gefunden."),
+                         MessageType::FatalError);
+        allOk = false;
+    } else {
+        addStatusMessage(tr("Einstellungen geladen."),
+                         MessageType::Success);
+    }
+
+    // ── WebSites.xml ──────────────────────────────────────────────────────
+    const QString webSitesPath = appDir + QStringLiteral("/WebSites.xml");
+    const auto webResult = m_webSitesConfig.load(webSitesPath);
+
+    if (webResult == WebSitesConfig::LoadResult::Success) {
+        addStatusMessage(tr("WebSites-Konfiguration geladen: %1 Einträge.")
+                             .arg(m_webSitesConfig.count()),
+                         MessageType::Success);
+    } else {
+        addStatusMessage(tr("WebSites-Konfiguration konnte nicht geladen werden: %1")
+                             .arg(m_webSitesConfig.lastError()),
+                         webResult == WebSitesConfig::LoadResult::FileNotFound
+                             ? MessageType::FatalError
+                             : MessageType::Error);
+        allOk = false;
+    }
+
+    // ── Documents.xml ─────────────────────────────────────────────────────
+    const QString documentsPath = appDir + QStringLiteral("/Documents.xml");
+    const auto docResult = m_documentsConfig.load(documentsPath);
+
+    if (docResult == DocumentsConfig::LoadResult::Success) {
+        addStatusMessage(tr("Dokument-Konfiguration geladen: %1 Bank(en).")
+                             .arg(m_documentsConfig.count()),
+                         MessageType::Success);
+    } else {
+        addStatusMessage(tr("Dokument-Konfiguration konnte nicht geladen werden: %1")
+                             .arg(m_documentsConfig.lastError()),
+                         docResult == DocumentsConfig::LoadResult::FileNotFound
+                             ? MessageType::FatalError
+                             : MessageType::Error);
+        allOk = false;
+    }
+
+    if (!allOk) {
+        addStatusMessage(tr("Kritische Konfigurationsfehler — bitte Konfigurationsdateien prüfen."),
+                         MessageType::FatalError);
+        disableAllControls();
+    }
+
+    // ── Sound files (non-critical — warn but don't disable controls) ──────
+    const QString soundsDir = appDir + QStringLiteral("/sounds");
+    const QString updateSoundFile = soundsDir + QStringLiteral("/")
+                                  + AppSettings::instance().soundUpdateFile();
+    const QString errorSoundFile  = soundsDir + QStringLiteral("/")
+                                  + AppSettings::instance().soundErrorFile();
+
+    if (!QFileInfo::exists(updateSoundFile)) {
+        addStatusMessage(tr("Update-Sound nicht gefunden: %1 — Sound deaktiviert.")
+                             .arg(AppSettings::instance().soundUpdateFile()),
+                         MessageType::Warning);
+        AppSettings::instance().setSoundUpdateEnabled(false);
+    }
+
+    if (!QFileInfo::exists(errorSoundFile)) {
+        addStatusMessage(tr("Fehler-Sound nicht gefunden: %1 — Sound deaktiviert.")
+                             .arg(AppSettings::instance().soundErrorFile()),
+                         MessageType::Warning);
+        AppSettings::instance().setSoundErrorEnabled(false);
+    }
+
+    return allOk;
+}
+
+void MainWindow::disableAllControls()
+{
+    // Disable all toolbar actions
+    m_actionNew->setEnabled(false);
+    m_actionOpen->setEnabled(false);
+    m_actionSaveAs->setEnabled(false);
+    m_actionAdd->setEnabled(false);
+    m_actionEdit->setEnabled(false);
+    m_actionDelete->setEnabled(false);
+    m_actionRefresh->setEnabled(false);
+    m_actionRefreshAll->setEnabled(false);
+
+    // Disable settings and API menus
+    m_actionLanguage->setEnabled(false);
+    m_actionLogger->setEnabled(false);
+    m_actionSound->setEnabled(false);
+    m_actionApiKeyYahoo->setEnabled(false);
+
+    // Disable portfolio tabs
+    m_portfolioTabs->setEnabled(false);
+
+    // Only Quit remains enabled — already connected and always active
+    addStatusMessage(tr("Nur Beenden ist verfügbar."), MessageType::Warning);
+}
+
+void MainWindow::addStatusMessage(const QString& message, MessageType type)
+{
+    // Map MessageType to AppSettings color index:
+    // 0=Start, 1=Info, 2=Warning, 3=Error, 4=FatalError, 5=Success
+    int colorIndex = 1;
+    switch (type) {
+    case MessageType::Info:       colorIndex = 1; break;
+    case MessageType::Success:    colorIndex = 5; break;
+    case MessageType::Warning:    colorIndex = 2; break;
+    case MessageType::Error:      colorIndex = 3; break;
+    case MessageType::FatalError: colorIndex = 4; break;
+    default:                      colorIndex = 1; break;
+    }
+
+    const QColor color = AppSettings::instance().logColorAt(colorIndex);
+    const QString colorName = color.name();
+    const QString timestamp = QTime::currentTime().toString(QStringLiteral("hh:mm:ss"));
+
+    // Move cursor to end and insert colored HTML.
+    // insertHtml() is used instead of append() because append() wraps each
+    // call in its own paragraph block which resets inline color styles under
+    // some Qt themes. insertHtml() with moveCursor(End) inserts the HTML
+    // directly at the current position and reliably preserves inline styles.
+    m_statusMessageText->moveCursor(QTextCursor::End);
+    if (!m_statusMessageText->document()->isEmpty())
+        m_statusMessageText->insertHtml(QStringLiteral("<br>"));
+    m_statusMessageText->insertHtml(
+        QStringLiteral("<span style=\"color:%1;\">%2 %3</span>")
+            .arg(colorName,
+                 timestamp.toHtmlEscaped(),
+                 message.toHtmlEscaped()));
+    m_statusMessageText->moveCursor(QTextCursor::End);
+}
+
+
+void MainWindow::updatePortfolioLabel(int entryCount, const QString& lastUpdate)
+{
+    m_portfolioLabel->setText(
+        tr("Portfolio-Übersicht ( Einträge: %1 ) / Letzte Aktualisierung: %2")
+            .arg(entryCount)
+            .arg(lastUpdate));
+}
+
+void MainWindow::clearPortfolioTables()
+{
+    m_finalValueTable->setRowCount(0);
+    m_marketValueTable->setRowCount(0);
+    // Clear footer contents but keep row structure
+    for (int r = 0; r < m_finalValueFooter->rowCount(); ++r)
+        for (int c = 0; c < m_finalValueFooter->columnCount(); ++c)
+            if (auto* it = m_finalValueFooter->item(r, c)) it->setText(QString());
+    for (int r = 0; r < m_marketValueFooter->rowCount(); ++r)
+        for (int c = 0; c < m_marketValueFooter->columnCount(); ++c)
+            if (auto* it = m_marketValueFooter->item(r, c)) it->setText(QString());
+}
+
+void MainWindow::updateWindowTitle(const QString& portfolioPath)
+{
+    const QString fileName = QFileInfo(portfolioPath).fileName();
+    setWindowTitle(tr("Share Portfolio Manager - %1").arg(fileName));
+    updateStatusBarPortfolio(portfolioPath);
+}
+
+// ── updateStatusBarPortfolio ──────────────────────────────────────────────────
+
+void MainWindow::updateStatusBarPortfolio(const QString& portfolioPath)
+{
+    if (portfolioPath.isEmpty())
+        m_portfolioPathLabel->setText(tr("Kein Portfolio geladen"));
+    else
+        m_portfolioPathLabel->setText(tr("Portfolio: %1").arg(portfolioPath));
+}
+
+// ── Slots ─────────────────────────────────────────────────────────────────────
+
+void MainWindow::onNewPortfolio()
+{
+    // Let the user choose where to save the new portfolio
+    const QString filePath = QFileDialog::getSaveFileName(
+        this,
+        tr("Neues Portfolio anlegen"),
+        AppSettings::instance().portfolioPath(),
+        tr("Portfolio-Datenbank (*.db);;Alle Dateien (*)"));
+
+    if (filePath.isEmpty())
+        return; // User cancelled
+
+    // Close existing database if open
+    if (Database::instance().isOpen()) {
+        Database::instance().close();
+        qInfo() << "[MainWindow] Closed current portfolio.";
+    }
+
+    // Open (create) the new database
+    if (!Database::instance().open(filePath)) {
+        OwnMessageBox::critical(this,
+            tr("Fehler"),
+            tr("Das neue Portfolio konnte nicht angelegt werden:\n\n%1").arg(filePath));
+        qCritical() << "[MainWindow] Failed to create new portfolio:" << filePath;
+        return;
+    }
+
+    // Persist the new path
+    AppSettings::instance().setPortfolioPath(filePath);
+
+    // Update UI
+    clearPortfolioTables();
+    updatePortfolioLabel(0);
+    updateWindowTitle(filePath);
+
+    // New empty portfolio: only Add is enabled — nothing to update yet
+    m_actionAdd->setEnabled(true);
+    m_actionRefreshAll->setEnabled(false);
+    m_actionRefresh->setEnabled(false);
+    m_actionEdit->setEnabled(false);
+    m_actionDelete->setEnabled(false);
+
+    addStatusMessage(tr("Neues Portfolio angelegt: %1").arg(filePath),
+                     MessageType::Success);
+
+    qInfo() << "[MainWindow] New portfolio created:" << filePath;
+}
+
+void MainWindow::onOpenPortfolio()
+{
+    const QString filePath = QFileDialog::getOpenFileName(
+        this,
+        tr("Portfolio öffnen"),
+        AppSettings::instance().portfolioPath(),
+        tr("Portfolio-Datenbank (*.db);;Alle Dateien (*)"));
+
+    if (filePath.isEmpty())
+        return; // User cancelled
+
+    // Close existing database if open
+    if (Database::instance().isOpen()) {
+        Database::instance().close();
+        qInfo() << "[MainWindow] Closed current portfolio.";
+    }
+
+    // Open the selected database
+    if (!Database::instance().open(filePath)) {
+        OwnMessageBox::critical(this,
+            tr("Fehler"),
+            tr("Das Portfolio konnte nicht geöffnet werden:\n\n%1").arg(filePath));
+        qCritical() << "[MainWindow] Failed to open portfolio:" << filePath;
+        return;
+    }
+
+    // Create a timestamped backup of the opened portfolio
+    createBackup(filePath);
+
+    // Persist the new path
+    AppSettings::instance().setPortfolioPath(filePath);
+
+    // Update UI
+    updateWindowTitle(filePath);
+    addStatusMessage(tr("Portfolio geöffnet: %1").arg(filePath),
+                     MessageType::Success);
+    populatePortfolioTables();
+
+    qInfo() << "[MainWindow] Portfolio opened:" << filePath;
+}
+
+void MainWindow::populatePortfolioTables()
+{
+    clearPortfolioTables();
+
+    ShareRepository shareRepo;
+    const QList<ShareObject> shares = shareRepo.findAll();
+    const int shareCount = shares.size();
+
+    const QLocale locale;
+
+    // Helper: create a colored two-line item
+    auto makeTwoLine = [&](const QString& top,    const QColor& topColor,
+                           const QString& bottom, const QColor& bottomColor) {
+        auto* item = new QTableWidgetItem();
+        item->setData(TwoLineRole::Top,         top);
+        item->setData(TwoLineRole::Bottom,       bottom);
+        item->setData(TwoLineRole::TopColor,     topColor);
+        item->setData(TwoLineRole::BottomColor,  bottomColor);
+        item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+        return item;
+    };
+
+    // Helper: performance color
+    auto perfColor = [](double value) -> QColor {
+        if (value >  0.0) return QColor(0, 140, 0);   // green
+        if (value <  0.0) return QColor(180, 0, 0);    // red
+        return QColor(Qt::black);
+    };
+
+    // Helper: pick development icon
+    auto devIcon = [](double pct) -> QIcon {
+        if (pct >  2.0)  return IconProvider::icon(IconProvider::PositivStrong);
+        if (pct >  0.0)  return IconProvider::icon(IconProvider::PositivNormal);
+        if (pct <  -2.0) return IconProvider::icon(IconProvider::NegativStrong);
+        if (pct <  0.0)  return IconProvider::icon(IconProvider::NegativNormal);
+        return IconProvider::icon(IconProvider::Neutral);
+    };
+
+    // Helper: update state icon from ShareObject
+    auto stateIcon = [](const ShareObject& s) -> QIcon {
+        using T = ShareUpdateType;
+        switch (s.updateType()) {
+        case T::Both:        return IconProvider::icon(IconProvider::StateUpdateBoth);
+        case T::MarketPrice: return IconProvider::icon(IconProvider::StateUpdateMarket);
+        case T::DailyValues: return IconProvider::icon(IconProvider::StateUpdateDaily);
+        default:             return IconProvider::icon(IconProvider::StateNoUpdate);
+        }
+    };
+
+    QList<ShareValues> allValues;
+    allValues.reserve(shareCount);
+
+    for (const ShareObject& share : shares) {
+        const ShareValues v = ShareCalculator::compute(
+            share.guid(), share.curPrice(), share.prevDayPrice());
+        allValues.append(v);
+
+        const QColor neutral  = QColor(Qt::black);
+        const QColor muted    = QColor(100, 100, 100);
+
+        // ── Formatted strings ─────────────────────────────────────────────
+        const QString curPriceStr   = locale.toString(v.curPrice,     'f', 4)
+                                    + QStringLiteral(" €");
+        const QString prevPriceStr  = locale.toString(v.prevDayPrice, 'f', 4)
+                                    + QStringLiteral(" €");
+        const QString prevDiffStr   = (v.prevDayDiff >= 0 ? QStringLiteral("+") : QString())
+                                    + locale.toString(v.prevDayDiff, 'f', 2)
+                                    + QStringLiteral(" €");
+        const QString prevPctStr    = (v.prevDayPct >= 0 ? QStringLiteral("+") : QString())
+                                    + locale.toString(v.prevDayPct, 'f', 2)
+                                    + QStringLiteral(" %");
+        const QString profitStr     = locale.toString(v.profitLoss, 'f', 2)
+                                    + QStringLiteral(" €");
+        const QString profitPctStr  = locale.toString(v.profitLossPct, 'f', 2)
+                                    + QStringLiteral(" %");
+        const QString purchaseStr   = locale.toString(v.purchaseValue, 'f', 2)
+                                    + QStringLiteral(" €");
+        const QString curValueStr   = locale.toString(v.curValue, 'f', 2)
+                                    + QStringLiteral(" €");
+        const QString volumeStr     = locale.toString(v.volume, 'f', 2);
+        const QString brokerDivStr  = locale.toString(v.totalBrokerage, 'f', 2)
+                                    + QStringLiteral(" €");
+        const QString dividendStr   = locale.toString(v.totalDividend, 'f', 2)
+                                    + QStringLiteral(" €");
+        const QString cProfitStr    = locale.toString(v.completeProfitLoss, 'f', 2)
+                                    + QStringLiteral(" €");
+        const QString cProfitPctStr = locale.toString(v.completeProfitPct, 'f', 2)
+                                    + QStringLiteral(" %");
+        const QString cPurchaseStr  = locale.toString(v.completePurchase, 'f', 2)
+                                    + QStringLiteral(" €");
+        const QString cCurValueStr  = locale.toString(v.completeCurValue, 'f', 2)
+                                    + QStringLiteral(" €");
+
+        // ── Depotwert-Tab ──────────────────────────────────────────────────
+        const int fr = m_finalValueTable->rowCount();
+        m_finalValueTable->insertRow(fr);
+        m_finalValueTable->setRowHeight(fr, 38);
+
+        // Icon
+        auto* iconItemF = new QTableWidgetItem();
+        iconItemF->setIcon(stateIcon(share));
+        iconItemF->setData(Qt::UserRole, share.guid());
+        iconItemF->setFlags(iconItemF->flags() & ~Qt::ItemIsEditable);
+
+        // WKN
+        auto* wknItemF = new QTableWidgetItem(share.wkn());
+        wknItemF->setData(Qt::UserRole, share.guid());
+        wknItemF->setTextAlignment(Qt::AlignCenter);
+
+        // Name
+        auto* nameItemF = new QTableWidgetItem(share.name());
+
+        // Volume
+        auto* volItemF = new QTableWidgetItem(volumeStr);
+        volItemF->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+        // Kosten / Dividenden (2-line)
+        auto* bdItemF = makeTwoLine(brokerDivStr, neutral,
+                                    dividendStr,  muted);
+
+        // Preis (2-line)
+        auto* priceItemF = makeTwoLine(curPriceStr,  neutral,
+                                       prevPriceStr, muted);
+
+        // PrevDay chart icon
+        auto* prevChartItemF = new QTableWidgetItem();
+        prevChartItemF->setIcon(devIcon(v.prevDayPct));
+        prevChartItemF->setFlags(prevChartItemF->flags() & ~Qt::ItemIsEditable);
+
+        // Vortag (2-line, colored)
+        auto* prevDayItemF = makeTwoLine(prevDiffStr, perfColor(v.prevDayDiff),
+                                         prevPctStr,  perfColor(v.prevDayPct));
+
+        // Aktuelle Entwicklung (2-line, colored)
+        auto* perfItemF = makeTwoLine(profitStr,    perfColor(v.profitLoss),
+                                      profitPctStr, perfColor(v.profitLossPct));
+
+        // Einzahlung / Marktwert (2-line)
+        auto* pvItemF = makeTwoLine(purchaseStr, neutral,
+                                    curValueStr, neutral);
+
+        // Complete chart icon
+        auto* cChartItemF = new QTableWidgetItem();
+        cChartItemF->setIcon(devIcon(v.completeProfitPct));
+        cChartItemF->setFlags(cChartItemF->flags() & ~Qt::ItemIsEditable);
+
+        // Komplette Entwicklung (2-line, colored)
+        auto* cPerfItemF = makeTwoLine(cProfitStr,    perfColor(v.completeProfitLoss),
+                                       cProfitPctStr, perfColor(v.completeProfitPct));
+
+        // Kpl. Einzahlung / Kpl. Marktwert (2-line)
+        auto* cPvItemF = makeTwoLine(cPurchaseStr, neutral,
+                                     cCurValueStr, neutral);
+
+        using FC = FinalValueColumn;
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::Icon),                     iconItemF);
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::Wkn),                      wknItemF);
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::Name),                     nameItemF);
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::Volume),                   volItemF);
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::BrokerageDividend),        bdItemF);
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::Price),                    priceItemF);
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::PrevDayChart),             prevChartItemF);
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::PrevDay),                  prevDayItemF);
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::Performance),              perfItemF);
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::PurchaseFinalValue),       pvItemF);
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::CompleteChart),            cChartItemF);
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::CompletePerformance),      cPerfItemF);
+        m_finalValueTable->setItem(fr, static_cast<int>(FC::CompletePurchaseFinalValue), cPvItemF);
+
+        // ── Marktwert-Tab ──────────────────────────────────────────────────
+        const int mr = m_marketValueTable->rowCount();
+        m_marketValueTable->insertRow(mr);
+        m_marketValueTable->setRowHeight(mr, 38);
+
+        auto* iconItemM = new QTableWidgetItem();
+        iconItemM->setIcon(stateIcon(share));
+        iconItemM->setData(Qt::UserRole, share.guid());
+        iconItemM->setFlags(iconItemM->flags() & ~Qt::ItemIsEditable);
+
+        auto* wknItemM = new QTableWidgetItem(share.wkn());
+        wknItemM->setData(Qt::UserRole, share.guid());
+        wknItemM->setTextAlignment(Qt::AlignCenter);
+
+        auto* nameItemM  = new QTableWidgetItem(share.name());
+        auto* volItemM   = new QTableWidgetItem(volumeStr);
+        volItemM->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+        // Marktwert-specific strings
+        const QString marketValueStr = locale.toString(v.marketValue, 'f', 2)
+                                     + QStringLiteral(" €");
+        const QString profitMStr     = locale.toString(v.profitLoss, 'f', 2)
+                                     + QStringLiteral(" €");
+        const QString profitMPctStr  = locale.toString(v.profitLossPct, 'f', 2)
+                                     + QStringLiteral(" %");
+
+        auto* priceItemM     = makeTwoLine(curPriceStr, neutral, prevPriceStr, muted);
+        auto* prevChartItemM = new QTableWidgetItem();
+        prevChartItemM->setIcon(devIcon(v.prevDayPct));
+        prevChartItemM->setFlags(prevChartItemM->flags() & ~Qt::ItemIsEditable);
+        auto* prevDayItemM   = makeTwoLine(prevDiffStr, perfColor(v.prevDayDiff),
+                                           prevPctStr,  perfColor(v.prevDayPct));
+        // Aktuelle Entwicklung: profitLoss per buy (no brokerage)
+        auto* perfItemM      = makeTwoLine(profitMStr,    perfColor(v.profitLoss),
+                                           profitMPctStr, perfColor(v.profitLossPct));
+        // Einzahlung (upper) = purchaseValue, Marktwert (lower) = curValue + saleProfitLoss
+        auto* pvItemM        = makeTwoLine(purchaseStr, neutral, marketValueStr, neutral);
+
+        using MC = MarketValueColumn;
+        m_marketValueTable->setItem(mr, static_cast<int>(MC::Icon),                iconItemM);
+        m_marketValueTable->setItem(mr, static_cast<int>(MC::Wkn),                 wknItemM);
+        m_marketValueTable->setItem(mr, static_cast<int>(MC::Name),                nameItemM);
+        m_marketValueTable->setItem(mr, static_cast<int>(MC::Volume),              volItemM);
+        m_marketValueTable->setItem(mr, static_cast<int>(MC::Price),               priceItemM);
+        m_marketValueTable->setItem(mr, static_cast<int>(MC::PrevDayChart),        prevChartItemM);
+        m_marketValueTable->setItem(mr, static_cast<int>(MC::PrevDay),             prevDayItemM);
+        m_marketValueTable->setItem(mr, static_cast<int>(MC::Performance),         perfItemM);
+        m_marketValueTable->setItem(mr, static_cast<int>(MC::PurchaseMarketValue), pvItemM);
+    }
+
+    updatePortfolioFooters(allValues);
+    updatePortfolioLabel(shareCount);
+
+    m_actionAdd->setEnabled(true);
+    m_actionRefreshAll->setEnabled(shareCount > 0);
+    m_actionEdit->setEnabled(false);
+    m_actionDelete->setEnabled(false);
+    m_actionRefresh->setEnabled(false);
+}
+
+void MainWindow::onSaveAsPortfolio()
+{
+    const QString currentPath = AppSettings::instance().portfolioPath();
+
+    const QString filePath = QFileDialog::getSaveFileName(
+        this,
+        tr("Portfolio speichern unter"),
+        currentPath,
+        tr("Portfolio-Datenbank (*.db);;Alle Dateien (*)"));
+
+    if (filePath.isEmpty())
+        return; // User cancelled
+
+    if (filePath == currentPath) {
+        OwnMessageBox::information(this,
+            tr("Hinweis"),
+            tr("Das Portfolio ist bereits unter diesem Namen gespeichert."));
+        return;
+    }
+
+    // Copy current database file to new location
+    if (QFile::exists(filePath))
+        QFile::remove(filePath);
+
+    if (!QFile::copy(currentPath, filePath)) {
+        OwnMessageBox::critical(this,
+            tr("Fehler"),
+            tr("Das Portfolio konnte nicht gespeichert werden:\n\n%1").arg(filePath));
+        return;
+    }
+
+    // Switch to the new file
+    Database::instance().close();
+    AppSettings::instance().setPortfolioPath(filePath);
+    Database::instance().open(filePath);
+    updateWindowTitle(filePath);
+
+    addStatusMessage(tr("Portfolio gespeichert unter: %1").arg(filePath),
+                     MessageType::Success);
+
+    qInfo() << "[MainWindow] Portfolio saved as:" << filePath;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+void MainWindow::onAddShare()
+{
+    ViewShareAdd dlg(&m_documentsConfig, this);
+    if (dlg.exec() == QDialog::Accepted) {
+        addStatusMessage(
+            tr("Aktie \"%1\" (%2) wurde erfolgreich hinzugefügt.")
+                .arg(dlg.name().trimmed(), dlg.wkn().trimmed()),
+            MessageType::Success);
+        populatePortfolioTables();
+    } else {
+        addStatusMessage(
+            tr("Aktie hinzufügen wurde abgebrochen."),
+            MessageType::Info);
+    }
+}
+
+void MainWindow::onEditShare()
+{
+    // Find the selected row in whichever table is currently active
+    QTableWidget* table = nullptr;
+    int row = -1;
+
+    if (m_finalValueTable->selectionModel()->hasSelection()) {
+        table = m_finalValueTable;
+        row   = m_finalValueTable->currentRow();
+    } else if (m_marketValueTable->selectionModel()->hasSelection()) {
+        table = m_marketValueTable;
+        row   = m_marketValueTable->currentRow();
+    }
+
+    if (!table || row < 0)
+        return;
+
+    // The GUID is stored in the WKN cell (column 0) via Qt::UserRole
+    QTableWidgetItem* wknItem = table->item(row, 0);
+    if (!wknItem)
+        return;
+
+    const QString shareGuid = wknItem->data(Qt::UserRole).toString();
+    if (shareGuid.isEmpty())
+        return;
+
+    ViewShareEdit dlg(shareGuid, &m_documentsConfig, this);
+    if (dlg.exec() == QDialog::Accepted) {
+        addStatusMessage(tr("Aktie wurde gespeichert."), MessageType::Success);
+        populatePortfolioTables();
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+void MainWindow::onDeleteShare()
+{
+    // Find the selected row in whichever table is currently active
+    QTableWidget* table = nullptr;
+    int row = -1;
+
+    if (m_finalValueTable->selectionModel()->hasSelection()) {
+        table = m_finalValueTable;
+        row   = m_finalValueTable->currentRow();
+    } else if (m_marketValueTable->selectionModel()->hasSelection()) {
+        table = m_marketValueTable;
+        row   = m_marketValueTable->currentRow();
+    }
+
+    if (!table || row < 0)
+        return;
+
+    // GUID and display name from the selected row
+    QTableWidgetItem* wknItem  = table->item(row, 0);
+    QTableWidgetItem* nameItem = table->item(row, 1);
+    if (!wknItem || !nameItem)
+        return;
+
+    const QString shareGuid = wknItem->data(Qt::UserRole).toString();
+    const QString shareName = nameItem->text();
+    if (shareGuid.isEmpty())
+        return;
+
+    // Confirmation dialog
+    const bool confirmed = OwnMessageBox::question(
+        this,
+        tr("Aktie entfernen"),
+        tr("Möchten Sie den Aktien-Eintrag \"%1\" wirklich aus dem Portfolio entfernen?\n\n"
+           "Alle zugehörigen Käufe, Verkäufe, Dividenden und Kosten werden ebenfalls gelöscht.")
+            .arg(shareName));
+
+    if (!confirmed)
+        return;
+
+    // Delete from database
+    ShareRepository shareRepo;
+    if (!shareRepo.remove(shareGuid)) {
+        OwnMessageBox::critical(
+            this,
+            tr("Fehler"),
+            tr("Die Aktie \"%1\" konnte nicht entfernt werden:\n\n%2")
+                .arg(shareName, shareRepo.lastError().text()));
+        return;
+    }
+
+    m_actionDelete->setEnabled(false);
+    m_actionEdit->setEnabled(false);
+    populatePortfolioTables();
+
+    addStatusMessage(
+        tr("Aktie \"%1\" wurde aus dem Portfolio entfernt.").arg(shareName),
+        MessageType::Success);
+
+    qInfo() << "[MainWindow] Share removed:" << shareName << shareGuid;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+void MainWindow::createBackup(const QString& portfolioPath)
+{
+    constexpr int kMaxBackups = 5;
+
+    const QFileInfo fi(portfolioPath);
+    if (!fi.exists())
+        return;
+
+    const QString dir      = fi.absolutePath();
+    const QString baseName = fi.baseName();                 // e.g. "ShareList"
+    const QString suffix   = fi.suffix();                   // e.g. "db"
+    const QString timestamp =
+        QDateTime::currentDateTime().toString(QStringLiteral("yyyy_MM_dd_HH_mm_ss"));
+
+    // Backup_ShareList_2026_06_16_21_59_30.db
+    const QString backupName = QStringLiteral("Backup_%1_%2.%3")
+                                   .arg(baseName, timestamp, suffix);
+    const QString backupPath = dir + QDir::separator() + backupName;
+
+    // Show progress dialog — copy runs in background thread
+    BackupProgressDialog dlg(portfolioPath, backupPath, this);
+    dlg.exec();
+
+    if (!dlg.wasSuccessful()) {
+        qWarning() << "[MainWindow] Backup failed or cancelled:" << backupPath;
+        addStatusMessage(tr("Backup fehlgeschlagen oder abgebrochen: %1").arg(backupName),
+                         MessageType::Warning);
+        return;
+    }
+
+    qInfo() << "[MainWindow] Backup created:" << backupPath;
+    addStatusMessage(tr("Backup erstellt: %1").arg(backupName), MessageType::Info);
+
+    // Keep only the most recent kMaxBackups — delete oldest if exceeded
+    QDir backupDir(dir);
+    backupDir.setNameFilters({ QStringLiteral("Backup_%1_*.%2").arg(baseName, suffix) });
+    backupDir.setSorting(QDir::Name);  // ISO timestamp → lexicographic = chronological
+
+    const QStringList backups = backupDir.entryList(QDir::Files);
+    if (backups.size() > kMaxBackups) {
+        const int toDelete = backups.size() - kMaxBackups;
+        for (int i = 0; i < toDelete; ++i) {
+            const QString oldBackup = dir + QDir::separator() + backups.at(i);
+            if (QFile::remove(oldBackup))
+                qInfo() << "[MainWindow] Old backup removed:" << oldBackup;
+            else
+                qWarning() << "[MainWindow] Could not remove old backup:" << oldBackup;
+        }
+    }
+}
+
+// ── buildDailyValuesUrl ───────────────────────────────────────────────────────
+
+QString MainWindow::buildDailyValuesUrl(const QString& urlTemplate,
+                                        const QDate&   latestExistingDate,
+                                        ShareParsingType parsingType) const
+{
+    // Mirrors Helper.BuildDailyValuesUrl() from the C# reference implementation.
+    //
+    // The URL templates stored in the DB may use C#-style placeholders {0}, {1}
+    // instead of Qt's %1, %2 — normalise them first.
+    // Also replace XML-escaped &amp; with & (carried over from C# XML storage).
+    auto normalise = [](const QString& tmpl) -> QString {
+        return QString(tmpl)
+            .replace(QStringLiteral("{0}"), QStringLiteral("%1"))
+            .replace(QStringLiteral("{1}"), QStringLiteral("%2"))
+            .replace(QStringLiteral("&amp;"), QStringLiteral("&"));
+    };
+
+    const QString tpl   = normalise(urlTemplate);
+    const QDate   today = QDate::currentDate();
+
+    auto monthDiff = [&](const QDate& from) -> int {
+        int months = (today.year() - from.year()) * 12
+                   + (today.month() - from.month());
+        if (today.day() < from.day())
+            --months;
+        return qMax(0, months);
+    };
+
+    if (!latestExistingDate.isValid()) {
+        // No data yet — fetch 5 years of history
+        const QDate start = today.addYears(-5);
+        switch (parsingType) {
+        case ShareParsingType::ApiOnVista:
+            return tpl
+                .arg(start.toString(QStringLiteral("yyyy-MM-dd")),
+                     QStringLiteral("Y5"));
+        case ShareParsingType::ApiYahoo:
+            return tpl.arg(QStringLiteral("20y"));
+        default:
+            return {};
+        }
+    }
+
+    const int diff = monthDiff(latestExistingDate);
+
+    // Select the minimal window that covers the gap
+    struct PeriodEntry { int maxMonths; const char* onVistaCode; const char* yahooCode; };
+    static const PeriodEntry kPeriods[] = {
+        {  1, "M1",  "1mo" },
+        {  3, "M3",  "3mo" },
+        {  6, "M6",  "6mo" },
+        { 12, "Y1",  "1y"  },
+        { 36, "Y3",  "3y"  },
+        { 60, "Y5",  "5y"  },
+    };
+
+    for (const auto& p : kPeriods) {
+        if (diff < p.maxMonths) {
+            switch (parsingType) {
+            case ShareParsingType::ApiOnVista: {
+                const QDate from = today.addMonths(-p.maxMonths);
+                return tpl
+                    .arg(from.toString(QStringLiteral("yyyy-MM-dd")),
+                         QLatin1String(p.onVistaCode));
+            }
+            case ShareParsingType::ApiYahoo:
+                return tpl.arg(QLatin1String(p.yahooCode));
+            default:
+                return {};
+            }
+        }
+    }
+
+    // Fallback: 5 years
+    switch (parsingType) {
+    case ShareParsingType::ApiOnVista: {
+        const QDate from = today.addMonths(-60);
+        return tpl
+            .arg(from.toString(QStringLiteral("yyyy-MM-dd")),
+                 QStringLiteral("Y5"));
+    }
+    case ShareParsingType::ApiYahoo:
+        return tpl.arg(QStringLiteral("5y"));
+    default:
+        return {};
+    }
+}
+
+// ── startRefreshForShare ──────────────────────────────────────────────────────
+
+void MainWindow::startRefreshForShare(const ShareObject& share)
+{
+    m_refreshShare  = share;
+    m_marketDone    = false;
+    m_dailyDone     = false;
+    m_errorOccurred = false;
+
+    const bool doMarket = (share.updateType() == ShareUpdateType::MarketPrice ||
+                           share.updateType() == ShareUpdateType::Both);
+    const bool doDaily  = (share.updateType() == ShareUpdateType::DailyValues ||
+                           share.updateType() == ShareUpdateType::Both);
+
+    if (!doMarket) m_marketDone = true;
+    if (!doDaily)  m_dailyDone  = true;
+
+    addStatusMessage(tr("Aktualisierung gestartet: %1").arg(share.name()),
+                     MessageType::Info);
+
+    // ── MarketPrice parser ────────────────────────────────────────────────
+    if (doMarket) {
+        const QString apiKey = (share.marketPriceParsingType() == ShareParsingType::ApiYahoo)
+            ? AppSettings::instance().apiKeyYahoo()
+            : AppSettings::instance().apiKeyOnVista();
+
+        ParserLib::ParsingType pt = (share.marketPriceParsingType() == ShareParsingType::ApiYahoo)
+            ? ParserLib::ParsingType::YahooRealTime
+            : ParserLib::ParsingType::OnVistaRealTime;
+
+        const QString marketUrl = QString(share.marketPriceUrl())
+            .replace(QStringLiteral("&amp;"), QStringLiteral("&"));
+
+        m_parserMarketValues.setParsingValues(
+            ParserLib::ParsingValues(
+                QUrl(marketUrl),
+                apiKey,
+                share.marketPriceEncoding(),
+                pt));
+        m_marketValueProgress->setValue(0);
+        m_marketValueStateLabel->setText(tr("Kurswert: gestartet..."));
+        m_parserMarketValues.startParsing();
+    }
+
+    // ── DailyValues parser ────────────────────────────────────────────────
+    if (doDaily) {
+        DailyValuesRepository dvRepo;
+        const QDate latestDate = dvRepo.latestDate(share.guid());
+        const QString url = buildDailyValuesUrl(share.dailyValuesUrl(),
+                                                latestDate,
+                                                share.dailyValuesParsingType());
+        if (url.isEmpty()) {
+            addStatusMessage(
+                tr("Fehler: Ungültige Tageswerte-URL für \"%1\"").arg(share.name()),
+                MessageType::Error);
+            m_dailyDone = true;
+            if (m_marketDone)
+                onRefreshShareFinished();
+            return;
+        }
+
+        const QString apiKey = (share.dailyValuesParsingType() == ShareParsingType::ApiYahoo)
+            ? AppSettings::instance().apiKeyYahoo()
+            : AppSettings::instance().apiKeyOnVista();
+
+        ParserLib::ParsingType pt = (share.dailyValuesParsingType() == ShareParsingType::ApiYahoo)
+            ? ParserLib::ParsingType::YahooHistoryData
+            : ParserLib::ParsingType::OnVistaHistoryData;
+
+        m_parserDailyValues.setParsingValues(
+            ParserLib::ParsingValues(
+                QUrl(url),
+                apiKey,
+                share.dailyValuesEncoding(),
+                pt));
+        m_dailyValuesProgress->setValue(0);
+        m_dailyValuesStateLabel->setText(tr("Tageswerte: gestartet..."));
+        m_parserDailyValues.startParsing();
+    }
+}
+
+// ── onRefreshShare ────────────────────────────────────────────────────────────
+
+void MainWindow::onRefreshShare()
+{
+    if (m_parserMarketValues.isBusy() || m_parserDailyValues.isBusy())
+        return;
+
+    // Determine selected row in the active tab
+    QTableWidget* activeTable = (m_portfolioTabs->currentIndex() == 0)
+        ? m_finalValueTable
+        : m_marketValueTable;
+
+    const QList<QTableWidgetItem*> selected = activeTable->selectedItems();
+    if (selected.isEmpty())
+        return;
+
+    const QString guid = activeTable->item(selected.first()->row(), 0)
+                             ->data(Qt::UserRole).toString();
+    if (guid.isEmpty())
+        return;
+
+    ShareRepository repo;
+    const ShareObject share = repo.findByGuid(guid);
+    if (!share.isValid() || share.updateType() == ShareUpdateType::None)
+        return;
+
+    m_updateAllFlag = false;
+
+    // Disable actions while updating
+    m_actionRefresh->setEnabled(false);
+    m_actionRefreshAll->setEnabled(false);
+    m_actionAdd->setEnabled(false);
+    m_actionEdit->setEnabled(false);
+    m_actionDelete->setEnabled(false);
+
+    startRefreshForShare(share);
+}
+
+// ── onRefreshAll ──────────────────────────────────────────────────────────────
+
+void MainWindow::onRefreshAll()
+{
+    if (m_parserMarketValues.isBusy() || m_parserDailyValues.isBusy())
+        return;
+
+    ShareRepository repo;
+    const QList<ShareObject> all = repo.findAll();
+
+    m_refreshQueue.clear();
+    for (const ShareObject& s : all) {
+        if (s.updateType() != ShareUpdateType::None)
+            m_refreshQueue.enqueue(s);
+    }
+
+    if (m_refreshQueue.isEmpty()) {
+        addStatusMessage(tr("Keine Aktien für Aktualisierung konfiguriert."),
+                         MessageType::Warning);
+        return;
+    }
+
+    m_updateAllFlag = true;
+
+    m_actionRefresh->setEnabled(false);
+    m_actionRefreshAll->setEnabled(false);
+    m_actionAdd->setEnabled(false);
+    m_actionEdit->setEnabled(false);
+    m_actionDelete->setEnabled(false);
+
+    startRefreshForShare(m_refreshQueue.dequeue());
+}
+
+// ── onRefreshShareFinished ────────────────────────────────────────────────────
+
+void MainWindow::onRefreshShareFinished()
+{
+    if (m_errorOccurred) {
+        // At least one parser failed — stop the queue entirely
+        m_errorOccurred = false;
+        m_refreshQueue.clear();
+        m_updateAllFlag = false;
+        finaliseRefresh();
+        return;
+    }
+
+    if (m_updateAllFlag && !m_refreshQueue.isEmpty()) {
+        // Start next share in queue
+        startRefreshForShare(m_refreshQueue.dequeue());
+    } else {
+        finaliseRefresh();
+    }
+}
+
+// ── finaliseRefresh ───────────────────────────────────────────────────────────
+
+void MainWindow::finaliseRefresh()
+{
+    m_updateAllFlag = false;
+    m_refreshQueue.clear();
+
+    m_marketValueProgress->setValue(0);
+    m_dailyValuesProgress->setValue(0);
+    m_marketValueStateLabel->setText(tr("Kurswert:"));
+    m_dailyValuesStateLabel->setText(tr("Tageswerte:"));
+
+    m_actionAdd->setEnabled(true);
+    m_actionRefreshAll->setEnabled(true);
+
+    // Re-enable Edit/Delete/Refresh only if a row is still selected
+    QTableWidget* active = (m_portfolioTabs->currentIndex() == 0)
+        ? m_finalValueTable : m_marketValueTable;
+    const bool hasSelection = !active->selectedItems().isEmpty();
+    m_actionEdit->setEnabled(hasSelection);
+    m_actionDelete->setEnabled(hasSelection);
+    m_actionRefresh->setEnabled(hasSelection);
+}
+
+// ── onMarketValuesUpdated ─────────────────────────────────────────────────────
+
+void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
+{
+    using EC = ParserLib::ParserErrorCode;
+
+    // Update progress bar
+    m_marketValueProgress->setValue(state.percentage);
+
+    // Progress state labels
+    if (state.lastErrorCode == EC::Starting) {
+        m_marketValueStateLabel->setText(tr("Kurswert:"));
+        m_marketValueProgress->setValue(0);
+        return;
+    }
+    if (state.lastErrorCode == EC::Started) {
+        m_marketValueStateLabel->setText(
+            tr("Kurswert: lädt... (%1 %)").arg(state.percentage));
+        return;
+    }
+    if (state.lastErrorCode == EC::ContentLoadStarted ||
+        state.lastErrorCode == EC::ContentLoadFinished ||
+        state.lastErrorCode == EC::SearchStarted ||
+        state.lastErrorCode == EC::SearchRunning ||
+        state.lastErrorCode == EC::SearchFinished) {
+        m_marketValueStateLabel->setText(
+            tr("Kurswert: %1 %").arg(state.percentage));
+        return;
+    }
+
+    // ── Error handling ────────────────────────────────────────────────────
+    if (state.lastErrorCode < EC::NoError) {
+        if (m_marketDone) return; // guard against double-firing
+        QString errMsg;
+        switch (state.lastErrorCode) {
+        case EC::InvalidWebSiteGiven:
+            errMsg = tr("Kurswert: Ungültige URL für \"%1\"")
+                         .arg(m_refreshShare.name()); break;
+        case EC::NoWebContentLoaded:
+            errMsg = tr("Kurswert: Kein Inhalt geladen für \"%1\"")
+                         .arg(m_refreshShare.name()); break;
+        case EC::ParsingFailed:
+            errMsg = tr("Kurswert: Parsing fehlgeschlagen für \"%1\"")
+                         .arg(m_refreshShare.name()); break;
+        case EC::NetworkError:
+            errMsg = tr("Kurswert: Netzwerkfehler für \"%1\" — %2")
+                         .arg(m_refreshShare.name(), state.exceptionMessage); break;
+        case EC::JsonError:
+            errMsg = tr("Kurswert: JSON-Fehler für \"%1\"")
+                         .arg(m_refreshShare.name()); break;
+        default:
+            errMsg = tr("Kurswert: Fehler beim Abruf von \"%1\" (%2)")
+                         .arg(m_refreshShare.name(),
+                              QString::number(static_cast<int>(state.lastErrorCode))); break;
+        }
+        addStatusMessage(errMsg, MessageType::Error);
+
+        m_marketDone    = true;
+        m_errorOccurred = true; // signals onRefreshShareFinished() to stop the queue
+
+        // Let the daily parser finish on its own — do not cancel it
+        if (m_dailyDone)
+            onRefreshShareFinished();
+        return;
+    }
+
+    // ── Finished ──────────────────────────────────────────────────────────
+    if (state.lastErrorCode == EC::Finished) {
+        if (m_marketDone) return; // guard against double-firing
+        const auto& result = state.searchResult;
+
+        // Extract price
+        double newPrice = 0.0;
+        const auto& priceList = result[QStringLiteral("Price")];
+        if (!priceList.isEmpty())
+            newPrice = QLocale::c().toDouble(priceList.first());
+
+        // prevDayPrice: most recent entry in daily_values before today
+        double prevDay = 0.0;
+        {
+            DailyValuesRepository dvRepo;
+            const QDate today = QDate::currentDate();
+            const QList<DailyValuesObject> entries =
+                dvRepo.findByShareAndDateRange(m_refreshShare.guid(),
+                                              QDate(1900, 1, 1),
+                                              today.addDays(-1));
+            if (!entries.isEmpty())
+                prevDay = entries.last().closingPrice();
+        }
+
+        // Persist to DB
+        const QString now = QDateTime::currentDateTime()
+                                .toString(Qt::ISODate);
+        ShareRepository shareRepo;
+        shareRepo.updatePrice(m_refreshShare.guid(), newPrice, prevDay, now);
+        shareRepo.updateLastInternetUpdate(m_refreshShare.guid(), now);
+
+        // Update the in-memory copy
+        m_refreshShare.setCurPrice(newPrice);
+        m_refreshShare.setPrevDayPrice(prevDay);
+
+        // Recompute all values for this share and update both grid rows
+        const ShareValues v = ShareCalculator::compute(
+            m_refreshShare.guid(), newPrice, prevDay);
+        const QLocale locale;
+
+        auto perfColor = [](double val) -> QColor {
+            if (val > 0.0) return QColor(0, 140, 0);
+            if (val < 0.0) return QColor(180, 0, 0);
+            return QColor(Qt::black);
+        };
+
+        auto setTwoLine = [&](QTableWidget* tbl, int row, int col,
+                               const QString& top,    const QColor& tc,
+                               const QString& bottom, const QColor& bc) {
+            if (auto* it = tbl->item(row, col)) {
+                it->setData(TwoLineRole::Top,         top);
+                it->setData(TwoLineRole::Bottom,       bottom);
+                it->setData(TwoLineRole::TopColor,     tc);
+                it->setData(TwoLineRole::BottomColor,  bc);
+            }
+        };
+
+        const QColor neutral(Qt::black);
+        const QColor muted(100, 100, 100);
+
+        auto findRow = [&](QTableWidget* tbl) -> int {
+            for (int r = 0; r < tbl->rowCount(); ++r) {
+                auto* it = tbl->item(r, 0);
+                if (it && it->data(Qt::UserRole).toString() == m_refreshShare.guid())
+                    return r;
+            }
+            return -1;
+        };
+
+        const QString curPriceStr  = locale.toString(v.curPrice, 'f', 4) + QStringLiteral(" €");
+        const QString prevPriceStr = locale.toString(v.prevDayPrice, 'f', 4) + QStringLiteral(" €");
+        const QString prevDiffStr  = (v.prevDayDiff >= 0 ? QStringLiteral("+") : QString())
+                                   + locale.toString(v.prevDayDiff, 'f', 2) + QStringLiteral(" €");
+        const QString prevPctStr   = (v.prevDayPct >= 0 ? QStringLiteral("+") : QString())
+                                   + locale.toString(v.prevDayPct, 'f', 2) + QStringLiteral(" %");
+        const QString profitStr    = locale.toString(v.profitLoss, 'f', 2) + QStringLiteral(" €");
+        const QString profitPctStr = locale.toString(v.profitLossPct, 'f', 2) + QStringLiteral(" %");
+        const QString purchaseStr  = locale.toString(v.purchaseValue, 'f', 2) + QStringLiteral(" €");
+        const QString curValStr    = locale.toString(v.curValue, 'f', 2) + QStringLiteral(" €");
+
+        // Update Depotwert row
+        if (const int fr = findRow(m_finalValueTable); fr >= 0) {
+            using FC = FinalValueColumn;
+            setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::Price),
+                       curPriceStr, neutral, prevPriceStr, muted);
+            setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::PrevDay),
+                       prevDiffStr, perfColor(v.prevDayDiff), prevPctStr, perfColor(v.prevDayPct));
+            setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::Performance),
+                       profitStr, perfColor(v.profitLoss), profitPctStr, perfColor(v.profitLossPct));
+            setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::PurchaseFinalValue),
+                       purchaseStr, neutral, curValStr, neutral);
+
+            const QString cProfitStr    = locale.toString(v.completeProfitLoss, 'f', 2) + QStringLiteral(" €");
+            const QString cProfitPctStr = locale.toString(v.completeProfitPct,  'f', 2) + QStringLiteral(" %");
+            const QString cPurchaseStr  = locale.toString(v.completePurchase,   'f', 2) + QStringLiteral(" €");
+            const QString cCurValStr    = locale.toString(v.completeCurValue,   'f', 2) + QStringLiteral(" €");
+            setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::CompletePerformance),
+                       cProfitStr, perfColor(v.completeProfitLoss), cProfitPctStr, perfColor(v.completeProfitPct));
+            setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::CompletePurchaseFinalValue),
+                       cPurchaseStr, neutral, cCurValStr, neutral);
+        }
+
+        // Update Marktwert row
+        if (const int mr = findRow(m_marketValueTable); mr >= 0) {
+            using MC = MarketValueColumn;
+            setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::Price),
+                       curPriceStr, neutral, prevPriceStr, muted);
+            setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::PrevDay),
+                       prevDiffStr, perfColor(v.prevDayDiff), prevPctStr, perfColor(v.prevDayPct));
+            setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::Performance),
+                       profitStr, perfColor(v.profitLoss), profitPctStr, perfColor(v.profitLossPct));
+            setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::PurchaseMarketValue),
+                       purchaseStr, neutral, curValStr, neutral);
+        }
+
+        const QString priceStr = locale.toString(newPrice, 'f', 2);
+        addStatusMessage(
+            tr("Kurswert aktualisiert: %1 — %2")
+                .arg(m_refreshShare.name(), priceStr),
+            MessageType::Success);
+
+        m_marketValueStateLabel->setText(tr("Kurswert: %1").arg(priceStr));
+
+        m_marketDone = true;
+        if (m_dailyDone)
+            onRefreshShareFinished();
+    }
+}
+
+// ── onDailyValuesUpdated ──────────────────────────────────────────────────────
+
+void MainWindow::onDailyValuesUpdated(const ParserLib::ParserInfoState& state)
+{
+    using EC = ParserLib::ParserErrorCode;
+
+    // Update progress bar
+    m_dailyValuesProgress->setValue(state.percentage);
+
+    // Progress state labels
+    if (state.lastErrorCode == EC::Starting) {
+        m_dailyValuesStateLabel->setText(tr("Tageswerte:"));
+        m_dailyValuesProgress->setValue(0);
+        return;
+    }
+    if (state.lastErrorCode == EC::Started) {
+        m_dailyValuesStateLabel->setText(
+            tr("Tageswerte: lädt... (%1 %)").arg(state.percentage));
+        return;
+    }
+    if (state.lastErrorCode == EC::ContentLoadStarted ||
+        state.lastErrorCode == EC::ContentLoadFinished ||
+        state.lastErrorCode == EC::SearchStarted ||
+        state.lastErrorCode == EC::SearchRunning ||
+        state.lastErrorCode == EC::SearchFinished) {
+        m_dailyValuesStateLabel->setText(
+            tr("Tageswerte: %1 %").arg(state.percentage));
+        return;
+    }
+
+    // ── Error handling ────────────────────────────────────────────────────
+    if (state.lastErrorCode < EC::NoError) {
+        if (m_dailyDone) return; // guard against double-firing
+        QString errMsg;
+        switch (state.lastErrorCode) {
+        case EC::InvalidWebSiteGiven:
+            errMsg = tr("Tageswerte: Ungültige URL für \"%1\"")
+                         .arg(m_refreshShare.name()); break;
+        case EC::NoWebContentLoaded:
+            errMsg = tr("Tageswerte: Kein Inhalt geladen für \"%1\"")
+                         .arg(m_refreshShare.name()); break;
+        case EC::ParsingFailed:
+            errMsg = tr("Tageswerte: Parsing fehlgeschlagen für \"%1\"")
+                         .arg(m_refreshShare.name()); break;
+        case EC::NetworkError:
+            errMsg = tr("Tageswerte: Netzwerkfehler für \"%1\" — %2")
+                         .arg(m_refreshShare.name(), state.exceptionMessage); break;
+        case EC::JsonError:
+            errMsg = tr("Tageswerte: JSON-Fehler für \"%1\"")
+                         .arg(m_refreshShare.name()); break;
+        default:
+            errMsg = tr("Tageswerte: Fehler beim Abruf von \"%1\" (%2)")
+                         .arg(m_refreshShare.name(),
+                              QString::number(static_cast<int>(state.lastErrorCode))); break;
+        }
+        addStatusMessage(errMsg, MessageType::Error);
+
+        m_dailyDone     = true;
+        m_errorOccurred = true; // signals onRefreshShareFinished() to stop the queue
+
+        // Let the market parser finish on its own — do not cancel it
+        if (m_marketDone)
+            onRefreshShareFinished();
+        return;
+    }
+
+    // ── Finished ──────────────────────────────────────────────────────────
+    if (state.lastErrorCode == EC::Finished) {
+        if (m_dailyDone) return; // guard against double-firing
+        const QList<ParserLib::DailyValues>& dvList = state.dailyValuesList;
+
+        if (!dvList.isEmpty()) {
+            // Convert and upsert
+            QList<DailyValuesObject> objects;
+            objects.reserve(dvList.size());
+            for (const auto& dv : dvList) {
+                objects.append(DailyValuesObject(
+                    m_refreshShare.guid(),
+                    dv.date,
+                    dv.openingPrice,
+                    dv.closingPrice,
+                    dv.top,
+                    dv.bottom,
+                    dv.volume));
+            }
+
+            DailyValuesRepository dvRepo;
+            if (!dvRepo.upsertList(objects)) {
+                addStatusMessage(
+                    tr("Tageswerte: Speichern fehlgeschlagen für \"%1\": %2")
+                        .arg(m_refreshShare.name(), dvRepo.lastError().text()),
+                    MessageType::Error);
+            } else {
+                addStatusMessage(
+                    tr("Tageswerte aktualisiert: %1 — %2 Einträge")
+                        .arg(m_refreshShare.name(),
+                             QString::number(dvList.size())),
+                    MessageType::Success);
+            }
+
+            m_dailyValuesStateLabel->setText(
+                tr("Tageswerte: %1 Einträge").arg(dvList.size()));
+        } else {
+            addStatusMessage(
+                tr("Tageswerte: Keine neuen Einträge für \"%1\"")
+                    .arg(m_refreshShare.name()),
+                MessageType::Info);
+        }
+
+        m_dailyDone = true;
+        if (m_marketDone)
+            onRefreshShareFinished();
+    }
+}
+
+// ── setupTableDelegates ───────────────────────────────────────────────────────
+
+void MainWindow::setupTableDelegates()
+{
+    // One delegate instance per table — parented so Qt manages lifetime.
+    // setItemDelegateForColumn() does NOT take ownership; the parent does.
+
+    // Depotwert tab — two-line columns
+    using FC = FinalValueColumn;
+    auto* delF = new TwoLineDelegate(m_finalValueTable);
+    for (int col : {
+            static_cast<int>(FC::BrokerageDividend),
+            static_cast<int>(FC::Price),
+            static_cast<int>(FC::PrevDay),
+            static_cast<int>(FC::Performance),
+            static_cast<int>(FC::PurchaseFinalValue),
+            static_cast<int>(FC::CompletePerformance),
+            static_cast<int>(FC::CompletePurchaseFinalValue) }) {
+        m_finalValueTable->setItemDelegateForColumn(col, delF);
+        m_finalValueFooter->setItemDelegateForColumn(col, delF);
+    }
+
+    // Marktwert tab — two-line columns
+    using MC = MarketValueColumn;
+    auto* delM = new TwoLineDelegate(m_marketValueTable);
+    for (int col : {
+            static_cast<int>(MC::Price),
+            static_cast<int>(MC::PrevDay),
+            static_cast<int>(MC::Performance),
+            static_cast<int>(MC::PurchaseMarketValue) }) {
+        m_marketValueTable->setItemDelegateForColumn(col, delM);
+        m_marketValueFooter->setItemDelegateForColumn(col, delM);
+    }
+}
+
+// ── updatePortfolioFooters ────────────────────────────────────────────────────
+
+void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
+{
+    const QLocale locale;
+    const QColor  neutral(Qt::black);
+    const QColor  muted(100, 100, 100);
+
+    auto perfColor = [](double value) -> QColor {
+        if (value > 0.0) return QColor(0, 140, 0);
+        if (value < 0.0) return QColor(180, 0, 0);
+        return QColor(Qt::black);
+    };
+
+    auto makeFooterItem = [&](const QString& top,    const QColor& topColor,
+                               const QString& bottom, const QColor& bottomColor) {
+        auto* item = new QTableWidgetItem();
+        item->setData(TwoLineRole::Top,         top);
+        item->setData(TwoLineRole::Bottom,       bottom);
+        item->setData(TwoLineRole::TopColor,     topColor);
+        item->setData(TwoLineRole::BottomColor,  bottomColor);
+        item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+        return item;
+    };
+
+    auto makeTextItem = [&](const QString& text, const QColor& color = QColor(Qt::black),
+                             Qt::Alignment align = Qt::AlignRight | Qt::AlignVCenter) {
+        auto* item = new QTableWidgetItem(text);
+        item->setForeground(color);
+        item->setTextAlignment(align);
+        item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+        return item;
+    };
+
+    // ── Depotwert footer ──────────────────────────────────────────────────
+    double bd = 0, tPurchase = 0, tCurValue = 0, tProfit = 0, tProfitPct = 0;
+    double cPurchase = 0, cCurValue = 0, cProfit = 0, cProfitPct = 0;
+    ShareCalculator::portfolioTotalsFinal(shareValues,
+        bd, tPurchase, tCurValue, tProfit, tProfitPct,
+        cPurchase, cCurValue, cProfit, cProfitPct);
+
+    // Initialise footer rows (3 rows: Einzahlung / Entwicklung / Depotstand)
+    for (int r = 0; r < 3; ++r) {
+        if (m_finalValueFooter->item(r, 0) == nullptr) {
+            for (int c = 0; c < m_finalValueFooter->columnCount(); ++c)
+                m_finalValueFooter->setItem(r, c, new QTableWidgetItem());
+        }
+    }
+    m_finalValueFooter->setRowHeight(0, 38);
+    m_finalValueFooter->setRowHeight(1, 38);
+    m_finalValueFooter->setRowHeight(2, 38);
+
+    using FC = FinalValueColumn;
+    // Row 0 — Einzahlung (gesamt)
+    m_finalValueFooter->setItem(0, static_cast<int>(FC::Name),
+        makeTextItem(tr("Einzahlung (gesamt)"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    m_finalValueFooter->setItem(0, static_cast<int>(FC::BrokerageDividend),
+        makeFooterItem(locale.toString(bd, 'f', 2) + QStringLiteral(" €"), neutral,
+                       QString(), muted));
+    m_finalValueFooter->setItem(0, static_cast<int>(FC::PurchaseFinalValue),
+        makeFooterItem(locale.toString(tPurchase, 'f', 2) + QStringLiteral(" €"), neutral,
+                       locale.toString(tCurValue, 'f', 2) + QStringLiteral(" €"), muted));
+    m_finalValueFooter->setItem(0, static_cast<int>(FC::CompletePurchaseFinalValue),
+        makeFooterItem(locale.toString(cPurchase, 'f', 2) + QStringLiteral(" €"), neutral,
+                       locale.toString(cCurValue, 'f', 2) + QStringLiteral(" €"), muted));
+
+    // Row 1 — Entwicklung (gesamt)
+    m_finalValueFooter->setItem(1, static_cast<int>(FC::Name),
+        makeTextItem(tr("Entwicklung (gesamt)"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    m_finalValueFooter->setItem(1, static_cast<int>(FC::Performance),
+        makeFooterItem(locale.toString(tProfit, 'f', 2) + QStringLiteral(" €"),
+                       perfColor(tProfit),
+                       locale.toString(tProfitPct, 'f', 2) + QStringLiteral(" %"),
+                       perfColor(tProfitPct)));
+    m_finalValueFooter->setItem(1, static_cast<int>(FC::CompletePerformance),
+        makeFooterItem(locale.toString(cProfit, 'f', 2) + QStringLiteral(" €"),
+                       perfColor(cProfit),
+                       locale.toString(cProfitPct, 'f', 2) + QStringLiteral(" %"),
+                       perfColor(cProfitPct)));
+
+    // Row 2 — Aktueller Depotstand
+    m_finalValueFooter->setItem(2, static_cast<int>(FC::Name),
+        makeTextItem(tr("Aktueller Depotstand"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    m_finalValueFooter->setItem(2, static_cast<int>(FC::PurchaseFinalValue),
+        makeFooterItem(locale.toString(tCurValue, 'f', 2) + QStringLiteral(" €"), neutral,
+                       QString(), muted));
+    m_finalValueFooter->setItem(2, static_cast<int>(FC::CompletePurchaseFinalValue),
+        makeFooterItem(locale.toString(cCurValue, 'f', 2) + QStringLiteral(" €"), neutral,
+                       QString(), muted));
+
+    // Mirror column widths from main table
+    for (int c = 0; c < m_finalValueTable->columnCount(); ++c)
+        m_finalValueFooter->setColumnWidth(c, m_finalValueTable->columnWidth(c));
+
+    // ── Marktwert footer ──────────────────────────────────────────────────
+    double mPurchase = 0, mCurValue = 0, mMarketValue = 0, mProfit = 0, mProfitPct = 0, mMarketPct = 0;
+    ShareCalculator::portfolioTotalsMarket(shareValues,
+        mPurchase, mCurValue, mMarketValue, mProfit, mProfitPct, mMarketPct);
+
+    for (int r = 0; r < 3; ++r) {
+        if (m_marketValueFooter->item(r, 0) == nullptr) {
+            for (int c = 0; c < m_marketValueFooter->columnCount(); ++c)
+                m_marketValueFooter->setItem(r, c, new QTableWidgetItem());
+        }
+    }
+    m_marketValueFooter->setRowHeight(0, 38);
+    m_marketValueFooter->setRowHeight(1, 38);
+    m_marketValueFooter->setRowHeight(2, 38);
+
+    using MC = MarketValueColumn;
+    // Row 0 — Einzahlung (gesamt) / Marktwert (gesamt)
+    m_marketValueFooter->setItem(0, static_cast<int>(MC::Name),
+        makeTextItem(tr("Einzahlung (gesamt)"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    m_marketValueFooter->setItem(0, static_cast<int>(MC::PurchaseMarketValue),
+        makeFooterItem(locale.toString(mPurchase, 'f', 2) + QStringLiteral(" €"), neutral,
+                       locale.toString(mMarketValue, 'f', 2) + QStringLiteral(" €"), muted));
+
+    // Row 1 — Entwicklung (gesamt)
+    m_marketValueFooter->setItem(1, static_cast<int>(MC::Name),
+        makeTextItem(tr("Entwicklung (gesamt)"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    m_marketValueFooter->setItem(1, static_cast<int>(MC::Performance),
+        makeFooterItem(locale.toString(mProfit, 'f', 2) + QStringLiteral(" €"),
+                       perfColor(mProfit),
+                       locale.toString(mProfitPct, 'f', 2) + QStringLiteral(" %"),
+                       perfColor(mProfitPct)));
+
+    // Row 2 — Aktueller Depotstand (= marketValue gesamt)
+    m_marketValueFooter->setItem(2, static_cast<int>(MC::Name),
+        makeTextItem(tr("Aktueller Depotstand"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    m_marketValueFooter->setItem(2, static_cast<int>(MC::PurchaseMarketValue),
+        makeFooterItem(locale.toString(mMarketValue, 'f', 2) + QStringLiteral(" €"), neutral,
+                       QString(), muted));
+
+    for (int c = 0; c < m_marketValueTable->columnCount(); ++c)
+        m_marketValueFooter->setColumnWidth(c, m_marketValueTable->columnWidth(c));
+}

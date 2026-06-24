@@ -1,0 +1,20 @@
+/**
+ * @mainpage Dokumentation
+ *
+ * @section intro Überblick
+ * Cross-platform Desktop-Anwendung zur Verwaltung von Aktienportfolios.
+ * Entwickelt mit Qt/C++ für Windows und Linux.
+ *
+ * @section modules Module
+ * - @ref Logging "Logger" — Level-basiertes Logging mit Bit-Flag-Filterung
+ * - @ref ParserLib "Parser" — Asynchrones REST-API und Regex-Parsing
+ * - **Database** — SQLite-Datenbankzugriff (Singleton)
+ * - **Domain Models** — BuyObject, SaleObject, DividendObject, ShareObject
+ * - **Repositories** — Datenbankzugriff pro Entität (BuyRepository, ...)
+ * - **Forms** — UI-Schicht mit MVP-Pattern
+ *
+ * @section links Weitere Dokumentation
+ * - \subpage architecture "Architektur-Übersicht"
+ * - \subpage testing "Test-Dokumentation"
+ * - Quelldateien: siehe "Files" oben
+ */
