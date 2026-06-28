@@ -30,9 +30,9 @@ namespace TwoLineRole {
 /**
  * @brief Delegate that renders two text lines inside a single table cell.
  *
- * The upper line uses the normal font; the lower line uses a slightly
- * smaller font and is rendered in a muted grey by default (overridable
- * via TwoLineRole::BottomColor).
+ * Both lines use the cell font (equal size); the lower line is rendered in
+ * a muted grey by default (overridable via TwoLineRole::BottomColor). When a
+ * cell has no second line, the single value is centered vertically.
  *
  * Text is right-aligned by default; override alignment via
  * Qt::TextAlignmentRole on the item.
@@ -144,11 +144,8 @@ public:
                    const QModelIndex& index) const override
     {
         Q_UNUSED(index)
-        // Two lines: normal + 82% smaller font
-        const int topH = option.fontMetrics.height();
-        QFont botFont  = option.font;
-        botFont.setPointSizeF(option.font.pointSizeF() * 0.82);
-        const int botH = QFontMetrics(botFont).height();
-        return { 120, topH + botH + 8 };
+        // Two equal-size lines (both rendered in the cell font) + padding.
+        const int lineH = option.fontMetrics.height();
+        return { 120, 2 * lineH + 8 };
     }
 };
