@@ -933,7 +933,9 @@ Depotwert-Tab (`m_finalValueTable`):
 | Komplette Entwicklung | `completeProfitLoss` € | `completeProfitPct` % |
 | Kpl. Einzahlung / Kpl. Marktwert | `completePurchase` € | `completeCurValue` € |
 
-Marktwert-Tab (`m_marketValueTable`) — ohne Kosten/Dividenden und ohne Kpl.-Spalten:
+Marktwert-Tab (`m_marketValueTable`) — ohne Kosten/Dividenden; Werte durchgängig
+brokeragefrei. Die Komplett-Spalten sind in sich konsistent
+(`Kpl. Entwicklung = Kpl. Marktwert − Kpl. Einzahlung`):
 
 | Spalte | Inhalt oben | Inhalt unten |
 | ------ | ----------- | ------------ |
@@ -946,6 +948,54 @@ Marktwert-Tab (`m_marketValueTable`) — ohne Kosten/Dividenden und ohne Kpl.-Sp
 | Vortag | Δ€ | Δ% |
 | Aktuelle Entwicklung | `profitLoss` € | `profitLossPct` % |
 | Einzahlung / Marktwert | `purchaseValue` € | `curValue` € |
+| (Chart-Icon) | Kpl. Entwicklungs-Pfeil | — |
+| Komplette Entwicklung | `completeProfitLossMarket` € | `completeProfitPctMarket` % |
+| Kpl. Einzahlung / Kpl. Marktwert | `completePurchaseMarket` € | `completeCurValueMarket` € |
+
+#### Footer-Tabelle (Summenzeilen)
+
+Jeder Tab hat unter der Haupttabelle eine eigene 3-zeilige Footer-Tabelle. Der
+Marktwert-Footer (`m_marketValueFooter`) zeigt:
+
+| Zeile | Beschriftung | Werte |
+| ----- | ------------ | ----- |
+| 0 | Einzahlung (gesamt) | `mPurchase` (Einzahlung/Marktwert), `mcPurchase` (Kpl. Einzahlung) — einzeilig |
+| 1 | Entwicklung (gesamt) | `mProfit`/`mProfitPct` (Aktuelle Entwicklung), Entwicklungs-Icon (CompleteChart), `mcProfit`/`mcProfitPct` (Komplette Entwicklung) |
+| 2 | Aktueller Depotstand | `mMarketValue` (Einzahlung/Marktwert), `mcCurValue` (Kpl. Einzahlung/Kpl. Marktwert) — einzeilig |
+
+Totale liefern `portfolioTotalsMarket` (laufende Spalten) und
+`portfolioCompleteTotalsMarket` (Kpl.-Spalten).
+
+Layout-Konventionen (an die C#-Anwendung angelehnt):
+
+- Die Beschriftung jeder Zeile spannt per `setSpan(row, 0, 1, 7)` die Spalten
+  Icon..Vortag und ist rechtsbündig (endet an der Vortag-Spalte). Die Spalten
+  **nach** Vortag werden NICHT verbunden — die Werte stehen einzeln unter ihren
+  jeweiligen Überschriften.
+- In der Entwicklungs-Zeile sitzt in der `CompleteChart`-Spalte das
+  Entwicklungs-Icon (`devIcon(mcProfitPct)`) — wie im Grid.
+- Einzelwert-Zellen (Zeile 0 und 2) werden vom `TwoLineDelegate` vertikal
+  zentriert dargestellt (eine saubere Zeile statt obere Hälfte + Leerraum).
+- Der Footer scrollt nie: feste Höhe = 3 × 34 px + Rahmen, beide Scrollbalken aus.
+- Die Footer-Spaltenbreiten werden laufend über `QHeaderView::sectionResized`
+  mit der Haupttabelle synchronisiert. Das ist nötig, weil die gestreckte
+  Name-Spalte ihre echte Breite erst beim Layout erhält; eine einmalige
+  Spiegelung beim Daten-Update würde die Werte nach links verschieben.
+
+#### Darstellung (Farben, Icons, Zeilen)
+
+Gilt für beide Tabs (Haupttabellen und Footer):
+
+- **Farben** sind theme-abhängig aus der Palette: `neutral` =
+  `palette().color(QPalette::Text)`, `muted` = `neutral` mit Alpha 140
+  (gedämpfte Zweitzeile). Gewinn/Verlust nutzen dieselbe Quelle wie die
+  Statusmeldungsbox — `AppSettings::logColorAt(5)` (Erfolg-Grün) bzw.
+  `logColorAt(3)` (Fehler-Rot); ein Nullwert wird in Textfarbe gezeichnet.
+- **Icons**: `setIconSize(24×24)`; die Entwicklungs-Pfeile liegen als 24-px-PNGs
+  vor. Der `CenterIconDelegate` zentriert die Icon-Dekoration in den
+  Icon-Spalten (Icon, PrevDayChart, CompleteChart) von Haupttabelle und Footer.
+- **Zeilen**: Haupttabellen 38 px, Footer 34 px; alternierende Zeilenfarben und
+  Gridlinien in Haupttabellen und Footer.
 
 #### TwoLineDelegate (forms/MainForm/TwoLineDelegate.h)
 
@@ -953,27 +1003,83 @@ Header-only `QStyledItemDelegate` der zwei Textzeilen in einer Qt-Zelle rendert.
 Daten werden über `TwoLineRole`-Konstanten gesetzt (`Qt::UserRole + 10..13`):
 `Top`, `Bottom`, `TopColor`, `BottomColor`. Kein `Q_OBJECT` — keine eigenen Signals.
 
+Beide Zeilen werden in der Zellenschrift (`option.font`) gezeichnet, also **gleich
+groß** (die untere Zeile war früher kleiner gerendert). Hat eine Zelle keine zweite
+Zeile (`Bottom` leer), wird der Einzelwert **vertikal in der ganzen Zelle zentriert**
+statt in der oberen Hälfte — sonst sähen einzeilige Werte wie eine zweizeilige Zelle
+mit leerer Unterzeile aus. Standardausrichtung ist rechtsbündig/vertikal zentriert,
+überschreibbar via `Qt::TextAlignmentRole`. Die tatsächliche Zeilenhöhe geben die
+Tabellen explizit vor (`setFixedHeight`: Haupttabelle 38 px, Footer 34 px); der
+`sizeHint` ist damit nicht die maßgebliche Größe.
+
+#### CenterIconDelegate (forms/MainForm/CenterIconDelegate.h)
+
+Header-only `QStyledItemDelegate` ohne `Q_OBJECT`. Überschreibt nur
+`initStyleOption` und setzt `option->decorationAlignment = Qt::AlignCenter`. Damit
+werden die Icons in den reinen Icon-Spalten (Icon/Status, PrevDayChart, CompleteChart)
+zentriert statt linksbündig dargestellt — angewandt auf beide Haupttabellen und beide
+Footer.
+
 #### ShareCalculator (utils/ShareCalculator.h/.cpp)
 
-Statische Hilfsklasse. `compute(guid, curPrice, prevDayPrice)` gibt `ShareValues`
-zurück mit allen berechneten Finanzwerten. Formeln (Marktwert-Tab):
+Statische, zustandslose Hilfsklasse. `compute(guid, curPrice, prevDayPrice)` liest Kaeufe,
+Verkaeufe, Brokerage und Dividenden frisch aus den Repositories und gibt ein `ShareValues`
+zurueck. Keine laufenden Salden, keine Sentinel-Guards. Die anteilige Brokerage/Rabatt eines
+teilverkauften Kaufs wird hier aus der verknuepften Brokerage des Kaufs rekonstruiert,
+unabhaengig von den auf `SaleBuyDetail` gespeicherten Anteilen.
 
-- `purchaseValue` = Σ(buyVolume × buyPrice) aller Käufe [**ohne** Brokerage]
-- `curValue` = netVolume × curPrice
-- `profitLoss` = Σ((curPrice − buyPrice) × remainingVolume) pro Kauf
-- `saleProfitLoss` = Σ sale.profitLoss() = Σ(saleValue − buyValue − taxSum) [**ohne** Brokerage]
+Beide Tabs teilen sich die "aktuellen" Spalten (Einzahlung/Marktwert, Aktuelle Entwicklung),
+fuellen sie aber mit zwei verschiedenen Wertesaetzen. Beide Basen zaehlen nur die aktuell
+GEHALTENEN Anteile (FIFO: jeder Kauf steuert sein Restvolumen bei) und sind damit konsistent
+zu `curValue`.
+
+Einheitlicher Rundungs-Vertrag (cent-genau): Jeder Geldbetrag wird per `roundAway(value, 2)`
+kaufmaennisch (half-away-from-zero) auf 2 Stellen gerundet -- jeder Kaufwert, jeder
+Verkaufswert, jeder anteilige Brokerage/Rabatt-Teil, der aktuelle Marktwert und jede
+angezeigte Aggregatzelle. `roundAway` addiert vor dem Runden ein winziges Epsilon in
+Betragsrichtung, damit Halb-Cent-Grenzfaelle (z. B. 1,005) identisch zur C#-Referenz
+(`MidpointRounding.AwayFromZero`) gerundet werden.
+
+Marktwert-Tab (ohne Brokerage):
+
+- `purchaseValue` = gehaltene Basis: Summe(round(remVol x price) - reductionPart)
+- `curValue` = round(heldVolume x curPrice)
+- `profitLoss` = curValue - purchaseValue
+- `saleProfitLoss` = realisierte G/V ohne Brokerage (mit Rabatt), nur Footer-Aggregat
 - `marketValue` = curValue + saleProfitLoss
+- `completePurchaseMarket` = alle Kaeufe: Summe(round(vol x price) - reduction) (ohne Brokerage)
+- `completeProfitLossMarket` = (curValue - purchaseValue) + realisierte G/V MIT Brokerage
+- `completeCurValueMarket` = completePurchaseMarket + completeProfitLossMarket
 
-Depotwert-Tab-Extras:
+Die Spalten "Einzahlung/Marktwert" und "Kpl. Einzahlung" sind brokeragefrei (reiner
+Marktwert der gehaltenen Anteile bzw. Einzahlung ohne Brokerage). "Komplette Entwicklung"
+addiert zur unrealisierten Entwicklung der gehaltenen Anteile die **realisierte** G/V
+abgeschlossener Verkaeufe inkl. Verkaufs- und anteiliger Kaufgebuehren (entspricht
+`profitLossBrokerageReduction`), da dies der tatsaechlich erzielte Netto-Gewinn/-Verlust ist.
+"Kpl. Marktwert" = "Kpl. Einzahlung" + "Komplette Entwicklung", womit
+`Kpl. Entwicklung = Kpl. Marktwert - Kpl. Einzahlung` exakt gilt.
 
-- `totalBrokerage` = `BrokerageRepository::totalBrokerage()` = alle Brokerageeinträge
-- `totalDividend` = `DividendRepository::totalPayoutWithTaxes()` = Dividenden nach Steuer
-- `completePurchase` = `purchaseValue`
-- `completeCurValue` = `curValue + totalDividend + saleProfitLoss`
-- `completeProfitLoss` = `completeCurValue − completePurchase`
+Die realisierte G/V wird aus Aggregaten gerechnet (Netto-Verkaufserloes minus Kaufkosten der
+verkauften Stuecke = alle Kaeufe minus noch gehaltene Kaeufe), nicht aus den `SaleBuyDetail`-
+Records. Footer-Totale liefert `portfolioCompleteTotalsMarket`.
 
-> Hinweis: Die Berechnungen werden in einer späteren Session gegen die
-> Referenzwerte aus dem Details-Fenster abgeglichen und ggf. korrigiert.
+Depotwert-Tab (mit Brokerage + Dividenden):
+
+- `purchaseValueFinal` = gehaltene Basis: Summe(round(remVol x price) + brokeragePart - reductionPart)
+- `profitLossFinal` = curValue - purchaseValueFinal
+- `totalBrokerage` = `BrokerageRepository::totalBrokerage()`
+- `totalDividend` = `DividendRepository::totalPayoutWithTaxes()` (netto nach Steuer)
+- `completePurchase` = alle Kaeufe: Summe(round(vol x price) + brokerage - reduction)
+- `completeCurValue` = curValue + Summe(Verkaufs-Auszahlung inkl. Brokerage/Rabatt) + totalDividend
+- `completeProfitLoss` = completeCurValue - completePurchase
+
+Die Semantik spiegelt das C#-Referenzprojekt (`ShareObjectMarketValue` / `ShareObjectFinalValue`):
+gehaltene Kostenbasis, einziger Unterschied der "aktuellen" Spalten ist die Brokerage, und die
+Komplett-Sicht des Depotwerts setzt Gesamteinsatz (alle Kaeufe inkl. Gebuehren) gegen
+aktuellen Bestand + Netto-Verkaufsauszahlungen + Dividenden. Abweichend von C# wird die
+Rundung einheitlich auf 2 Stellen vorgenommen (C# laesst Verkaufswerte und FIFO-Anteile
+ungerundet); dadurch ist das Grid cent-genau konsistent zum Qt-Details-Fenster, kann aber in
+seltenen Grenzfaellen um einen Cent von den alten C#-Ausgaben abweichen.
 
 #### Toolbar-Aktionen
 

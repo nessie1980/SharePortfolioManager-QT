@@ -22,6 +22,7 @@
 #include "../../../libs/parser/src/Parser.h"
 #include "../../../libs/parser/src/DataTypes.h"
 #include "TwoLineDelegate.h"
+#include "CenterIconDelegate.h"
 #include "../../utils/ShareCalculator.h"
 
 #include <QList>
@@ -81,7 +82,10 @@ public:
         PrevDay             = 6,  ///< Δ€ / Δ% vs. previous day (2-line, colored)
         Performance         = 7,  ///< profitLoss€ / profitLoss% (2-line, colored)
         PurchaseMarketValue = 8,  ///< purchaseValue€ / curValue€ (2-line)
-        Count               = 9
+        CompleteChart               = 9,  ///< Complete development icon
+        CompletePerformance         = 10, ///< completeProfitLossMarket€ / completeProfitPctMarket% (2-line, colored)
+        CompletePurchaseMarketValue = 11, ///< completePurchaseMarket€ / completeCurValueMarket€ (2-line)
+        Count               = 12
     };
 
 private slots:

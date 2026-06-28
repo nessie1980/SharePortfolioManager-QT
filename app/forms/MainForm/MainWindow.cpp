@@ -266,7 +266,8 @@ void MainWindow::setupCentralWidget()
         tbl->setEditTriggers(QAbstractItemView::NoEditTriggers);
         tbl->setAlternatingRowColors(true);
         tbl->setSortingEnabled(false); // disabled while inserting; enabled after load
-        tbl->setShowGrid(false);
+        tbl->setShowGrid(true);
+        tbl->setIconSize(QSize(24, 24)); // development arrows ship as 24px PNGs
     };
 
     auto setupFooter = [](QTableWidget* tbl) {
@@ -275,8 +276,15 @@ void MainWindow::setupCentralWidget()
         tbl->setEditTriggers(QAbstractItemView::NoEditTriggers);
         tbl->setSelectionMode(QAbstractItemView::NoSelection);
         tbl->setFocusPolicy(Qt::NoFocus);
-        tbl->setShowGrid(false);
-        tbl->setFixedHeight(tbl->verticalHeader()->defaultSectionSize() * 3 + 4);
+        tbl->setShowGrid(true);
+        tbl->setAlternatingRowColors(true);
+        tbl->setIconSize(QSize(24, 24));
+        // Fixed 3-row footer: never scroll.
+        tbl->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        tbl->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        // Rows are 34px each (set in updatePortfolioFooters); fit them exactly
+        // plus the frame so no vertical scrollbar is needed.
+        tbl->setFixedHeight(34 * 3 + 2 * tbl->frameWidth());
     };
 
     // ── Depotwert-Tab ─────────────────────────────────────────────────────
@@ -302,7 +310,7 @@ void MainWindow::setupCentralWidget()
         static_cast<int>(FinalValueColumn::Name), QHeaderView::Stretch);
 
     // Icon columns — fixed width
-    m_finalValueTable->setColumnWidth(static_cast<int>(FinalValueColumn::Icon),         20);
+    m_finalValueTable->setColumnWidth(static_cast<int>(FinalValueColumn::Icon),         28);
     m_finalValueTable->setColumnWidth(static_cast<int>(FinalValueColumn::PrevDayChart), 32);
     m_finalValueTable->setColumnWidth(static_cast<int>(FinalValueColumn::CompleteChart),32);
 
@@ -328,15 +336,19 @@ void MainWindow::setupCentralWidget()
         QStringLiteral(""),          // PrevDay chart icon
         tr("Vortag"),
         tr("Aktuelle\nEntwicklung"),
-        tr("Einzahlung\nMarktwert")
+        tr("Einzahlung\nMarktwert"),
+        QStringLiteral(""),          // Complete chart icon
+        tr("Komplette\nEntwicklung"),
+        tr("Kpl. Einzahlung\nKpl. Marktwert")
     });
     setupTable(m_marketValueTable);
     m_marketValueTable->horizontalHeader()->setStretchLastSection(false);
     m_marketValueTable->horizontalHeader()->setSectionResizeMode(
         static_cast<int>(MarketValueColumn::Name), QHeaderView::Stretch);
 
-    m_marketValueTable->setColumnWidth(static_cast<int>(MarketValueColumn::Icon),         20);
+    m_marketValueTable->setColumnWidth(static_cast<int>(MarketValueColumn::Icon),         28);
     m_marketValueTable->setColumnWidth(static_cast<int>(MarketValueColumn::PrevDayChart), 32);
+    m_marketValueTable->setColumnWidth(static_cast<int>(MarketValueColumn::CompleteChart),32);
 
     m_marketValueFooter = new QTableWidget(3, static_cast<int>(MarketValueColumn::Count));
     setupFooter(m_marketValueFooter);
@@ -353,6 +365,22 @@ void MainWindow::setupCentralWidget()
 
     // Install two-line delegates
     setupTableDelegates();
+
+    // Keep each footer's column widths in sync with its grid continuously.
+    // The grid's "Name" column is stretched and only reaches its real width
+    // during layout (after the first show / on every resize). A one-off mirror
+    // at data-update time would capture a stale (default) width and shift all
+    // footer value columns left, so they would no longer sit under the grid
+    // columns. sectionResized fires whenever a column (incl. the stretched one)
+    // changes width, keeping the footer aligned.
+    connect(m_finalValueTable->horizontalHeader(), &QHeaderView::sectionResized,
+            this, [this](int idx, int /*oldSize*/, int newSize) {
+                m_finalValueFooter->setColumnWidth(idx, newSize);
+            });
+    connect(m_marketValueTable->horizontalHeader(), &QHeaderView::sectionResized,
+            this, [this](int idx, int /*oldSize*/, int newSize) {
+                m_marketValueFooter->setColumnWidth(idx, newSize);
+            });
 
     // Enable Edit / Delete / Refresh when a row is selected
     auto enableShareActions = [this]() {
@@ -774,11 +802,12 @@ void MainWindow::populatePortfolioTables()
         return item;
     };
 
-    // Helper: performance color
-    auto perfColor = [](double value) -> QColor {
-        if (value >  0.0) return QColor(0, 140, 0);   // green
-        if (value <  0.0) return QColor(180, 0, 0);    // red
-        return QColor(Qt::black);
+    // Helper: performance color — same green/red as the status message box
+    // (AppSettings log colors: 5 = success green, 3 = error red).
+    auto perfColor = [this](double value) -> QColor {
+        if (value >  0.0) return AppSettings::instance().logColorAt(5);
+        if (value <  0.0) return AppSettings::instance().logColorAt(3);
+        return palette().color(QPalette::Text);          // neutral (theme-aware)
     };
 
     // Helper: pick development icon
@@ -809,8 +838,9 @@ void MainWindow::populatePortfolioTables()
             share.guid(), share.curPrice(), share.prevDayPrice());
         allValues.append(v);
 
-        const QColor neutral  = QColor(Qt::black);
-        const QColor muted    = QColor(100, 100, 100);
+        const QColor neutral = palette().color(QPalette::Text);
+        QColor muted = neutral;
+        muted.setAlpha(140); // dimmed toward background, works in light + dark
 
         // ── Formatted strings ─────────────────────────────────────────────
         const QString curPriceStr   = locale.toString(v.curPrice,     'f', 4)
@@ -940,8 +970,6 @@ void MainWindow::populatePortfolioTables()
         volItemM->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
         // Marktwert-specific strings
-        const QString marketValueStr = locale.toString(v.marketValue, 'f', 2)
-                                     + QStringLiteral(" €");
         const QString profitMStr     = locale.toString(v.profitLoss, 'f', 2)
                                      + QStringLiteral(" €");
         const QString profitMPctStr  = locale.toString(v.profitLossPct, 'f', 2)
@@ -956,8 +984,25 @@ void MainWindow::populatePortfolioTables()
         // Aktuelle Entwicklung: profitLoss per buy (no brokerage)
         auto* perfItemM      = makeTwoLine(profitMStr,    perfColor(v.profitLoss),
                                            profitMPctStr, perfColor(v.profitLossPct));
-        // Einzahlung (upper) = purchaseValue, Marktwert (lower) = curValue + saleProfitLoss
-        auto* pvItemM        = makeTwoLine(purchaseStr, neutral, marketValueStr, neutral);
+        // Einzahlung (upper) = purchaseValue, Marktwert (lower) = reiner Marktwert (curValue)
+        auto* pvItemM        = makeTwoLine(purchaseStr, neutral, curValueStr, neutral);
+
+        // Marktwert complete columns (brokerage-free)
+        const QString cProfitMStr    = locale.toString(v.completeProfitLossMarket, 'f', 2)
+                                     + QStringLiteral(" €");
+        const QString cProfitMPctStr = locale.toString(v.completeProfitPctMarket, 'f', 2)
+                                     + QStringLiteral(" %");
+        const QString cPurchaseMStr  = locale.toString(v.completePurchaseMarket, 'f', 2)
+                                     + QStringLiteral(" €");
+        const QString cCurValueMStr  = locale.toString(v.completeCurValueMarket, 'f', 2)
+                                     + QStringLiteral(" €");
+
+        auto* cChartItemM = new QTableWidgetItem();
+        cChartItemM->setIcon(devIcon(v.completeProfitPctMarket));
+        cChartItemM->setFlags(cChartItemM->flags() & ~Qt::ItemIsEditable);
+        auto* cPerfItemM  = makeTwoLine(cProfitMStr,    perfColor(v.completeProfitLossMarket),
+                                        cProfitMPctStr, perfColor(v.completeProfitPctMarket));
+        auto* cPvItemM    = makeTwoLine(cPurchaseMStr, neutral, cCurValueMStr, neutral);
 
         using MC = MarketValueColumn;
         m_marketValueTable->setItem(mr, static_cast<int>(MC::Icon),                iconItemM);
@@ -969,6 +1014,9 @@ void MainWindow::populatePortfolioTables()
         m_marketValueTable->setItem(mr, static_cast<int>(MC::PrevDay),             prevDayItemM);
         m_marketValueTable->setItem(mr, static_cast<int>(MC::Performance),         perfItemM);
         m_marketValueTable->setItem(mr, static_cast<int>(MC::PurchaseMarketValue), pvItemM);
+        m_marketValueTable->setItem(mr, static_cast<int>(MC::CompleteChart),               cChartItemM);
+        m_marketValueTable->setItem(mr, static_cast<int>(MC::CompletePerformance),         cPerfItemM);
+        m_marketValueTable->setItem(mr, static_cast<int>(MC::CompletePurchaseMarketValue), cPvItemM);
     }
 
     updatePortfolioFooters(allValues);
@@ -1580,10 +1628,10 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
             m_refreshShare.guid(), newPrice, prevDay);
         const QLocale locale;
 
-        auto perfColor = [](double val) -> QColor {
-            if (val > 0.0) return QColor(0, 140, 0);
-            if (val < 0.0) return QColor(180, 0, 0);
-            return QColor(Qt::black);
+        auto perfColor = [this](double val) -> QColor {
+            if (val > 0.0) return AppSettings::instance().logColorAt(5);
+            if (val < 0.0) return AppSettings::instance().logColorAt(3);
+            return palette().color(QPalette::Text);
         };
 
         auto setTwoLine = [&](QTableWidget* tbl, int row, int col,
@@ -1597,8 +1645,9 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
             }
         };
 
-        const QColor neutral(Qt::black);
-        const QColor muted(100, 100, 100);
+        const QColor neutral = palette().color(QPalette::Text);
+        QColor muted = neutral;
+        muted.setAlpha(140);
 
         auto findRow = [&](QTableWidget* tbl) -> int {
             for (int r = 0; r < tbl->rowCount(); ++r) {
@@ -1653,6 +1702,15 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
                        profitStr, perfColor(v.profitLoss), profitPctStr, perfColor(v.profitLossPct));
             setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::PurchaseMarketValue),
                        purchaseStr, neutral, curValStr, neutral);
+
+            const QString cProfitMStr    = locale.toString(v.completeProfitLossMarket, 'f', 2) + QStringLiteral(" €");
+            const QString cProfitMPctStr = locale.toString(v.completeProfitPctMarket,  'f', 2) + QStringLiteral(" %");
+            const QString cPurchaseMStr  = locale.toString(v.completePurchaseMarket,   'f', 2) + QStringLiteral(" €");
+            const QString cCurValMStr    = locale.toString(v.completeCurValueMarket,   'f', 2) + QStringLiteral(" €");
+            setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::CompletePerformance),
+                       cProfitMStr, perfColor(v.completeProfitLossMarket), cProfitMPctStr, perfColor(v.completeProfitPctMarket));
+            setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::CompletePurchaseMarketValue),
+                       cPurchaseMStr, neutral, cCurValMStr, neutral);
         }
 
         const QString priceStr = locale.toString(newPrice, 'f', 2);
@@ -1813,9 +1871,27 @@ void MainWindow::setupTableDelegates()
             static_cast<int>(MC::Price),
             static_cast<int>(MC::PrevDay),
             static_cast<int>(MC::Performance),
-            static_cast<int>(MC::PurchaseMarketValue) }) {
+            static_cast<int>(MC::PurchaseMarketValue),
+            static_cast<int>(MC::CompletePerformance),
+            static_cast<int>(MC::CompletePurchaseMarketValue) }) {
         m_marketValueTable->setItemDelegateForColumn(col, delM);
         m_marketValueFooter->setItemDelegateForColumn(col, delM);
+    }
+
+    // Center the decoration (icon) in all icon columns of both tabs and footers.
+    auto* iconDelF = new CenterIconDelegate(m_finalValueTable);
+    for (int col : { static_cast<int>(FC::Icon),
+                     static_cast<int>(FC::PrevDayChart),
+                     static_cast<int>(FC::CompleteChart) }) {
+        m_finalValueTable->setItemDelegateForColumn(col, iconDelF);
+        m_finalValueFooter->setItemDelegateForColumn(col, iconDelF);
+    }
+    auto* iconDelM = new CenterIconDelegate(m_marketValueTable);
+    for (int col : { static_cast<int>(MC::Icon),
+                     static_cast<int>(MC::PrevDayChart),
+                     static_cast<int>(MC::CompleteChart) }) {
+        m_marketValueTable->setItemDelegateForColumn(col, iconDelM);
+        m_marketValueFooter->setItemDelegateForColumn(col, iconDelM);
     }
 }
 
@@ -1824,13 +1900,22 @@ void MainWindow::setupTableDelegates()
 void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
 {
     const QLocale locale;
-    const QColor  neutral(Qt::black);
-    const QColor  muted(100, 100, 100);
+    const QColor  neutral = palette().color(QPalette::Text);
+    QColor        muted   = neutral;
+    muted.setAlpha(140);
 
-    auto perfColor = [](double value) -> QColor {
-        if (value > 0.0) return QColor(0, 140, 0);
-        if (value < 0.0) return QColor(180, 0, 0);
-        return QColor(Qt::black);
+    auto perfColor = [this](double value) -> QColor {
+        if (value > 0.0) return AppSettings::instance().logColorAt(5);
+        if (value < 0.0) return AppSettings::instance().logColorAt(3);
+        return palette().color(QPalette::Text);
+    };
+
+    auto devIcon = [](double pct) -> QIcon {
+        if (pct >  2.0)  return IconProvider::icon(IconProvider::PositivStrong);
+        if (pct >  0.0)  return IconProvider::icon(IconProvider::PositivNormal);
+        if (pct <  -2.0) return IconProvider::icon(IconProvider::NegativStrong);
+        if (pct <  0.0)  return IconProvider::icon(IconProvider::NegativNormal);
+        return IconProvider::icon(IconProvider::Neutral);
     };
 
     auto makeFooterItem = [&](const QString& top,    const QColor& topColor,
@@ -1867,9 +1952,9 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
                 m_finalValueFooter->setItem(r, c, new QTableWidgetItem());
         }
     }
-    m_finalValueFooter->setRowHeight(0, 38);
-    m_finalValueFooter->setRowHeight(1, 38);
-    m_finalValueFooter->setRowHeight(2, 38);
+    m_finalValueFooter->setRowHeight(0, 34);
+    m_finalValueFooter->setRowHeight(1, 34);
+    m_finalValueFooter->setRowHeight(2, 34);
 
     using FC = FinalValueColumn;
     // Row 0 — Einzahlung (gesamt)
@@ -1918,38 +2003,66 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
     ShareCalculator::portfolioTotalsMarket(shareValues,
         mPurchase, mCurValue, mMarketValue, mProfit, mProfitPct, mMarketPct);
 
+    double mcPurchase = 0, mcCurValue = 0, mcProfit = 0, mcProfitPct = 0;
+    ShareCalculator::portfolioCompleteTotalsMarket(shareValues,
+        mcPurchase, mcCurValue, mcProfit, mcProfitPct);
+
     for (int r = 0; r < 3; ++r) {
         if (m_marketValueFooter->item(r, 0) == nullptr) {
             for (int c = 0; c < m_marketValueFooter->columnCount(); ++c)
                 m_marketValueFooter->setItem(r, c, new QTableWidgetItem());
         }
     }
-    m_marketValueFooter->setRowHeight(0, 38);
-    m_marketValueFooter->setRowHeight(1, 38);
-    m_marketValueFooter->setRowHeight(2, 38);
+    m_marketValueFooter->setRowHeight(0, 34);
+    m_marketValueFooter->setRowHeight(1, 34);
+    m_marketValueFooter->setRowHeight(2, 34);
+
+    // Merge only the label area (Icon..Vortag) so the row label is right-aligned
+    // up to the Vortag column. Columns after Vortag are NOT merged (matches C#).
+    m_marketValueFooter->setSpan(0, 0, 1, 7);
+    m_marketValueFooter->setSpan(1, 0, 1, 7);
+    m_marketValueFooter->setSpan(2, 0, 1, 7);
 
     using MC = MarketValueColumn;
-    // Row 0 — Einzahlung (gesamt) / Marktwert (gesamt)
-    m_marketValueFooter->setItem(0, static_cast<int>(MC::Name),
+    // Row 0 — Einzahlung (gesamt): only the Einzahlung total (the current
+    // Marktwert total is shown in row 2 "Aktueller Depotstand").
+    m_marketValueFooter->setItem(0, static_cast<int>(MC::Icon),
         makeTextItem(tr("Einzahlung (gesamt)"), neutral, Qt::AlignRight | Qt::AlignVCenter));
     m_marketValueFooter->setItem(0, static_cast<int>(MC::PurchaseMarketValue),
         makeFooterItem(locale.toString(mPurchase, 'f', 2) + QStringLiteral(" €"), neutral,
-                       locale.toString(mMarketValue, 'f', 2) + QStringLiteral(" €"), muted));
+                       QString(), muted));
+    m_marketValueFooter->setItem(0, static_cast<int>(MC::CompletePurchaseMarketValue),
+        makeFooterItem(locale.toString(mcPurchase, 'f', 2) + QStringLiteral(" €"), neutral,
+                       QString(), muted));
 
     // Row 1 — Entwicklung (gesamt)
-    m_marketValueFooter->setItem(1, static_cast<int>(MC::Name),
+    m_marketValueFooter->setItem(1, static_cast<int>(MC::Icon),
         makeTextItem(tr("Entwicklung (gesamt)"), neutral, Qt::AlignRight | Qt::AlignVCenter));
     m_marketValueFooter->setItem(1, static_cast<int>(MC::Performance),
         makeFooterItem(locale.toString(mProfit, 'f', 2) + QStringLiteral(" €"),
                        perfColor(mProfit),
                        locale.toString(mProfitPct, 'f', 2) + QStringLiteral(" %"),
                        perfColor(mProfitPct)));
+    m_marketValueFooter->setItem(1, static_cast<int>(MC::CompletePerformance),
+        makeFooterItem(locale.toString(mcProfit, 'f', 2) + QStringLiteral(" €"),
+                       perfColor(mcProfit),
+                       locale.toString(mcProfitPct, 'f', 2) + QStringLiteral(" %"),
+                       perfColor(mcProfitPct)));
+    {
+        auto* chartItem = new QTableWidgetItem();
+        chartItem->setIcon(devIcon(mcProfitPct));
+        chartItem->setFlags(chartItem->flags() & ~Qt::ItemIsEditable);
+        m_marketValueFooter->setItem(1, static_cast<int>(MC::CompleteChart), chartItem);
+    }
 
     // Row 2 — Aktueller Depotstand (= marketValue gesamt)
-    m_marketValueFooter->setItem(2, static_cast<int>(MC::Name),
+    m_marketValueFooter->setItem(2, static_cast<int>(MC::Icon),
         makeTextItem(tr("Aktueller Depotstand"), neutral, Qt::AlignRight | Qt::AlignVCenter));
     m_marketValueFooter->setItem(2, static_cast<int>(MC::PurchaseMarketValue),
         makeFooterItem(locale.toString(mMarketValue, 'f', 2) + QStringLiteral(" €"), neutral,
+                       QString(), muted));
+    m_marketValueFooter->setItem(2, static_cast<int>(MC::CompletePurchaseMarketValue),
+        makeFooterItem(locale.toString(mcCurValue, 'f', 2) + QStringLiteral(" €"), neutral,
                        QString(), muted));
 
     for (int c = 0; c < m_marketValueTable->columnCount(); ++c)

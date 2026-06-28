@@ -8,57 +8,116 @@
 /**
  * @brief Aggregated financial values for a single share.
  *
- * ### Marktwert-Tab formulas (pure share values, no brokerage/dividend)
+ * The portfolio grid shows two tabs that share the same "current" columns
+ * (Einzahlung / Marktwert, Aktuelle Entwicklung) but fill them with two
+ * different value sets:
  *
- * - volume         = Σ buyVolume − Σ soldVolume (FIFO via SaleBuyDetail)
- * - purchaseValue  = Σ(buyVolume × buyPrice)   [all buys, no brokerage]
- * - curValue       = volume × curPrice
- * - profitLoss     = Σ((curPrice − buyPrice) × remainingVolume) per buy
- * - saleProfitLoss = Σ sale.profitLoss()        [saleValue − buyValue, no brokerage]
- * - marketValue    = curValue + saleProfitLoss
+ * - Marktwert-Tab: held-share cost basis WITHOUT brokerage (with reduction).
+ * - Depotwert-Tab: held-share cost basis WITH brokerage (with reduction),
+ *   plus dividends and realized sale payouts in the complete columns.
  *
- * ### Depotwert-Tab extras
+ * Both bases are computed over the CURRENTLY HELD shares only (FIFO: each
+ * buy contributes its remaining volume), so they stay consistent with
+ * curValue, which also counts held shares only.
  *
- * - totalBrokerage   = all brokerage entries (buy + sale)
- * - totalDividend    = dividends after tax
- * - completePurchase = purchaseValue
- * - completeCurValue = curValue + totalDividend + saleProfitLoss
- * - completeProfitLoss = completeCurValue − completePurchase
+ * ### Rounding contract (cent-exact, unified)
+ *
+ * Every monetary amount is rounded to 2 decimals using round-half-away-from-zero
+ * (see ShareCalculator::roundAway). This is applied uniformly:
+ * - each buy value (volume x price) before adding brokerage / subtracting reduction,
+ * - each sale value (volume x salePrice) before fee/tax adjustments,
+ * - each proportional brokerage / reduction part of a held position,
+ * - the current market value (held volume x curPrice),
+ * - and every aggregate that feeds a displayed cell.
+ *
+ * ### Marktwert-Tab (no brokerage)
+ *
+ * - purchaseValue  = held basis: sum(round(remVol x price) - reductionPart)
+ * - curValue       = round(heldVolume x curPrice)
+ * - profitLoss      = curValue - purchaseValue          [Aktuelle Entwicklung EUR]
+ * - profitLossPct   = profitLoss / purchaseValue x 100  [Aktuelle Entwicklung %]
+ * - saleProfitLoss  = realized gain/loss (no brokerage, with reduction)
+ * - marketValue     = curValue + saleProfitLoss         [footer aggregate only]
+ *
+ * Marktwert complete columns (brokerage-free, internally consistent):
+ * - completePurchaseMarket   = all buys: sum(round(vol x price) - reduction)
+ * - completeCurValueMarket   = completePurchaseMarket + completeProfitLossMarket
+ * - completeProfitLossMarket = (curValue - purchaseValue) + realized P/L WITH brokerage
+ * - completeProfitPctMarket  = completeProfitLossMarket / completePurchaseMarket x 100
+ *
+ * ### Depotwert-Tab (with brokerage + dividends)
+ *
+ * - purchaseValueFinal = held basis: sum(round(remVol x price) + brokeragePart - reductionPart)
+ * - profitLossFinal     = curValue - purchaseValueFinal          [Aktuelle Entwicklung EUR]
+ * - profitLossPctFinal  = profitLossFinal / purchaseValueFinal x 100
+ * - totalBrokerage      = all brokerage entries (buy + sale)
+ * - totalDividend       = dividends after tax
+ * - completePurchase    = all buys: sum(round(vol x price) + brokerage - reduction)
+ * - completeCurValue    = curValue + sum(sale payout incl. brokerage/reduction) + totalDividend
+ * - completeProfitLoss  = completeCurValue - completePurchase
+ * - completeProfitPct   = completeProfitLoss / completePurchase x 100
  */
 struct ShareValues
 {
-    // ── Volume / price ────────────────────────────────────────────────────
+    // -- Volume / price ----------------------------------------------------
     double volume       = 0.0;
     double curPrice     = 0.0;
     double prevDayPrice = 0.0;
     double prevDayDiff  = 0.0;
     double prevDayPct   = 0.0;
 
-    // ── Marktwert-Tab ─────────────────────────────────────────────────────
-    double purchaseValue    = 0.0; ///< Σ(buyVol × buyPrice), no brokerage
-    double curValue         = 0.0; ///< volume × curPrice
-    double profitLoss       = 0.0; ///< Aktuelle Entwicklung €
-    double profitLossPct    = 0.0; ///< Aktuelle Entwicklung %
+    // -- Marktwert-Tab (no brokerage) --------------------------------------
+    double purchaseValue    = 0.0; ///< Held basis without brokerage (with reduction)
+    double curValue         = 0.0; ///< round(heldVolume x curPrice)
+    double profitLoss       = 0.0; ///< Aktuelle Entwicklung EUR (market)
+    double profitLossPct    = 0.0; ///< Aktuelle Entwicklung % (market)
     double saleProfitLoss   = 0.0; ///< Realized gain/loss from sales (no brokerage)
     double marketValue      = 0.0; ///< curValue + saleProfitLoss
-    double marketValuePct   = 0.0; ///< (marketValue / purchaseValue − 1) × 100
+    double marketValuePct   = 0.0; ///< (marketValue / purchaseValue - 1) x 100
 
-    // ── Depotwert-Tab extras ──────────────────────────────────────────────
-    double totalBrokerage    = 0.0;
-    double totalDividend     = 0.0;
-    double completePurchase  = 0.0; ///< = purchaseValue
-    double completeCurValue  = 0.0; ///< curValue + totalDividend + saleProfitLoss
+    // -- Marktwert-Tab complete columns (brokerage-free) -------------------
+    double completePurchaseMarket   = 0.0; ///< All buys, no brokerage (with reduction)
+    double completeCurValueMarket   = 0.0; ///< completePurchaseMarket + completeProfitLossMarket
+    double completeProfitLossMarket = 0.0;
+    double completeProfitPctMarket  = 0.0;
+
+    // -- Depotwert-Tab (with brokerage) ------------------------------------
+    double purchaseValueFinal = 0.0; ///< Held basis WITH brokerage (with reduction)
+    double profitLossFinal    = 0.0; ///< Aktuelle Entwicklung EUR (final)
+    double profitLossPctFinal = 0.0; ///< Aktuelle Entwicklung % (final)
+
+    double totalBrokerage     = 0.0;
+    double totalDividend      = 0.0;
+    double completePurchase   = 0.0; ///< All buys, with brokerage - reduction
+    double completeCurValue   = 0.0; ///< curValue + sale payouts + dividends
     double completeProfitLoss = 0.0;
     double completeProfitPct  = 0.0;
 };
 
 /**
  * @brief Computes aggregated financial values for a single share.
+ *
+ * Stateless: every call reads buys, sales, brokerage and dividends fresh from
+ * the repositories and returns a fully populated ShareValues. No running
+ * balances, no sentinel guards. The proportional brokerage / reduction of a
+ * partly-sold buy is reconstructed here from the buy's linked brokerage record,
+ * independent of any values stored on SaleBuyDetail.
  */
 class ShareCalculator
 {
 public:
     ShareCalculator() = delete;
+
+    /**
+     * @brief Round to @p digits decimals, half-away-from-zero (matches the
+     *        C# reference's MidpointRounding.AwayFromZero and decimal display).
+     *
+     * A tiny magnitude-direction epsilon is added before rounding so that a
+     * value that should sit exactly on a half-cent boundary but is represented
+     * slightly low in binary (e.g. 2.4999999998 for 2.50) still rounds away
+     * from zero, giving the same cent as the C# decimal computation.
+     */
+    static double roundAway(double value, int digits = 2);
 
     static ShareValues compute(const QString& guid,
                                double curPrice,
@@ -71,6 +130,18 @@ public:
                                       double& totalProfitLoss,
                                       double& totalProfitPct,
                                       double& totalMarketValuePct);
+
+    /**
+     * @brief Complete (Kpl.) column totals for the Marktwert footer.
+     *
+     * Separate additive function so existing call sites keep compiling while
+     * the Marktwert tab gains its complete columns.
+     */
+    static void portfolioCompleteTotalsMarket(const QList<ShareValues>& values,
+                                              double& completePurchase,
+                                              double& completeCurValue,
+                                              double& completeProfitLoss,
+                                              double& completeProfitPct);
 
     static void portfolioTotalsFinal(const QList<ShareValues>& values,
                                      double& totalBrokDividend,

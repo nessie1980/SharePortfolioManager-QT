@@ -66,15 +66,22 @@ public:
         const int   hpad = 4; // horizontal padding
 
         // ── Fonts ─────────────────────────────────────────────────────────
+        // Both lines use the same size.
         QFont topFont    = option.font;
         QFont bottomFont = option.font;
-        bottomFont.setPointSizeF(topFont.pointSizeF() * 0.82);
 
         const QFontMetrics fmTop(topFont);
         const QFontMetrics fmBot(bottomFont);
 
         const int lineHeight = rect.height() / 2;
-        const int topY    = rect.top()    + (lineHeight - fmTop.height()) / 2 + fmTop.ascent();
+        // When there is no second line, center the single value vertically in
+        // the whole cell instead of drawing it in the upper half (which would
+        // look like a two-line cell with an empty second line).
+        const bool hasBottom =
+            !index.data(TwoLineRole::Bottom).toString().isEmpty();
+        const int topY = hasBottom
+            ? rect.top() + (lineHeight - fmTop.height()) / 2 + fmTop.ascent()
+            : rect.top() + (rect.height() - fmTop.height()) / 2 + fmTop.ascent();
         const int bottomY = rect.top() + lineHeight
                           + (lineHeight - fmBot.height()) / 2 + fmBot.ascent();
 

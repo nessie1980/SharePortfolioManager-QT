@@ -35,6 +35,7 @@ ctest --output-on-failure
 ./bin/tst_iconprovider
 ./bin/tst_websitesconfig
 ./bin/tst_documentsconfig
+./bin/tst_sharecalculator
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
 ./bin/tst_buysform
@@ -955,15 +956,32 @@ TestBackupForm — createBackup via MainWindow:
 
 ---
 
-### ShareCalculator — noch nicht getestet
+### ShareCalculator (tests/utils/tst_sharecalculator.cpp)
 
 `ShareCalculator::compute()` ist eine reine Berechnungsfunktion ohne UI oder
-Netzwerk und daher gut unit-testbar. Tests wären sinnvoll für:
-korrekte Formel für `completeProfitLoss`, Verhalten bei `volume = 0`,
-`purchaseValue = 0`, und Konsistenz zwischen `completePurchase` und `purchaseValue`.
-Tests zurückgestellt bis die Berechnungen gegen Referenzwerte abgeglichen sind.
+Netzwerk. Da sie Käufe, Verkäufe, Brokerage und Dividenden frisch aus den
+Repositories liest, läuft der Test gegen eine echte In-Memory-SQLite-Datenbank
+(`Database::instance().open(":memory:")`) — dasselbe Muster wie die
+Repository-Tests. Die Helfer `addBuy()`/`addSale()` legen Käufe samt verknüpfter
+Kauf-Brokerage (`brokerage.buy_guid`) bzw. Verkäufe samt Verkaufs-Brokerage
+(geladen via JOIN über `brokerage_guid`) an. `init()` räumt FK-sicher auf
+(`sale_buy_details`, `sales`, `brokerage`, dann `buys`).
 
-`TwoLineDelegate` ist Header-only ohne `Q_OBJECT` — kein eigenständiger Test nötig.
+Geprüft wird vor allem der Marktwert-Tab inklusive der beim Port korrigierten
+Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_roundAway_halfAwayFromZero` | Cent-Rundung | half-away-from-zero, positiv/negativ |
+| `test_marktwert_coreScenario` | Kernbeispiel (2 Käufe, 1 Verkauf) | `purchaseValue`, `curValue`, `profitLoss`, `completeProfitLossMarket`, `completeCurValueMarket` + Depotwert-Basis |
+| `test_marktwert_emptyDetails_sameResult` | Regression „viel zu hoch" | Ergebnis identisch trotz **leerer** `SaleBuyDetails` (Aggregat-basiert) |
+| `test_marktwert_columnIdentity` | Spalten-Identität | `Kpl. Marktwert = Kpl. Einzahlung + Kpl. Entwicklung` |
+| `test_marktwert_fullySold` | Position komplett verkauft | `volume = 0`, `purchaseValue = 0`, realisierte G/V mit Gebühren |
+| `test_marktwert_noSales` | keine Verkäufe | reine unrealisierte Entwicklung, `Kpl. Marktwert == curValue` |
+| `test_prevDay_diffAndPct` | Vortagswerte | `prevDayDiff`, `prevDayPct` |
+
+`TwoLineDelegate` und `CenterIconDelegate` sind Header-only ohne `Q_OBJECT` —
+kein eigenständiger Test nötig.
 
 ---
 

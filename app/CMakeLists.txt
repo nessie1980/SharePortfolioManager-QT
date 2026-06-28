@@ -45,6 +45,7 @@ set(APP_SOURCES
     forms/MainForm/MainWindow.h
     forms/MainForm/MainWindow.cpp
     forms/MainForm/TwoLineDelegate.h
+    forms/MainForm/CenterIconDelegate.h
 
     # ── Utils ──────────────────────────────────────────────────────────────
     utils/ShareCalculator.h
