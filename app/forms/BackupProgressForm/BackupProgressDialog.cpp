@@ -39,6 +39,21 @@ BackupProgressDialog::BackupProgressDialog(const QString& source,
     m_thread->start();
 }
 
+// ── Destructor ────────────────────────────────────────────────────────────────
+
+BackupProgressDialog::~BackupProgressDialog()
+{
+    // m_thread (QPointer) may already be nullptr if it finished and ran its
+    // own QThread::finished -> deleteLater() chain. If it's still alive,
+    // block until it has actually stopped before ~QObject() tears down its
+    // QThread child — quit()/wait() are idempotent, so this is safe even if
+    // the thread already received a quit() request or already finished.
+    if (m_thread) {
+        m_thread->quit();
+        m_thread->wait();
+    }
+}
+
 // ── setupUi ───────────────────────────────────────────────────────────────────
 
 void BackupProgressDialog::setupUi(const QString& source, const QString& destination)

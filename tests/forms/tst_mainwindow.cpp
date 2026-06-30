@@ -5999,8 +5999,12 @@ private slots:
 
     // ── BackupProgressDialog ──────────────────────────────────────────────────
     // Note: BackupProgressDialog starts a QThread in its constructor.
-    // All tests must process events until the thread finishes before the dialog
-    // goes out of scope — otherwise QThread is destroyed while still running.
+    // ~BackupProgressDialog() waits for the worker thread itself (quit() +
+    // wait()) before tearing down its QThread child, so destroying the
+    // dialog without waiting is safe (see
+    // test_backupProgressDialog_destroyedImmediately_doesNotCrash below).
+    // The other tests still call waitForDialog() — not to avoid a crash, but
+    // because they assert on wasSuccessful()/the copied file afterwards.
 
     // Helper: wait for dialog to finish (max 5 seconds)
     static void waitForDialog(BackupProgressDialog& dlg)
@@ -6070,6 +6074,28 @@ private slots:
 
         QVERIFY(dlg.wasSuccessful());
         QVERIFY(QFileInfo::exists(dst));
+    }
+
+    // ── BackupProgressDialog — destructor race regression ──────────────────────
+    // Before the fix, BackupWorker::finished() drove onFinished() (sets
+    // m_success) and QThread::quit() via two separate queued events. A
+    // caller destroying the dialog as soon as wasSuccessful() looked done —
+    // or, as here, immediately without waiting at all — could tear down a
+    // still-running QThread child ("QThread: Destroyed while thread is
+    // still running"), crashing the process. The destructor must now wait
+    // for the worker thread itself, so this must survive unconditionally.
+    void test_backupProgressDialog_destroyedImmediately_doesNotCrash()
+    {
+        const QString src = makeTestFile(QStringLiteral("immediate_dtor.db"), 512);
+        const QString dst = m_tempDir.path() + QStringLiteral("/Backup_immediate_dtor.db");
+
+        {
+            BackupProgressDialog dlg(src, dst);
+            // No waitForDialog() here on purpose — the worker thread may
+            // still be mid-copy or mid-quit() when dlg goes out of scope.
+        }
+
+        QVERIFY(true); // reaching this line means the destructor didn't crash
     }
 
     // ── createBackup via MainWindow ───────────────────────────────────────────

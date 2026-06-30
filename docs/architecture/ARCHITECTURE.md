@@ -1209,6 +1209,38 @@ Bei Fehler: analog zu `onMarketValuesUpdated()` — `m_errorOccurred = true`,
 > `last`, `high`, `low`, `volume`). `OnVistaObjects::HistoryData::fromJson()` und
 > `RealTimeData::fromJson()` verwenden entsprechend camelCase-Keys — nicht PascalCase.
 
+#### Methode onRefreshShareFinished() — Footer-Aktualisierung
+
+Wird aufgerufen sobald sowohl `m_marketDone` als auch `m_dailyDone` für die
+aktuelle Aktie `true` sind (siehe oben) — d.h. sobald die Aktie **vollständig**
+angefragt wurde (Kurswert- und/oder Tageswerte-Parser, je nach
+`ShareUpdateType`, sind durchgelaufen).
+
+Ablauf bei Erfolg (`m_errorOccurred == false`):
+
+1. `refreshPortfolioFooters()` — rekonstruiert `QList<ShareValues>` für
+   **alle** Aktien frisch aus der DB (`ShareRepository::findAll()` +
+   `ShareCalculator::compute()` je Aktie) und ruft damit
+   `updatePortfolioFooters()` auf. Dadurch werden beide Footer (Depotwert-
+   und Marktwert-Tab) sofort nach jeder einzelnen Aktie neu berechnet — nicht
+   erst am Ende von "Alle aktualisieren".
+2. Im "Alle aktualisieren"-Modus (`m_updateAllFlag == true`) und solange die
+   Queue nicht leer ist: nächste Aktie via `startRefreshForShare()` starten.
+3. Andernfalls: `finaliseRefresh()`.
+
+Bei Fehler (`m_errorOccurred == true`) wird die Queue geleert und direkt
+`finaliseRefresh()` aufgerufen — der Footer wird in diesem Fall **nicht**
+aktualisiert, da die Aktie nicht vollständig (beide Parser fehlerfrei)
+angefragt wurde.
+
+`refreshPortfolioFooters()` ist bewusst von `updatePortfolioFooters()`
+getrennt: Letztere nimmt eine bereits vorliegende `QList<ShareValues>`
+entgegen (z.B. aus `populatePortfolioTables()`), Erstere lädt die Liste
+für den Refresh-Flow eigenständig neu, da zum Zeitpunkt von
+`onRefreshShareFinished()` keine vollständige Werteliste vorliegt — nur
+die einzelne soeben aktualisierte Aktie ist bekannt (`m_refreshShare`), die
+Footer-Summen sind aber portfolioweite Aggregate.
+
 #### Methode onRefreshAll() — Alle aktualisieren
 
 Lädt alle Shares via `ShareRepository::findAll()`, filtert `updateType() == None`
@@ -1282,6 +1314,31 @@ BackupProgressDialog::ctor
     → QThread::quit()
     → QObject::deleteLater()    (Worker + Thread)
 @endcode
+
+Destruktor-Sicherheit (Race-Fix): `onFinished()` (setzt `m_success`) und
+`QThread::quit()` hängen am selben `BackupWorker::finished()`-Signal, laufen
+im GUI-Thread aber als getrennte, queued Events ab. `wasSuccessful() == true`
+bedeutet daher **nicht**, dass der Worker-Thread bereits tatsächlich beendet
+ist (`isRunning() == false`) — nur dass `quit()` angefordert wurde. Wird der
+Dialog in genau diesem Zwischenfenster zerstört (z.B. unmittelbar nachdem ein
+Aufrufer `wasSuccessful()` als `true` sieht), würde `~QObject()` versuchen,
+das `m_thread`-Kindobjekt zu zerstören während es noch läuft —
+`"QThread: Destroyed while thread is still running"`, im schlimmsten Fall ein
+Absturz.
+
+`%BackupProgressDialog::~BackupProgressDialog()` löst das defensiv: falls
+`m_thread` noch lebt, wird `quit()` (idempotent) plus ein blockierendes
+`wait()` ausgeführt, bevor die Basisklassen-Destruktoren laufen. `m_thread`
+ist dafür bewusst als `QPointer<QThread>` statt als roher `QThread*`
+deklariert — der Thread entsorgt sich nach `finished()` selbst per
+`deleteLater()`, ein roher Zeiger wäre im (häufigen) regulären Fall, in dem
+der Thread schon fertig ist, ein Dangling-Pointer. `QPointer` wird dabei
+automatisch `nullptr`, sobald das Objekt zerstört wurde, wodurch
+`if (m_thread)` im Destruktor immer sicher ist.
+
+Diese Absicherung greift unabhängig vom Aufrufer — sowohl im echten
+`createBackup()`-Flow als auch in Tests, die den Dialog vor dem
+800-ms-Auto-Close zerstören.
 
 ---
 

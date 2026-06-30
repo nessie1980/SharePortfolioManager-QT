@@ -923,8 +923,13 @@ Hinweis zu BackupWorker-Tests: `BackupWorker::run()` wird in den Tests synchron 
 aufgerufen — kein Thread nötig. Signals werden via `QSignalSpy` geprüft.
 
 Hinweis zu BackupProgressDialog-Tests: Der Dialog startet einen `QThread` im Konstruktor.
-Alle Tests rufen `waitForDialog()` am Ende auf bevor der Dialog den Scope verlässt —
-sonst tritt `QThread: Destroyed while thread is still running` auf.
+`%BackupProgressDialog::~BackupProgressDialog()` wartet seit dem Destruktor-Race-Fix
+selbst aktiv (`quit()` + `wait()`) auf das tatsächliche Thread-Ende, bevor `~QObject()`
+das `m_thread`-Kindobjekt zerstört — ein Test darf den Dialog daher inzwischen auch ohne
+`waitForDialog()` gefahrlos zerstören (siehe `test_backupProgressDialog_destroyedImmediately_doesNotCrash`).
+Die übrigen Tests rufen `waitForDialog()` trotzdem weiterhin auf — nicht zur Crash-Vermeidung,
+sondern weil sie danach `wasSuccessful()` bzw. die kopierte Zieldatei prüfen wollen, was ohne
+Warten auf den Abschluss des Kopiervorgangs nicht deterministisch wäre.
 `waitForDialog()` ist eine statische Hilfsmethode in `TestBackupForm` die Events verarbeitet
 bis `wasSuccessful()` true ist (max. 5 Sekunden).
 
@@ -947,6 +952,7 @@ TestBackupForm — BackupProgressDialog:
 | `test_backupProgressDialog_hasCancelButton` | Abbrechen-Button vorhanden | Text enthält "Abbrechen" |
 | `test_backupProgressDialog_hasProgressBar` | Fortschrittsbalken vorhanden | Range 0–100 |
 | `test_backupProgressDialog_successfulCopy_wasSuccessfulTrue` | Erfolgreiche Kopie | `wasSuccessful()` = true, Zieldatei existiert |
+| `test_backupProgressDialog_destroyedImmediately_doesNotCrash` | Regression: Dialog wird zerstört bevor der Worker-Thread sein `finished()`/`quit()` durchlaufen hat (`wasSuccessful()` ggf. noch `false`) — Destruktor muss aktiv auf Thread-Ende warten statt einen laufenden `QThread` zu zerstören | Destruktor kehrt zurück ohne Absturz/Warnung; kein `waitForDialog()`-Aufruf |
 
 TestBackupForm — createBackup via MainWindow:
 
@@ -1004,6 +1010,16 @@ wäre eigenständig testbar und kann bei Bedarf in `tst_mainwindow` ergänzt wer
 Testbare Aspekte wären u.a.: URL-Normalisierung (`{0}`→`%1`, `&amp;`→`&`),
 korrekte Periodenauswahl nach Monatsdifferenz, und Verhalten bei ungültigem
 `latestExistingDate`.
+
+`refreshPortfolioFooters()` (aufgerufen aus `onRefreshShareFinished()` bei
+Erfolg, siehe ARCHITECTURE.md) lädt alle Aktien neu und ruft
+`updatePortfolioFooters()` auf — dieser Pfad sollte zusammen mit den
+Refresh-Flow-Tests (Parser-Mocking) mitgetestet werden: nach Abschluss einer
+einzelnen Aktie (`onRefreshShare`) ebenso wie zwischen den einzelnen Aktien
+während `onRefreshAll()` müssen beide Footer (Depotwert- und Marktwert-Tab)
+bereits die aktualisierten Summen zeigen, nicht erst nach dem letzten Element
+der Queue. Im Fehlerfall (`m_errorOccurred`) darf der Footer für die
+betroffene Aktie nicht aktualisiert werden.
 
 ---
 
