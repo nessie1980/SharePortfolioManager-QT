@@ -273,6 +273,17 @@ private:
     void updatePortfolioFooters(const QList<ShareValues>& shareValues);
 
     /**
+     * @brief Recompute ShareValues for all shares and refresh both footer tables.
+     *
+     * Called from onRefreshShareFinished() once a single share's parsers have
+     * both completed successfully (market price and/or daily values, per its
+     * ShareUpdateType) — independent of whether this is a single-share refresh
+     * or part of "Alle aktualisieren". Loads all shares fresh from the DB so
+     * the totals reflect the just-persisted price/daily-values update.
+     */
+    void refreshPortfolioFooters();
+
+    /**
      * @brief Install TwoLineDelegate on all two-line columns of both tables.
      *
      * Called once from setupCentralWidget() after the tables are created.

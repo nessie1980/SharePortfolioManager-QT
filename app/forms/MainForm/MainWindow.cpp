@@ -1494,6 +1494,12 @@ void MainWindow::onRefreshShareFinished()
         return;
     }
 
+    // The share's market price and/or daily values have now been fully
+    // fetched and persisted (m_marketDone && m_dailyDone, no error) — refresh
+    // both footer tables immediately so the totals stay in sync, not just
+    // once "Alle aktualisieren" has finished.
+    refreshPortfolioFooters();
+
     if (m_updateAllFlag && !m_refreshQueue.isEmpty()) {
         // Start next share in queue
         startRefreshForShare(m_refreshQueue.dequeue());
@@ -2113,4 +2119,24 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
 
     for (int c = 0; c < m_marketValueTable->columnCount(); ++c)
         m_marketValueFooter->setColumnWidth(c, m_marketValueTable->columnWidth(c));
+}
+
+// ── refreshPortfolioFooters ───────────────────────────────────────────────────
+
+void MainWindow::refreshPortfolioFooters()
+{
+    // Recompute ShareValues for ALL shares (not just the one just refreshed) —
+    // the footer totals are portfolio-wide aggregates, so a single-share price
+    // update still needs a full recompute to stay correct.
+    ShareRepository shareRepo;
+    const QList<ShareObject> shares = shareRepo.findAll();
+
+    QList<ShareValues> allValues;
+    allValues.reserve(shares.size());
+    for (const ShareObject& share : shares) {
+        allValues.append(ShareCalculator::compute(
+            share.guid(), share.curPrice(), share.prevDayPrice()));
+    }
+
+    updatePortfolioFooters(allValues);
 }
