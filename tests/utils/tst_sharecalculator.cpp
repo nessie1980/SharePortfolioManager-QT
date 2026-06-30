@@ -94,6 +94,22 @@ private:
                                    0.0));                // reduction (ignored on insert; from brokerage)
     }
 
+    // Insert a dividend. payout = rate * volume (no FX), net = payout - tax.
+    // Other tax columns and FX use their schema defaults (0 / 1). Enough to
+    // exercise the net-dividend contribution to the Depotwert complete columns.
+    void addDividend(double rate, double volume, double tax)
+    {
+        Database::instance().execute(
+            QStringLiteral("INSERT INTO dividends "
+                           "(guid, share_guid, datetime, rate, volume, tax_at_source) "
+                           "VALUES ('%1', '%2', '2024-03-01T10:00:00', %3, %4, %5)")
+                .arg(newGuid())
+                .arg(k_shareGuid)
+                .arg(rate,   0, 'f', 6)
+                .arg(volume, 0, 'f', 6)
+                .arg(tax,    0, 'f', 6));
+    }
+
 private slots:
 
     void initTestCase()
@@ -119,6 +135,7 @@ private slots:
         Database::instance().execute(QStringLiteral("DELETE FROM sales"));
         Database::instance().execute(QStringLiteral("DELETE FROM brokerage"));
         Database::instance().execute(QStringLiteral("DELETE FROM buys"));
+        Database::instance().execute(QStringLiteral("DELETE FROM dividends"));
     }
 
     // ── roundAway ─────────────────────────────────────────────────────────
@@ -158,6 +175,74 @@ private slots:
         CMP_MONEY(v.purchaseValueFinal,       1208.94);
         CMP_MONEY(v.completePurchase,         1612.90);
         CMP_MONEY(v.completeProfitLoss,       272.10);
+    }
+
+    // ── Depotwert tab: …Final fields (with brokerage), per-lot attribution ──
+    // Same core fixture. Verifies the exact values the Depotwert tab displays —
+    // "Aktuelle Entwicklung" (profitLossFinal / profitLossPctFinal) and the
+    // Depotwert complete columns. Buy-brokerage is attributed per held lot:
+    //   Buy1 (6/10 held): 600 + round(9.90*0.6)=5.94             = 605.94
+    //   Buy2 (5/5 held):  600 + 5.00 - 2.00                      = 603.00
+    //   purchaseValueFinal = 1208.94 ; curValue = 1375
+    //   profitLossFinal    = 1375 - 1208.94                      = 166.06
+    //   completeCurValue   = curValue + salePayoutFinal(510) + 0 = 1885.00
+    void test_depotwert_finalFields()
+    {
+        const QString b1 = addBuy(10.0, 4.0, 100.0, 9.90, 0.0);
+        addBuy(5.0, 0.0, 120.0, 5.00, 2.00);
+        addSale(4.0, 130.0, 7.0, 0.0, 3.0,
+                { SaleBuyDetail(b1, QStringLiteral("2024-06-01T10:00:00"),
+                                4.0, 100.0, 0.0, 0.0) });
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 125.0, 120.0);
+
+        // Aktuelle Entwicklung (Depotwert, WITH brokerage)
+        CMP_MONEY(v.purchaseValueFinal, 1208.94);
+        CMP_MONEY(v.profitLossFinal,    166.06);
+        CMP_MONEY(v.profitLossPctFinal, 166.06 / 1208.94 * 100.0);
+
+        // Depotwert complete columns
+        CMP_MONEY(v.completePurchase,   1612.90);
+        CMP_MONEY(v.completeCurValue,   1885.00);
+        CMP_MONEY(v.completeProfitLoss, 272.10);
+        CMP_MONEY(v.completeProfitPct,  272.10 / 1612.90 * 100.0);
+    }
+
+    // ── Depotwert: brokerage AND reduction prorated per held lot ───────────
+    // One buy partly sold (6 of 10 held) carrying both brokerage and a
+    // reduction. Both are prorated to the held fraction (0.6) and rounded per
+    // lot:  heldBrokerage = round(9.94*0.6) = 5.96,
+    //       heldReduction = round(5.51*0.6) = 3.31.
+    //   purchaseValueFinal = 600 + 5.96 - 3.31 = 602.65
+    // The full-attribution model (600 + 9.94 - 5.51 = 604.43) is explicitly
+    // wrong; this pins the per-lot behaviour for both terms.
+    void test_depotwert_partialLotBrokerageAndReduction()
+    {
+        addBuy(10.0, 4.0, 100.0, 9.94, 5.51);
+        addSale(4.0, 110.0, 0.0, 0.0, 0.0, {});
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 100.0, 100.0);
+
+        CMP_MONEY(v.purchaseValueFinal, 602.65);  // per-lot, NOT 604.43
+        CMP_MONEY(v.purchaseValue,      596.69);  // market basis (reduction only)
+        CMP_MONEY(v.profitLossFinal,    -2.65);
+        CMP_MONEY(v.profitLossPctFinal, -2.65 / 602.65 * 100.0);
+    }
+
+    // ── Depotwert: net dividends contribute to the complete columns ────────
+    // One held buy, no sale, a single dividend (2.00 * 6 = 12.00, no tax).
+    //   completeCurValue = curValue(1000) + salePayout(0) + dividend(12) = 1012
+    // Without the dividend term this would be 1000.00.
+    void test_depotwert_dividendInCompleteValue()
+    {
+        addBuy(10.0, 0.0, 100.0, 0.0, 0.0);
+        addDividend(2.0, 6.0, 0.0);
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 100.0, 100.0);
+
+        CMP_MONEY(v.completeCurValue,   1012.00); // 1000.00 without the dividend
+        CMP_MONEY(v.completePurchase,   1000.00);
+        CMP_MONEY(v.completeProfitLoss, 12.00);
     }
 
     // ── Regression: empty SaleBuyDetails must NOT overstate the gain ──────

@@ -5,6 +5,8 @@
 #include <QApplication>
 #include <QTemporaryDir>
 #include <QFileInfo>
+#include <QFile>
+#include <QLocale>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QTableWidget>
@@ -20,6 +22,7 @@
 #include <QDialog>
 
 #include "../../app/forms/MainForm/MainWindow.h"
+#include "../../app/forms/MainForm/TwoLineDelegate.h"  // TwoLineRole::Top/Bottom
 #include "../../app/forms/ShareAddForm/ViewShareAdd.h"
 #include "../../app/forms/ShareAddForm/ModelShareAdd.h"
 #include "../../app/forms/ShareAddForm/IViewShareAdd.h"
@@ -530,6 +533,48 @@ private:
         return b;
     }
 
+    /**
+     * Seed a one-share Depotwert portfolio on a real file DB and point the
+     * settings at it, so constructing a MainWindow populates the grid.
+     *
+     * Share has a single buy (10 @ 100) with 9.90 buy-brokerage, no sale,
+     * cur_price = 0. The brokerage makes the Depotwert (…Final) values differ
+     * from the brokerage-free market values:
+     *   purchaseValueFinal = 1000 + 9.90 = 1009.90   (market: 1000.00)
+     *   profitLossFinal    = 0 - 1009.90 = -1009.90  (market: -1000.00)
+     *   totalBrokerage     = 9.90, totalDividend = 0.00
+     */
+    QString seedDepotwertPortfolio()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/DepotwertUi.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);                 // creates schema
+        ShareRepository().insert(ShareObject(QStringLiteral("g-dw"),
+                                             QStringLiteral("DW01"),
+                                             QStringLiteral("DE000DW0001"),
+                                             QStringLiteral("Depotwert AG")));
+        insertTestBuy(QStringLiteral("g-dw"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 10.0, 100.0);
+        AppSettings::instance().setPortfolioPath(dbPath);
+        return dbPath;
+    }
+
+    /**
+     * Among the four QTableWidgets the Depotwert tables carry 13 columns
+     * (FinalValueColumn::Count); the Marktwert tables have 12. The enum lives
+     * in MainWindow and is not reachable from the test, so raw indices are used:
+     *   4 = BrokerageDividend, 8 = Performance, 9 = PurchaseFinalValue.
+     * wantRows: 1 for the data table (one seeded share), 3 for the footer.
+     */
+    static QTableWidget* findFinalTable(const MainWindow& w, int wantRows)
+    {
+        const int cols = 13; // FinalValueColumn::Count (Depotwert columns)
+        for (auto* t : w.findChildren<QTableWidget*>())
+            if (t && t->columnCount() == cols && t->rowCount() == wantRows)
+                return t;
+        return nullptr;
+    }
+
 private slots:
 
     void initTestCase()
@@ -604,6 +649,60 @@ private slots:
         }
         QCOMPARE(emptyCount,  2);
         QCOMPARE(footerCount, 2);
+    }
+
+    // Regression for the Depotwert display bug: "Aktuelle Entwicklung" and
+    // "Einzahlung" must show the …Final fields (WITH brokerage), not the
+    // brokerage-free market values.
+    void test_finalValueTable_showsFinalFields()
+    {
+        seedDepotwertPortfolio();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* tbl = findFinalTable(window, 1); // data table, 1 share row
+        if (!tbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+
+        const QLocale loc;
+        const QString finalStr  = loc.toString(-1009.90, 'f', 2) + QStringLiteral(" €");
+        const QString marketStr = loc.toString(-1000.00, 'f', 2) + QStringLiteral(" €");
+
+        QTableWidgetItem* perf =
+            tbl->item(0, 8); // FinalValueColumn::Performance (Aktuelle Entwicklung)
+        if (!perf) QFAIL("Performance-Zelle fehlt");
+        // Upper line = profitLossFinal (with brokerage), NOT the market value.
+        QCOMPARE(perf->data(TwoLineRole::Top).toString(), finalStr);
+        QVERIFY(perf->data(TwoLineRole::Top).toString() != marketStr);
+
+        QTableWidgetItem* pv =
+            tbl->item(0, 9); // FinalValueColumn::PurchaseFinalValue (Einzahlung)
+        if (!pv) QFAIL("Einzahlung-Zelle fehlt");
+        // Upper line = purchaseValueFinal (incl. brokerage).
+        QCOMPARE(pv->data(TwoLineRole::Top).toString(),
+                 loc.toString(1009.90, 'f', 2) + QStringLiteral(" €"));
+    }
+
+    // The Depotwert footer carries the Kosten / Dividenden total as a two-line
+    // value (Kosten over Dividenden) in the middle row.
+    void test_finalValueFooter_costDividendCell()
+    {
+        seedDepotwertPortfolio();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* footer = findFinalTable(window, 3); // footer, 3 summary rows
+        if (!footer) QFAIL("Depotwert-Footer nicht gefunden");
+
+        QTableWidgetItem* cell =
+            footer->item(1, 4); // FinalValueColumn::BrokerageDividend (Kosten/Dividenden)
+        if (!cell) QFAIL("Kosten/Dividenden-Footerzelle fehlt");
+
+        const QLocale loc;
+        // Kosten (oben) = totalBrokerage 9.90; Dividenden (unten) = 0.00.
+        QCOMPARE(cell->data(TwoLineRole::Top).toString(),
+                 loc.toString(9.90, 'f', 2) + QStringLiteral(" €"));
+        QCOMPARE(cell->data(TwoLineRole::Bottom).toString(),
+                 loc.toString(0.0, 'f', 2) + QStringLiteral(" €"));
     }
 
     void test_updateWindowTitle_showsFileName()

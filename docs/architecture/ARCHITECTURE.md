@@ -927,8 +927,8 @@ Depotwert-Tab (`m_finalValueTable`):
 | Preis | `curPrice` | `prevDayPrice` |
 | (Chart-Icon) | Entwicklungs-Pfeil | — |
 | Vortag | Δ€ | Δ% |
-| Aktuelle Entwicklung | `profitLoss` € | `profitLossPct` % |
-| Einzahlung / Marktwert | `purchaseValue` € | `curValue` € |
+| Aktuelle Entwicklung | `profitLossFinal` € | `profitLossPctFinal` % |
+| Einzahlung / Marktwert | `purchaseValueFinal` € | `curValue` € |
 | (Chart-Icon) | Kpl. Entwicklungs-Pfeil | — |
 | Komplette Entwicklung | `completeProfitLoss` € | `completeProfitPct` % |
 | Kpl. Einzahlung / Kpl. Marktwert | `completePurchase` € | `completeCurValue` € |
@@ -966,12 +966,37 @@ Marktwert-Footer (`m_marketValueFooter`) zeigt:
 Totale liefern `portfolioTotalsMarket` (laufende Spalten) und
 `portfolioCompleteTotalsMarket` (Kpl.-Spalten).
 
+Der Depotwert-Footer (`m_finalValueFooter`) ist analog aufgebaut, weicht aber
+wegen der zusaetzlichen Spalte Kosten / Dividenden im Label-Layout ab:
+
+| Zeile | Beschriftung | Werte |
+| ----- | ------------ | ----- |
+| 0 | Einzahlung (gesamt) | `tPurchase` (Einzahlung/Marktwert), `cPurchase` (Kpl. Einzahlung) — einzeilig |
+| 1 | Entwicklung (gesamt) | Label "Kosten (ges.)" / "Dividenden (ges.)" und 2-zeiliger Wert `tBrokerage`/`tDividend` in der Spalte Kosten / Dividenden; `tProfit`/`tProfitPct` (Aktuelle Entwicklung), Entwicklungs-Icon (CompleteChart), `cProfit`/`cProfitPct` (Komplette Entwicklung) |
+| 2 | Aktueller Depotstand | `tCurValue` (Einzahlung/Marktwert), `cCurValue` (Kpl. Einzahlung/Kpl. Marktwert) — einzeilig |
+
+Totale liefert `portfolioTotalsFinal`; `tBrokerage` und `tDividend` werden als
+Summe von `totalBrokerage` bzw. `totalDividend` ueber alle Aktien gebildet.
+
+Abweichungen zum Marktwert-Footer (bedingt durch die Spalte Kosten / Dividenden):
+
+- Die Zeilenbeschriftung spannt per `setSpan(row, Price, 1, 3)` nur Preis +
+  (Chart-)Icon + Vortag (rechtsbuendig, endet an Vortag). Die Spalte Kosten /
+  Dividenden links davon bleibt frei fuer ihren eigenen Wert.
+- In der Entwicklungs-Zeile steht links der Kosten / Dividenden-Spalte das
+  2-zeilige Label per `setSpan(row, Icon, 1, 4)`, rechtsbuendig neben dem Wert.
+- Delegat-Sonderfall (nur Footer): die Anker-Spalte des Zeilen-Labels (Preis)
+  nutzt den `CenterIconDelegate` (einzeiliger Text), die Anker-Spalte des
+  Kosten / Dividenden-Labels (Icon) den `TwoLineDelegate` (zwei Zeilen), damit
+  beide Label-Arten korrekt rendern.
+
 Layout-Konventionen (an die C#-Anwendung angelehnt):
 
-- Die Beschriftung jeder Zeile spannt per `setSpan(row, 0, 1, 7)` die Spalten
-  Icon..Vortag und ist rechtsbündig (endet an der Vortag-Spalte). Die Spalten
-  **nach** Vortag werden NICHT verbunden — die Werte stehen einzeln unter ihren
-  jeweiligen Überschriften.
+- Die Beschriftung jeder Zeile spannt im Marktwert-Footer per
+  `setSpan(row, 0, 1, 7)` die Spalten Icon..Vortag und ist rechtsbuendig
+  (endet an der Vortag-Spalte). Die Spalten **nach** Vortag werden NICHT
+  verbunden — die Werte stehen einzeln unter ihren jeweiligen Ueberschriften.
+  Der Depotwert-Footer spannt stattdessen nur Preis..Vortag (siehe oben).
 - In der Entwicklungs-Zeile sitzt in der `CompleteChart`-Spalte das
   Entwicklungs-Icon (`devIcon(mcProfitPct)`) — wie im Grid.
 - Einzelwert-Zellen (Zeile 0 und 2) werden vom `TwoLineDelegate` vertikal

@@ -145,6 +145,8 @@ MainWindow:
 | `test_construction_windowTitleSet` | Fenstertitel nach Konstruktion gesetzt | Enthält "Share Portfolio Manager" |
 | `test_construction_actionsDisabledAtStart` | Menüaktionen ohne Portfolio deaktiviert | `isEnabled()` = false |
 | `test_clearPortfolioTables_removesAllRows` | 2 Datentabellen starten leer, 2 Footer behalten ihre 3 Summenzeilen | `emptyCount` = 2, `footerCount` = 2 |
+| `test_finalValueTable_showsFinalFields` | Regression Depotwert-Anzeige: Tab zeigt die `…Final`-Felder (mit Brokerage), nicht die brokeragefreien Marktwerte | „Aktuelle Entwicklung" = `profitLossFinal` (-1009,90), „Einzahlung" = `purchaseValueFinal` (1009,90) statt 1000,00 |
+| `test_finalValueFooter_costDividendCell` | Depotwert-Footer: Kosten/Dividenden als 2-zeiliger Wert in der Mittelzeile | Zelle (Zeile 1, Spalte Kosten/Dividenden) `TwoLineRole::Top` = `totalBrokerage` (9,90), `Bottom` = `totalDividend` (0,00) |
 | `test_updatePortfolioLabel_defaultValues` | Portfolio-Label existiert | `findChild<QLabel*>()` nicht null |
 | `test_updateWindowTitle_showsFileName` | Fenstertitel enthält Dateinamen nach Öffnen | Titel enthält Dateinamen |
 | `test_newPortfolio_databaseCreated` | Neue DB-Datei wird angelegt | `QFileInfo::exists()` = true |
@@ -964,8 +966,9 @@ Repositories liest, läuft der Test gegen eine echte In-Memory-SQLite-Datenbank
 (`Database::instance().open(":memory:")`) — dasselbe Muster wie die
 Repository-Tests. Die Helfer `addBuy()`/`addSale()` legen Käufe samt verknüpfter
 Kauf-Brokerage (`brokerage.buy_guid`) bzw. Verkäufe samt Verkaufs-Brokerage
-(geladen via JOIN über `brokerage_guid`) an. `init()` räumt FK-sicher auf
-(`sale_buy_details`, `sales`, `brokerage`, dann `buys`).
+(geladen via JOIN über `brokerage_guid`) an; `addDividend()` legt eine Dividende
+an (`rate * volume` abzüglich Steuer). `init()` räumt FK-sicher auf
+(`sale_buy_details`, `sales`, `brokerage`, `buys`, `dividends`).
 
 Geprüft wird vor allem der Marktwert-Tab inklusive der beim Port korrigierten
 Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
@@ -974,6 +977,9 @@ Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
 |------|--------------|-------|
 | `test_roundAway_halfAwayFromZero` | Cent-Rundung | half-away-from-zero, positiv/negativ |
 | `test_marktwert_coreScenario` | Kernbeispiel (2 Käufe, 1 Verkauf) | `purchaseValue`, `curValue`, `profitLoss`, `completeProfitLossMarket`, `completeCurValueMarket` + Depotwert-Basis |
+| `test_depotwert_finalFields` | Depotwert-Tab (mit Brokerage), per-Lot-Zuordnung — gleiche Fixture | `profitLossFinal` (166,06), `profitLossPctFinal`, `purchaseValueFinal` (1208,94), `completeCurValue` (1885,00), `completeProfitLoss` (272,10), `completeProfitPct` |
+| `test_depotwert_partialLotBrokerageAndReduction` | Brokerage UND Rabatt anteilig auf teilverkauftem Lot (6/10 gehalten) | `purchaseValueFinal` (602,65, nicht 604,43), `purchaseValue` (596,69), `profitLossFinal` (-2,65) — Voll-Zuordnung explizit ausgeschlossen |
+| `test_depotwert_dividendInCompleteValue` | Netto-Dividende fliesst in die Komplett-Spalten | `completeCurValue` (1012,00 statt 1000,00), `completeProfitLoss` (12,00) |
 | `test_marktwert_emptyDetails_sameResult` | Regression „viel zu hoch" | Ergebnis identisch trotz **leerer** `SaleBuyDetails` (Aggregat-basiert) |
 | `test_marktwert_columnIdentity` | Spalten-Identität | `Kpl. Marktwert = Kpl. Einzahlung + Kpl. Entwicklung` |
 | `test_marktwert_fullySold` | Position komplett verkauft | `volume = 0`, `purchaseValue = 0`, realisierte G/V mit Gebühren |

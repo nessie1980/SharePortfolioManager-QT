@@ -853,10 +853,6 @@ void MainWindow::populatePortfolioTables()
         const QString prevPctStr    = (v.prevDayPct >= 0 ? QStringLiteral("+") : QString())
                                     + locale.toString(v.prevDayPct, 'f', 2)
                                     + QStringLiteral(" %");
-        const QString profitStr     = locale.toString(v.profitLoss, 'f', 2)
-                                    + QStringLiteral(" €");
-        const QString profitPctStr  = locale.toString(v.profitLossPct, 'f', 2)
-                                    + QStringLiteral(" %");
         const QString purchaseStr   = locale.toString(v.purchaseValue, 'f', 2)
                                     + QStringLiteral(" €");
         const QString curValueStr   = locale.toString(v.curValue, 'f', 2)
@@ -915,12 +911,20 @@ void MainWindow::populatePortfolioTables()
         auto* prevDayItemF = makeTwoLine(prevDiffStr, perfColor(v.prevDayDiff),
                                          prevPctStr,  perfColor(v.prevDayPct));
 
-        // Aktuelle Entwicklung (2-line, colored)
-        auto* perfItemF = makeTwoLine(profitStr,    perfColor(v.profitLoss),
-                                      profitPctStr, perfColor(v.profitLossPct));
+        // Depotwert-specific strings (WITH brokerage)
+        const QString profitFinalStr    = locale.toString(v.profitLossFinal, 'f', 2)
+                                        + QStringLiteral(" €");
+        const QString profitFinalPctStr = locale.toString(v.profitLossPctFinal, 'f', 2)
+                                        + QStringLiteral(" %");
+        const QString purchaseFinalStr  = locale.toString(v.purchaseValueFinal, 'f', 2)
+                                        + QStringLiteral(" €");
 
-        // Einzahlung / Marktwert (2-line)
-        auto* pvItemF = makeTwoLine(purchaseStr, neutral,
+        // Aktuelle Entwicklung (2-line, colored)
+        auto* perfItemF = makeTwoLine(profitFinalStr,    perfColor(v.profitLossFinal),
+                                      profitFinalPctStr, perfColor(v.profitLossPctFinal));
+
+        // Einzahlung / Marktwert (2-line) — Einzahlung WITH brokerage, Marktwert = curValue
+        auto* pvItemF = makeTwoLine(purchaseFinalStr, neutral,
                                     curValueStr, neutral);
 
         // Complete chart icon
@@ -1672,14 +1676,19 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
         // Update Depotwert row
         if (const int fr = findRow(m_finalValueTable); fr >= 0) {
             using FC = FinalValueColumn;
+            // Depotwert-specific strings (WITH brokerage)
+            const QString profitFinalStr    = locale.toString(v.profitLossFinal, 'f', 2) + QStringLiteral(" €");
+            const QString profitFinalPctStr = locale.toString(v.profitLossPctFinal, 'f', 2) + QStringLiteral(" %");
+            const QString purchaseFinalStr  = locale.toString(v.purchaseValueFinal, 'f', 2) + QStringLiteral(" €");
             setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::Price),
                        curPriceStr, neutral, prevPriceStr, muted);
             setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::PrevDay),
                        prevDiffStr, perfColor(v.prevDayDiff), prevPctStr, perfColor(v.prevDayPct));
             setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::Performance),
-                       profitStr, perfColor(v.profitLoss), profitPctStr, perfColor(v.profitLossPct));
+                       profitFinalStr, perfColor(v.profitLossFinal),
+                       profitFinalPctStr, perfColor(v.profitLossPctFinal));
             setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::PurchaseFinalValue),
-                       purchaseStr, neutral, curValStr, neutral);
+                       purchaseFinalStr, neutral, curValStr, neutral);
 
             const QString cProfitStr    = locale.toString(v.completeProfitLoss, 'f', 2) + QStringLiteral(" €");
             const QString cProfitPctStr = locale.toString(v.completeProfitPct,  'f', 2) + QStringLiteral(" %");
@@ -1893,6 +1902,16 @@ void MainWindow::setupTableDelegates()
         m_marketValueTable->setItemDelegateForColumn(col, iconDelM);
         m_marketValueFooter->setItemDelegateForColumn(col, iconDelM);
     }
+
+    // The Depotwert footer merges Preis+(Chart-)Icon+Vortag into a single
+    // right-aligned row label whose span anchor is the Price column. Give that
+    // column a plain-text delegate in the FOOTER only, so the label renders —
+    // the two-line price delegate would swallow plain DisplayRole text. The
+    // main table keeps its two-line price delegate untouched.
+    m_finalValueFooter->setItemDelegateForColumn(static_cast<int>(FC::Price), iconDelF);
+    // The "Kosten / Dividenden (ges.)" footer label is two-line; its span anchor
+    // is the Icon column, which therefore uses the two-line delegate (footer only).
+    m_finalValueFooter->setItemDelegateForColumn(static_cast<int>(FC::Icon), delF);
 }
 
 // ── updatePortfolioFooters ────────────────────────────────────────────────────
@@ -1956,23 +1975,44 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
     m_finalValueFooter->setRowHeight(1, 34);
     m_finalValueFooter->setRowHeight(2, 34);
 
+    // Separate totals for the Kosten / Dividenden cell (2-line, middle row).
+    double tBrokerage = 0.0, tDividend = 0.0;
+    for (const ShareValues& v : shareValues) {
+        tBrokerage += v.totalBrokerage;
+        tDividend  += v.totalDividend;
+    }
+
     using FC = FinalValueColumn;
-    // Row 0 — Einzahlung (gesamt)
-    m_finalValueFooter->setItem(0, static_cast<int>(FC::Name),
+    // Merge Preis + (Chart-)Icon + Vortag so the row label is right-aligned up
+    // to the Vortag column, mirroring the Marktwert footer. The Kosten /
+    // Dividenden column (left of Preis) stays separate for its own 2-line total.
+    m_finalValueFooter->setSpan(0, static_cast<int>(FC::Price), 1, 3);
+    m_finalValueFooter->setSpan(1, static_cast<int>(FC::Price), 1, 3);
+    m_finalValueFooter->setSpan(2, static_cast<int>(FC::Price), 1, 3);
+
+    // Row 0 — Einzahlung (gesamt): single-line (current Depotstand is row 2).
+    m_finalValueFooter->setItem(0, static_cast<int>(FC::Price),
         makeTextItem(tr("Einzahlung (gesamt)"), neutral, Qt::AlignRight | Qt::AlignVCenter));
-    m_finalValueFooter->setItem(0, static_cast<int>(FC::BrokerageDividend),
-        makeFooterItem(locale.toString(bd, 'f', 2) + QStringLiteral(" €"), neutral,
-                       QString(), muted));
     m_finalValueFooter->setItem(0, static_cast<int>(FC::PurchaseFinalValue),
         makeFooterItem(locale.toString(tPurchase, 'f', 2) + QStringLiteral(" €"), neutral,
-                       locale.toString(tCurValue, 'f', 2) + QStringLiteral(" €"), muted));
+                       QString(), muted));
     m_finalValueFooter->setItem(0, static_cast<int>(FC::CompletePurchaseFinalValue),
         makeFooterItem(locale.toString(cPurchase, 'f', 2) + QStringLiteral(" €"), neutral,
-                       locale.toString(cCurValue, 'f', 2) + QStringLiteral(" €"), muted));
+                       QString(), muted));
 
-    // Row 1 — Entwicklung (gesamt)
-    m_finalValueFooter->setItem(1, static_cast<int>(FC::Name),
+    // Row 1 — Entwicklung (gesamt); Kosten / Dividenden total (2-line) in the
+    // Kosten / Dividenden column, plus the complete-development icon.
+    m_finalValueFooter->setItem(1, static_cast<int>(FC::Price),
         makeTextItem(tr("Entwicklung (gesamt)"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    // "Kosten / Dividenden (ges.)" label, two-line to match its value:
+    // Kosten (top) / Dividenden (bottom), both full neutral (no dimming).
+    m_finalValueFooter->setSpan(1, static_cast<int>(FC::Icon), 1, 4);
+    m_finalValueFooter->setItem(1, static_cast<int>(FC::Icon),
+        makeFooterItem(tr("Kosten (ges.)"),     neutral,
+                       tr("Dividenden (ges.)"), neutral));
+    m_finalValueFooter->setItem(1, static_cast<int>(FC::BrokerageDividend),
+        makeFooterItem(locale.toString(tBrokerage, 'f', 2) + QStringLiteral(" €"), neutral,
+                       locale.toString(tDividend, 'f', 2) + QStringLiteral(" €"), neutral));
     m_finalValueFooter->setItem(1, static_cast<int>(FC::Performance),
         makeFooterItem(locale.toString(tProfit, 'f', 2) + QStringLiteral(" €"),
                        perfColor(tProfit),
@@ -1983,9 +2023,15 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
                        perfColor(cProfit),
                        locale.toString(cProfitPct, 'f', 2) + QStringLiteral(" %"),
                        perfColor(cProfitPct)));
+    {
+        auto* chartItem = new QTableWidgetItem();
+        chartItem->setIcon(devIcon(cProfitPct));
+        chartItem->setFlags(chartItem->flags() & ~Qt::ItemIsEditable);
+        m_finalValueFooter->setItem(1, static_cast<int>(FC::CompleteChart), chartItem);
+    }
 
-    // Row 2 — Aktueller Depotstand
-    m_finalValueFooter->setItem(2, static_cast<int>(FC::Name),
+    // Row 2 — Aktueller Depotstand: single-line.
+    m_finalValueFooter->setItem(2, static_cast<int>(FC::Price),
         makeTextItem(tr("Aktueller Depotstand"), neutral, Qt::AlignRight | Qt::AlignVCenter));
     m_finalValueFooter->setItem(2, static_cast<int>(FC::PurchaseFinalValue),
         makeFooterItem(locale.toString(tCurValue, 'f', 2) + QStringLiteral(" €"), neutral,
