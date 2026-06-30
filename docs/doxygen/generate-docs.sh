@@ -90,6 +90,11 @@ else
     echo ""
 fi
 
+# ── Output-Verzeichnis sicherstellen ─────────────────────────────────────────
+# Doxygen legt nur die letzte Pfadebene an; fehlt z. B. build/ (nach einem
+# Clean oder ohne vorherigen Build), schlaegt OUTPUT_DIRECTORY fehl.
+mkdir -p "$OUTPUT_DIR"
+
 # ── Output-Verzeichnis leeren (sauberer Build) ────────────────────────────────
 if [ -d "$OUTPUT_DIR/html" ]; then
     echo "Lösche alten Build: $OUTPUT_DIR/html"
