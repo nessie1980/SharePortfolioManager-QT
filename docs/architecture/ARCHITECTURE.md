@@ -1508,3 +1508,156 @@ ausgelesen. `BackupSettingsForm` folgt dem MVP-Pattern analog zu `LoggerSettings
 | pdftotext | aktuell | PDF → Text für Parser — XpdfReader oder Poppler | apt: `poppler-utils` oder xpdfreader.com |
 | Graphviz | aktuell | Doxygen-Diagramme | apt: `graphviz` |
 | Doxygen | 1.10+ | Code-Dokumentation | doxygen.nl |
+
+---
+
+## XML-Import-Tool (tools/xml-importer)
+
+Eigenständiges Console-Tool zum einmaligen Import einer Portfolio.xml der alten
+C#-SharePortfolioManager-Anwendung in eine spm-qt SQLite-Datenbank. **Kein**
+Bestandteil des `SharePortfolioManager`-Targets — eigenes ausführbares Programm
+`spm-xml-importer`, das die bestehenden Models/Repositories (ShareObject,
+BuyObject, ... / ShareRepository, BuyRepository, ...) wiederverwendet, damit
+importierte Daten von UI-erfassten Daten ununterscheidbar sind.
+
+@code{.unparsed}
+tools/xml-importer/
+├── CMakeLists.txt
+├── main.cpp                  # CLI (QCommandLineParser)
+├── XmlPortfolioParser.h/.cpp # reiner XML → Struct-Parser (RawShare, RawBuy, ...)
+├── PortfolioImporter.h/.cpp  # Struct → DB (Repositories), Konvertierung, Dedupe
+└── ImportLogger.h/.cpp       # Datei- + Konsolen-Logging inkl. Zusammenfassung
+@endcode
+
+### Aufruf
+
+```
+spm-xml-importer <input.xml> <portfolio.db> [--dry-run] [--log <path>]
+```
+
+`portfolio.db` wird über `Database::instance().open()` geöffnet — bei einer neuen
+Datei legt das dieselbe Schema-DDL an wie die Hauptanwendung. `--dry-run` führt
+den kompletten Mapping-/Prüflauf aus, schreibt aber nichts in die Datenbank.
+
+### Mapping XML → Schema
+
+| XML | Ziel | Anmerkung |
+| ------ | ------ | ------ |
+| `<Share WKN/ISIN/Name/Update>` | `shares` | `Update` → `ShareUpdateType` (None/MarketPrice/DailyValues/Both, Default „Both") |
+| `<StockMarketLaunchDate>` | `shares.add_datetime` | entspricht der „Börsennotierung" (`listingDate`), siehe C#-Kompatibilitätshinweis in `PresenterShareEdit` |
+| `<MarketValue Parsing>` / `<DailyValues Parsing>` | `*_parsing_type` | „ApiYahoo"/„ApiOnVista"/„ApiOnvista" (case-insensitive) → `ShareParsingType`, sonst `Regex` |
+| `<Culture>` | — | keine Entsprechung im aktuellen Schema, wird geloggt und ignoriert |
+| `<Buy>` | `buys` | GUID aus XML wird direkt übernommen |
+| `<Sale><UsedBuys><UsedBuy>` | `sales` + `sale_buy_details` | `UsedBuy` → `SaleBuyDetail` (FIFO-Zuteilung) |
+| `<Brokerage BuyPart/SalePart/GuidBuySale>` | `brokerage` | `GuidBuySale` wird gegen `buys`/`sales` verifiziert (nicht `BuyPart`/`SalePart` blind übernommen) — siehe Abschnitt "Brokerage-Zuordnung" unten |
+| `<Dividend><ForeignCurrency>` | `dividends` | `Flag="Checked"` → `enable_fc=true`, sonst FX-Felder auf Default (1.0 / „EUR") |
+| `<DailyValues><Entry D/C/O/T/B/V>` | `daily_values` | `INSERT OR REPLACE` über `(share_guid, date)` — Re-Import aktualisiert vorhandene Tage |
+
+Alle numerischen/Datums-Felder liegen im Quell-XML im deutschen Format
+(Komma-Dezimaltrennzeichen, `dd.MM.yyyy[ HH:mm]`) und werden von
+`PortfolioImporter` in ISO-8601-Strings bzw. `double` konvertiert
+(`toDouble()`, `toIsoDate()`, `toIsoDateTime()`).
+
+### Insert-Reihenfolge (Foreign-Key-bedingt)
+
+```
+shares → buys → sales (+ sale_buy_details) → brokerage → dividends → daily_values
+```
+
+`brokerage.buy_guid`/`brokerage.sale_guid` haben echte `REFERENCES`-Constraints
+auf `buys`/`sales`, deshalb wird die Brokerage-Tabelle zuletzt befüllt.
+`buys.brokerage_guid`/`sales.brokerage_guid` sind dagegen einfache TEXT-Spalten
+ohne FK — der Wert kann also gesetzt werden, bevor die Brokerage-Zeile existiert.
+
+### Brokerage-Zuordnung: Verifikation statt Vertrauen (seit 02.07.2026)
+
+Die Zuordnung einer `<Brokerage GuidBuySale="...">` zu Buy oder Sale wird
+**nicht** aus den Attributen `BuyPart`/`SalePart` der Quelle übernommen,
+sondern anhand der zu diesem Zeitpunkt bereits importierten `buys`/`sales`-
+Tabellen verifiziert (`BuyRepository::findByGuid()` / `SaleRepository::findByGuid()`):
+
+- `GuidBuySale` existiert nur als Buy → `buy_guid` gesetzt.
+- `GuidBuySale` existiert nur als Sale → `sale_guid` gesetzt.
+- `GuidBuySale` existiert in **keiner** der beiden Tabellen (z. B. weil der
+  referenzierte Datensatz selbst an einem Fehler wie einer OrderNumber-
+  Kollision gescheitert ist) → `ERROR`, Brokerage wird übersprungen.
+- `GuidBuySale` existiert in **beiden** Tabellen (GUID-Kollision zwischen
+  Buy und Sale, bei echten UUIDs praktisch ausgeschlossen) → `ERROR`,
+  nicht automatisch aufgelöst.
+
+Widerspricht das Ergebnis den `BuyPart`/`SalePart`-Flags der Quelle, wird das
+per `INFO`-Zeile protokolliert, aber die anhand der Datenbank ermittelte
+Zuordnung verwendet — die Flags sind reine Zusatzinformation und werden nicht
+als Wahrheitsquelle behandelt.
+
+**Hintergrund:** Beim Import vom 01.07.2026 trugen zwei Verkaufs-Brokerages
+(`BuyPart="True"` statt `"False"`) fälschlich `BuyPart="True"`, obwohl
+`GuidBuySale` auf eine Sale zeigte — ein Datenfehler in der alten C#-Quelle.
+Mit der ursprünglichen (flag-basierten) Logik führte das zu
+`FOREIGN KEY constraint failed`, da `buy_guid` auf eine nicht existierende
+Buy-GUID gesetzt wurde. Mit verifikationsbasierter Zuordnung wird die Sale
+korrekt erkannt und verknüpft, unabhängig davon, was die Flags behaupten.
+
+### Idempotenz / Wiederholbarkeit
+
+- **Shares** werden über die WKN abgeglichen (`ShareRepository::findByWkn`).
+  Existiert die Aktie bereits, wird ihre GUID wiederverwendet und die
+  Stammdaten bleiben unangetastet — es werden nur fehlende Kindobjekte importiert.
+- **Buys/Sales/Dividends/Brokerages** übernehmen die GUID direkt aus dem
+  Quell-XML. Vor dem Insert prüft der Importer per `findByGuid()`, ob der
+  Datensatz schon existiert, und überspringt ihn dann (`SKIPPED`). Ein erneuter
+  Lauf über dieselbe (oder eine aktualisierte) Export-Datei ist damit sicher.
+- **Daily values** verwenden `INSERT OR REPLACE` über den Composite-Key
+  `(share_guid, date)` und sind dadurch immer gefahrlos erneut importierbar.
+
+### Fehlerverhalten
+
+Fehler auf Datensatz-Ebene (fehlende GUID, SQL-Fehler, UNIQUE-Konflikt bei
+`order_number`, nicht auflösbare Brokerage-Zuordnung) werden geloggt und
+übersprungen — der Import läuft mit dem nächsten Datensatz weiter, statt
+komplett abzubrechen. Fehlt einer Aktie die WKN oder schlägt deren Insert
+fehl, werden ihre Kindobjekte konsequenterweise ebenfalls übersprungen (ohne
+Share-GUID kein gültiges Ziel). Scheitert ein Buy (z. B. an einer
+OrderNumber-Kollision), scheitern in der Folge auch alle davon abhängigen
+Sales (`sale_buy_details.buy_guid`) und Brokerages (`buy_guid`) — das sind
+erwartete Kaskadenfehler aus einer einzigen Ursache, keine unabhängigen Bugs.
+
+### Protokollierung (ImportLogger)
+
+Jede Zeile: Zeitstempel, Aktion (`INSERTED`/`SKIPPED`/`REUSED`/`ERROR`/`INFO`),
+Entitätstyp, Quell-ID (WKN/GUID/OrderNumber) und optionales Detail — sowohl auf
+der Konsole als auch in der Log-Datei (`--log`, Default
+`import_<Zeitstempel>.log`, Append-Modus). Am Ende des Laufs gibt
+`writeSummary()` eine Zusammenfassung je Entität/Aktion aus.
+
+### Bekannte Datenqualitätsprobleme in der Quell-XML
+
+Beim Import realer Depotdaten wurden zwei Klassen von Fehlern in der alten
+C#-Quelle gefunden, die der Importer erkennt und meldet, aber nicht selbst
+reparieren kann:
+
+1. **Falsche `OrderNumber`** — ein einzelner Buy trug eine `OrderNumber`, die
+   nicht zum zugehörigen PDF-Beleg passte und stattdessen mit einer völlig
+   anderen Aktie kollidierte (`UNIQUE constraint failed: buys.order_number`).
+   Nur durch Korrektur der `OrderNumber` in der Quelle behebbar (Beleg-Dateiname
+   als Referenz).
+2. **Vertauschte `BuyPart`/`SalePart`-Flags** — siehe Abschnitt
+   "Brokerage-Zuordnung" oben. Seit dem Fix vom 02.07.2026 fängt der Importer
+   das automatisch ab und protokolliert es als `INFO`.
+
+Bei jedem neuen Import lohnt sich ein Blick in die Log-Zusammenfassung auf
+`ERROR`-Zeilen (Fall 1, weiterhin nur an der Quelle behebbar) sowie auf
+`INFO`-Zeilen mit "widerspricht dem tatsächlichen Befund" (Fall 2, wird jetzt
+automatisch korrigiert, ist aber ein Hinweis auf die Häufigkeit dieses
+Datenfehlers in der Quelle).
+
+### Tests (tests/xml-importer/)
+
+| Executable | Prüft |
+| ------ | ------ |
+| `tst_xmlportfolioparser` | Reiner XML → Struct-Parser, ohne DB. Attribut-Mapping für Share/Buy/Sale/Brokerage/Dividend/DailyValues, Fremdwährungs-Dividenden, mehrere Aktien, Fehlerfälle (fehlendes Wurzelelement, Datei nicht gefunden, kaputtes XML). |
+| `tst_portfolioimporter` | Integrationstests gegen In-Memory-SQLite (`:memory:`), analog zu `tests/repositories/`. Deckt ab: Share-Neuanlage/-Wiederverwendung per WKN, GUID-basierte Idempotenz bei erneutem Lauf, OrderNumber-Kollision (Fehler geloggt, Import läuft weiter), Dry-Run (keine Schreibzugriffe), Tageswerte-Upsert. **Regressionstests für den Brokerage-Zuordnungs-Fix vom 02.07.2026:** falsches `BuyPart`, falsches `SalePart`, korrekte Flags (Kontrollfall), `GuidBuySale` in keiner Tabelle gefunden. |
+
+Beide folgen dem etablierten Muster: Models/Repositories werden als Quelldateien
+direkt mitkompiliert (kein separates Backend-Interface nötig), `initTestCase()`
+öffnet `:memory:`, `init()` räumt die relevanten Tabellen vor jedem Test auf.

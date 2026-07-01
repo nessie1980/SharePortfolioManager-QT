@@ -67,6 +67,9 @@ add_subdirectory(libs/parser)
 add_subdirectory(app/core)
 add_subdirectory(app)
 
+# ── Tools ────────────────────────────────────────────────────────────────────
+add_subdirectory(tools/xml-importer)
+
 # ── Tests ────────────────────────────────────────────────────────────────────
 enable_testing()
 add_subdirectory(tests/logger)
@@ -77,3 +80,4 @@ add_subdirectory(tests/database)
 add_subdirectory(tests/app)
 add_subdirectory(tests/config)
 add_subdirectory(tests/forms)
+add_subdirectory(tests/xml-importer)

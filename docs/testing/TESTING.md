@@ -39,6 +39,8 @@ ctest --output-on-failure
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
 ./bin/tst_buysform
+./bin/tst_xmlportfolioparser
+./bin/tst_portfolioimporter
 ```
 
 ---
@@ -1200,3 +1202,52 @@ target_link_libraries(tst_shareeditform
 
 add_test(NAME tst_shareeditform COMMAND tst_shareeditform)
 ```
+
+---
+
+### tests/xml-importer/ — XML-Importer Unit-/Integrationstests
+
+Hinweis: `tools/xml-importer` ist ein eigenständiges Console-Tool (kein Teil des
+`SharePortfolioManager`-Targets), das dieselben Models/Repositories der
+Hauptanwendung wiederverwendet. Die Tests spiegeln das: `tst_xmlportfolioparser`
+prüft den reinen XML-Parser ohne DB, `tst_portfolioimporter` folgt exakt dem
+Muster aus `tests/repositories/` (In-Memory-SQLite via `:memory:`).
+
+#### tst_xmlportfolioparser
+
+Executable: `tst_xmlportfolioparser`
+Klasse unter Test: `XmlPortfolioParser` (reines XML → Struct-Mapping, keine DB)
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_parse_minimalShare_readsBasicAttributesAndFields` | Ein `<Share>` mit allen Basis-Feldern | WKN/ISIN/Name/Update, Datumsfelder, `MarketValue`/`DailyValues`-Parsing-Attribute korrekt extrahiert |
+| `test_parse_buySaleBrokerageCycle_isLinkedCorrectly` | Ein Buy + eine Sale mit `UsedBuys` + zwei Brokerages | Anzahl je Kategorie, `UsedBuy.buyGuid`/`brokerage`, `Brokerage.buyPart`/`salePart`/`guidBuySale` |
+| `test_parse_dividendWithForeignCurrency_setsFcFields` | Eine Dividende mit `<ForeignCurrency>`, eine ohne | `hasForeignCurrency`, `fc.enabled`, `fc.exchangeRatio`, `fc.currency` nur bei vorhandenem Element gesetzt |
+| `test_parse_dailyValuesEntries_mapsAttributesCorrectly` | Zwei `<Entry D/C/O/T/B/V>` | Korrektes Mapping der Kurzattribute auf `date/close/open/top/bottom/volume` |
+| `test_parse_multipleShares_areAllCollected` | Zwei `<Share>`-Blöcke in einem `<Portfolio>` | `portfolio.shares.size() == 2`, Reihenfolge erhalten |
+| `test_parse_missingRootElement_fails` | XML ohne `<Portfolio>`-Wurzel | `parse()` liefert `false`, Fehlermeldung nicht leer |
+| `test_parse_fileNotFound_fails` | Nicht existierender Pfad | `parse()` liefert `false`, Fehlermeldung nicht leer |
+| `test_parse_malformedXml_fails` | Nicht geschlossenes `<Share>`-Tag | `parse()` liefert `false` (QXmlStreamReader-Fehler) |
+
+#### tst_portfolioimporter
+
+Executable: `tst_portfolioimporter`
+Klasse unter Test: `PortfolioImporter` (gegen In-Memory-SQLite `:memory:`)
+
+Hinweis: Da `importBuys()`/`importSales()`/`importBrokerages()`/... privat sind,
+laufen alle Tests über den einzigen öffentlichen Einstiegspunkt
+`importPortfolio()` — das sind bewusst Integrations- statt Einzelmethodentests.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_importShare_insertsNewShare` | Neue Aktie importieren | Genau eine Zeile in `shares`, Felder korrekt |
+| `test_importShare_reusesExistingShareByWkn_masterDataUntouched` | Zweiter Import derselben WKN mit geändertem Namen | Keine Dublette, GUID wiederverwendet, Stammdaten **nicht** überschrieben |
+| `test_importBuy_isIdempotentOnRerun` | Identischer Import zweimal ausgeführt | Kein doppelter Buy-Datensatz (GUID-Dedupe) |
+| `test_importBuy_orderNumberCollision_skipsSecondButContinues` | Zwei Buys mit gleicher `OrderNumber`, unterschiedlicher GUID | Nur der erste wird gespeichert, Import bricht nicht ab (Regressionstest AGIF/Facebook-Fall, 01.07.2026) |
+| `test_importBrokerage_correctsWrongBuyPartFlag` | `BuyPart="True"`, `GuidBuySale` zeigt aber auf eine Sale | `sale_guid` korrekt gesetzt, `buy_guid` leer (Regressionstest Mensch u. Maschine/Procter & Gamble, 01.07.2026) |
+| `test_importBrokerage_correctsWrongSalePartFlag` | Spiegelfall: `SalePart="True"`, zeigt auf einen Buy | `buy_guid` korrekt gesetzt, `sale_guid` leer |
+| `test_importBrokerage_correctFlags_areAcceptedUnchanged` | Korrekte Flags (Kontrollfall) | Zuordnung wie erwartet, kein falscher Fehlalarm |
+| `test_importBrokerage_guidBuySaleNotFoundInEitherTable_isSkipped` | `GuidBuySale` existiert weder als Buy noch als Sale | Kein Insert, kein Absturz |
+| `test_importDividend_foreignCurrencyFieldsAreStored` | Dividende mit `ForeignCurrency` | `enable_fc`, `exchange_ratio`, `currency` korrekt in der DB |
+| `test_dryRun_writesNothing` | Import mit `dryRun=true` | Alle Zieltabellen bleiben leer |
+| `test_dailyValues_upsertReplacesExistingValueOnRerun` | Gleicher Tag zweimal mit unterschiedlichem Schlusskurs importiert | Keine Dublette, Wert wurde aktualisiert (`INSERT OR REPLACE`) |
