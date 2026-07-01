@@ -1093,7 +1093,15 @@ Depotwert-Tab (mit Brokerage + Dividenden):
 - `purchaseValueFinal` = gehaltene Basis: Summe(round(remVol x price) + brokeragePart - reductionPart)
 - `profitLossFinal` = curValue - purchaseValueFinal
 - `totalBrokerage` = `BrokerageRepository::totalBrokerage()`
-- `totalDividend` = `DividendRepository::totalPayoutWithTaxes()` (netto nach Steuer)
+- `totalDividend` = `DividendRepository::totalPayoutWithTaxes()` (netto nach Steuer) —
+  bei Fremdwährungs-Dividenden zweistufig gerundet: erst `rate x volume` auf 2 Nachkomma-
+  stellen, dann das Ergebnis der Division durch `exchange_ratio` erneut auf 2 Nachkomma-
+  stellen. Identisch zu `DividendObject::calculateValues()`, damit die Summe im Depotwert-
+  Tab exakt der Summe der einzeln im Dividenden-Tab angezeigten Zeilen entspricht (Bugfix
+  02.07.2026 — die SQL-Aggregation rundete zuvor nur einmal, was bei bestimmten Wechsel-
+  kursen zu Differenzen von wenigen Cent führte; siehe Regressionstest
+  `test_totalPayoutWithTaxes_matchesDoubleRoundedDividendObjectSum` in
+  `tests/repositories/tst_dividendrepository.cpp`).
 - `completePurchase` = alle Kaeufe: Summe(round(vol x price) + brokerage - reduction)
 - `completeCurValue` = curValue + Summe(Verkaufs-Auszahlung inkl. Brokerage/Rabatt) + totalDividend
 - `completeProfitLoss` = completeCurValue - completePurchase

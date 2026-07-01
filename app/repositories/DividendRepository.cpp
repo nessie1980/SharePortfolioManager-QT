@@ -212,7 +212,7 @@ double DividendRepository::totalPayoutWithTaxes(const QString& shareGuid) const
     sqlQuery.prepare(R"(
         SELECT COALESCE(SUM(
             CASE WHEN enable_fc = 1 AND exchange_ratio != 0
-                THEN ROUND(rate * volume / exchange_ratio, 2)
+                THEN ROUND(ROUND(rate * volume, 2) / exchange_ratio, 2)
                 ELSE ROUND(rate * volume, 2)
             END
             - (tax_at_source + capital_gains_tax + solidarity_tax)
@@ -234,7 +234,7 @@ double DividendRepository::totalPayout(const QString& shareGuid) const
     sqlQuery.prepare(R"(
         SELECT COALESCE(SUM(
             CASE WHEN enable_fc = 1 AND exchange_ratio != 0
-                THEN ROUND(rate * volume / exchange_ratio, 2)
+                THEN ROUND(ROUND(rate * volume, 2) / exchange_ratio, 2)
                 ELSE ROUND(rate * volume, 2)
             END
         ), 0)

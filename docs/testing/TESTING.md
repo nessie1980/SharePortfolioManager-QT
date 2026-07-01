@@ -95,6 +95,13 @@ Die Repository-Tests decken `BuyRepository`, `SaleRepository`, `DividendReposito
 `ShareRepository`, `BrokerageRepository` und `DailyValuesRepository` ab — CRUD-Operationen,
 Filterung, Sortierung und Transaktionsverhalten je Repository.
 
+**Regressionstest `test_totalPayoutWithTaxes_matchesDoubleRoundedDividendObjectSum`
+(tst_dividendrepository.cpp):** Verifiziert, dass `DividendRepository::totalPayoutWithTaxes()`
+bei Fremdwährungs-Dividenden dieselbe zweistufige Rundung anwendet wie
+`DividendObject::calculateValues()`. Nutzt die realen Wechselkurse (1,07907 / 1,10526) aus
+dem Fall, der die 0,02€-Differenz zwischen Dividenden-Tab-Summe und Depotwert-Tab am
+02.07.2026 aufdeckte.
+
 ---
 
 ### tests/database/ — Database Unit-Tests

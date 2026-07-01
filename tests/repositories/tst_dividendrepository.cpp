@@ -189,6 +189,24 @@ private slots:
 
         QCOMPARE(repo.totalPayoutWithTaxes(k_shareGuid), 191.5);
     }
+
+    void test_totalPayoutWithTaxes_matchesDoubleRoundedDividendObjectSum()
+    {
+        DividendRepository repo;
+
+        DividendObject d1(newGuid(), k_shareGuid, "2024-07-01T00:00:00",
+                          0.485, 125.0, 0.0, 0.0, 0.0, 60.0,
+                          true, 1.07907, "USD");
+        DividendObject d2(newGuid(), k_shareGuid, "2024-10-01T00:00:00",
+                          0.485, 125.0, 0.0, 0.0, 0.0, 60.0,
+                          true, 1.10526, "USD");
+        QVERIFY(repo.insert(d1));
+        QVERIFY(repo.insert(d2));
+
+        const double expected = d1.dividendPayoutWithTaxes() + d2.dividendPayoutWithTaxes();
+
+        QCOMPARE(repo.totalPayoutWithTaxes(k_shareGuid), expected);
+    }
 };
 
 QTEST_MAIN(TestDividendRepository)
