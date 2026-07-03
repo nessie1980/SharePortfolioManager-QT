@@ -896,11 +896,11 @@ void MainWindow::populatePortfolioTables()
 
         // Kosten / Dividenden (2-line)
         auto* bdItemF = makeTwoLine(brokerDivStr, neutral,
-                                    dividendStr,  muted);
+                                    dividendStr,  neutral);
 
         // Preis (2-line)
         auto* priceItemF = makeTwoLine(curPriceStr,  neutral,
-                                       prevPriceStr, muted);
+                                       prevPriceStr, neutral);
 
         // PrevDay chart icon
         auto* prevChartItemF = new QTableWidgetItem();
@@ -979,7 +979,7 @@ void MainWindow::populatePortfolioTables()
         const QString profitMPctStr  = locale.toString(v.profitLossPct, 'f', 2)
                                      + QStringLiteral(" %");
 
-        auto* priceItemM     = makeTwoLine(curPriceStr, neutral, prevPriceStr, muted);
+        auto* priceItemM = makeTwoLine(curPriceStr, neutral, prevPriceStr, neutral);
         auto* prevChartItemM = new QTableWidgetItem();
         prevChartItemM->setIcon(devIcon(v.prevDayPct));
         prevChartItemM->setFlags(prevChartItemM->flags() & ~Qt::ItemIsEditable);
@@ -1687,7 +1687,7 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
             const QString profitFinalPctStr = locale.toString(v.profitLossPctFinal, 'f', 2) + QStringLiteral(" %");
             const QString purchaseFinalStr  = locale.toString(v.purchaseValueFinal, 'f', 2) + QStringLiteral(" €");
             setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::Price),
-                       curPriceStr, neutral, prevPriceStr, muted);
+                       curPriceStr, neutral, prevPriceStr, neutral);
             setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::PrevDay),
                        prevDiffStr, perfColor(v.prevDayDiff), prevPctStr, perfColor(v.prevDayPct));
             setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::Performance),
@@ -1710,7 +1710,7 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
         if (const int mr = findRow(m_marketValueTable); mr >= 0) {
             using MC = MarketValueColumn;
             setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::Price),
-                       curPriceStr, neutral, prevPriceStr, muted);
+                       curPriceStr, neutral, prevPriceStr, neutral);
             setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::PrevDay),
                        prevDiffStr, perfColor(v.prevDayDiff), prevPctStr, perfColor(v.prevDayPct));
             setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::Performance),

@@ -155,6 +155,8 @@ MainWindow:
 | `test_construction_actionsDisabledAtStart` | Menüaktionen ohne Portfolio deaktiviert | `isEnabled()` = false |
 | `test_clearPortfolioTables_removesAllRows` | 2 Datentabellen starten leer, 2 Footer behalten ihre 3 Summenzeilen | `emptyCount` = 2, `footerCount` = 2 |
 | `test_finalValueTable_showsFinalFields` | Regression Depotwert-Anzeige: Tab zeigt die `…Final`-Felder (mit Brokerage), nicht die brokeragefreien Marktwerte | „Aktuelle Entwicklung" = `profitLossFinal` (-1009,90), „Einzahlung" = `purchaseValueFinal` (1009,90) statt 1000,00 |
+| `test_finalValueTable_priceAndCostDividendBottomColorIsNeutral` | Regression Bugfix 03.07.2026: Unterzeile von "Kosten/Dividenden" und "Preis" (Depotwert) nutzt `neutral` statt `muted` | `BottomColor.alpha()` = `neutral.alpha()` für beide Zellen |
+| `test_marketValueTable_priceBottomColorIsNeutral` | Regression Bugfix 03.07.2026: Unterzeile von "Preis" (Marktwert) nutzt `neutral` statt `muted` | `BottomColor.alpha()` = `neutral.alpha()` |
 | `test_finalValueFooter_costDividendCell` | Depotwert-Footer: Kosten/Dividenden als 2-zeiliger Wert in der Mittelzeile | Zelle (Zeile 1, Spalte Kosten/Dividenden) `TwoLineRole::Top` = `totalBrokerage` (9,90), `Bottom` = `totalDividend` (0,00) |
 | `test_updatePortfolioLabel_defaultValues` | Portfolio-Label existiert | `findChild<QLabel*>()` nicht null |
 | `test_updateWindowTitle_showsFileName` | Fenstertitel enthält Dateinamen nach Öffnen | Titel enthält Dateinamen |

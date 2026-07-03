@@ -1013,7 +1013,12 @@ Gilt für beide Tabs (Haupttabellen und Footer):
 
 - **Farben** sind theme-abhängig aus der Palette: `neutral` =
   `palette().color(QPalette::Text)`, `muted` = `neutral` mit Alpha 140
-  (gedämpfte Zweitzeile). Gewinn/Verlust nutzen dieselbe Quelle wie die
+  (nur für leere Platzhalterwerte in Footer-Einzelwertzeilen genutzt — alle
+  sichtbaren Zweitzeilen in Haupttabellen und Footer nutzen `neutral` bzw.
+  `perfColor(...)`, damit Ober- und Unterzeile optisch gleich dargestellt
+  werden; Bugfix 03.07.2026 — zuvor nutzten "Kosten/Dividenden" und "Preis"
+  fälschlich `muted` für die Unterzeile, wodurch sie optisch wie eine andere
+  Schrift wirkte). Gewinn/Verlust nutzen dieselbe Quelle wie die
   Statusmeldungsbox — `AppSettings::logColorAt(5)` (Erfolg-Grün) bzw.
   `logColorAt(3)` (Fehler-Rot); ein Nullwert wird in Textfarbe gezeichnet.
 - **Icons**: `setIconSize(24×24)`; die Entwicklungs-Pfeile liegen als 24-px-PNGs

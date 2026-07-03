@@ -575,6 +575,20 @@ private:
         return nullptr;
     }
 
+    /**
+     * Analog zu findFinalTable(), aber für die Marktwert-Tabellen (12 Spalten =
+     * MarketValueColumn::Count). wantRows: 1 für die Datentabelle (ein
+     * geseedeter Titel), 3 für den Footer.
+     */
+    static QTableWidget* findMarketTable(const MainWindow& w, int wantRows)
+    {
+        const int cols = 12; // MarketValueColumn::Count (Marktwert columns)
+        for (auto* t : w.findChildren<QTableWidget*>())
+            if (t && t->columnCount() == cols && t->rowCount() == wantRows)
+                return t;
+        return nullptr;
+    }
+
 private slots:
 
     void initTestCase()
@@ -680,6 +694,52 @@ private slots:
         // Upper line = purchaseValueFinal (incl. brokerage).
         QCOMPARE(pv->data(TwoLineRole::Top).toString(),
                  loc.toString(1009.90, 'f', 2) + QStringLiteral(" €"));
+    }
+
+    // Regression Bugfix 03.07.2026: die zweite Zeile in "Kosten/Dividenden"
+    // und "Preis" nutzte fälschlich `muted` (Alpha 140) statt `neutral`,
+    // wodurch sie optisch wie eine andere Schrift wirkte als die übrigen
+    // zweizeiligen Spalten. Beide Unterzeilen müssen dieselbe (volle)
+    // Farbe wie der Rest der Zweitzeilen im Grid nutzen.
+    void test_finalValueTable_priceAndCostDividendBottomColorIsNeutral()
+    {
+        seedDepotwertPortfolio();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* tbl = findFinalTable(window, 1); // data table, 1 share row
+        if (!tbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+
+        const QColor neutral = window.palette().color(QPalette::Text);
+
+        QTableWidgetItem* bd = tbl->item(0, 4); // FinalValueColumn::BrokerageDividend
+        if (!bd) QFAIL("Kosten/Dividenden-Zelle fehlt");
+        QCOMPARE(bd->data(TwoLineRole::BottomColor).value<QColor>().alpha(),
+                 neutral.alpha());
+
+        QTableWidgetItem* price = tbl->item(0, 5); // FinalValueColumn::Price
+        if (!price) QFAIL("Preis-Zelle fehlt");
+        QCOMPARE(price->data(TwoLineRole::BottomColor).value<QColor>().alpha(),
+                 neutral.alpha());
+    }
+
+    // Gleiche Regression für den Marktwert-Tab (dort gibt es keine
+    // Kosten/Dividenden-Spalte, nur Preis).
+    void test_marketValueTable_priceBottomColorIsNeutral()
+    {
+        seedDepotwertPortfolio();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* tbl = findMarketTable(window, 1); // data table, 1 share row
+        if (!tbl) QFAIL("Marktwert-Datentabelle nicht gefunden");
+
+        const QColor neutral = window.palette().color(QPalette::Text);
+
+        QTableWidgetItem* price = tbl->item(0, 4); // MarketValueColumn::Price
+        if (!price) QFAIL("Preis-Zelle fehlt");
+        QCOMPARE(price->data(TwoLineRole::BottomColor).value<QColor>().alpha(),
+                 neutral.alpha());
     }
 
     // The Depotwert footer carries the Kosten / Dividenden total as a two-line
