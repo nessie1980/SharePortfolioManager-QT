@@ -79,9 +79,25 @@ Executable: `tst_parser`
 | `test_regex_no_match_result_empty_false` | Pflichtfeld fehlt | `ParserErrorCode::ParsingFailed` |
 | `test_regex_no_match_result_empty_true` | Optionales Feld fehlt | `ParserErrorCode::Finished` |
 | `test_start_fails_when_busy` | Guard: keine RegExList | `ParserErrorCode::NoRegexListGiven` |
+| `test_reentrant_start_from_finished_signal_succeeds` | **Regressionstest Bugfix 05.07.2026:** reentranter `startParsing()`-Aufruf auf demselben Parser-Objekt aus dem `parserUpdated(Finished)`-Handler heraus (simuliert die Verkettung von "Alle aktualisieren" zur nächsten Aktie) | Zweiter `startParsing()`-Aufruf liefert `true` statt `BusyFailed` (-2); finaler Zustand `Finished` mit den Werten des zweiten Aufrufs; `isBusy() == false` danach |
 | `test_onvista_realtime_json_parsing` | OnVista JSON Deserialisierung | Preis, Währung, Vortagskurs korrekt |
 | `test_onvista_history_json_parsing` | OnVista Historie JSON | Anzahl Einträge, Eröffnungskurs korrekt |
 | `test_yahoo_history_json_parsing` | Yahoo Finance Historie JSON | Timestamps, Schlusskurs korrekt |
+
+**Regressionstest `test_reentrant_start_from_finished_signal_succeeds`
+(tst_parser.cpp):** Deckt den Bugfix vom 05.07.2026 ab, bei dem
+`Parser::finish()` `m_busy` erst *nach* dem synchronen Emit des
+`Finished`-Zustands zurücksetzte. Bei "Alle aktualisieren" führte das dazu,
+dass eine Aktie ohne Kurswert-Update (nur `ShareUpdateType::DailyValues`)
+direkt aus dem `onDailyValuesUpdated()`-Callback heraus in
+`startRefreshForShare()` für die nächste Aktie verkettete und
+`m_parserDailyValues.startParsing()` auf dem noch als „busy" markierten
+Parser-Objekt fehlschlug (`BusyFailed`, -2) — sichtbar als
+`"Tageswerte: Fehler beim Abruf von ... (-2)"` direkt nach einer schnell
+abgeschlossenen vorherigen Aktie. Der Test ruft `startParsing()` reentrant
+aus dem `parserUpdated`-Signal-Handler heraus auf (Text-Modus, daher
+synchron und ohne Netzwerk-Mocking testbar) und verifiziert, dass der
+zweite Aufruf erfolgreich ist.
 
 ---
 

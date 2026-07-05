@@ -1501,6 +1501,53 @@ ausgelesen. `BackupSettingsForm` folgt dem MVP-Pattern analog zu `LoggerSettings
 
 ---
 
+### XML-Import: Tageswerte-URL fehlt bei mindestens zwei Aktien (gemeldet 05.07.2026)
+
+Beim Ausführen von "Alle aktualisieren" auf einem über `tools/xml-importer`
+importierten Portfolio ist aufgefallen, dass bei mindestens zwei Aktien —
+**Nvidia** und **Wacker (Wacker Chemie)** — die Tageswerte-URL
+(`shares.daily_values_url`) nicht korrekt aus der Quell-XML übernommen wurde —
+vermutlich leer oder `NULL`, sodass `buildDailyValuesUrl()` keine gültige
+Ziel-URL erzeugen kann.
+
+Nächste Schritte für eine zukünftige Sitzung:
+
+1. **Betroffene Aktien bestätigen/genauer eingrenzen** — bereits bekannt:
+   Nvidia und Wacker (Wacker Chemie). Zur Verifikation per direkter DB-Abfrage:
+   ```sql
+   SELECT wkn, name, daily_values_url, daily_values_parsing_type
+   FROM shares
+   WHERE name LIKE '%Nvidia%' OR name LIKE '%Wacker%';
+   ```
+   ggf. zusätzlich generell gegen den ganzen Bestand prüfen (falls noch
+   weitere Aktien betroffen sind):
+   ```sql
+   SELECT wkn, name, daily_values_url, daily_values_parsing_type
+   FROM shares
+   WHERE daily_values_url IS NULL OR daily_values_url = '';
+   ```
+2. **Quell-XML der beiden `<Share>`-Einträge (Nvidia, Wacker) gezielt
+   prüfen:** Fehlt das `<DailyValues>`-Element bzw. dessen URL-Attribut
+   komplett, oder liegt ein abweichendes Attribut-/Encoding-Format vor (z. B.
+   andere Schreibweise von `Parsing="ApiYahoo"/"ApiOnVista"`, die vom
+   `case-insensitive`-Mapping in `PortfolioImporter` nicht erfasst wird)?
+   Beide Aktien sind US- bzw. deutsche Standardwerte — ein gemeinsames
+   Muster (z. B. bestimmter Parsing-Typ oder Börsenplatz) in der Quelle wäre
+   ein Hinweis auf die Ursache.
+3. **`XmlPortfolioParser`-Mapping gegenzuprüfen** (Attribut `<DailyValues
+   Parsing/URL>` → `shares.daily_values_url`/`daily_values_parsing_type`) —
+   analog zur bereits behobenen Brokerage-Zuordnung vom 02.07.2026 prüfen,
+   ob es sich um ein weiteres Datenqualitätsproblem in der alten C#-Quelle
+   handelt statt um einen Importer-Bug.
+4. Je nach Befund: Korrektur in der Quell-XML + Re-Import (idempotent, siehe
+   Abschnitt "Idempotenz/Wiederholbarkeit" im XML-Importer-Kapitel), oder
+   manuelle Korrektur der betroffenen Aktien über `ShareEditForm`.
+
+Verwandt mit dem bereits vermerkten Punkt "Checking source XML for further
+data quality issues" — ergänzt diesen um einen konkreten, reproduzierten Fall.
+
+---
+
 ## Plattform-Unterstützung
 
 | Plattform | Status | Besonderheiten |

@@ -160,6 +160,57 @@ private slots:
         QCOMPARE(lastState.lastErrorCode, ParserErrorCode::NoRegexListGiven);
     }
 
+    // ── Regression: reentrancy bugfix 05.07.2026 ───────────────────────────
+    //
+    // Bug: "Alle aktualisieren" chains directly from one share's finished
+    // callback into startRefreshForShare() for the next share, reusing the
+    // SAME Parser instance (m_parserDailyValues / m_parserMarketValues in
+    // MainWindow). Parser::finish() used to reset m_busy AFTER emitting the
+    // Finished signal, but that emit is a synchronous, direct call — so the
+    // reentrant startParsing() call for the next share ran while m_busy was
+    // still true and was rejected with BusyFailed (-2). This only showed up
+    // for "Alle aktualisieren" (chained calls), never for a single
+    // "Aktualisieren" (no chaining) — matching the reported symptom exactly.
+    void test_reentrant_start_from_finished_signal_succeeds()
+    {
+        RegExList rules;
+        rules["Price"] = RegExElement{ R"((\d+[.,]\d+))", 0, false, {} };
+
+        ParsingValues pvFirst("Kurs: 100,00 EUR", "UTF-8", rules);
+        ParsingValues pvSecond("Kurs: 200,00 EUR", "UTF-8", rules);
+
+        Parser parser;
+        parser.setParsingValues(pvFirst);
+
+        bool            reentrantAttempted   = false;
+        bool            reentrantStartResult = false;
+        ParserInfoState finalState;
+
+        connect(&parser, &Parser::parserUpdated, [&](const ParserInfoState& s) {
+            // Simulate MainWindow::onRefreshShareFinished() chaining straight
+            // into startRefreshForShare() for the next share, from within the
+            // Finished callback of the current share.
+            if (s.lastErrorCode == ParserErrorCode::Finished && !reentrantAttempted) {
+                reentrantAttempted = true;
+                parser.setParsingValues(pvSecond);
+                reentrantStartResult = parser.startParsing();
+            }
+            if (reentrantAttempted)
+                finalState = s;
+        });
+
+        QVERIFY(parser.startParsing());
+
+        QVERIFY2(reentrantStartResult,
+                 "Reentrant startParsing() called from within the Finished "
+                 "callback must succeed. A 'false' result here reproduces the "
+                 "BusyFailed (-2) regression from 'Alle aktualisieren'.");
+        QCOMPARE(finalState.lastErrorCode, ParserErrorCode::Finished);
+        QVERIFY(finalState.searchResult.contains("Price"));
+        QCOMPARE(finalState.searchResult["Price"].first(), QString("200,00"));
+        QVERIFY(!parser.isBusy());
+    }
+
     // ── JSON Objects ──────────────────────────────────────────────────────
     void test_onvista_realtime_json_parsing()
     {

@@ -83,8 +83,12 @@ void Parser::cancelParsing()
     m_cancelled = true;
     if (m_reply && m_reply->isRunning())
         m_reply->abort();
-    setState(ParserErrorCode::CancelOperation, 0);
+
+    // NOTE (Bugfix 05.07.2026): m_busy must be reset BEFORE emitting the
+    // state change. See the detailed explanation in finish() below — the
+    // same reentrancy hazard applies here.
     m_busy = false;
+    setState(ParserErrorCode::CancelOperation, 0);
 }
 
 // ── Network slots ─────────────────────────────────────────────────────────────
@@ -115,8 +119,10 @@ void Parser::onDownloadFinished()
     const QByteArray rawData = m_reply->readAll();
 
     if (rawData.isEmpty()) {
-        setState(ParserErrorCode::NoWebContentLoaded, 0);
+        // Bugfix 05.07.2026: reset m_busy before emitting the error state —
+        // see finish() for the full explanation of the reentrancy hazard.
         m_busy = false;
+        setState(ParserErrorCode::NoWebContentLoaded, 0);
         return;
     }
 
@@ -151,8 +157,11 @@ void Parser::onNetworkError(QNetworkReply::NetworkError /*error*/)
     if (!m_reply) return;
     const QString msg = m_reply->errorString();
     qWarning() << "[Parser] Network error:" << msg;
-    setState(ParserErrorCode::NetworkError, 0, msg);
+
+    // Bugfix 05.07.2026: reset m_busy before emitting the error state —
+    // see finish() for the full explanation of the reentrancy hazard.
     m_busy = false;
+    setState(ParserErrorCode::NetworkError, 0, msg);
 }
 
 // ── Regex parsing ─────────────────────────────────────────────────────────────
@@ -166,8 +175,9 @@ void Parser::doRegexParsing(const QString& text)
 
     for (auto it = rules.cbegin(); it != rules.cend(); ++it) {
         if (m_cancelled) {
-            setState(ParserErrorCode::CancelOperation, 0);
+            // Bugfix 05.07.2026: reset m_busy before emitting — see finish().
             m_busy = false;
+            setState(ParserErrorCode::CancelOperation, 0);
             return;
         }
 
@@ -185,8 +195,9 @@ void Parser::doRegexParsing(const QString& text)
         if (!regularExpression.isValid()) {
             qWarning() << "[Parser] Invalid regex for key:" << key << regularExpression.errorString();
             if (!element.resultEmpty) {
-                setState(ParserErrorCode::ParsingFailed, 0);
+                // Bugfix 05.07.2026: reset m_busy before emitting — see finish().
                 m_busy = false;
+                setState(ParserErrorCode::ParsingFailed, 0);
                 return;
             }
             continue;
@@ -225,8 +236,9 @@ void Parser::doRegexParsing(const QString& text)
         }
 
         if (results.isEmpty() && !element.resultEmpty) {
-            setState(ParserErrorCode::ParsingFailed, 0);
+            // Bugfix 05.07.2026: reset m_busy before emitting — see finish().
             m_busy = false;
+            setState(ParserErrorCode::ParsingFailed, 0);
             return;
         }
 
@@ -262,8 +274,9 @@ void Parser::doOnVistaHistoryParsing(const QByteArray& data)
     const auto historyData = JsonObjects::OnVista::HistoryData::fromJson(data);
 
     if (historyData.isEmpty() || !historyData.isValid()) {
-        setState(ParserErrorCode::NoWebContentLoaded, 0);
+        // Bugfix 05.07.2026: reset m_busy before emitting — see finish().
         m_busy = false;
+        setState(ParserErrorCode::NoWebContentLoaded, 0);
         return;
     }
 
@@ -295,8 +308,9 @@ void Parser::doYahooRealTimeParsing(const QByteArray& data)
     const auto realTimeData = JsonObjects::Yahoo::RealTimeData::fromJson(data);
 
     if (!realTimeData.isValid()) {
-        setState(ParserErrorCode::ParsingFailed, 0);
+        // Bugfix 05.07.2026: reset m_busy before emitting — see finish().
         m_busy = false;
+        setState(ParserErrorCode::ParsingFailed, 0);
         return;
     }
 
@@ -318,8 +332,9 @@ void Parser::doYahooHistoryParsing(const QByteArray& data)
     const auto historyData = JsonObjects::Yahoo::HistoryData::fromJson(data);
 
     if (!historyData.isValid()) {
-        setState(ParserErrorCode::NoWebContentLoaded, 0);
+        // Bugfix 05.07.2026: reset m_busy before emitting — see finish().
         m_busy = false;
+        setState(ParserErrorCode::NoWebContentLoaded, 0);
         return;
     }
 
@@ -360,9 +375,29 @@ void Parser::setState(ParserErrorCode code, int percentage, const QString& excep
 
 void Parser::finish(ParserErrorCode code)
 {
+    // Bugfix 05.07.2026 ("Alle aktualisieren" / Tageswerte-Fehler -2 BusyFailed):
+    //
+    // m_busy MUST be reset to false BEFORE the Finished state is emitted, not
+    // after. setState() -> emit parserUpdated(...) is a synchronous, direct
+    // call for same-thread slots (which MainWindow's connections are). That
+    // means MainWindow::onDailyValuesUpdated()/onMarketValuesUpdated() runs
+    // *inside* this very call stack.
+    //
+    // During "Alle aktualisieren", if the just-finished share had no
+    // outstanding sibling parser (e.g. ShareUpdateType::DailyValues only, so
+    // m_marketDone was already true), MainWindow chains directly into
+    // onRefreshShareFinished() -> startRefreshForShare() for the NEXT share,
+    // which calls this same Parser instance's startParsing() again — all
+    // still within this finish() call. If m_busy were still true at that
+    // point (as it was before this fix), startParsing() would reject the
+    // call with BusyFailed (-2), exactly as observed for "Tageswerte: Fehler
+    // beim Abruf ... (-2)" right after a fast-finishing previous share.
+    //
+    // Resetting m_busy first makes the object correctly report "not busy" to
+    // any reentrant caller invoked from within the signal emission below.
+    m_busy = false;
     setState(ParserErrorCode::SearchFinished, 100);
     setState(code, 100);
-    m_busy = false;
 }
 
 } // namespace ParserLib
