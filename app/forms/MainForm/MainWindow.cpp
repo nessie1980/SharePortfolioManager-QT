@@ -1829,16 +1829,21 @@ void MainWindow::onDailyValuesUpdated(const ParserLib::ParserInfoState& state)
             }
 
             DailyValuesRepository dvRepo;
-            if (!dvRepo.upsertList(objects)) {
+            DailyValuesRepository::UpsertStats stats;
+            if (!dvRepo.upsertList(objects, &stats)) {
                 addStatusMessage(
                     tr("Tageswerte: Speichern fehlgeschlagen für \"%1\": %2")
                         .arg(m_refreshShare.name(), dvRepo.lastError().text()),
                     MessageType::Error);
             } else {
                 addStatusMessage(
-                    tr("Tageswerte aktualisiert: %1 — %2 Einträge")
-                        .arg(m_refreshShare.name(),
-                             QString::number(dvList.size())),
+                    tr("Tageswerte aktualisiert: %1 — %2 Einträge geholt "
+                       "(Eingefügt: %3 / Aktualisiert: %4 / Unverändert: %5)")
+                        .arg(m_refreshShare.name())
+                        .arg(stats.fetched)
+                        .arg(stats.inserted)
+                        .arg(stats.updated)
+                        .arg(stats.unchanged),
                     MessageType::Success);
             }
 

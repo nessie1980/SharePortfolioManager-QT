@@ -118,6 +118,26 @@ bei Fremdwährungs-Dividenden dieselbe zweistufige Rundung anwendet wie
 dem Fall, der die 0,02€-Differenz zwischen Dividenden-Tab-Summe und Depotwert-Tab am
 02.07.2026 aufdeckte.
 
+**`DailyValuesRepository::UpsertStats`-Tests (tst_dailyvaluesrepository.cpp, ab 05.07.2026):**
+Verifizieren das Change-Tracking von `upsertList()`, das seit dem 05.07.2026 bei jedem
+Refresh unnötig wiederholte "Tageswerte aktualisiert"-Meldungen mit identischen Werten
+auflösen soll (Hintergrund: `buildDailyValuesUrl()` fragt bei jedem Refresh stets ein
+ganzes Zeitfenster ab, nicht nur neue Tage — die Meldung soll daher zwischen tatsächlich
+neuen/geänderten und unveränderten Zeilen unterscheiden):
+
+- `test_upsertList_stats_allInserted` — leere DB, alle Zeilen landen in `inserted`.
+- `test_upsertList_stats_updatedAndUnchanged` — Mischfall: ein bereits vorhandener Eintrag
+  bleibt unverändert (`unchanged`), einer wird mit geänderten Werten überschrieben
+  (`updated`), einer ist neu (`inserted`); prüft zusätzlich, dass der unveränderte Eintrag
+  in der DB tatsächlich unangetastet bleibt und der geänderte die neuen Werte trägt.
+- `test_upsertList_stats_toleratesFloatingPointNoise` — Differenz von `1e-10` im Kurswert
+  (reines Fließkomma-Rauschen) muss als `unchanged` gewertet werden.
+- `test_upsertList_stats_detectsFifthDecimalChange` — echte Änderung in der 5. Nachkommastelle
+  (Auflösung der Kursdaten-APIs) muss zuverlässig als `updated` erkannt werden, darf also
+  nicht von der Toleranz (`kValueEpsilon = 1e-9`) verschluckt werden.
+- `test_upsertList_backwardCompatible_withoutStats` — Aufruf ohne `stats`-Parameter verhält
+  sich unverändert wie vor der Erweiterung.
+
 ---
 
 ### tests/database/ — Database Unit-Tests

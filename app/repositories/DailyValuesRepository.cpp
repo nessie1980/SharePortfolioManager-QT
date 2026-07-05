@@ -7,6 +7,29 @@
 #include <QVariant>
 #include <QDebug>
 
+#include <cmath>
+
+namespace {
+
+// Absolute tolerance for OHLCV double comparison. Values come from different
+// upstream sources (OnVista/Yahoo, re-parsed on every refresh) and can carry
+// up to 5 decimal places, i.e. real differences as small as 0.00001 must be
+// detected. The tolerance is set well below that (several orders of
+// magnitude smaller) so it only absorbs genuine floating-point
+// representation noise, never an actual change in the underlying data.
+constexpr double kValueEpsilon = 1e-9;
+
+bool valuesEqual(const DailyValuesObject& a, const DailyValuesObject& b)
+{
+    return std::abs(a.openingPrice() - b.openingPrice()) < kValueEpsilon
+        && std::abs(a.closingPrice() - b.closingPrice()) < kValueEpsilon
+        && std::abs(a.top()          - b.top())          < kValueEpsilon
+        && std::abs(a.bottom()       - b.bottom())       < kValueEpsilon
+        && std::abs(a.volume()       - b.volume())       < kValueEpsilon;
+}
+
+} // namespace
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 DailyValuesObject DailyValuesRepository::fromQuery(const QSqlQuery& sqlQuery) const
@@ -51,16 +74,41 @@ bool DailyValuesRepository::upsert(const DailyValuesObject& dailyValues)
     return true;
 }
 
-bool DailyValuesRepository::upsertList(const QList<DailyValuesObject>& dailyValuesList)
+bool DailyValuesRepository::upsertList(const QList<DailyValuesObject>& dailyValuesList,
+                                        UpsertStats* stats)
 {
+    // Change tracking always runs (per-row comparison against the existing DB
+    // state), independent of whether the caller wants the counts reported.
+    // This ensures unchanged rows are never rewritten, regardless of the
+    // caller. `localStats` is copied out to `stats` at the end if requested.
+    UpsertStats localStats;
+
     // Wrap all inserts in a single transaction for performance.
     Database::instance().beginTransaction();
     for (const auto& dailyValues : dailyValuesList) {
+        ++localStats.fetched;
+
+        const DailyValuesObject existing =
+            findByShareAndDate(dailyValues.shareGuid(), dailyValues.date());
+
+        if (!existing.isValid()) {
+            ++localStats.inserted;
+        } else if (valuesEqual(existing, dailyValues)) {
+            ++localStats.unchanged;
+            continue; // Values identical — nothing to write for this row.
+        } else {
+            ++localStats.updated;
+        }
+
         if (!upsert(dailyValues)) {
             Database::instance().rollbackTransaction();
             return false;
         }
     }
+
+    if (stats)
+        *stats = localStats;
+
     return Database::instance().commitTransaction();
 }
 

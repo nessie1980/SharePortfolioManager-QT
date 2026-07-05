@@ -106,6 +106,7 @@ private slots:
 
         // Insert initial values
         QVERIFY(repo.upsert(makeEntry(date, 100.0, 105.0)));
+
         // Upsert with updated values for the same date
         QVERIFY(repo.upsert(makeEntry(date, 110.0, 115.0)));
 
@@ -126,6 +127,117 @@ private slots:
 
         QVERIFY(repo.upsertList(entries));
         QCOMPARE(repo.count(k_shareGuid), 3);
+    }
+
+    // ── DailyValuesRepository::UpsertStats ─────────────────────────────────
+    //
+    // upsertList() always compares each incoming record against the existing
+    // DB row (regardless of whether `stats` is passed) and skips the DB
+    // write entirely for rows whose values are unchanged. `stats` is a pure
+    // reporting out-parameter for the caller (see MainWindow refresh flow).
+
+    void test_upsertList_stats_allInserted()
+    {
+        DailyValuesRepository repo;
+        QList<DailyValuesObject> entries = {
+            makeEntry(QDate(2024, 6, 13)),
+            makeEntry(QDate(2024, 6, 14)),
+            makeEntry(QDate(2024, 6, 15))
+        };
+
+        DailyValuesRepository::UpsertStats stats;
+        QVERIFY(repo.upsertList(entries, &stats));
+
+        QCOMPARE(stats.fetched,   3);
+        QCOMPARE(stats.inserted,  3);
+        QCOMPARE(stats.updated,   0);
+        QCOMPARE(stats.unchanged, 0);
+        QCOMPARE(repo.count(k_shareGuid), 3);
+    }
+
+    void test_upsertList_stats_updatedAndUnchanged()
+    {
+        DailyValuesRepository repo;
+        const QDate d1(2024, 6, 13);
+        const QDate d2(2024, 6, 14);
+        const QDate d3(2024, 6, 15);
+
+        // Seed the DB with two existing rows (d1, d2).
+        QVERIFY(repo.upsertList({ makeEntry(d1), makeEntry(d2) }));
+
+        // Simulate a re-fetch of an overlapping window:
+        //  - d1: identical values          -> unchanged
+        //  - d2: changed values            -> updated
+        //  - d3: not present in DB yet     -> inserted
+        QList<DailyValuesObject> refreshed = {
+            makeEntry(d1),
+            makeEntry(d2, 111.0, 116.0, 117.0, 108.0, 200000.0),
+            makeEntry(d3)
+        };
+
+        DailyValuesRepository::UpsertStats stats;
+        QVERIFY(repo.upsertList(refreshed, &stats));
+
+        QCOMPARE(stats.fetched,   3);
+        QCOMPARE(stats.inserted,  1);
+        QCOMPARE(stats.updated,   1);
+        QCOMPARE(stats.unchanged, 1);
+
+        // Unchanged row must still hold its original values.
+        QCOMPARE(repo.findByShareAndDate(k_shareGuid, d1).openingPrice(), 100.0);
+        // Updated row must hold the new values.
+        QCOMPARE(repo.findByShareAndDate(k_shareGuid, d2).openingPrice(), 111.0);
+        QCOMPARE(repo.findByShareAndDate(k_shareGuid, d2).volume(),       200000.0);
+    }
+
+    void test_upsertList_stats_toleratesFloatingPointNoise()
+    {
+        DailyValuesRepository repo;
+        const QDate date(2024, 6, 15);
+
+        QVERIFY(repo.upsert(makeEntry(date, 123.45678, 124.56789)));
+
+        // Differs only in the 10th decimal place — pure floating-point
+        // representation noise, must be treated as "unchanged".
+        DailyValuesObject noisy = makeEntry(date, 123.45678 + 1e-10, 124.56789);
+
+        DailyValuesRepository::UpsertStats stats;
+        QVERIFY(repo.upsertList({ noisy }, &stats));
+
+        QCOMPARE(stats.unchanged, 1);
+        QCOMPARE(stats.updated,   0);
+    }
+
+    void test_upsertList_stats_detectsFifthDecimalChange()
+    {
+        DailyValuesRepository repo;
+        const QDate date(2024, 6, 15);
+
+        QVERIFY(repo.upsert(makeEntry(date, 123.45678, 124.56789)));
+
+        // Real change in the 5th decimal place (upstream API precision) must
+        // be detected as "updated", not swallowed by the tolerance.
+        DailyValuesObject changed = makeEntry(date, 123.45679, 124.56789);
+
+        DailyValuesRepository::UpsertStats stats;
+        QVERIFY(repo.upsertList({ changed }, &stats));
+
+        QCOMPARE(stats.updated,   1);
+        QCOMPARE(stats.unchanged, 0);
+        QCOMPARE(repo.findByShareAndDate(k_shareGuid, date).openingPrice(), 123.45679);
+    }
+
+    void test_upsertList_backwardCompatible_withoutStats()
+    {
+        DailyValuesRepository repo;
+        QList<DailyValuesObject> entries = {
+            makeEntry(QDate(2024, 6, 13)),
+            makeEntry(QDate(2024, 6, 14))
+        };
+
+        // No stats pointer passed — call still works exactly as before.
+        QVERIFY(repo.upsertList(entries));
+        QCOMPARE(repo.count(k_shareGuid), 2);
     }
 
     void test_findByShare_orderedByDate()

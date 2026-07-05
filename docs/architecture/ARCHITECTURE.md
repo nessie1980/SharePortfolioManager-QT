@@ -1210,9 +1210,14 @@ Bei `ParserErrorCode::Finished`:
 
 1. `state.dailyValuesList` nach `QList<DailyValuesObject>` konvertieren
    (GUID aus `m_refreshShare.guid()`).
-2. `DailyValuesRepository::upsertList()` — Transaktion, bestehende Einträge
-   werden per `INSERT OR REPLACE` aktualisiert.
-3. Statusmeldung: `"Tageswerte aktualisiert: <Name> — <N> Einträge"`.
+2. `DailyValuesRepository::upsertList(objects, &stats)` — Transaktion; jeder
+   Datensatz wird gegen den bestehenden DB-Eintrag verglichen
+   (`findByShareAndDate()` + `valuesEqual()`, Toleranz `1e-9`). Neue/geänderte
+   Zeilen werden per `INSERT OR REPLACE` geschrieben, unveränderte Zeilen
+   übersprungen (kein DB-Write). Rückgabe der Zähler in
+   `DailyValuesRepository::UpsertStats` (`fetched`/`inserted`/`updated`/`unchanged`).
+3. Statusmeldung: `"Tageswerte aktualisiert: <Name> — <N> Einträge geholt
+   (Eingefügt: X / Aktualisiert: Y / Unverändert: Z)"`.
 4. `m_dailyDone = true` → wenn auch `m_marketDone`, `onRefreshShareFinished()` aufrufen.
 
 Bei Fehler: analog zu `onMarketValuesUpdated()` — `m_errorOccurred = true`,
@@ -1545,6 +1550,34 @@ Nächste Schritte für eine zukünftige Sitzung:
 
 Verwandt mit dem bereits vermerkten Punkt "Checking source XML for further
 data quality issues" — ergänzt diesen um einen konkreten, reproduzierten Fall.
+
+---
+
+### XML-Import: Change-Tracking für Tageswerte nachziehen (offen seit 05.07.2026)
+
+`DailyValuesRepository::upsertList()` vergleicht seit dem 05.07.2026 jeden
+eingehenden Datensatz gegen den bestehenden DB-Eintrag (`findByShareAndDate()`)
+und liefert optional `UpsertStats` (`fetched`/`inserted`/`updated`/`unchanged`)
+zurück — genutzt vom Refresh-Flow (`MainWindow::onDailyValuesUpdated()`) für
+eine detaillierte Statusmeldung. Unveränderte Zeilen werden dabei nicht mehr
+neu geschrieben.
+
+`PortfolioImporter::importDailyValues()` (in `tools/xml-importer/`) ruft
+`upsertList()` bislang **ohne** `stats`-Parameter auf und loggt weiterhin
+pauschal `"<n> Tageswert(e) importiert/aktualisiert"` — unabhängig davon, ob
+ein Datensatz neu eingefügt, geändert oder unverändert war. Da der Vergleich
+inzwischen bei jedem `upsertList()`-Aufruf ohnehin läuft (siehe oben), ist die
+Erweiterung im Importer nur noch eine Frage der Log-Ausgabe, nicht der
+Kernlogik:
+
+1. `stats`-Parameter beim Aufruf in `importDailyValues()` übergeben.
+2. `ImportLogger`-Meldung analog zur MainWindow-Statusmeldung differenzieren,
+   z. B. `"<n> Tageswert(e) geholt (Eingefügt: X / Aktualisiert: Y /
+   Unverändert: Z)"`.
+3. Prüfen, ob der Dry-Run-Zweig (`m_dryRun`) ebenfalls eine sinnvolle
+   Vorschau der Zähler liefern kann, oder ob dort weiterhin nur die
+   Gesamtanzahl ausgegeben wird (Dry-Run schreibt nicht in die DB, ein
+   echter Insert/Update/Unchanged-Vergleich ergibt dort ggf. wenig Sinn).
 
 ---
 

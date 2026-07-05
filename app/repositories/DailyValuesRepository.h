@@ -30,6 +30,24 @@ class DailyValuesRepository
 public:
     DailyValuesRepository() = default;
 
+    /**
+     * @brief Result counters for an upsertList() call with change tracking.
+     *
+     * Only populated when upsertList() is called with a non-null stats
+     * out-parameter. In that case each incoming record is compared against
+     * the existing DB row (if any) before writing:
+     *  - no existing row            -> inserted
+     *  - existing row, values differ -> updated
+     *  - existing row, values equal  -> unchanged (row is NOT re-written)
+     */
+    struct UpsertStats
+    {
+        int fetched   = 0; ///< Number of records passed in (i.e. size of the input list)
+        int inserted  = 0; ///< Number of rows newly inserted
+        int updated   = 0; ///< Number of existing rows whose values changed
+        int unchanged = 0; ///< Number of existing rows left untouched (values identical)
+    };
+
     // ── Create / Update ───────────────────────────────────────────────────
     /**
      * @brief Insert a new daily values record, or replace it if (shareGuid, date) already exists.
@@ -42,10 +60,22 @@ public:
      * @brief Insert a list of daily values records, replacing existing ones.
      *
      * Wraps all inserts in a single transaction for performance.
+     *
+     * Each record is compared against the existing DB row (via
+     * findByShareAndDate()) before writing: rows with identical values
+     * (within a tight floating-point tolerance) are skipped entirely — no
+     * DB write occurs for them. Rows that are new or whose values changed
+     * go through upsert() as before. This comparison always runs,
+     * regardless of whether @p stats is provided.
+     *
      * @param dailyValuesList  List of DailyValuesObjects to insert.
+     * @param stats            Optional out-parameter receiving change counts
+     *                         (fetched/inserted/updated/unchanged), e.g. for
+     *                         a detailed status message after a refresh.
      * @return true if all inserts succeeded, false on first error.
      */
-    bool upsertList(const QList<DailyValuesObject>& dailyValuesList);
+    bool upsertList(const QList<DailyValuesObject>& dailyValuesList,
+                     UpsertStats* stats = nullptr);
 
     // ── Read ──────────────────────────────────────────────────────────────
     /**
