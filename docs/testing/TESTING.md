@@ -1302,3 +1302,4 @@ laufen alle Tests über den einzigen öffentlichen Einstiegspunkt
 | `test_importDividend_foreignCurrencyFieldsAreStored` | Dividende mit `ForeignCurrency` | `enable_fc`, `exchange_ratio`, `currency` korrekt in der DB |
 | `test_dryRun_writesNothing` | Import mit `dryRun=true` | Alle Zieltabellen bleiben leer |
 | `test_dailyValues_upsertReplacesExistingValueOnRerun` | Gleicher Tag zweimal mit unterschiedlichem Schlusskurs importiert | Keine Dublette, Wert wurde aktualisiert (`INSERT OR REPLACE`) |
+| `test_importDailyValues_logsInsertedUpdatedUnchangedBreakdown` | Zweiter Import mit einem unveränderten, einem geänderten und einem neuen Tageswert-Eintrag (ergänzt 05.07.2026) | Log enthält "3 Tageswert(e) geholt (Eingefügt: 1 / Aktualisiert: 1 / Unverändert: 1)" |

@@ -1506,32 +1506,6 @@ ausgelesen. `BackupSettingsForm` folgt dem MVP-Pattern analog zu `LoggerSettings
 
 ---
 
-### XML-Import: Change-Tracking für Tageswerte nachziehen (offen seit 05.07.2026)
-
-`DailyValuesRepository::upsertList()` vergleicht seit dem 05.07.2026 jeden
-eingehenden Datensatz gegen den bestehenden DB-Eintrag (`findByShareAndDate()`)
-und liefert optional `UpsertStats` (`fetched`/`inserted`/`updated`/`unchanged`)
-zurück — genutzt vom Refresh-Flow (`MainWindow::onDailyValuesUpdated()`) für
-eine detaillierte Statusmeldung. Unveränderte Zeilen werden dabei nicht mehr
-neu geschrieben.
-
-`PortfolioImporter::importDailyValues()` (in `tools/xml-importer/`) ruft
-`upsertList()` bislang **ohne** `stats`-Parameter auf und loggt weiterhin
-pauschal `"<n> Tageswert(e) importiert/aktualisiert"` — unabhängig davon, ob
-ein Datensatz neu eingefügt, geändert oder unverändert war. Da der Vergleich
-inzwischen bei jedem `upsertList()`-Aufruf ohnehin läuft (siehe oben), ist die
-Erweiterung im Importer nur noch eine Frage der Log-Ausgabe, nicht der
-Kernlogik:
-
-1. `stats`-Parameter beim Aufruf in `importDailyValues()` übergeben.
-2. `ImportLogger`-Meldung analog zur MainWindow-Statusmeldung differenzieren,
-   z. B. `"<n> Tageswert(e) geholt (Eingefügt: X / Aktualisiert: Y /
-   Unverändert: Z)"`.
-3. Prüfen, ob der Dry-Run-Zweig (`m_dryRun`) ebenfalls eine sinnvolle
-   Vorschau der Zähler liefern kann, oder ob dort weiterhin nur die
-   Gesamtanzahl ausgegeben wird (Dry-Run schreibt nicht in die DB, ein
-   echter Insert/Update/Unchanged-Vergleich ergibt dort ggf. wenig Sinn).
-
 ---
 
 ## Plattform-Unterstützung
@@ -1615,6 +1589,27 @@ shares → buys → sales (+ sale_buy_details) → brokerage → dividends → d
 auf `buys`/`sales`, deshalb wird die Brokerage-Tabelle zuletzt befüllt.
 `buys.brokerage_guid`/`sales.brokerage_guid` sind dagegen einfache TEXT-Spalten
 ohne FK — der Wert kann also gesetzt werden, bevor die Brokerage-Zeile existiert.
+
+### Tageswerte: Change-Tracking im Log (ergänzt 05.07.2026)
+
+`DailyValuesRepository::upsertList()` vergleicht seit dem 05.07.2026 jeden
+eingehenden Datensatz gegen den bestehenden DB-Eintrag (`findByShareAndDate()`)
+und liefert optional `UpsertStats` (`fetched`/`inserted`/`updated`/`unchanged`)
+zurück; unveränderte Zeilen werden dabei nicht neu geschrieben. Der
+Refresh-Flow (`MainWindow::onDailyValuesUpdated()`) nutzt das bereits für eine
+detaillierte Statusmeldung. `PortfolioImporter::importDailyValues()` übergibt
+den `stats`-Parameter jetzt ebenfalls und loggt analog dazu
+`"<n> Tageswert(e) geholt (Eingefügt: X / Aktualisiert: Y / Unverändert: Z)"`
+statt wie zuvor nur die pauschale Gesamtanzahl. Wurde dabei tatsächlich nichts
+geschrieben (alle Zeilen unverändert), wird als Action `SKIPPED` statt
+`INSERTED` protokolliert, damit die Log-Zusammenfassung nicht suggeriert, es
+sei etwas passiert.
+
+Im Dry-Run-Zweig (`m_dryRun`) bleibt es bei der reinen Gesamtanzahl ohne
+Eingefügt/Aktualisiert/Unverändert-Aufschlüsselung: eine solche Vorschau würde
+die DB-Vergleichslogik aus `upsertList()` duplizieren, ohne dass am Ende
+tatsächlich etwas geschrieben wird — der Aufwand steht in keinem Verhältnis
+zum Nutzen einer reinen Trockenlauf-Vorschau.
 
 ### Brokerage-Zuordnung: Verifikation statt Vertrauen (seit 02.07.2026)
 

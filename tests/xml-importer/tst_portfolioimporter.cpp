@@ -407,6 +407,60 @@ private slots:
         QCOMPARE(q.value(0).toInt(), 1);        // keine Dublette
         QCOMPARE(q.value(1).toDouble(), 11.00); // aktualisierter Wert
     }
+
+    void test_importDailyValues_logsInsertedUpdatedUnchangedBreakdown()
+    {
+        const QString logPath = QDir::temp().filePath("tst_portfolioimporter_dailyvalues.log");
+        QFile::remove(logPath); // saubere Ausgangslage, Logger öffnet im Append-Modus
+
+        RawShare share = makeShare(QStringLiteral("TEST12"));
+        RawDailyValue e1;
+        e1.date = QStringLiteral("13.06.2024");
+        e1.open = e1.close = e1.top = e1.bottom = QStringLiteral("100,00");
+        e1.volume = QStringLiteral("1000");
+        RawDailyValue e2;
+        e2.date = QStringLiteral("14.06.2024");
+        e2.open = e2.close = e2.top = e2.bottom = QStringLiteral("100,00");
+        e2.volume = QStringLiteral("1000");
+        share.dailyValues.append(e1);
+        share.dailyValues.append(e2);
+
+        {
+            ImportLogger logger(logPath);
+            RawPortfolio portfolio;
+            portfolio.shares.append(share);
+            PortfolioImporter(logger, false).importPortfolio(portfolio);
+        }
+
+        // Zweiter Import: e1 unverändert, e2 mit geändertem Schlusskurs, e3 neu.
+        RawShare share2 = makeShare(QStringLiteral("TEST12"));
+        RawDailyValue e2changed = e2;
+        e2changed.close = QStringLiteral("111,00");
+        RawDailyValue e3;
+        e3.date = QStringLiteral("15.06.2024");
+        e3.open = e3.close = e3.top = e3.bottom = QStringLiteral("100,00");
+        e3.volume = QStringLiteral("1000");
+        share2.dailyValues.append(e1);
+        share2.dailyValues.append(e2changed);
+        share2.dailyValues.append(e3);
+
+        {
+            ImportLogger logger(logPath);
+            RawPortfolio portfolio2;
+            portfolio2.shares.append(share2);
+            PortfolioImporter(logger, false).importPortfolio(portfolio2);
+        }
+
+        QFile logFile(logPath);
+        QVERIFY(logFile.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString logContent = QString::fromUtf8(logFile.readAll());
+        logFile.close();
+
+        QVERIFY(logContent.contains(QStringLiteral(
+            "3 Tageswert(e) geholt (Eingefügt: 1 / Aktualisiert: 1 / Unverändert: 1)")));
+
+        QFile::remove(logPath);
+    }
 };
 
 QTEST_MAIN(TestPortfolioImporter)

@@ -504,6 +504,11 @@ void PortfolioImporter::importDailyValues(const RawShare& share, const QString& 
         return;
 
     if (m_dryRun) {
+        // Kein Schreibzugriff im Dry-Run — daher auch keine echte
+        // Eingefügt/Aktualisiert/Unverändert-Aufschlüsselung (die würde
+        // dieselbe DB-Vergleichslogik wie upsertList() duplizieren, ohne
+        // dass am Ende tatsächlich etwas geschrieben würde). Nur die
+        // Gesamtanzahl als Vorschau.
         m_logger.log(QStringLiteral("DailyValue"), share.wkn, ImportLogger::Action::Inserted,
                      QStringLiteral("[DRY-RUN] %1 Tageswert(e) würden importiert/aktualisiert "
                                    "(INSERT OR REPLACE)").arg(values.size()));
@@ -512,10 +517,28 @@ void PortfolioImporter::importDailyValues(const RawShare& share, const QString& 
 
     // upsertList() nutzt INSERT OR REPLACE über den Composite-Key (share_guid, date) —
     // dadurch ist ein erneuter Import bei aktualisierten Kursdaten immer sicher.
+    // Der stats-Parameter liefert eine Aufschlüsselung nach
+    // Eingefügt/Aktualisiert/Unverändert (siehe DailyValuesRepository::UpsertStats),
+    // analog zur Statusmeldung im Refresh-Flow (MainWindow::onDailyValuesUpdated()),
+    // statt wie zuvor nur die pauschale Gesamtanzahl zu loggen.
     DailyValuesRepository dvRepo;
-    if (dvRepo.upsertList(values)) {
-        m_logger.log(QStringLiteral("DailyValue"), share.wkn, ImportLogger::Action::Inserted,
-                     QStringLiteral("%1 Tageswert(e) importiert/aktualisiert").arg(values.size()));
+    DailyValuesRepository::UpsertStats stats;
+    if (dvRepo.upsertList(values, &stats)) {
+        const QString detail = QStringLiteral(
+            "%1 Tageswert(e) geholt (Eingefügt: %2 / Aktualisiert: %3 / Unverändert: %4)")
+                .arg(stats.fetched)
+                .arg(stats.inserted)
+                .arg(stats.updated)
+                .arg(stats.unchanged);
+
+        // Wurde tatsächlich nichts geschrieben (alles unverändert), ist
+        // "Inserted" als Action irreführend — dann besser "Skipped".
+        const ImportLogger::Action action =
+            (stats.inserted > 0 || stats.updated > 0)
+                ? ImportLogger::Action::Inserted
+                : ImportLogger::Action::Skipped;
+
+        m_logger.log(QStringLiteral("DailyValue"), share.wkn, action, detail);
     } else {
         m_logger.log(QStringLiteral("DailyValue"), share.wkn, ImportLogger::Action::Error,
                      dvRepo.lastError().text().isEmpty()
