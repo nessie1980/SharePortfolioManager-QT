@@ -101,6 +101,21 @@ void PortfolioImporter::importShare(const RawShare& share)
         return;
     }
 
+    // Datenqualitäts-Hinweise aus dem Parser protokollieren: sicher
+    // auto-korrigierte Formatdetails (z.B. doppelt-XML-escapte WebSite-URLs,
+    // siehe XmlPortfolioParser::normalizeWebSiteUrl()) als INFO, und
+    // strukturelle Datenfehler in der Quelle, die bewusst NICHT automatisch
+    // übernommen wurden (z.B. falscher Elementname "<MarketValues>" statt
+    // "<MarketValue>"), als ERROR — unabhängig davon, ob die Aktie neu
+    // angelegt oder wiederverwendet wird, damit der Datenfehler in der
+    // Quelle sichtbar bleibt und nicht stillschweigend durchrutscht.
+    for (const QString& warning : share.parseWarnings) {
+        m_logger.log(QStringLiteral("Share"), share.wkn, ImportLogger::Action::Info, warning);
+    }
+    for (const QString& error : share.parseErrors) {
+        m_logger.log(QStringLiteral("Share"), share.wkn, ImportLogger::Action::Error, error);
+    }
+
     ShareRepository shareRepo;
     QString shareGuid;
 

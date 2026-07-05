@@ -3,6 +3,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 #include <QList>
 #include <QXmlStreamReader>
 
@@ -141,6 +142,24 @@ struct RawShare
     QList<RawBuy>        buys;
     QList<RawSale>       sales;
     QList<RawDividend>   dividends;
+
+    /// Human-readable notes about auto-corrected data quality issues found
+    /// while parsing this share (e.g. double-XML-escaped WebSite URLs, see
+    /// XmlPortfolioParser::normalizeWebSiteUrl()). Populated by the parser,
+    /// logged by PortfolioImporter — kept separate from the fatal
+    /// XML-structure errors handled via XmlPortfolioParser::parse()'s
+    /// errorMessage out-parameter.
+    QStringList parseWarnings;
+
+    /// Human-readable notes about data quality issues found while parsing
+    /// this share that were deliberately NOT auto-corrected (e.g. an
+    /// unexpected element name such as "<MarketValues>" instead of
+    /// "<MarketValue>" — a structural error in the source, not a safely
+    /// normalizable formatting detail). The affected field(s) are left empty
+    /// rather than guessed at. Populated by the parser, logged by
+    /// PortfolioImporter as ImportLogger::Action::Error so the source data
+    /// gets corrected and re-imported instead of silently accepted.
+    QStringList parseErrors;
 };
 
 struct RawPortfolio
@@ -152,7 +171,10 @@ struct RawPortfolio
  * @brief Streaming reader for the legacy C# Portfolio.xml export format.
  *
  * Pure parsing only — no DB access, no business logic, no logging beyond
- * fatal XML structure errors (returned via the error out-parameter).
+ * fatal XML structure errors (returned via the error out-parameter). Data
+ * quality issues that can be safely auto-corrected (see normalizeWebSiteUrl())
+ * are collected as human-readable notes in RawShare::parseWarnings instead,
+ * for the caller to log as it sees fit.
  */
 class XmlPortfolioParser
 {
@@ -176,4 +198,37 @@ private:
     static RawBrokerage    parseBrokerage(const QXmlStreamAttributes& attrs);
     static RawDailyValue   parseDailyValueEntry(const QXmlStreamAttributes& attrs);
     static RawUsedBuy      parseUsedBuy(const QXmlStreamAttributes& attrs);
+
+    /**
+     * @brief Detects and repairs double-XML-escaped WebSite/URL values.
+     *
+     * The legacy C# source XML has been observed to contain doubly-escaped
+     * ampersands in WebSite attributes/elements (`DetailsWebSite`,
+     * `MarketValue@WebSite`, `DailyValues@WebSite`), e.g. `&amp;amp;` instead
+     * of `&amp;`. A conformant XML parser (QXmlStreamReader included) only
+     * unescapes entities once, so such a value survives parsing as a literal
+     * `&amp;` substring in the resulting QString — a broken URL, but not an
+     * empty one (reported 05.07.2026 for Nvidia/Wacker Chemie).
+     *
+     * If the given raw value contains a literal `&amp;` substring, this is a
+     * strong signal of exactly this data quality issue (a legitimate URL
+     * query string never contains that literal text), so it is auto-corrected
+     * to `&` and a note is appended to @p warnings for the caller to log.
+     *
+     * Note: the same two shares (Nvidia/Wacker Chemie) also use the element
+     * name `<MarketValues>` (plural) instead of `<MarketValue>` (singular) —
+     * a separate, structural data error handled directly in parseShare() by
+     * logging it to RawShare::parseErrors and deliberately NOT parsing that
+     * element's data (not a case for this method, which only handles safely
+     * auto-correctable formatting details).
+     *
+     * @param raw        The already-XML-unescaped attribute/element value.
+     * @param fieldLabel Human-readable field identifier for the warning text,
+     *                   e.g. "MarketValue.WebSite".
+     * @param warnings   Warning list to append a note to, if a correction was made.
+     * @return           The (possibly corrected) value.
+     */
+    static QString normalizeWebSiteUrl(const QString& raw,
+                                       const QString& fieldLabel,
+                                       QStringList&   warnings);
 };

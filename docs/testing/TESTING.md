@@ -1265,8 +1265,14 @@ Klasse unter Test: `XmlPortfolioParser` (reines XML → Struct-Mapping, keine DB
 
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
-| `test_parse_minimalShare_readsBasicAttributesAndFields` | Ein `<Share>` mit allen Basis-Feldern | WKN/ISIN/Name/Update, Datumsfelder, `MarketValue`/`DailyValues`-Parsing-Attribute korrekt extrahiert |
-| `test_parse_buySaleBrokerageCycle_isLinkedCorrectly` | Ein Buy + eine Sale mit `UsedBuys` + zwei Brokerages | Anzahl je Kategorie, `UsedBuy.buyGuid`/`brokerage`, `Brokerage.buyPart`/`salePart`/`guidBuySale` |
+| `test_parse_minimalShare_readsBasicAttributesAndFields` | Ein `<Share>` mit allen Basis-Feldern | WKN/ISIN/Name/Update, Datumsfelder, `MarketValue`/`DailyValues`-Parsing-Attribute korrekt extrahiert, `parseWarnings` leer |
+| `test_parse_marketValueWebSite_doubleEscapedAmpersand_isAutoCorrected` | `MarketValue@WebSite` mit `&amp;amp;` in der Quelle (Regressionstest Nvidia, gemeldet 05.07.2026) | Literales `&amp;` im Rohwert wird zu `&` korrigiert, genau eine Warnung mit Feldbezeichner „MarketValue.WebSite" |
+| `test_parse_dailyValuesWebSite_doubleEscapedAmpersand_isAutoCorrected` | `DailyValues@WebSite` mit `&amp;amp;` in der Quelle (Regressionstest Wacker Chemie, gemeldet 05.07.2026) | Analog korrigiert, Warnung mit Feldbezeichner „DailyValues.WebSite" |
+| `test_parse_detailsWebSite_doubleEscapedAmpersand_isAutoCorrected` | `<DetailsWebSite>` mit `&amp;amp;` in der Quelle | Analog korrigiert, Warnung mit Feldbezeichner „DetailsWebSite" (vorsorglich abgedeckt, kein bekannter Realfall) |
+| `test_parse_marketValuePluralTag_isReportedAsErrorNotImported` | `<MarketValues>` (Plural) statt `<MarketValue>` (Singular) in der Quelle (Regressionstest Wacker Chemie, gemeldet 05.07.2026) | Wird NICHT übernommen (`marketValueWebSite`/`marketValueParsing` bleiben leer), stattdessen genau ein Eintrag in `parseErrors` |
+| `test_parse_marketValuePluralTag_doesNotSuppressOtherFieldWarnings` | Plural-Tag bei `MarketValue` (→ `parseErrors`) **und** doppelt-escaptes Ampersand bei `DailyValues` (→ `parseWarnings`) gleichzeitig (Regressionstest Nvidia, Originalwerte aus dem Report vom 05.07.2026) | Beide Erkennungen laufen unabhängig voneinander an unterschiedlichen Feldern, ohne sich gegenseitig zu beeinflussen |
+| `test_parse_singleEscapedAmpersand_isLeftUnchanged_noWarning` | Korrekt einfach escapte URL, Kontrollfall (analog BMW.DE aus demselben Bestand) | Wert unverändert nach dem Unescape, `parseWarnings` bleibt leer — kein Fehlalarm |
+| `test_parse_buysSalesBrokerages_mapsAttributesCorrectly` | Ein Buy + eine Sale mit `UsedBuys` + zwei Brokerages | Anzahl je Kategorie, `UsedBuy.buyGuid`/`brokerage`, `Brokerage.buyPart`/`salePart`/`guidBuySale` |
 | `test_parse_dividendWithForeignCurrency_setsFcFields` | Eine Dividende mit `<ForeignCurrency>`, eine ohne | `hasForeignCurrency`, `fc.enabled`, `fc.exchangeRatio`, `fc.currency` nur bei vorhandenem Element gesetzt |
 | `test_parse_dailyValuesEntries_mapsAttributesCorrectly` | Zwei `<Entry D/C/O/T/B/V>` | Korrektes Mapping der Kurzattribute auf `date/close/open/top/bottom/volume` |
 | `test_parse_multipleShares_areAllCollected` | Zwei `<Share>`-Blöcke in einem `<Portfolio>` | `portfolio.shares.size() == 2`, Reihenfolge erhalten |

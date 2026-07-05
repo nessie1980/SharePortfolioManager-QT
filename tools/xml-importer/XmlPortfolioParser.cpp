@@ -4,6 +4,28 @@
 
 #include <QFile>
 
+// ── Data quality helpers ─────────────────────────────────────────────────────
+
+QString XmlPortfolioParser::normalizeWebSiteUrl(const QString& raw,
+                                                const QString& fieldLabel,
+                                                QStringList&   warnings)
+{
+    static const QString kDoubleEscaped = QStringLiteral("&amp;");
+
+    if (!raw.contains(kDoubleEscaped))
+        return raw;
+
+    QString corrected = raw;
+    corrected.replace(kDoubleEscaped, QStringLiteral("&"));
+
+    warnings.append(QStringLiteral(
+        "%1 enthält doppelt-XML-escapte Ampersands (\"&amp;\" im geparsten Wert) "
+        "— automatisch zu \"&\" korrigiert. Original: \"%2\" -> Korrigiert: \"%3\"")
+            .arg(fieldLabel, raw, corrected));
+
+    return corrected;
+}
+
 // ── Attribute-level helpers ─────────────────────────────────────────────────
 
 RawDailyValue XmlPortfolioParser::parseDailyValueEntry(const QXmlStreamAttributes& a)
@@ -142,7 +164,9 @@ RawShare XmlPortfolioParser::parseShare(QXmlStreamReader& xml)
         const QString tag = xml.name().toString();
 
         if (tag == QStringLiteral("DetailsWebSite")) {
-            share.detailsWebSite = xml.readElementText();
+            share.detailsWebSite = normalizeWebSiteUrl(xml.readElementText(),
+                                                       QStringLiteral("DetailsWebSite"),
+                                                       share.parseWarnings);
         } else if (tag == QStringLiteral("StockMarketLaunchDate")) {
             share.stockMarketLaunchDate = xml.readElementText();
         } else if (tag == QStringLiteral("LastUpdateInternet")) {
@@ -159,12 +183,37 @@ RawShare XmlPortfolioParser::parseShare(QXmlStreamReader& xml)
             share.shareTypeStr = xml.readElementText();
         } else if (tag == QStringLiteral("MarketValue")) {
             const auto a = xml.attributes();
-            share.marketValueWebSite = a.value(QStringLiteral("WebSite")).toString();
+            share.marketValueWebSite = normalizeWebSiteUrl(
+                a.value(QStringLiteral("WebSite")).toString(),
+                QStringLiteral("MarketValue.WebSite"),
+                share.parseWarnings);
             share.marketValueParsing = a.value(QStringLiteral("Parsing")).toString();
+            xml.skipCurrentElement();
+        } else if (tag == QStringLiteral("MarketValues")) {
+            // Datenfehler in der Quell-XML (gemeldet 05.07.2026, Nvidia/Wacker
+            // Chemie): das Element heißt hier "<MarketValues>" (Plural) statt
+            // "<MarketValue>" (Singular) wie beim Rest des Bestands (32 von 34
+            // Vorkommen laut grep). Das wird NICHT als gültige Schreibvariante
+            // akzeptiert und automatisch übernommen — ein falscher Elementname
+            // ist ein struktureller Fehler in der Quelle, kein reines
+            // Formatierungsdetail wie der Ampersand-Fall. Stattdessen wird der
+            // Fehler protokolliert und das Element unverarbeitet übersprungen;
+            // MarketValue.WebSite/Parsing bleiben für diese Aktie leer, bis die
+            // Quelle korrigiert und neu importiert wurde (oder die Daten manuell
+            // über ShareEditForm nachgetragen werden).
+            share.parseErrors.append(QStringLiteral(
+                "Unerwartetes Element <MarketValues> (Plural) statt <MarketValue> "
+                "(Singular) gefunden — wird als Datenfehler in der Quell-XML "
+                "gewertet und NICHT übernommen. MarketValue.WebSite/Parsing "
+                "bleiben für diese Aktie leer. Quell-XML korrigieren und erneut "
+                "importieren, oder Werte manuell über ShareEditForm nachtragen."));
             xml.skipCurrentElement();
         } else if (tag == QStringLiteral("DailyValues")) {
             const auto a = xml.attributes();
-            share.dailyValuesWebSite = a.value(QStringLiteral("WebSite")).toString();
+            share.dailyValuesWebSite = normalizeWebSiteUrl(
+                a.value(QStringLiteral("WebSite")).toString(),
+                QStringLiteral("DailyValues.WebSite"),
+                share.parseWarnings);
             share.dailyValuesParsing = a.value(QStringLiteral("Parsing")).toString();
             while (xml.readNextStartElement()) {
                 if (xml.name() == QStringLiteral("Entry")) {

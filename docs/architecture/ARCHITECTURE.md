@@ -1506,53 +1506,6 @@ ausgelesen. `BackupSettingsForm` folgt dem MVP-Pattern analog zu `LoggerSettings
 
 ---
 
-### XML-Import: Tageswerte-URL fehlt bei mindestens zwei Aktien (gemeldet 05.07.2026)
-
-Beim Ausführen von "Alle aktualisieren" auf einem über `tools/xml-importer`
-importierten Portfolio ist aufgefallen, dass bei mindestens zwei Aktien —
-**Nvidia** und **Wacker (Wacker Chemie)** — die Tageswerte-URL
-(`shares.daily_values_url`) nicht korrekt aus der Quell-XML übernommen wurde —
-vermutlich leer oder `NULL`, sodass `buildDailyValuesUrl()` keine gültige
-Ziel-URL erzeugen kann.
-
-Nächste Schritte für eine zukünftige Sitzung:
-
-1. **Betroffene Aktien bestätigen/genauer eingrenzen** — bereits bekannt:
-   Nvidia und Wacker (Wacker Chemie). Zur Verifikation per direkter DB-Abfrage:
-   ```sql
-   SELECT wkn, name, daily_values_url, daily_values_parsing_type
-   FROM shares
-   WHERE name LIKE '%Nvidia%' OR name LIKE '%Wacker%';
-   ```
-   ggf. zusätzlich generell gegen den ganzen Bestand prüfen (falls noch
-   weitere Aktien betroffen sind):
-   ```sql
-   SELECT wkn, name, daily_values_url, daily_values_parsing_type
-   FROM shares
-   WHERE daily_values_url IS NULL OR daily_values_url = '';
-   ```
-2. **Quell-XML der beiden `<Share>`-Einträge (Nvidia, Wacker) gezielt
-   prüfen:** Fehlt das `<DailyValues>`-Element bzw. dessen URL-Attribut
-   komplett, oder liegt ein abweichendes Attribut-/Encoding-Format vor (z. B.
-   andere Schreibweise von `Parsing="ApiYahoo"/"ApiOnVista"`, die vom
-   `case-insensitive`-Mapping in `PortfolioImporter` nicht erfasst wird)?
-   Beide Aktien sind US- bzw. deutsche Standardwerte — ein gemeinsames
-   Muster (z. B. bestimmter Parsing-Typ oder Börsenplatz) in der Quelle wäre
-   ein Hinweis auf die Ursache.
-3. **`XmlPortfolioParser`-Mapping gegenzuprüfen** (Attribut `<DailyValues
-   Parsing/URL>` → `shares.daily_values_url`/`daily_values_parsing_type`) —
-   analog zur bereits behobenen Brokerage-Zuordnung vom 02.07.2026 prüfen,
-   ob es sich um ein weiteres Datenqualitätsproblem in der alten C#-Quelle
-   handelt statt um einen Importer-Bug.
-4. Je nach Befund: Korrektur in der Quell-XML + Re-Import (idempotent, siehe
-   Abschnitt "Idempotenz/Wiederholbarkeit" im XML-Importer-Kapitel), oder
-   manuelle Korrektur der betroffenen Aktien über `ShareEditForm`.
-
-Verwandt mit dem bereits vermerkten Punkt "Checking source XML for further
-data quality issues" — ergänzt diesen um einen konkreten, reproduzierten Fall.
-
----
-
 ### XML-Import: Change-Tracking für Tageswerte nachziehen (offen seit 05.07.2026)
 
 `DailyValuesRepository::upsertList()` vergleicht seit dem 05.07.2026 jeden
@@ -1638,6 +1591,7 @@ den kompletten Mapping-/Prüflauf aus, schreibt aber nichts in die Datenbank.
 | ------ | ------ | ------ |
 | `<Share WKN/ISIN/Name/Update>` | `shares` | `Update` → `ShareUpdateType` (None/MarketPrice/DailyValues/Both, Default „Both") |
 | `<StockMarketLaunchDate>` | `shares.add_datetime` | entspricht der „Börsennotierung" (`listingDate`), siehe C#-Kompatibilitätshinweis in `PresenterShareEdit` |
+| `<DetailsWebSite>` / `<MarketValue WebSite>` / `<DailyValues WebSite>` | `shares.details_website` / `market_value_url` / `daily_values_url` | Doppelt-XML-escapte Ampersands (`&amp;amp;` in der Quelle → literales `&amp;` nach dem Parsen) werden von `XmlPortfolioParser::normalizeWebSiteUrl()` zu `&` korrigiert und als `INFO` protokolliert. Ein Element `<MarketValues>` (Plural) statt `<MarketValue>` wird dagegen NICHT akzeptiert, sondern als struktureller Datenfehler erkannt und als `ERROR` gemeldet — siehe Abschnitt "URL-Normalisierung" unten |
 | `<MarketValue Parsing>` / `<DailyValues Parsing>` | `*_parsing_type` | „ApiYahoo"/„ApiOnVista"/„ApiOnvista" (case-insensitive) → `ShareParsingType`, sonst `Regex` |
 | `<Culture>` | — | keine Entsprechung im aktuellen Schema, wird geloggt und ignoriert |
 | `<Buy>` | `buys` | GUID aus XML wird direkt übernommen |
@@ -1691,6 +1645,58 @@ Mit der ursprünglichen (flag-basierten) Logik führte das zu
 Buy-GUID gesetzt wurde. Mit verifikationsbasierter Zuordnung wird die Sale
 korrekt erkannt und verknüpft, unabhängig davon, was die Flags behaupten.
 
+### URL-Normalisierung: doppelt-XML-escapte Ampersands & Tag-Varianten (gemeldet und behoben 05.07.2026)
+
+Beim Ausführen von "Alle aktualisieren" auf einem über `tools/xml-importer`
+importierten Portfolio wurde zunächst vermutet, dass bei **Nvidia** und
+**Wacker (Wacker Chemie)** die Tageswerte-URL (`shares.daily_values_url`)
+fehlte. Tatsächlich handelt es sich um zwei unabhängige Datenqualitätsprobleme
+in der alten C#-Quelle, die zufällig dieselben zwei Aktien betreffen:
+
+**1. Doppelt-XML-escapte Ampersands.** Die Quell-XML enthielt in den
+`WebSite`-Attributen `&amp;amp;` statt `&amp;` (bestätigt per
+`grep -n "&amp;amp;"` auf der realen Quell-XML, 3 Fundstellen: Wacker
+`MarketValue`, Nvidia `MarketValue` und `DailyValues`). Ein konformer
+XML-Parser (auch `QXmlStreamReader`) löst Entities nur **einmal** auf:
+`&amp;amp;` wird dabei zu literalem `&amp;` (nicht zu `&`), da die erste
+`&amp;`-Entity zu `&` aufgelöst wird und das direkt folgende `amp;` danach nur
+noch literaler Text ist, kein weiterer Entity-Match — das Ergebnis ist eine
+kaputte, aber nicht leere URL.
+
+`MainWindow::buildDailyValuesUrl()`/`startRefreshForShare()` normalisieren zur
+Laufzeit bereits einen einzelnen Escape-Level (`.replace("&amp;", "&")`,
+"carried over from C# XML storage") — das reicht für einfach escapte URLs im
+selben Bestand (z. B. BMW.DE, unauffällig) und tatsächlich auch für den
+doppelt-escapten Fall, weil nach dem einmaligen XML-Unescape dort literal
+`&amp;` (einfach) steht, was die Laufzeit-Normalisierung korrekt zu `&`
+auflöst. Der Refresh dürfte also praktisch funktioniert haben. Trotzdem blieb
+der DB-Rohwert (`shares.daily_values_url`/`market_value_url`) "verschmutzt"
+und das zugrunde liegende Datenproblem in der Quelle unbemerkt.
+
+**2. Element `<MarketValues>` (Plural) statt `<MarketValue>` (Singular).**
+Bei genau denselben zwei Aktien heißt das Element in der Quell-XML
+`<MarketValues>` statt `<MarketValue>` wie beim Rest des Bestands
+(`grep -c "<MarketValue "` → 32 Treffer, `grep -c "<MarketValues "` → 2
+Treffer). Anders als der Ampersand-Fall (eindeutig sicher zu normalisieren)
+ist ein falscher Elementname ein struktureller Fehler in der Quelle — der
+Importer darf hier nicht raten/interpretieren, sondern muss den Fehler
+melden.
+
+**Fix:** `XmlPortfolioParser::parseShare()` erkennt `<MarketValues>`
+explizit als Datenfehler, protokolliert ihn über `RawShare::parseErrors`
+und lässt `marketValueWebSite`/`marketValueParsing` für die betroffene Aktie
+bewusst leer, statt das Element zu interpretieren. `normalizeWebSiteUrl()`
+erkennt weiterhin unabhängig davon ein literales `&amp;` im bereits einmal
+entschärften Attribut-/Element-Wert (`DetailsWebSite`, `MarketValue@WebSite`,
+`DailyValues@WebSite`) und korrigiert es sicher zu `&` — diese beiden Fälle
+können für dieselbe Aktie gleichzeitig, aber unabhängig voneinander auftreten
+(bei Nvidia: falscher Elementname bei `MarketValue` **und** doppelt-escaptes
+Ampersand bei `DailyValues`). `PortfolioImporter::importShare()` loggt
+`parseWarnings` als `INFO` (sicher auto-korrigiert) und `parseErrors` als
+`ERROR` (bewusst nicht automatisch behoben, Quelle muss korrigiert und neu
+importiert werden, oder die Werte werden manuell über `ShareEditForm`
+nachgetragen).
+
 ### Idempotenz / Wiederholbarkeit
 
 - **Shares** werden über die WKN abgeglichen (`ShareRepository::findByWkn`).
@@ -1725,9 +1731,10 @@ der Konsole als auch in der Log-Datei (`--log`, Default
 
 ### Bekannte Datenqualitätsprobleme in der Quell-XML
 
-Beim Import realer Depotdaten wurden zwei Klassen von Fehlern in der alten
-C#-Quelle gefunden, die der Importer erkennt und meldet, aber nicht selbst
-reparieren kann:
+Beim Import realer Depotdaten wurden vier Klassen von Fehlern in der alten
+C#-Quelle gefunden. Fall 1 und 4 erkennt der Importer und meldet sie, kann
+sie aber nicht selbst reparieren; Fall 2 und 3 werden automatisch korrigiert,
+weil dort eine eindeutig sichere Korrektur möglich ist:
 
 1. **Falsche `OrderNumber`** — ein einzelner Buy trug eine `OrderNumber`, die
    nicht zum zugehörigen PDF-Beleg passte und stattdessen mit einer völlig
@@ -1737,12 +1744,27 @@ reparieren kann:
 2. **Vertauschte `BuyPart`/`SalePart`-Flags** — siehe Abschnitt
    "Brokerage-Zuordnung" oben. Seit dem Fix vom 02.07.2026 fängt der Importer
    das automatisch ab und protokolliert es als `INFO`.
+3. **Doppelt-XML-escapte Ampersands in WebSite-URLs** (`&amp;amp;` statt
+   `&amp;`, gefunden bei Nvidia/Wacker Chemie) — siehe Abschnitt
+   "URL-Normalisierung" oben. Seit dem Fix vom 05.07.2026 erkennt und
+   korrigiert `XmlPortfolioParser` das automatisch und protokolliert es als
+   `INFO` (`RawShare::parseWarnings`).
+4. **Element `<MarketValues>` (Plural) statt `<MarketValue>` (Singular)** —
+   dieselben zwei Aktien (Nvidia/Wacker Chemie), 2 von 34 Vorkommen laut
+   `grep -c`. Anders als Fall 3 ist das ein struktureller Fehler im
+   Elementnamen, kein sicher normalisierbares Formatdetail — der Importer
+   rät hier nicht, sondern meldet den Fehler als `ERROR`
+   (`RawShare::parseErrors`) und lässt `market_value_url`/
+   `market_value_parsing_type` für die betroffene Aktie leer. Nur durch
+   Korrektur des Elementnamens in der Quelle + Re-Import behebbar, oder
+   manuelles Nachtragen über `ShareEditForm`.
 
 Bei jedem neuen Import lohnt sich ein Blick in die Log-Zusammenfassung auf
-`ERROR`-Zeilen (Fall 1, weiterhin nur an der Quelle behebbar) sowie auf
-`INFO`-Zeilen mit "widerspricht dem tatsächlichen Befund" (Fall 2, wird jetzt
-automatisch korrigiert, ist aber ein Hinweis auf die Häufigkeit dieses
-Datenfehlers in der Quelle).
+`ERROR`-Zeilen (Fall 1 und 4, nur an der Quelle bzw. manuell behebbar) sowie
+auf `INFO`-Zeilen mit "widerspricht dem tatsächlichen Befund" (Fall 2) bzw.
+"doppelt-XML-escapte Ampersands" (Fall 3) — Letztere werden automatisch
+korrigiert, sind aber ein Hinweis auf die Häufigkeit dieser Datenfehler in
+der Quelle.
 
 ### Tests (tests/xml-importer/)
 
