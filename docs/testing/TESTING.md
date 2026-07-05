@@ -1069,6 +1069,41 @@ bereits die aktualisierten Summen zeigen, nicht erst nach dem letzten Element
 der Queue. Im Fehlerfall (`m_errorOccurred`) darf der Footer für die
 betroffene Aktie nicht aktualisiert werden.
 
+**Grid-Selektion folgt dem Refresh (Feature vom 05.07.2026)** — ebenfalls Teil
+des zurückgestellten Testplans, da `selectShareRow()` aus `startRefreshForShare()`
+und `selectFirstShareRow()` aus `onRefreshShareFinished()` aufgerufen werden und
+damit denselben Parser-Mocking-Bedarf haben wie der übrige Refresh-Flow. Beide
+Methoden sind zudem `private` (keine `private slots`), also auch ohne echten
+Parser-Lauf nicht per `QMetaObject::invokeMethod` isoliert aufrufbar. Testbare
+Aspekte, sobald Parser-Mocking existiert:
+
+- Während `onRefreshAll()` läuft: nach dem Start jeder Aktie in der Queue ist
+  in **beiden** Tabellen (`m_finalValueTable`, `m_marketValueTable`) die Zeile
+  mit `item(row, 0)->data(Qt::UserRole) == share.guid()` selektiert
+  (`currentRow()` entsprechend gesetzt), unabhängig vom aktiven Tab.
+- Erfolgreicher Abschluss von "Alle aktualisieren" (Queue leer, kein Fehler):
+  nach `onRefreshShareFinished()` ist in beiden Tabellen Zeile 0 selektiert.
+- Abgeschlossener Einzel-Refresh (`onRefreshShare()`, kein "Alle
+  aktualisieren"): Selektion bleibt auf der aktualisierten Aktie stehen,
+  `selectFirstShareRow()` wird nicht aufgerufen.
+- Fehlerfall (`m_errorOccurred == true`) während `onRefreshAll()`: Selektion
+  bleibt unverändert auf der Aktie stehen, bei der der Fehler auftrat —
+  `selectFirstShareRow()` wird nicht aufgerufen, unabhängig davon ob noch
+  weitere Aktien in der Queue standen.
+- `enableShareActions`-Lambda (in `setupCentralWidget()`): bleibt No-Op
+  solange `m_parserMarketValues.isBusy() || m_parserDailyValues.isBusy()` —
+  d.h. Edit/Delete/Refresh dürfen sich während eines laufenden Refreshs durch
+  die programmatische Selektion in `selectShareRow()` nicht selbst wieder
+  aktivieren.
+
+@note Ein isolierter Test ohne Parser-Mocking wäre nur über einen
+Refaktor möglich (z.B. `selectShareRow()`/`selectFirstShareRow()` als
+`private slots` deklarieren, damit sie per `QMetaObject::invokeMethod`
+direkt aufrufbar sind, unabhängig vom restlichen Refresh-Flow). Das wurde
+hier bewusst nicht gemacht, um die Methoden nicht ohne funktionalen Grund
+zu Slots aufzuwerten; die Testabdeckung erfolgt stattdessen zusammen mit
+dem übrigen Refresh-Flow, sobald Parser-Mocking eingeführt wird.
+
 ---
 
 ## Konventionen

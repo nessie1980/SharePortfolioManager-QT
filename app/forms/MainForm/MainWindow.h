@@ -166,6 +166,41 @@ private slots:
      */
     void onDailyValuesUpdated(const ParserLib::ParserInfoState& state);
 
+    /**
+     * @brief Select the first row and scroll to the top in both portfolio tables.
+     *
+     * Called once the "Alle aktualisieren" run has fully completed without
+     * any error, so the grid resets back to showing the first share instead
+     * of leaving the last-processed share selected. Not called when an
+     * error occurred — in that case the selection stays on the share that
+     * failed so the problem is immediately visible. No-op if a table is
+     * empty.
+     *
+     * Declared as a slot (rather than a plain private method) solely so
+     * unit tests can invoke it directly via QMetaObject::invokeMethod
+     * without needing a real ParserLib::Parser run — it has no Parser or
+     * network dependency of its own. No behavioral difference otherwise.
+     */
+    void selectFirstShareRow();
+
+    /**
+     * @brief Select the row belonging to the given share in both portfolio tables.
+     *
+     * Called at the start of each refresh (single share or as part of the
+     * "Alle aktualisieren" queue) so the grid always highlights whichever
+     * share is currently being updated — regardless of which tab is
+     * currently visible. No-op if the GUID is empty or not found in either
+     * table.
+     *
+     * Declared as a slot (rather than a plain private method) solely so
+     * unit tests can invoke it directly via QMetaObject::invokeMethod
+     * without needing a real ParserLib::Parser run — it has no Parser or
+     * network dependency of its own. No behavioral difference otherwise.
+     *
+     * @param guid  GUID of the share to select.
+     */
+    void selectShareRow(const QString& guid);
+
 private:
     /**
      * @brief Create a timestamped backup of the given portfolio file.

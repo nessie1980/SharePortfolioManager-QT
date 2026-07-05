@@ -560,6 +560,46 @@ private:
     }
 
     /**
+     * Seed a two-share portfolio (each with a small buy so both appear as a
+     * grid row) on a real file DB. Used by tests that need more than one row
+     * to select/verify a specific GUID against — e.g. selectShareRow() /
+     * selectFirstShareRow().
+     * @return GUIDs of the two seeded shares, in insertion order.
+     */
+    QStringList seedTwoSharePortfolio()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/TwoShareUi.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+        ShareRepository().insert(ShareObject(QStringLiteral("g-first"),
+                                             QStringLiteral("FS01"),
+                                             QStringLiteral("DE000FS00001"),
+                                             QStringLiteral("First AG")));
+        insertTestBuy(QStringLiteral("g-first"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 5.0, 50.0);
+        ShareRepository().insert(ShareObject(QStringLiteral("g-second"),
+                                             QStringLiteral("SS01"),
+                                             QStringLiteral("DE000SS00001"),
+                                             QStringLiteral("Second AG")));
+        insertTestBuy(QStringLiteral("g-second"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 5.0, 50.0);
+        AppSettings::instance().setPortfolioPath(dbPath);
+        return { QStringLiteral("g-first"), QStringLiteral("g-second") };
+    }
+
+    /** Row index whose column-0 Qt::UserRole (GUID) matches guid, or -1. */
+    static int rowForGuid(QTableWidget* table, const QString& guid)
+    {
+        if (!table) return -1;
+        for (int row = 0; row < table->rowCount(); ++row) {
+            QTableWidgetItem* item = table->item(row, 0);
+            if (item && item->data(Qt::UserRole).toString() == guid)
+                return row;
+        }
+        return -1;
+    }
+
+    /**
      * Among the four QTableWidgets the Depotwert tables carry 13 columns
      * (FinalValueColumn::Count); the Marktwert tables have 12. The enum lives
      * in MainWindow and is not reachable from the test, so raw indices are used:
@@ -763,6 +803,130 @@ private slots:
                  loc.toString(9.90, 'f', 2) + QStringLiteral(" €"));
         QCOMPARE(cell->data(TwoLineRole::Bottom).toString(),
                  loc.toString(0.0, 'f', 2) + QStringLiteral(" €"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // MainWindow — Grid-Selektion folgt Refresh (Feature vom 05.07.2026)
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // selectShareRow() and selectFirstShareRow() are called from within the
+    // Parser-dependent refresh flow (startRefreshForShare() /
+    // onRefreshShareFinished()), which itself still requires Parser-Mocking
+    // to be exercised end-to-end (see TESTING.md). Both methods are pure
+    // table helpers with no Parser/network dependency of their own — they
+    // were declared as "private slots" specifically so they can be invoked
+    // directly via QMetaObject::invokeMethod, which lets the actual
+    // selection logic be tested deterministically without touching the
+    // Parser at all.
+
+    void test_selectShareRow_selectsMatchingGuidInBothTables()
+    {
+        const auto guids = seedTwoSharePortfolio();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl  = findFinalTable(window, 2);
+        QTableWidget* marketTbl = findMarketTable(window, 2);
+        if (!finalTbl)  QFAIL("Depotwert-Datentabelle nicht gefunden");
+        if (!marketTbl) QFAIL("Marktwert-Datentabelle nicht gefunden");
+
+        const int wantFinalRow  = rowForGuid(finalTbl,  guids.at(1));
+        const int wantMarketRow = rowForGuid(marketTbl, guids.at(1));
+        QVERIFY(wantFinalRow  >= 0);
+        QVERIFY(wantMarketRow >= 0);
+
+        QMetaObject::invokeMethod(&window, "selectShareRow", Qt::DirectConnection,
+                                  Q_ARG(QString, guids.at(1)));
+
+        QCOMPARE(finalTbl->currentRow(),  wantFinalRow);
+        QCOMPARE(marketTbl->currentRow(), wantMarketRow);
+    }
+
+    void test_selectShareRow_switchingGuid_movesSelectionToOtherShare()
+    {
+        const auto guids = seedTwoSharePortfolio();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 2);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+
+        QMetaObject::invokeMethod(&window, "selectShareRow", Qt::DirectConnection,
+                                  Q_ARG(QString, guids.at(0)));
+        QCOMPARE(finalTbl->currentRow(), rowForGuid(finalTbl, guids.at(0)));
+
+        // Simulates the queue advancing from the first to the second share
+        // during "Alle aktualisieren" — the selection must follow.
+        QMetaObject::invokeMethod(&window, "selectShareRow", Qt::DirectConnection,
+                                  Q_ARG(QString, guids.at(1)));
+        QCOMPARE(finalTbl->currentRow(), rowForGuid(finalTbl, guids.at(1)));
+    }
+
+    void test_selectShareRow_emptyGuid_doesNotChangeSelection()
+    {
+        seedDepotwertPortfolio();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        finalTbl->setCurrentCell(0, 0);
+
+        QMetaObject::invokeMethod(&window, "selectShareRow", Qt::DirectConnection,
+                                  Q_ARG(QString, QString()));
+
+        QCOMPARE(finalTbl->currentRow(), 0);
+    }
+
+    void test_selectShareRow_unknownGuid_doesNotChangeSelection()
+    {
+        seedDepotwertPortfolio();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        finalTbl->setCurrentCell(0, 0);
+
+        QMetaObject::invokeMethod(&window, "selectShareRow", Qt::DirectConnection,
+                                  Q_ARG(QString, QStringLiteral("does-not-exist")));
+
+        QCOMPARE(finalTbl->currentRow(), 0);
+    }
+
+    void test_selectFirstShareRow_selectsRowZeroInBothTables()
+    {
+        seedTwoSharePortfolio();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl  = findFinalTable(window, 2);
+        QTableWidget* marketTbl = findMarketTable(window, 2);
+        if (!finalTbl)  QFAIL("Depotwert-Datentabelle nicht gefunden");
+        if (!marketTbl) QFAIL("Marktwert-Datentabelle nicht gefunden");
+
+        // Start on the last row, as selectShareRow() would leave it after
+        // the final share of an "Alle aktualisieren" run.
+        finalTbl->setCurrentCell(1, 0);
+        marketTbl->setCurrentCell(1, 0);
+
+        QMetaObject::invokeMethod(&window, "selectFirstShareRow", Qt::DirectConnection);
+
+        QCOMPARE(finalTbl->currentRow(),  0);
+        QCOMPARE(marketTbl->currentRow(), 0);
+    }
+
+    void test_selectFirstShareRow_emptyTables_doesNotCrash()
+    {
+        openMemoryDb();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QMetaObject::invokeMethod(&window, "selectFirstShareRow", Qt::DirectConnection);
+
+        // No crash is the actual assertion here; data tables stay empty.
+        QTableWidget* finalTbl = findFinalTable(window, 0);
+        QVERIFY(finalTbl != nullptr);
     }
 
     void test_updateWindowTitle_showsFileName()

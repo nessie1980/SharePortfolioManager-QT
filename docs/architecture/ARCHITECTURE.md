@@ -1154,6 +1154,40 @@ Beide Parser starten **parallel** für eine Aktie. Die Koordination erfolgt übe
 die Flags `m_marketDone` und `m_dailyDone` — erst wenn beide `true` sind, wird
 `onRefreshShareFinished()` aufgerufen.
 
+#### Methode selectShareRow() — Grid-Selektion folgt dem Refresh
+
+Wird von `startRefreshForShare()` als erstes aufgerufen, noch bevor ein Parser
+gestartet wird. Durchsucht Spalte 0 (`Qt::UserRole`, GUID) beider Tabellen
+(`m_finalValueTable` und `m_marketValueTable`) nach der übergebenen GUID und
+selektiert die gefundene Zeile per `setCurrentCell()` + `scrollToItem(...,
+PositionAtCenter)`. Läuft für **beide** Tabs, unabhängig davon welcher gerade
+sichtbar ist, damit ein Tab-Wechsel während des Refreshs stets die korrekte
+Zeile zeigt. No-Op bei leerer oder nicht gefundener GUID.
+
+Dadurch folgt die Grid-Selektion sowohl beim Einzel-Refresh (`onRefreshShare()`)
+als auch bei jedem Schritt der "Alle aktualisieren"-Queue automatisch der
+gerade angefragten Aktie.
+
+@note Der bestehende `enableShareActions`-Lambda (verbunden mit
+`selectionChanged` beider `QItemSelectionModel`s in `setupCentralWidget()`,
+aktiviert normalerweise Edit/Delete/Refresh sobald eine Zeile selektiert ist)
+wurde um einen Busy-Guard erweitert: Solange `m_parserMarketValues.isBusy()`
+oder `m_parserDailyValues.isBusy()`, ist der Lambda ein No-Op. Ohne diesen
+Guard hätte die programmatische Selektion aus `selectShareRow()` die drei
+Aktionen mitten im laufenden Refresh versehentlich wieder freigeschaltet,
+obwohl `onRefreshShare()`/`onRefreshAll()` sie explizit deaktiviert hatten.
+
+#### Methode selectFirstShareRow() — Grid-Reset nach "Alle aktualisieren"
+
+Selektiert Zeile 0 und ruft `scrollToTop()` in beiden Tabellen auf (No-Op falls
+eine Tabelle leer ist). Wird ausschließlich aus `onRefreshShareFinished()`
+aufgerufen, und zwar nur dann, wenn der komplette "Alle aktualisieren"-Lauf
+**ohne Fehler** abgeschlossen wurde (siehe unten) — nicht nach einem
+abgeschlossenen Einzel-Refresh und nicht im Fehlerfall. Im Fehlerfall bleibt
+die Selektion bewusst auf der zuletzt von `selectShareRow()` markierten
+(fehlgeschlagenen) Aktie stehen, damit sofort ersichtlich ist, welche Aktie
+das Problem verursacht hat.
+
 #### Methode buildDailyValuesUrl()
 
 Spiegelt `Helper.BuildDailyValuesUrl()` aus dem C#-Referenzprojekt.
@@ -1243,13 +1277,24 @@ Ablauf bei Erfolg (`m_errorOccurred == false`):
    und Marktwert-Tab) sofort nach jeder einzelnen Aktie neu berechnet — nicht
    erst am Ende von "Alle aktualisieren".
 2. Im "Alle aktualisieren"-Modus (`m_updateAllFlag == true`) und solange die
-   Queue nicht leer ist: nächste Aktie via `startRefreshForShare()` starten.
-3. Andernfalls: `finaliseRefresh()`.
+   Queue nicht leer ist: nächste Aktie via `startRefreshForShare()` starten
+   (welches wiederum `selectShareRow()` für die neue Aktie aufruft).
+3. Andernfalls (Queue leer oder Einzel-Refresh): `m_updateAllFlag` wird
+   **vor** dem Aufruf von `finaliseRefresh()` zwischengespeichert, da
+   `finaliseRefresh()` es zurücksetzt. War es `true` — d.h. der komplette
+   "Alle aktualisieren"-Lauf ist soeben ohne Fehler zu Ende gegangen — wird
+   im Anschluss an `finaliseRefresh()` `selectFirstShareRow()` aufgerufen,
+   sodass das Grid wieder die erste Aktie zeigt statt der zuletzt
+   aktualisierten. War es `false` (abgeschlossener Einzel-Refresh), bleibt
+   die Selektion unverändert auf der gerade aktualisierten Aktie stehen.
 
 Bei Fehler (`m_errorOccurred == true`) wird die Queue geleert und direkt
 `finaliseRefresh()` aufgerufen — der Footer wird in diesem Fall **nicht**
 aktualisiert, da die Aktie nicht vollständig (beide Parser fehlerfrei)
-angefragt wurde.
+angefragt wurde. `selectFirstShareRow()` wird in diesem Zweig **nicht**
+aufgerufen — die Selektion bleibt auf der Aktie stehen, die zuletzt via
+`selectShareRow()` markiert wurde, also der Aktie, bei der der Fehler
+auftrat. So ist sofort ersichtlich, welche Aktie das Problem verursacht hat.
 
 `refreshPortfolioFooters()` ist bewusst von `updatePortfolioFooters()`
 getrennt: Letztere nimmt eine bereits vorliegende `QList<ShareValues>`
@@ -1272,6 +1317,13 @@ wird die Queue in `onRefreshShareFinished()` geleert und die Aktualisierung
 gestoppt — alle nachfolgenden Aktien werden nicht mehr abgerufen. Der jeweils
 andere Parser der aktuellen Aktie wird dabei **nicht** abgebrochen, er darf
 noch regulär abschließen.
+
+Grid-Selektion: Jede Aktie der Queue wird beim Start via `selectShareRow()`
+im Grid selektiert (siehe oben) — das Grid zeigt also fortlaufend, welche
+Aktie gerade angefragt wird. Endet der Lauf erfolgreich (Queue leer, kein
+Fehler), springt die Selektion via `selectFirstShareRow()` zurück auf die
+erste Zeile. Bricht der Lauf wegen eines Fehlers ab, bleibt die Selektion
+auf der fehlgeschlagenen Aktie stehen.
 
 #### Methode onDeleteShare() — Aktie entfernen
 

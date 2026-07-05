@@ -384,6 +384,14 @@ void MainWindow::setupCentralWidget()
 
     // Enable Edit / Delete / Refresh when a row is selected
     auto enableShareActions = [this]() {
+        // While a refresh is running (single share or "Alle aktualisieren"),
+        // Edit/Delete/Refresh must stay disabled — selectShareRow() moves the
+        // table selection programmatically to follow the share currently
+        // being updated, which would otherwise re-enable these actions via
+        // this same selectionChanged handler.
+        if (m_parserMarketValues.isBusy() || m_parserDailyValues.isBusy())
+            return;
+
         const bool hasSelection =
             m_finalValueTable->selectionModel()->hasSelection() ||
             m_marketValueTable->selectionModel()->hasSelection();
@@ -1329,6 +1337,37 @@ QString MainWindow::buildDailyValuesUrl(const QString& urlTemplate,
     }
 }
 
+// ── selectFirstShareRow ────────────────────────────────────────────────────────
+
+void MainWindow::selectFirstShareRow()
+{
+    for (QTableWidget* table : { m_finalValueTable, m_marketValueTable }) {
+        if (table->rowCount() > 0) {
+            table->setCurrentCell(0, 0);
+            table->scrollToTop();
+        }
+    }
+}
+
+// ── selectShareRow ─────────────────────────────────────────────────────────────
+
+void MainWindow::selectShareRow(const QString& guid)
+{
+    if (guid.isEmpty())
+        return;
+
+    for (QTableWidget* table : { m_finalValueTable, m_marketValueTable }) {
+        for (int row = 0; row < table->rowCount(); ++row) {
+            QTableWidgetItem* item = table->item(row, 0);
+            if (item && item->data(Qt::UserRole).toString() == guid) {
+                table->setCurrentCell(row, 0);
+                table->scrollToItem(item, QAbstractItemView::PositionAtCenter);
+                break;
+            }
+        }
+    }
+}
+
 // ── startRefreshForShare ──────────────────────────────────────────────────────
 
 void MainWindow::startRefreshForShare(const ShareObject& share)
@@ -1337,6 +1376,11 @@ void MainWindow::startRefreshForShare(const ShareObject& share)
     m_marketDone    = false;
     m_dailyDone     = false;
     m_errorOccurred = false;
+
+    // Keep the grid selection in sync with whichever share is currently
+    // being updated — both for a single refresh and for every step of the
+    // "Alle aktualisieren" queue.
+    selectShareRow(share.guid());
 
     const bool doMarket = (share.updateType() == ShareUpdateType::MarketPrice ||
                            share.updateType() == ShareUpdateType::Both);
@@ -1504,7 +1548,14 @@ void MainWindow::onRefreshShareFinished()
         // Start next share in queue
         startRefreshForShare(m_refreshQueue.dequeue());
     } else {
+        // Capture before finaliseRefresh() resets it — only reset the
+        // selection back to the first share when the whole "Alle
+        // aktualisieren" run has just finished (queue now empty). A
+        // completed single-share refresh leaves the selection untouched.
+        const bool wasUpdateAll = m_updateAllFlag;
         finaliseRefresh();
+        if (wasUpdateAll)
+            selectFirstShareRow();
     }
 }
 
