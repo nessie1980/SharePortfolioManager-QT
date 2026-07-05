@@ -104,13 +104,16 @@ int main(int argc, char* argv[])
         return 3;
     }
 
-    // ── Import ───────────────────────────────────────────────────────────
+    // ── Import (validiert zuerst die gesamte Datei — siehe PortfolioImporter) ──
     PortfolioImporter importer(logger, dryRun);
-    importer.importPortfolio(portfolio);
+    const bool importOk = importer.importPortfolio(portfolio);
 
     logger.writeSummary();
     Database::instance().close();
 
     logger.info(QStringLiteral("Log-Datei: %1").arg(QFileInfo(logPath).absoluteFilePath()));
-    return 0;
+
+    // Exit-Code 4: Validierung ist fehlgeschlagen, nichts wurde importiert —
+    // unterscheidbar von 0 (Erfolg) für Skripte/CI, die den Importer aufrufen.
+    return importOk ? 0 : 4;
 }

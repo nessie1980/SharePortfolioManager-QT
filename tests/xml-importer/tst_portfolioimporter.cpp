@@ -125,7 +125,7 @@ private slots:
         portfolio.shares.append(makeShare(QStringLiteral("TEST01")));
 
         ImportLogger logger = makeLogger();
-        PortfolioImporter(logger, false).importPortfolio(portfolio);
+        QVERIFY(PortfolioImporter(logger, false).importPortfolio(portfolio));
 
         QSqlQuery q = query(QStringLiteral("SELECT wkn, isin, name FROM shares"));
         QVERIFY(q.next());
@@ -139,7 +139,7 @@ private slots:
         RawPortfolio portfolio1;
         portfolio1.shares.append(makeShare(QStringLiteral("TEST02")));
         ImportLogger logger1 = makeLogger();
-        PortfolioImporter(logger1, false).importPortfolio(portfolio1);
+        QVERIFY(PortfolioImporter(logger1, false).importPortfolio(portfolio1));
 
         QSqlQuery q1 = query(QStringLiteral("SELECT guid FROM shares WHERE wkn='TEST02'"));
         QVERIFY(q1.next());
@@ -152,7 +152,7 @@ private slots:
         share2.name = QStringLiteral("Sollte nicht uebernommen werden");
         portfolio2.shares.append(share2);
         ImportLogger logger2 = makeLogger();
-        PortfolioImporter(logger2, false).importPortfolio(portfolio2);
+        QVERIFY(PortfolioImporter(logger2, false).importPortfolio(portfolio2));
 
         QSqlQuery q2 = query(QStringLiteral(
             "SELECT COUNT(*), MIN(guid), MIN(name) FROM shares WHERE wkn='TEST02'"));
@@ -173,19 +173,26 @@ private slots:
         portfolio.shares.append(share);
 
         ImportLogger logger1 = makeLogger();
-        PortfolioImporter(logger1, false).importPortfolio(portfolio);
+        QVERIFY(PortfolioImporter(logger1, false).importPortfolio(portfolio));
         ImportLogger logger2 = makeLogger();
-        PortfolioImporter(logger2, false).importPortfolio(portfolio); // identischer zweiter Lauf
+        QVERIFY(PortfolioImporter(logger2, false).importPortfolio(portfolio)); // identischer zweiter Lauf
 
         QSqlQuery q = query(QStringLiteral("SELECT COUNT(*) FROM buys"));
         QVERIFY(q.next());
         QCOMPARE(q.value(0).toInt(), 1); // keine Dublette trotz zweitem Lauf
     }
 
-    // ── OrderNumber-Kollision: Fehler wird geloggt, Import läuft weiter ─────
-    // (Regressionstest für den AGIF/Facebook-Fall vom 01.07.2026)
+    // ── OrderNumber-Kollision: Validierung schlägt fehl, GAR NICHTS wird importiert ─
+    // (Verhalten seit 05.07.2026 komplett geändert: vormals wurde nur der zweite
+    // Buy übersprungen und der Import lief weiter (Regressionstest für den
+    // AGIF/Facebook-Fall vom 01.07.2026). Das konnte inkonsistente Daten in der
+    // DB hinterlassen (Aktie + erster Buy importiert, zweiter Buy fehlt einfach).
+    // Jetzt: PortfolioValidator erkennt die doppelte OrderNumber VOR jedem
+    // Schreibzugriff, importPortfolio() gibt false zurück, und es wird — auch
+    // für dieselbe Aktie — überhaupt nichts geschrieben, nicht einmal die Aktie
+    // selbst.)
 
-    void test_importBuy_orderNumberCollision_skipsSecondButContinues()
+    void test_importBuy_orderNumberCollision_abortsEntireImport()
     {
         RawShare share = makeShare(QStringLiteral("TEST04"));
         share.buys.append(makeBuy(newGuid(), QStringLiteral("DUP-ORDER"))); // erster Buy
@@ -195,16 +202,17 @@ private slots:
         portfolio.shares.append(share);
 
         ImportLogger logger = makeLogger();
-        PortfolioImporter(logger, false).importPortfolio(portfolio); // darf nicht abbrechen
+        QVERIFY(!PortfolioImporter(logger, false).importPortfolio(portfolio));
 
         QSqlQuery q = query(QStringLiteral("SELECT COUNT(*) FROM buys WHERE order_number='DUP-ORDER'"));
         QVERIFY(q.next());
-        QCOMPARE(q.value(0).toInt(), 1); // nur der erste Buy wurde gespeichert
+        QCOMPARE(q.value(0).toInt(), 0); // gar nichts wurde importiert, auch nicht der erste Buy
 
-        // Der Import muss trotz des Fehlers weiterlaufen — die Aktie selbst existiert.
+        // Die Aktie selbst darf ebenfalls NICHT angelegt worden sein — alles
+        // oder nichts, kein Teilimport mehr.
         QSqlQuery q2 = query(QStringLiteral("SELECT COUNT(*) FROM shares WHERE wkn='TEST04'"));
         QVERIFY(q2.next());
-        QCOMPARE(q2.value(0).toInt(), 1);
+        QCOMPARE(q2.value(0).toInt(), 0);
     }
 
     // ── Regressionstests: Brokerage-Zuordnung vom 02.07.2026 ────────────────
@@ -233,7 +241,7 @@ private slots:
         RawPortfolio portfolio;
         portfolio.shares.append(share);
         ImportLogger logger = makeLogger();
-        PortfolioImporter(logger, false).importPortfolio(portfolio);
+        QVERIFY(PortfolioImporter(logger, false).importPortfolio(portfolio));
 
         QSqlQuery q = query(QStringLiteral(
             "SELECT buy_guid, sale_guid FROM brokerage WHERE guid='%1'").arg(b.guid));
@@ -263,7 +271,7 @@ private slots:
         RawPortfolio portfolio;
         portfolio.shares.append(share);
         ImportLogger logger = makeLogger();
-        PortfolioImporter(logger, false).importPortfolio(portfolio);
+        QVERIFY(PortfolioImporter(logger, false).importPortfolio(portfolio));
 
         QSqlQuery q = query(QStringLiteral(
             "SELECT buy_guid, sale_guid FROM brokerage WHERE guid='%1'").arg(b.guid));
@@ -289,7 +297,7 @@ private slots:
         RawPortfolio portfolio;
         portfolio.shares.append(share);
         ImportLogger logger = makeLogger();
-        PortfolioImporter(logger, false).importPortfolio(portfolio); // Kontrollfall: darf nicht scheitern
+        QVERIFY(PortfolioImporter(logger, false).importPortfolio(portfolio)); // Kontrollfall: darf nicht scheitern
 
         QSqlQuery q = query(QStringLiteral(
             "SELECT buy_guid FROM brokerage WHERE guid='%1'").arg(b.guid));
@@ -297,8 +305,13 @@ private slots:
         QCOMPARE(q.value(0).toString(), buyGuid);
     }
 
-    void test_importBrokerage_guidBuySaleNotFoundInEitherTable_isSkipped()
+    void test_importBrokerage_guidBuySaleNotFoundInEitherTable_abortsEntireImport()
     {
+        // Umbenannt von "..._isSkipped": vormals wurde nur die Brokerage
+        // übersprungen, die Aktie selbst aber trotzdem angelegt. Seit
+        // 05.07.2026 erkennt PortfolioValidator die nicht auflösbare
+        // GuidBuySale VOR jedem Schreibzugriff — der komplette Import (auch
+        // die Aktie selbst) wird abgebrochen, nicht nur die Brokerage.
         RawShare share = makeShare(QStringLiteral("TEST08"));
         RawBrokerage b;
         b.guid = newGuid();
@@ -310,11 +323,16 @@ private slots:
         RawPortfolio portfolio;
         portfolio.shares.append(share);
         ImportLogger logger = makeLogger();
-        PortfolioImporter(logger, false).importPortfolio(portfolio); // darf nicht abstürzen
+        QVERIFY(!PortfolioImporter(logger, false).importPortfolio(portfolio)); // darf nicht abstürzen
 
         QSqlQuery q = query(QStringLiteral("SELECT COUNT(*) FROM brokerage"));
         QVERIFY(q.next());
         QCOMPARE(q.value(0).toInt(), 0); // nichts eingefügt
+
+        // Auch die Aktie selbst darf nicht angelegt worden sein.
+        QSqlQuery q2 = query(QStringLiteral("SELECT COUNT(*) FROM shares WHERE wkn='TEST08'"));
+        QVERIFY(q2.next());
+        QCOMPARE(q2.value(0).toInt(), 0);
     }
 
     // ── Dividende mit Fremdwährung ───────────────────────────────────────────
@@ -340,7 +358,7 @@ private slots:
         RawPortfolio portfolio;
         portfolio.shares.append(share);
         ImportLogger logger = makeLogger();
-        PortfolioImporter(logger, false).importPortfolio(portfolio);
+        QVERIFY(PortfolioImporter(logger, false).importPortfolio(portfolio));
 
         QSqlQuery q = query(QStringLiteral(
             "SELECT enable_fc, exchange_ratio, currency FROM dividends WHERE guid='%1'").arg(d.guid));
@@ -360,7 +378,7 @@ private slots:
         RawPortfolio portfolio;
         portfolio.shares.append(share);
         ImportLogger logger = makeLogger();
-        PortfolioImporter(logger, /*dryRun=*/true).importPortfolio(portfolio);
+        QVERIFY(PortfolioImporter(logger, /*dryRun=*/true).importPortfolio(portfolio));
 
         QSqlQuery q1 = query(QStringLiteral("SELECT COUNT(*) FROM shares"));
         QVERIFY(q1.next());
@@ -388,7 +406,7 @@ private slots:
         RawPortfolio portfolio1;
         portfolio1.shares.append(share);
         ImportLogger logger1 = makeLogger();
-        PortfolioImporter(logger1, false).importPortfolio(portfolio1);
+        QVERIFY(PortfolioImporter(logger1, false).importPortfolio(portfolio1));
 
         // Zweiter Import derselben WKN mit geändertem Schlusskurs am selben Tag.
         RawShare share2 = makeShare(QStringLiteral("TEST11"));
@@ -399,13 +417,44 @@ private slots:
         RawPortfolio portfolio2;
         portfolio2.shares.append(share2);
         ImportLogger logger2 = makeLogger();
-        PortfolioImporter(logger2, false).importPortfolio(portfolio2);
+        QVERIFY(PortfolioImporter(logger2, false).importPortfolio(portfolio2));
 
         QSqlQuery q = query(QStringLiteral(
             "SELECT COUNT(*), MIN(closing) FROM daily_values WHERE date='2015-08-18'"));
         QVERIFY(q.next());
         QCOMPARE(q.value(0).toInt(), 1);        // keine Dublette
         QCOMPARE(q.value(1).toDouble(), 11.00); // aktualisierter Wert
+    }
+
+    // ── Alles-oder-Nichts über mehrere Aktien hinweg (ergänzt 05.07.2026) ───
+    // Kernverhalten der neuen Validate-then-Import-Architektur: schlägt die
+    // Validierung IRGENDWO in der Datei fehl, wird NICHTS importiert — auch
+    // nicht die Aktien, die für sich genommen völlig in Ordnung wären.
+
+    void test_importPortfolio_oneShareInvalid_abortsWholeImportIncludingValidShares()
+    {
+        RawShare validShare = makeShare(QStringLiteral("TEST13"));
+        validShare.buys.append(makeBuy(newGuid(), QStringLiteral("ORD-OK")));
+
+        RawShare invalidShare = makeShare(QStringLiteral("TEST14"));
+        invalidShare.stockMarketLaunchDate = QStringLiteral("32.13.2024"); // nicht parsbares Datum
+
+        RawPortfolio portfolio;
+        portfolio.shares.append(validShare);
+        portfolio.shares.append(invalidShare);
+
+        ImportLogger logger = makeLogger();
+        QVERIFY(!PortfolioImporter(logger, false).importPortfolio(portfolio));
+
+        // Weder die valide noch die defekte Aktie dürfen in der DB gelandet sein.
+        QSqlQuery q = query(QStringLiteral(
+            "SELECT COUNT(*) FROM shares WHERE wkn IN ('TEST13', 'TEST14')"));
+        QVERIFY(q.next());
+        QCOMPARE(q.value(0).toInt(), 0);
+
+        QSqlQuery q2 = query(QStringLiteral("SELECT COUNT(*) FROM buys WHERE order_number='ORD-OK'"));
+        QVERIFY(q2.next());
+        QCOMPARE(q2.value(0).toInt(), 0);
     }
 
     void test_importDailyValues_logsInsertedUpdatedUnchangedBreakdown()
@@ -429,7 +478,7 @@ private slots:
             ImportLogger logger(logPath);
             RawPortfolio portfolio;
             portfolio.shares.append(share);
-            PortfolioImporter(logger, false).importPortfolio(portfolio);
+            QVERIFY(PortfolioImporter(logger, false).importPortfolio(portfolio));
         }
 
         // Zweiter Import: e1 unverändert, e2 mit geändertem Schlusskurs, e3 neu.
@@ -448,7 +497,7 @@ private slots:
             ImportLogger logger(logPath);
             RawPortfolio portfolio2;
             portfolio2.shares.append(share2);
-            PortfolioImporter(logger, false).importPortfolio(portfolio2);
+            QVERIFY(PortfolioImporter(logger, false).importPortfolio(portfolio2));
         }
 
         QFile logFile(logPath);

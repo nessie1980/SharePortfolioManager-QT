@@ -18,6 +18,7 @@
 
 #include <QUuid>
 #include <QDateTime>
+#include <QMap>
 
 // ── Conversion helpers ──────────────────────────────────────────────────────
 
@@ -79,16 +80,66 @@ PortfolioImporter::PortfolioImporter(ImportLogger& logger, bool dryRun)
 
 // ── Top level ────────────────────────────────────────────────────────────────
 
-void PortfolioImporter::importPortfolio(const RawPortfolio& portfolio)
+bool PortfolioImporter::importPortfolio(const RawPortfolio& portfolio)
 {
     m_logger.info(QStringLiteral("Import gestartet — %1 Aktie(n) im Quell-XML%2")
                       .arg(portfolio.shares.size())
                       .arg(m_dryRun ? QStringLiteral(" [DRY-RUN — keine Schreibzugriffe]") : QString()));
 
+    QList<ValidationIssue> issues;
+    if (!PortfolioValidator::validate(portfolio, issues)) {
+        logValidationIssues(issues);
+        m_logger.info(QStringLiteral(
+            "Import abgebrochen — es wurde NICHTS in die Datenbank geschrieben. "
+            "Bitte die oben gemeldeten Probleme in der Quell-XML beheben und "
+            "erneut importieren."));
+        return false;
+    }
+
     for (const RawShare& share : portfolio.shares)
         importShare(share);
 
     m_logger.info(QStringLiteral("Import abgeschlossen."));
+    return true;
+}
+
+// ── Validation reporting ─────────────────────────────────────────────────────
+
+void PortfolioImporter::logValidationIssues(const QList<ValidationIssue>& issues)
+{
+    static const QString kSeparator =
+        QStringLiteral("════════════════════════════════════════════════════════");
+
+    m_logger.info(kSeparator);
+    m_logger.info(QStringLiteral("VALIDIERUNG FEHLGESCHLAGEN — keine Daten wurden geschrieben."));
+    m_logger.info(kSeparator);
+
+    // Nach Aktie gruppieren (WKN + Name), damit auf einen Blick sichtbar ist,
+    // wo genau nachgebessert werden muss, statt einer flachen Fehlerliste.
+    QMap<QString, QList<ValidationIssue>> byShare;
+    for (const ValidationIssue& issue : issues) {
+        const QString key = issue.shareWkn.trimmed().isEmpty()
+            ? QStringLiteral("(ohne WKN) \"%1\"").arg(issue.shareName)
+            : QStringLiteral("%1 (\"%2\")").arg(issue.shareWkn, issue.shareName);
+        byShare[key].append(issue);
+    }
+
+    for (auto it = byShare.constBegin(); it != byShare.constEnd(); ++it) {
+        m_logger.info(QStringLiteral("Aktie: %1").arg(it.key()));
+        for (const ValidationIssue& issue : it.value()) {
+            const QString recordPart = issue.recordId.trimmed().isEmpty()
+                ? QString()
+                : QStringLiteral(" %1").arg(issue.recordId);
+            m_logger.info(QStringLiteral("  - [%1%2] %3")
+                              .arg(issue.category, recordPart, issue.message));
+        }
+    }
+
+    m_logger.info(kSeparator);
+    m_logger.info(QStringLiteral("Gesamt: %1 Aktie(n) betroffen, %2 Problem(e) insgesamt.")
+                      .arg(byShare.size())
+                      .arg(issues.size()));
+    m_logger.info(kSeparator);
 }
 
 // ── Share ────────────────────────────────────────────────────────────────────

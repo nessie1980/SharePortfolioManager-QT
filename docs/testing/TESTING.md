@@ -40,6 +40,7 @@ ctest --output-on-failure
 ./bin/tst_shareeditform
 ./bin/tst_buysform
 ./bin/tst_xmlportfolioparser
+./bin/tst_portfoliovalidator
 ./bin/tst_portfolioimporter
 ```
 
@@ -84,14 +85,14 @@ Executable: `tst_parser`
 | `test_onvista_history_json_parsing` | OnVista Historie JSON | Anzahl Einträge, Eröffnungskurs korrekt |
 | `test_yahoo_history_json_parsing` | Yahoo Finance Historie JSON | Timestamps, Schlusskurs korrekt |
 
-**Regressionstest `test_reentrant_start_from_finished_signal_succeeds`
-(tst_parser.cpp):** Deckt den Bugfix vom 05.07.2026 ab, bei dem
+Regressionstest `test_reentrant_start_from_finished_signal_succeeds`
+(tst_parser.cpp): Deckt den Bugfix vom 05.07.2026 ab, bei dem
 `Parser::finish()` `m_busy` erst *nach* dem synchronen Emit des
 `Finished`-Zustands zurücksetzte. Bei "Alle aktualisieren" führte das dazu,
 dass eine Aktie ohne Kurswert-Update (nur `ShareUpdateType::DailyValues`)
 direkt aus dem `onDailyValuesUpdated()`-Callback heraus in
 `startRefreshForShare()` für die nächste Aktie verkettete und
-`m_parserDailyValues.startParsing()` auf dem noch als „busy" markierten
+`m_parserDailyValues.startParsing()` auf dem noch als "busy" markierten
 Parser-Objekt fehlschlug (`BusyFailed`, -2) — sichtbar als
 `"Tageswerte: Fehler beim Abruf von ... (-2)"` direkt nach einer schnell
 abgeschlossenen vorherigen Aktie. Der Test ruft `startParsing()` reentrant
@@ -103,7 +104,7 @@ zweite Aufruf erfolgreich ist.
 
 ### tests/repositories/ — Repository Unit-Tests
 
-Hinweis: Alle Repository-Tests legen in `initTestCase()` einen Test-Share an.
+@note Alle Repository-Tests legen in `initTestCase()` einen Test-Share an.
 `Database.cpp` wird **nicht** direkt eingebunden — nur gegen die `Database`-Library
 gelinkt (verhindert MOC-Konflikte).
 
@@ -111,14 +112,14 @@ Die Repository-Tests decken `BuyRepository`, `SaleRepository`, `DividendReposito
 `ShareRepository`, `BrokerageRepository` und `DailyValuesRepository` ab — CRUD-Operationen,
 Filterung, Sortierung und Transaktionsverhalten je Repository.
 
-**Regressionstest `test_totalPayoutWithTaxes_matchesDoubleRoundedDividendObjectSum`
-(tst_dividendrepository.cpp):** Verifiziert, dass `DividendRepository::totalPayoutWithTaxes()`
+Regressionstest `test_totalPayoutWithTaxes_matchesDoubleRoundedDividendObjectSum`
+(tst_dividendrepository.cpp): Verifiziert, dass `DividendRepository::totalPayoutWithTaxes()`
 bei Fremdwährungs-Dividenden dieselbe zweistufige Rundung anwendet wie
 `DividendObject::calculateValues()`. Nutzt die realen Wechselkurse (1,07907 / 1,10526) aus
 dem Fall, der die 0,02€-Differenz zwischen Dividenden-Tab-Summe und Depotwert-Tab am
 02.07.2026 aufdeckte.
 
-**`DailyValuesRepository::UpsertStats`-Tests (tst_dailyvaluesrepository.cpp, ab 05.07.2026):**
+`DailyValuesRepository::UpsertStats`-Tests (tst_dailyvaluesrepository.cpp, ab 05.07.2026):
 Verifizieren das Change-Tracking von `upsertList()`, das seit dem 05.07.2026 bei jedem
 Refresh unnötig wiederholte "Tageswerte aktualisiert"-Meldungen mit identischen Werten
 auflösen soll (Hintergrund: `buildDailyValuesUrl()` fragt bei jedem Refresh stets ein
@@ -171,12 +172,12 @@ Klassen unter Test: `MainWindow`, `Database`, `ModelShareAdd`, `PresenterShareAd
 `ModelBrokerageEdit`, `PresenterBrokerageEdit`, `ViewBrokerageEdit`,
 `OwnMessageBox`, `BackupWorker`, `BackupProgressDialog`
 
-> Hinweis: `ModelBuyEdit`/`PresenterBuyEdit`/`ViewBuyEdit` sind weiterhin als
-> Produktionsquellen Teil von `tst_mainwindow` (Compile-Abhängigkeit über
-> `ViewShareEdit`), werden dort aber nicht mehr getestet — siehe `tst_buysform`.
-> `ViewShareEdit` wurde in `tst_shareeditform` ausgelagert.
+@note `ModelBuyEdit`/`PresenterBuyEdit`/`ViewBuyEdit` sind weiterhin als
+Produktionsquellen Teil von `tst_mainwindow` (Compile-Abhängigkeit über
+`ViewShareEdit`), werden dort aber nicht mehr getestet — siehe `tst_buysform`.
+`ViewShareEdit` wurde in `tst_shareeditform` ausgelagert.
 
-Stub-Pattern: Für Presenter-Tests werden `StubView*` und `StubModel*`
+@note Stub-Pattern: Für Presenter-Tests werden `StubView*` und `StubModel*`
 verwendet — leichtgewichtige Implementierungen der Interfaces ohne echte UI
 oder Datenbank.
 
@@ -190,7 +191,7 @@ MainWindow:
 | `test_construction_windowTitleSet` | Fenstertitel nach Konstruktion gesetzt | Enthält "Share Portfolio Manager" |
 | `test_construction_actionsDisabledAtStart` | Menüaktionen ohne Portfolio deaktiviert | `isEnabled()` = false |
 | `test_clearPortfolioTables_removesAllRows` | 2 Datentabellen starten leer, 2 Footer behalten ihre 3 Summenzeilen | `emptyCount` = 2, `footerCount` = 2 |
-| `test_finalValueTable_showsFinalFields` | Regression Depotwert-Anzeige: Tab zeigt die `…Final`-Felder (mit Brokerage), nicht die brokeragefreien Marktwerte | „Aktuelle Entwicklung" = `profitLossFinal` (-1009,90), „Einzahlung" = `purchaseValueFinal` (1009,90) statt 1000,00 |
+| `test_finalValueTable_showsFinalFields` | Regression Depotwert-Anzeige: Tab zeigt die `…Final`-Felder (mit Brokerage), nicht die brokeragefreien Marktwerte | "Aktuelle Entwicklung" = `profitLossFinal` (-1009,90), "Einzahlung" = `purchaseValueFinal` (1009,90) statt 1000,00 |
 | `test_finalValueTable_priceAndCostDividendBottomColorIsNeutral` | Regression Bugfix 03.07.2026: Unterzeile von "Kosten/Dividenden" und "Preis" (Depotwert) nutzt `neutral` statt `muted` | `BottomColor.alpha()` = `neutral.alpha()` für beide Zellen |
 | `test_marketValueTable_priceBottomColorIsNeutral` | Regression Bugfix 03.07.2026: Unterzeile von "Preis" (Marktwert) nutzt `neutral` statt `muted` | `BottomColor.alpha()` = `neutral.alpha()` |
 | `test_finalValueFooter_costDividendCell` | Depotwert-Footer: Kosten/Dividenden als 2-zeiliger Wert in der Mittelzeile | Zelle (Zeile 1, Spalte Kosten/Dividenden) `TwoLineRole::Top` = `totalBrokerage` (9,90), `Bottom` = `totalDividend` (0,00) |
@@ -268,7 +269,7 @@ ViewShareAdd:
 | `test_viewShareAdd_onParseFinished_setsInfoOnUntouched` | Parse-Ergebnis befüllt unberührte Felder | Felder enthalten geparste Werte |
 | `test_viewShareAdd_markMissingFieldsAsFailed_doesNotCrash` | `markMissingFieldsAsFailed()` auf leerem Form | Kein Absturz |
 
-**ModelShareEdit (Datenbanktests):**
+ModelShareEdit (Datenbanktests):
 
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
@@ -281,12 +282,12 @@ ViewShareAdd:
 | `test_modelShareEdit_firstBuyDate_noBuys_returnsEmpty` | Keine Käufe vorhanden | `firstBuyDate()` leer |
 | `test_modelShareEdit_totalBuyValue_delegatesToRepository` | Reine Delegations-Smoke-Test | Wert identisch zu `BuyRepository::totalBuyValueBrokerageReduction()` |
 
-> **Hinweis:** `currentVolume()` und `firstBuyDate()` enthalten eigene Aggregationslogik
-> (Summenbildung bzw. Auswahl des ältesten Eintrags) und sind daher trotz Delegation an
-> `BuyRepository` separat getestet. Die übrigen Aggregat-Methoden (`totalSaleValue`,
-> `totalProfitLoss`, `totalDividendValue`, `totalBrokerageValue`, …) sind reine
-> 1:1-Weiterleitungen ohne eigene Logik und werden über die bereits bestehenden
-> Repository-Tests in `tests/repositories/` abgedeckt.
+@note `currentVolume()` und `firstBuyDate()` enthalten eigene Aggregationslogik
+(Summenbildung bzw. Auswahl des ältesten Eintrags) und sind daher trotz Delegation an
+`BuyRepository` separat getestet. Die übrigen Aggregat-Methoden (`totalSaleValue`,
+`totalProfitLoss`, `totalDividendValue`, `totalBrokerageValue`, …) sind reine
+1:1-Weiterleitungen ohne eigene Logik und werden über die bereits bestehenden
+Repository-Tests in `tests/repositories/` abgedeckt.
 
 PresenterShareEdit (via StubView + StubModel):
 | Test | Beschreibung | Prüft |
@@ -306,20 +307,20 @@ ViewShareEdit: Tests wurden in `tst_shareeditform` ausgelagert — siehe Abschni
 
 #### tst_buysform — BuysForm
 
-**Executable:** `tst_buysform`  
-**Klassen unter Test:** `ModelBuyEdit`, `PresenterBuyEdit`, `ViewBuyEdit`
+Executable: `tst_buysform`
+Klassen unter Test: `ModelBuyEdit`, `PresenterBuyEdit`, `ViewBuyEdit`
 
-> **Hinweis zur Auslagerung:** `tst_buysform` wurde aus `tst_mainwindow` herausgelöst,
-> nachdem die Testzahl der BuysForm groß genug geworden war, um eine eigene
-> Executable zu rechtfertigen. Die Produktionsklassen
-> `ModelBuyEdit`/`PresenterBuyEdit`/`ViewBuyEdit` bleiben weiterhin auch Teil der
-> `tst_mainwindow`-Quellen, da `ViewShareEdit` zur Compile-/Link-Zeit von
-> `ViewBuyEdit` abhängt (Pencil-Button "Käufe" öffnet `ViewBuyEdit` direkt) —
-> dort existieren dafür aber keine eigenen Tests mehr.
+@note Zur Auslagerung: `tst_buysform` wurde aus `tst_mainwindow` herausgelöst,
+nachdem die Testzahl der BuysForm groß genug geworden war, um eine eigene
+Executable zu rechtfertigen. Die Produktionsklassen
+`ModelBuyEdit`/`PresenterBuyEdit`/`ViewBuyEdit` bleiben weiterhin auch Teil der
+`tst_mainwindow`-Quellen, da `ViewShareEdit` zur Compile-/Link-Zeit von
+`ViewBuyEdit` abhängt (Pencil-Button "Käufe" öffnet `ViewBuyEdit` direkt) —
+dort existieren dafür aber keine eigenen Tests mehr.
 
-> **Stub-Pattern:** `StubViewBuyEdit` und `StubModelBuyEdit` implementieren die
-> jeweiligen Interfaces ohne echte UI oder Datenbank — identisches Muster wie in
-> `tst_mainwindow`.
+@note Stub-Pattern: `StubViewBuyEdit` und `StubModelBuyEdit` implementieren die
+jeweiligen Interfaces ohne echte UI oder Datenbank — identisches Muster wie in
+`tst_mainwindow`.
 
 ModelBuyEdit:
 | Test | Beschreibung | Prüft |
@@ -464,14 +465,14 @@ ruft `onReset()` auf → Formular geleert, Button "Hinzufügen".
 
 #### tst_shareeditform — ShareEditForm
 
-**Executable:** `tst_shareeditform`  
-**Klassen unter Test:** `ViewShareEdit`
+Executable: `tst_shareeditform`
+Klassen unter Test: `ViewShareEdit`
 
-> **Hinweis:** `ViewShareEdit.cpp` zieht alle vier Sub-Form-Trios (`BuysForm`,
-> `SalesForm`, `DividendForm`, `BrokeragesForm`) als Compile-Abhängigkeit rein —
-> diese werden in `tst_shareeditform` nur kompiliert und gelinkt, aber nicht
-> getestet. `ModelShareEdit` und `PresenterShareEdit` sind ebenfalls Compile-
-> Abhängigkeiten; ihre Tests verbleiben in `tst_mainwindow`.
+@note `ViewShareEdit.cpp` zieht alle vier Sub-Form-Trios (`BuysForm`,
+`SalesForm`, `DividendForm`, `BrokeragesForm`) als Compile-Abhängigkeit rein —
+diese werden in `tst_shareeditform` nur kompiliert und gelinkt, aber nicht
+getestet. `ModelShareEdit` und `PresenterShareEdit` sind ebenfalls Compile-
+Abhängigkeiten; ihre Tests verbleiben in `tst_mainwindow`.
 
 ViewShareEdit:
 
@@ -508,12 +509,12 @@ ViewShareEdit:
 
 ### tests/forms/ — SalesForm
 
-Hinweis zur Teststruktur: Da `QTEST_MAIN` nur eine Testklasse unterstützt,
+@note Zur Teststruktur: Da `QTEST_MAIN` nur eine Testklasse unterstützt,
 läuft `TestSalesForm` in einer eigenen `QObject`-Unterklasse. Ein gemeinsamer
 `main()`-Einstiegspunkt ruft `QTest::qExec` für alle Klassen nacheinander auf
 (aktuell: `TestMainWindow`, `TestSalesForm`, `TestDividendForm`, `TestOwnMessageBox`, `TestBackupForm`).
 
-Stub-Pattern: `StubViewSaleEdit` und `StubModelSaleEdit` implementieren
+@note Stub-Pattern: `StubViewSaleEdit` und `StubModelSaleEdit` implementieren
 die jeweiligen Interfaces ohne echte UI oder Datenbank.
 
 `StubModelSaleEdit` implementiert alle Methoden von `IModelSaleEdit` inkl.
@@ -547,9 +548,9 @@ ModelSaleEdit (Datenbanktests):
 | `test_modelSaleEdit_loadAllBuys_includesSoldOut` | `loadAllBuys()` gibt auch vollst. verkaufte Käufe zurück | Alle Käufe inkl. `volumeSold == volume` enthalten |
 | `test_modelSaleEdit_loadBrokerageForBuy_returnsBrokerage` | `loadBrokerageForBuy()` gibt das Brokerage des Kaufs zurück | `brokerageGuid` korrekt |
 
-> **Hinweis:** `test_modelSaleEdit_loadAllBuys_includesSoldOut` und
-> `test_modelSaleEdit_loadBrokerageForBuy_returnsBrokerage` sind dokumentiert
-> aber noch nicht implementiert.
+@note `test_modelSaleEdit_loadAllBuys_includesSoldOut` und
+`test_modelSaleEdit_loadBrokerageForBuy_returnsBrokerage` sind dokumentiert
+aber noch nicht implementiert.
 
 ---
 
@@ -686,7 +687,7 @@ Konfiguration & Settings:
 
 ### tests/forms/ — DividendForm
 
-Stub-Pattern: `StubViewDividendEdit` und `StubModelDividendEdit` implementieren
+@note Stub-Pattern: `StubViewDividendEdit` und `StubModelDividendEdit` implementieren
 die jeweiligen Interfaces ohne echte UI oder Datenbank.
 `StubModelDividendEdit::loadShare()` gibt ein ungültiges `ShareObject{}` zurück —
 die WKN/ISIN-Prüfung im Presenter wird damit übersprungen (korrekt für Unit-Tests).
@@ -805,9 +806,9 @@ den `readOnlyMode` auslösen — im DividendForm gibt es diesen Modus nicht.
 
 ### tests/forms/ — BrokeragesForm
 
-Stub-Pattern: `StubViewBrokerageEdit` und `StubModelBrokerageEdit` implementieren
+@note Stub-Pattern: `StubViewBrokerageEdit` und `StubModelBrokerageEdit` implementieren
 die jeweiligen Interfaces ohne echte UI oder Datenbank.
->
+
 Linked-Record-Besonderheit: `StubModelBrokerageEdit` kann so konfiguriert werden,
 dass `loadBrokerages()` Einträge mit gesetztem `buyGuid` oder `saleGuid` zurückgibt —
 damit lässt sich die `isLinkedRecord()`-Logik des Presenters testen.
@@ -914,7 +915,7 @@ dass bei `readOnly=true` alle Gebührenfelder und Datum/Uhrzeit deaktiviert werd
 Im Gegensatz zu BuysForm/SalesForm (wo `readOnlyMode` über `isLastBuy` gesteuert wird)
 kommt der `readOnly`-Parameter hier direkt von der Linked-Record-Erkennung im Presenter.
 
-Hinweis zur Testklasse: Anders als SalesForm/DividendForm (eigene `TestSalesForm` /
+@note Zur Testklasse: Anders als SalesForm/DividendForm (eigene `TestSalesForm` /
 `TestDividendForm`) laufen alle BrokeragesForm-Tests in `TestMainWindow`, da
 BrokeragesForm zusammen mit BuysForm im selben `tst_mainwindow`-Abschnitt geführt wird.
 `StubViewBrokerageEdit` und `StubModelBrokerageEdit` sind entsprechend dort als
@@ -924,11 +925,11 @@ file-globale Klassen vor `TestMainWindow` definiert.
 
 ### tests/forms/ — OwnMessageBox
 
-Stub-Pattern: Kein Stub nötig — `OwnMessageBox` hat keine externe
+@note Stub-Pattern: Kein Stub nötig — `OwnMessageBox` hat keine externe
 Abhängigkeit zu Datenbank oder komplexen Interfaces. Alle Tests arbeiten
 direkt mit dem Widget.
->
-Hinweis zu statischen Methoden: `critical()`, `information()` und
+
+@note Zu statischen Methoden: `critical()`, `information()` und
 `question()` rufen intern `exec()` auf und blockieren die Ereignisschleife —
 sie sind daher nicht direkt unit-testbar. Stattdessen wird der Konstruktor
 direkt verwendet und das Ergebnis von Button-Klicks über
@@ -966,10 +967,10 @@ TestOwnMessageBox:
 
 ### tests/forms/ — BackupProgressForm
 
-Hinweis zu BackupWorker-Tests: `BackupWorker::run()` wird in den Tests synchron direkt
+@note Zu BackupWorker-Tests: `BackupWorker::run()` wird in den Tests synchron direkt
 aufgerufen — kein Thread nötig. Signals werden via `QSignalSpy` geprüft.
 
-Hinweis zu BackupProgressDialog-Tests: Der Dialog startet einen `QThread` im Konstruktor.
+@note Zu BackupProgressDialog-Tests: Der Dialog startet einen `QThread` im Konstruktor.
 `%BackupProgressDialog::~BackupProgressDialog()` wartet seit dem Destruktor-Race-Fix
 selbst aktiv (`quit()` + `wait()`) auf das tatsächliche Thread-Ende, bevor `~QObject()`
 das `m_thread`-Kindobjekt zerstört — ein Test darf den Dialog daher inzwischen auch ohne
@@ -1033,7 +1034,7 @@ Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
 | `test_depotwert_finalFields` | Depotwert-Tab (mit Brokerage), per-Lot-Zuordnung — gleiche Fixture | `profitLossFinal` (166,06), `profitLossPctFinal`, `purchaseValueFinal` (1208,94), `completeCurValue` (1885,00), `completeProfitLoss` (272,10), `completeProfitPct` |
 | `test_depotwert_partialLotBrokerageAndReduction` | Brokerage UND Rabatt anteilig auf teilverkauftem Lot (6/10 gehalten) | `purchaseValueFinal` (602,65, nicht 604,43), `purchaseValue` (596,69), `profitLossFinal` (-2,65) — Voll-Zuordnung explizit ausgeschlossen |
 | `test_depotwert_dividendInCompleteValue` | Netto-Dividende fliesst in die Komplett-Spalten | `completeCurValue` (1012,00 statt 1000,00), `completeProfitLoss` (12,00) |
-| `test_marktwert_emptyDetails_sameResult` | Regression „viel zu hoch" | Ergebnis identisch trotz **leerer** `SaleBuyDetails` (Aggregat-basiert) |
+| `test_marktwert_emptyDetails_sameResult` | Regression "viel zu hoch" | Ergebnis identisch trotz **leerer** `SaleBuyDetails` (Aggregat-basiert) |
 | `test_marktwert_columnIdentity` | Spalten-Identität | `Kpl. Marktwert = Kpl. Einzahlung + Kpl. Entwicklung` |
 | `test_marktwert_fullySold` | Position komplett verkauft | `volume = 0`, `purchaseValue = 0`, realisierte G/V mit Gebühren |
 | `test_marktwert_noSales` | keine Verkäufe | reine unrealisierte Entwicklung, `Kpl. Marktwert == curValue` |
@@ -1252,11 +1253,12 @@ add_test(NAME tst_shareeditform COMMAND tst_shareeditform)
 
 ### tests/xml-importer/ — XML-Importer Unit-/Integrationstests
 
-Hinweis: `tools/xml-importer` ist ein eigenständiges Console-Tool (kein Teil des
+@note `tools/xml-importer` ist ein eigenständiges Console-Tool (kein Teil des
 `SharePortfolioManager`-Targets), das dieselben Models/Repositories der
 Hauptanwendung wiederverwendet. Die Tests spiegeln das: `tst_xmlportfolioparser`
-prüft den reinen XML-Parser ohne DB, `tst_portfolioimporter` folgt exakt dem
-Muster aus `tests/repositories/` (In-Memory-SQLite via `:memory:`).
+prüft den reinen XML-Parser ohne DB, `tst_portfoliovalidator` (neu, 05.07.2026)
+prüft die Vorab-Validierung isoliert vom eigentlichen Import, `tst_portfolioimporter`
+folgt exakt dem Muster aus `tests/repositories/` (In-Memory-SQLite via `:memory:`).
 
 #### tst_xmlportfolioparser
 
@@ -1266,9 +1268,9 @@ Klasse unter Test: `XmlPortfolioParser` (reines XML → Struct-Mapping, keine DB
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_parse_minimalShare_readsBasicAttributesAndFields` | Ein `<Share>` mit allen Basis-Feldern | WKN/ISIN/Name/Update, Datumsfelder, `MarketValue`/`DailyValues`-Parsing-Attribute korrekt extrahiert, `parseWarnings` leer |
-| `test_parse_marketValueWebSite_doubleEscapedAmpersand_isAutoCorrected` | `MarketValue@WebSite` mit `&amp;amp;` in der Quelle (Regressionstest Nvidia, gemeldet 05.07.2026) | Literales `&amp;` im Rohwert wird zu `&` korrigiert, genau eine Warnung mit Feldbezeichner „MarketValue.WebSite" |
-| `test_parse_dailyValuesWebSite_doubleEscapedAmpersand_isAutoCorrected` | `DailyValues@WebSite` mit `&amp;amp;` in der Quelle (Regressionstest Wacker Chemie, gemeldet 05.07.2026) | Analog korrigiert, Warnung mit Feldbezeichner „DailyValues.WebSite" |
-| `test_parse_detailsWebSite_doubleEscapedAmpersand_isAutoCorrected` | `<DetailsWebSite>` mit `&amp;amp;` in der Quelle | Analog korrigiert, Warnung mit Feldbezeichner „DetailsWebSite" (vorsorglich abgedeckt, kein bekannter Realfall) |
+| `test_parse_marketValueWebSite_doubleEscapedAmpersand_isAutoCorrected` | `MarketValue@WebSite` mit `&amp;amp;` in der Quelle (Regressionstest Nvidia, gemeldet 05.07.2026) | Literales `&amp;` im Rohwert wird zu `&` korrigiert, genau eine Warnung mit Feldbezeichner "MarketValue.WebSite" |
+| `test_parse_dailyValuesWebSite_doubleEscapedAmpersand_isAutoCorrected` | `DailyValues@WebSite` mit `&amp;amp;` in der Quelle (Regressionstest Wacker Chemie, gemeldet 05.07.2026) | Analog korrigiert, Warnung mit Feldbezeichner "DailyValues.WebSite" |
+| `test_parse_detailsWebSite_doubleEscapedAmpersand_isAutoCorrected` | `<DetailsWebSite>` mit `&amp;amp;` in der Quelle | Analog korrigiert, Warnung mit Feldbezeichner "DetailsWebSite" (vorsorglich abgedeckt, kein bekannter Realfall) |
 | `test_parse_marketValuePluralTag_isReportedAsErrorNotImported` | `<MarketValues>` (Plural) statt `<MarketValue>` (Singular) in der Quelle (Regressionstest Wacker Chemie, gemeldet 05.07.2026) | Wird NICHT übernommen (`marketValueWebSite`/`marketValueParsing` bleiben leer), stattdessen genau ein Eintrag in `parseErrors` |
 | `test_parse_marketValuePluralTag_doesNotSuppressOtherFieldWarnings` | Plural-Tag bei `MarketValue` (→ `parseErrors`) **und** doppelt-escaptes Ampersand bei `DailyValues` (→ `parseWarnings`) gleichzeitig (Regressionstest Nvidia, Originalwerte aus dem Report vom 05.07.2026) | Beide Erkennungen laufen unabhängig voneinander an unterschiedlichen Feldern, ohne sich gegenseitig zu beeinflussen |
 | `test_parse_singleEscapedAmpersand_isLeftUnchanged_noWarning` | Korrekt einfach escapte URL, Kontrollfall (analog BMW.DE aus demselben Bestand) | Wert unverändert nach dem Unescape, `parseWarnings` bleibt leer — kein Fehlalarm |
@@ -1285,21 +1287,55 @@ Klasse unter Test: `XmlPortfolioParser` (reines XML → Struct-Mapping, keine DB
 Executable: `tst_portfolioimporter`
 Klasse unter Test: `PortfolioImporter` (gegen In-Memory-SQLite `:memory:`)
 
-Hinweis: Da `importBuys()`/`importSales()`/`importBrokerages()`/... privat sind,
+@note Da `importBuys()`/`importSales()`/`importBrokerages()`/... privat sind,
 laufen alle Tests über den einzigen öffentlichen Einstiegspunkt
 `importPortfolio()` — das sind bewusst Integrations- statt Einzelmethodentests.
+Seit 05.07.2026 gibt `importPortfolio()` `bool` zurück (siehe
+`PortfolioValidator` weiter unten); alle Tests prüfen diesen Rückgabewert
+explizit per `QVERIFY`/`QVERIFY(!...)`.
 
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_importShare_insertsNewShare` | Neue Aktie importieren | Genau eine Zeile in `shares`, Felder korrekt |
 | `test_importShare_reusesExistingShareByWkn_masterDataUntouched` | Zweiter Import derselben WKN mit geändertem Namen | Keine Dublette, GUID wiederverwendet, Stammdaten **nicht** überschrieben |
-| `test_importBuy_isIdempotentOnRerun` | Identischer Import zweimal ausgeführt | Kein doppelter Buy-Datensatz (GUID-Dedupe) |
-| `test_importBuy_orderNumberCollision_skipsSecondButContinues` | Zwei Buys mit gleicher `OrderNumber`, unterschiedlicher GUID | Nur der erste wird gespeichert, Import bricht nicht ab (Regressionstest AGIF/Facebook-Fall, 01.07.2026) |
+| `test_importBuy_isIdempotentOnRerun` | Identischer Import zweimal ausgeführt | Kein doppelter Buy-Datensatz (GUID-Dedupe), zweiter Lauf liefert weiterhin `true` (Regressionstest 05.07.2026 — `PortfolioValidator` darf einen Re-Import derselben GUID/OrderNumber nicht als Kollision werten) |
+| `test_importBuy_orderNumberCollision_abortsEntireImport` | Zwei Buys mit gleicher `OrderNumber`, unterschiedlicher GUID | `importPortfolio()` liefert `false`, **gar nichts** wird importiert — auch nicht die Aktie selbst (umbenannt von `..._skipsSecondButContinues`: Verhalten seit 05.07.2026 komplett geändert, ursprünglicher Regressionstest AGIF/Facebook-Fall vom 01.07.2026) |
+| `test_importPortfolio_oneShareInvalid_abortsWholeImportIncludingValidShares` | Eine valide Aktie + eine mit nicht parsbarem Datum, in derselben Datei (ergänzt 05.07.2026) | `importPortfolio()` liefert `false`, **keine** der beiden Aktien landet in der DB — Kernverhalten der Validate-then-Import-Architektur |
 | `test_importBrokerage_correctsWrongBuyPartFlag` | `BuyPart="True"`, `GuidBuySale` zeigt aber auf eine Sale | `sale_guid` korrekt gesetzt, `buy_guid` leer (Regressionstest Mensch u. Maschine/Procter & Gamble, 01.07.2026) |
 | `test_importBrokerage_correctsWrongSalePartFlag` | Spiegelfall: `SalePart="True"`, zeigt auf einen Buy | `buy_guid` korrekt gesetzt, `sale_guid` leer |
 | `test_importBrokerage_correctFlags_areAcceptedUnchanged` | Korrekte Flags (Kontrollfall) | Zuordnung wie erwartet, kein falscher Fehlalarm |
-| `test_importBrokerage_guidBuySaleNotFoundInEitherTable_isSkipped` | `GuidBuySale` existiert weder als Buy noch als Sale | Kein Insert, kein Absturz |
+| `test_importBrokerage_guidBuySaleNotFoundInEitherTable_abortsEntireImport` | `GuidBuySale` existiert weder als Buy noch als Sale | `importPortfolio()` liefert `false`, weder Brokerage noch die Aktie selbst landen in der DB (umbenannt von `..._isSkipped`, gleicher Grund wie oben) |
 | `test_importDividend_foreignCurrencyFieldsAreStored` | Dividende mit `ForeignCurrency` | `enable_fc`, `exchange_ratio`, `currency` korrekt in der DB |
-| `test_dryRun_writesNothing` | Import mit `dryRun=true` | Alle Zieltabellen bleiben leer |
+| `test_dryRun_writesNothing` | Import mit `dryRun=true` | Alle Zieltabellen bleiben leer, `importPortfolio()` liefert trotzdem `true` (Validierung läuft unabhängig von `dryRun` und findet hier nichts) |
 | `test_dailyValues_upsertReplacesExistingValueOnRerun` | Gleicher Tag zweimal mit unterschiedlichem Schlusskurs importiert | Keine Dublette, Wert wurde aktualisiert (`INSERT OR REPLACE`) |
 | `test_importDailyValues_logsInsertedUpdatedUnchangedBreakdown` | Zweiter Import mit einem unveränderten, einem geänderten und einem neuen Tageswert-Eintrag (ergänzt 05.07.2026) | Log enthält "3 Tageswert(e) geholt (Eingefügt: 1 / Aktualisiert: 1 / Unverändert: 1)" |
+
+#### tst_portfoliovalidator (neu, 05.07.2026)
+
+Executable: `tst_portfoliovalidator`
+Klasse unter Test: `PortfolioValidator` (reine Vorab-Prüfung gegen In-Memory-SQLite `:memory:`, kein Import)
+
+Isoliert von `tst_portfolioimporter`, damit jeder Validierungsfall einzeln und
+ohne den Umweg über einen vollständigen Import-Lauf geprüft werden kann.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_validate_completelyValidPortfolio_noIssues` | Vollständig valide Aktie mit Buy/Brokerage/Dividend/DailyValue (Kontrollfall) | `validate()` liefert `true`, `issues` leer |
+| `test_validate_missingWkn_isReported` | Aktie ohne WKN | Problem gemeldet, Meldung erwähnt "WKN" |
+| `test_validate_unknownUpdateValue_isReported` | `Update="Sometimes"` (Tippfehler-Simulation) | Problem mit `recordId == "Update"` |
+| `test_validate_unknownShareType_isReported` | `ShareType="9"` | Problem mit `recordId == "ShareType"` |
+| `test_validate_unknownParsingValue_isReported` | `Parsing="ApiYaho"` (Tippfehler-Simulation) | Problem mit `recordId == "MarketValue.Parsing"` |
+| `test_validate_emptyParsingValue_isAccepted` | Leerer `Parsing`-Wert | **Kein** Problem — leer ist ein legitimer "nicht konfiguriert"-Zustand |
+| `test_validate_regexParsingValue_isAccepted` | `Parsing="Regex"` | **Kein** Problem — laut `ARCHITECTURE.md` ein regulärer dritter Parsing-Typ, kein Tippfehler |
+| `test_validate_unparsableShareDate_isReported` | `StockMarketLaunchDate="32.13.2024"` | Problem mit `recordId == "StockMarketLaunchDate"` |
+| `test_validate_parseErrorsFromXmlParser_areIncluded` | Simulierter `RawShare::parseErrors`-Eintrag (z. B. `<MarketValues>`-Tag) | Fließt 1:1 in die Validierungsprobleme ein |
+| `test_validate_buyMissingGuid_isReported` | Buy ohne GUID | Problem mit `category == "Buy"`, erwähnt "GUID" |
+| `test_validate_buyUnparsableDate_isReported` | Buy mit `Date="31.02.2024"` (31. Februar existiert nicht) | Problem mit `category == "Buy"`, erwähnt "Datum" |
+| `test_validate_duplicateOrderNumberAmongBuysInSameFile_isReported` | Zwei Buys derselben Aktie, gleiche `OrderNumber`, unterschiedliche GUID, in derselben Datei | Problem mit `category == "Buy"`, `recordId` = die doppelte OrderNumber |
+| `test_validate_duplicateGuidAcrossCategoriesInSameShare_isReported` | Ein Buy und eine Dividende derselben Aktie mit identischer GUID | Problem erwähnt "mehrfach", `recordId` = die kollidierende GUID |
+| `test_validate_brokerageGuidBuySaleNotFound_isReported` | `GuidBuySale` zeigt auf keine existierende Buy/Sale-GUID | Problem erwähnt "weder als Buy noch als Sale" |
+| `test_validate_brokerageGuidBuySaleAmbiguous_isReported` | Eine GUID wird absichtlich sowohl als Buy- als auch als Sale-GUID verwendet | Problem erwähnt "sowohl als Buy als auch als Sale" |
+| `test_validate_dailyValueUnparsableDate_isReported` | `DailyValue` mit nicht parsbarem Datum | Problem mit `category == "DailyValue"` |
+| `test_validate_orderNumberAlreadyExistsInDb_isReported` | Neuer Buy mit `OrderNumber`, die bereits unter einer **anderen** GUID in der DB existiert | Problem mit `category == "Buy"`, erwähnt "Datenbank" |
+| `test_validate_brokerageResolvesAgainstExistingDbBuy_noIssue` | Brokerage referenziert einen Buy, der bereits aus einem früheren Import in der DB steht (nicht in der aktuellen Datei) | **Kein** Problem — `GuidBuySale`-Auflösung berücksichtigt auch bereits importierte Daten |
+| `test_validate_sameGuidReimportedWithSameOrderNumber_noIssue` | Derselbe Buy (gleiche GUID, gleiche `OrderNumber`) wird erneut importiert | **Kein** Problem — Idempotenz-Regressionstest (Bug gefunden 05.07.2026 durch `test_importBuy_isIdempotentOnRerun`: DB-Abgleich unterschied ursprünglich nicht zwischen "andere GUID, gleiche OrderNumber" und "dieselbe GUID nochmal") |

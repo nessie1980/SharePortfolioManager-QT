@@ -188,14 +188,14 @@ austauschbar und isoliert testbar.
 | ShareDetailsForm | `forms/ShareDetailsForm/` | ⬜ Code vorhanden, aber nicht MVP-konform und nicht integriert |
 | ChartForm | `forms/ChartForm/` | ⬜ Dateien vorhanden, leer |
 
-> **Hinweis zu ShareDetailsForm:** `ShareDetailsForm.h/.cpp` enthalten bereits einen
-> funktionsfähigen Entwurf (Header mit Logo/Name/Kurs, Tabs für Stammdaten/Käufe/
-> Verkäufe/Dividenden/Brokerages), allerdings als einzelne `QDialog`-Klasse ohne
-> Trennung in `IView`/`IModel`/Presenter. Die Klasse ist in `app/CMakeLists.txt` als
-> Build-Quelle eingetragen, wird aber von keiner View aufgerufen (kein Verweis aus
-> `MainWindow` oder einer Detail-Ansicht) und hat keine Unit-Tests. Vor einer
-> Aktivierung muss der Dialog auf das MVP-Pattern umgestellt und an einen Aufrufpunkt
-> (z. B. Doppelklick auf eine Portfolio-Zeile) angebunden werden.
+@note Zu ShareDetailsForm: `ShareDetailsForm.h/.cpp` enthalten bereits einen
+funktionsfähigen Entwurf (Header mit Logo/Name/Kurs, Tabs für Stammdaten/Käufe/
+Verkäufe/Dividenden/Brokerages), allerdings als einzelne `QDialog`-Klasse ohne
+Trennung in `IView`/`IModel`/Presenter. Die Klasse ist in `app/CMakeLists.txt` als
+Build-Quelle eingetragen, wird aber von keiner View aufgerufen (kein Verweis aus
+`MainWindow` oder einer Detail-Ansicht) und hat keine Unit-Tests. Vor einer
+Aktivierung muss der Dialog auf das MVP-Pattern umgestellt und an einen Aufrufpunkt
+(z. B. Doppelklick auf eine Portfolio-Zeile) angebunden werden.
 
 ---
 
@@ -1223,9 +1223,9 @@ Bei `ParserErrorCode::Finished`:
 Bei Fehler: analog zu `onMarketValuesUpdated()` — `m_errorOccurred = true`,
 `m_dailyDone = true`, MarketValues-Parser läuft unabhängig weiter.
 
-> Hinweis: Die OnVista-API liefert JSON-Keys in camelCase (`datetimeLast`, `first`,
-> `last`, `high`, `low`, `volume`). `OnVistaObjects::HistoryData::fromJson()` und
-> `RealTimeData::fromJson()` verwenden entsprechend camelCase-Keys — nicht PascalCase.
+@note Die OnVista-API liefert JSON-Keys in camelCase (`datetimeLast`, `first`,
+`last`, `high`, `low`, `volume`). `OnVistaObjects::HistoryData::fromJson()` und
+`RealTimeData::fromJson()` verwenden entsprechend camelCase-Keys — nicht PascalCase.
 
 #### Methode onRefreshShareFinished() — Footer-Aktualisierung
 
@@ -1563,15 +1563,15 @@ den kompletten Mapping-/Prüflauf aus, schreibt aber nichts in die Datenbank.
 
 | XML | Ziel | Anmerkung |
 | ------ | ------ | ------ |
-| `<Share WKN/ISIN/Name/Update>` | `shares` | `Update` → `ShareUpdateType` (None/MarketPrice/DailyValues/Both, Default „Both") |
-| `<StockMarketLaunchDate>` | `shares.add_datetime` | entspricht der „Börsennotierung" (`listingDate`), siehe C#-Kompatibilitätshinweis in `PresenterShareEdit` |
-| `<DetailsWebSite>` / `<MarketValue WebSite>` / `<DailyValues WebSite>` | `shares.details_website` / `market_value_url` / `daily_values_url` | Doppelt-XML-escapte Ampersands (`&amp;amp;` in der Quelle → literales `&amp;` nach dem Parsen) werden von `XmlPortfolioParser::normalizeWebSiteUrl()` zu `&` korrigiert und als `INFO` protokolliert. Ein Element `<MarketValues>` (Plural) statt `<MarketValue>` wird dagegen NICHT akzeptiert, sondern als struktureller Datenfehler erkannt und als `ERROR` gemeldet — siehe Abschnitt "URL-Normalisierung" unten |
-| `<MarketValue Parsing>` / `<DailyValues Parsing>` | `*_parsing_type` | „ApiYahoo"/„ApiOnVista"/„ApiOnvista" (case-insensitive) → `ShareParsingType`, sonst `Regex` |
+| `<Share WKN/ISIN/Name/Update>` | `shares` | `Update` → `ShareUpdateType` (None/MarketPrice/DailyValues/Both, Default "Both") |
+| `<StockMarketLaunchDate>` | `shares.add_datetime` | entspricht der "Börsennotierung" (`listingDate`), siehe C#-Kompatibilitätshinweis in `PresenterShareEdit` |
+| `<DetailsWebSite>` / `<MarketValue WebSite>` / `<DailyValues WebSite>` | `shares.details_website` / `market_value_url` / `daily_values_url` | Doppelt-XML-escapte Ampersands (`&amp;amp;` in der Quelle → literales `&amp;` nach dem Parsen) werden von `XmlPortfolioParser::normalizeWebSiteUrl()` zu `&` korrigiert und als `INFO` protokolliert. Ein Element `<MarketValues>` (Plural) statt `<MarketValue>` wird dagegen NICHT akzeptiert, sondern als struktureller Datenfehler erkannt und blockiert seit 05.07.2026 über `PortfolioValidator` den kompletten Import — siehe Abschnitte "URL-Normalisierung" und "Validierung vor dem Import" unten |
+| `<MarketValue Parsing>` / `<DailyValues Parsing>` | `*_parsing_type` | "ApiYahoo"/"ApiOnVista"/"ApiOnvista" (case-insensitive) → `ShareParsingType`, sonst `Regex` |
 | `<Culture>` | — | keine Entsprechung im aktuellen Schema, wird geloggt und ignoriert |
 | `<Buy>` | `buys` | GUID aus XML wird direkt übernommen |
 | `<Sale><UsedBuys><UsedBuy>` | `sales` + `sale_buy_details` | `UsedBuy` → `SaleBuyDetail` (FIFO-Zuteilung) |
 | `<Brokerage BuyPart/SalePart/GuidBuySale>` | `brokerage` | `GuidBuySale` wird gegen `buys`/`sales` verifiziert (nicht `BuyPart`/`SalePart` blind übernommen) — siehe Abschnitt "Brokerage-Zuordnung" unten |
-| `<Dividend><ForeignCurrency>` | `dividends` | `Flag="Checked"` → `enable_fc=true`, sonst FX-Felder auf Default (1.0 / „EUR") |
+| `<Dividend><ForeignCurrency>` | `dividends` | `Flag="Checked"` → `enable_fc=true`, sonst FX-Felder auf Default (1.0 / "EUR") |
 | `<DailyValues><Entry D/C/O/T/B/V>` | `daily_values` | `INSERT OR REPLACE` über `(share_guid, date)` — Re-Import aktualisiert vorhandene Tage |
 
 Alle numerischen/Datums-Felder liegen im Quell-XML im deutschen Format
@@ -1632,7 +1632,7 @@ per `INFO`-Zeile protokolliert, aber die anhand der Datenbank ermittelte
 Zuordnung verwendet — die Flags sind reine Zusatzinformation und werden nicht
 als Wahrheitsquelle behandelt.
 
-**Hintergrund:** Beim Import vom 01.07.2026 trugen zwei Verkaufs-Brokerages
+Hintergrund: Beim Import vom 01.07.2026 trugen zwei Verkaufs-Brokerages
 (`BuyPart="True"` statt `"False"`) fälschlich `BuyPart="True"`, obwohl
 `GuidBuySale` auf eine Sale zeigte — ein Datenfehler in der alten C#-Quelle.
 Mit der ursprünglichen (flag-basierten) Logik führte das zu
@@ -1648,7 +1648,7 @@ importierten Portfolio wurde zunächst vermutet, dass bei **Nvidia** und
 fehlte. Tatsächlich handelt es sich um zwei unabhängige Datenqualitätsprobleme
 in der alten C#-Quelle, die zufällig dieselben zwei Aktien betreffen:
 
-**1. Doppelt-XML-escapte Ampersands.** Die Quell-XML enthielt in den
+Fall 1 — Doppelt-XML-escapte Ampersands: Die Quell-XML enthielt in den
 `WebSite`-Attributen `&amp;amp;` statt `&amp;` (bestätigt per
 `grep -n "&amp;amp;"` auf der realen Quell-XML, 3 Fundstellen: Wacker
 `MarketValue`, Nvidia `MarketValue` und `DailyValues`). Ein konformer
@@ -1668,7 +1668,7 @@ auflöst. Der Refresh dürfte also praktisch funktioniert haben. Trotzdem blieb
 der DB-Rohwert (`shares.daily_values_url`/`market_value_url`) "verschmutzt"
 und das zugrunde liegende Datenproblem in der Quelle unbemerkt.
 
-**2. Element `<MarketValues>` (Plural) statt `<MarketValue>` (Singular).**
+Fall 2 — Element `<MarketValues>` (Plural) statt `<MarketValue>` (Singular):
 Bei genau denselben zwei Aktien heißt das Element in der Quell-XML
 `<MarketValues>` statt `<MarketValue>` wie beim Rest des Bestands
 (`grep -c "<MarketValue "` → 32 Treffer, `grep -c "<MarketValues "` → 2
@@ -1677,20 +1677,78 @@ ist ein falscher Elementname ein struktureller Fehler in der Quelle — der
 Importer darf hier nicht raten/interpretieren, sondern muss den Fehler
 melden.
 
-**Fix:** `XmlPortfolioParser::parseShare()` erkennt `<MarketValues>`
-explizit als Datenfehler, protokolliert ihn über `RawShare::parseErrors`
-und lässt `marketValueWebSite`/`marketValueParsing` für die betroffene Aktie
-bewusst leer, statt das Element zu interpretieren. `normalizeWebSiteUrl()`
-erkennt weiterhin unabhängig davon ein literales `&amp;` im bereits einmal
+Fix: `XmlPortfolioParser::parseShare()` erkennt `<MarketValues>`
+explizit als Datenfehler und protokolliert ihn über `RawShare::parseErrors`,
+statt das Element zu interpretieren. `normalizeWebSiteUrl()` erkennt
+weiterhin unabhängig davon ein literales `&amp;` im bereits einmal
 entschärften Attribut-/Element-Wert (`DetailsWebSite`, `MarketValue@WebSite`,
 `DailyValues@WebSite`) und korrigiert es sicher zu `&` — diese beiden Fälle
 können für dieselbe Aktie gleichzeitig, aber unabhängig voneinander auftreten
 (bei Nvidia: falscher Elementname bei `MarketValue` **und** doppelt-escaptes
-Ampersand bei `DailyValues`). `PortfolioImporter::importShare()` loggt
-`parseWarnings` als `INFO` (sicher auto-korrigiert) und `parseErrors` als
-`ERROR` (bewusst nicht automatisch behoben, Quelle muss korrigiert und neu
-importiert werden, oder die Werte werden manuell über `ShareEditForm`
-nachgetragen).
+Ampersand bei `DailyValues`).
+
+Seit Einführung von `PortfolioValidator` (05.07.2026, siehe Abschnitt
+"Validierung vor dem Import" unten) fließt jeder Eintrag in
+`RawShare::parseErrors` direkt in die Vorab-Validierung ein: Ein solcher
+Fehler verhindert nicht mehr nur das eine Feld dieser einen Aktie, sondern
+den kompletten Import — auch aller anderen, für sich genommen fehlerfreien
+Aktien in derselben Datei. `PortfolioImporter` loggt `parseWarnings`
+(sicher auto-korrigiert) weiterhin als `INFO`, `parseErrors` dagegen als Teil
+des strukturierten Validierungsberichts.
+
+### Validierung vor dem Import (PortfolioValidator, seit 05.07.2026)
+
+Bis 05.07.2026 galt für Fehler auf Datensatz-Ebene durchgängig "loggen und
+überspringen, Import läuft weiter" (siehe Git-Historie). Das konnte die DB in
+einem inkonsistenten Zustand hinterlassen — z. B. eine Aktie mit dem ersten
+von zwei Buys importiert, der zweite (an einer `OrderNumber`-Kollision
+gescheitert) fehlte einfach, ohne dass das auf den ersten Blick auffiel.
+
+Seitdem läuft vor jedem Import eine vollständige Vorab-Prüfung der gesamten
+Datei (`PortfolioValidator::validate()`, aufgerufen von
+`PortfolioImporter::importPortfolio()`, bevor auch nur eine Zeile geschrieben
+wird). Findet sie irgendwo in der Datei — in irgendeiner Aktie, irgendeinem
+Datensatz — ein Problem, wird **gar nichts** importiert, auch nicht die
+Aktien, die für sich genommen fehlerfrei wären. `importPortfolio()` gibt in
+diesem Fall `false` zurück (`spm-xml-importer` beendet sich mit Exit-Code `4`,
+unterscheidbar von `0`/Erfolg für Skripte).
+
+Geprüft wird pro Aktie:
+
+| Bereich | Prüfung |
+| ------ | ------ |
+| Share | WKN vorhanden; `Update`/`ShareType`/`Parsing` sind bekannte Werte (`Parsing` darf auch leer oder `Regex` sein — beides legitim, kein Datenfehler); `StockMarketLaunchDate`/`LastUpdateInternet`/`LastUpdateShareDate` parsbar; vom Parser bereits erkannte strukturelle Fehler (`RawShare::parseErrors`, z. B. `<MarketValues>`-Tag) |
+| Buy/Sale/Brokerage/Dividend | GUID vorhanden; `Date` parsbar; `OrderNumber` (Buy/Sale) weder innerhalb derselben Aktie in der aktuellen Datei noch in der DB unter einer **anderen** GUID doppelt — ein Re-Import derselben GUID/OrderNumber ist ausdrücklich kein Fehler (Idempotenz) |
+| Brokerage | `GuidBuySale` muss genau einen Buy oder eine Sale dieser Aktie treffen (aktuelle Datei oder bereits in der DB), nicht keinen und nicht beide |
+| DailyValue | `D` (Datum) parsbar |
+| Aktienübergreifend (pro Aktie) | GUIDs von Buy/Sale/Brokerage/Dividend derselben Aktie müssen untereinander eindeutig sein |
+
+Bewusst **nicht** abgedeckt: Parsbarkeit numerischer Felder außer Daten (z. B.
+`SharePrice`, `Volume`, `Provision` fallen bei ungültiger Eingabe weiterhin
+lautlos auf `0.0` zurück, siehe `PortfolioImporter::toDouble()`) — eine
+mögliche Erweiterung für eine künftige Sitzung.
+
+Bei einem Fehlschlag wird ein strukturierter Bericht geloggt, gruppiert nach
+Aktie (WKN + Name), darunter alle gefundenen Probleme dieser Aktie, damit auf
+einen Blick sichtbar ist, wo nachgebessert werden muss:
+
+```
+════════════════════════════════════════════════════════
+VALIDIERUNG FEHLGESCHLAGEN — keine Daten wurden geschrieben.
+════════════════════════════════════════════════════════
+Aktie: NVDA ("Nvidia")
+  - [MarketValue.Parsing] Unbekannter Parsing-Wert "ApiYaho" ...
+  - [Buy ORD-123] Datum "32.13.2024" nicht parsbar (erwartet: dd.MM.yyyy).
+════════════════════════════════════════════════════════
+Gesamt: 1 Aktie(n) betroffen, 2 Problem(e) insgesamt.
+════════════════════════════════════════════════════════
+```
+
+Die bisherigen Datensatz-Ebene-Prüfungen in `importBuys()`/`importSales()`/
+`importBrokerages()`/... (fehlende GUID, nicht auflösbare `GuidBuySale`, ...)
+bleiben unverändert im Code — nach einer erfolgreichen Validierung sollten sie
+nicht mehr greifen, dienen aber als defensives Sicherheitsnetz, falls die
+Vorab-Prüfung eine Lücke hat.
 
 ### Idempotenz / Wiederholbarkeit
 
@@ -1700,21 +1758,26 @@ nachgetragen).
 - **Buys/Sales/Dividends/Brokerages** übernehmen die GUID direkt aus dem
   Quell-XML. Vor dem Insert prüft der Importer per `findByGuid()`, ob der
   Datensatz schon existiert, und überspringt ihn dann (`SKIPPED`). Ein erneuter
-  Lauf über dieselbe (oder eine aktualisierte) Export-Datei ist damit sicher.
+  Lauf über dieselbe (oder eine aktualisierte) Export-Datei ist damit sicher —
+  `PortfolioValidator` behandelt einen solchen Re-Import derselben GUID
+  ausdrücklich nicht als `OrderNumber`-Kollision (siehe oben).
 - **Daily values** verwenden `INSERT OR REPLACE` über den Composite-Key
   `(share_guid, date)` und sind dadurch immer gefahrlos erneut importierbar.
 
 ### Fehlerverhalten
 
-Fehler auf Datensatz-Ebene (fehlende GUID, SQL-Fehler, UNIQUE-Konflikt bei
-`order_number`, nicht auflösbare Brokerage-Zuordnung) werden geloggt und
-übersprungen — der Import läuft mit dem nächsten Datensatz weiter, statt
-komplett abzubrechen. Fehlt einer Aktie die WKN oder schlägt deren Insert
-fehl, werden ihre Kindobjekte konsequenterweise ebenfalls übersprungen (ohne
-Share-GUID kein gültiges Ziel). Scheitert ein Buy (z. B. an einer
-OrderNumber-Kollision), scheitern in der Folge auch alle davon abhängigen
-Sales (`sale_buy_details.buy_guid`) und Brokerages (`buy_guid`) — das sind
-erwartete Kaskadenfehler aus einer einzigen Ursache, keine unabhängigen Bugs.
+Seit der Einführung von `PortfolioValidator` (siehe oben) ist das
+Fehlerverhalten zweigeteilt:
+
+- **Vor dem Import:** Jedes gefundene Problem — egal in welcher Aktie —
+  verhindert den kompletten Lauf. Es gibt keine Teilimporte mehr.
+- **Während des Imports:** Die bereits bestehenden Datensatz-Ebene-Prüfungen
+  (fehlende GUID, SQL-Fehler, nicht auflösbare Brokerage-Zuordnung, ...)
+  bleiben als defensiver Fallback erhalten, sollten nach einer erfolgreichen
+  Validierung aber nicht mehr auslösen. Ein unerwarteter DB-Fehler an dieser
+  Stelle (z. B. ein Festplattenproblem) wird weiterhin pro Datensatz geloggt,
+  ohne den gesamten Lauf abzubrechen — das ist ein anderes Problem als eine
+  Datenqualitätsfrage in der Quelle und rechtfertigt keinen Komplettabbruch.
 
 ### Protokollierung (ImportLogger)
 
@@ -1722,14 +1785,19 @@ Jede Zeile: Zeitstempel, Aktion (`INSERTED`/`SKIPPED`/`REUSED`/`ERROR`/`INFO`),
 Entitätstyp, Quell-ID (WKN/GUID/OrderNumber) und optionales Detail — sowohl auf
 der Konsole als auch in der Log-Datei (`--log`, Default
 `import_<Zeitstempel>.log`, Append-Modus). Am Ende des Laufs gibt
-`writeSummary()` eine Zusammenfassung je Entität/Aktion aus.
+`writeSummary()` eine Zusammenfassung je Entität/Aktion aus. Schlägt die
+Vorab-Validierung fehl, wird stattdessen der strukturierte Validierungsbericht
+ausgegeben (siehe oben) — `writeSummary()` läuft in diesem Fall trotzdem noch
+(zeigt dann i. d. R. nur Nullen, da nichts geschrieben wurde).
 
 ### Bekannte Datenqualitätsprobleme in der Quell-XML
 
 Beim Import realer Depotdaten wurden vier Klassen von Fehlern in der alten
-C#-Quelle gefunden. Fall 1 und 4 erkennt der Importer und meldet sie, kann
-sie aber nicht selbst reparieren; Fall 2 und 3 werden automatisch korrigiert,
-weil dort eine eindeutig sichere Korrektur möglich ist:
+C#-Quelle gefunden. Fall 2 und 3 werden automatisch korrigiert, weil dort eine
+eindeutig sichere Korrektur möglich ist. Fall 1 und 4 kann der Importer nicht
+selbst reparieren — seit 05.07.2026 verhindern sie zusätzlich den kompletten
+Import (siehe "Validierung vor dem Import" oben), statt nur den betroffenen
+Datensatz zu überspringen:
 
 1. **Falsche `OrderNumber`** — ein einzelner Buy trug eine `OrderNumber`, die
    nicht zum zugehörigen PDF-Beleg passte und stattdessen mit einer völlig
@@ -1749,17 +1817,17 @@ weil dort eine eindeutig sichere Korrektur möglich ist:
    `grep -c`. Anders als Fall 3 ist das ein struktureller Fehler im
    Elementnamen, kein sicher normalisierbares Formatdetail — der Importer
    rät hier nicht, sondern meldet den Fehler als `ERROR`
-   (`RawShare::parseErrors`) und lässt `market_value_url`/
-   `market_value_parsing_type` für die betroffene Aktie leer. Nur durch
-   Korrektur des Elementnamens in der Quelle + Re-Import behebbar, oder
-   manuelles Nachtragen über `ShareEditForm`.
+   (`RawShare::parseErrors`). Nur durch Korrektur des Elementnamens in der
+   Quelle + Re-Import behebbar, oder manuelles Nachtragen über
+   `ShareEditForm` (nach einem ansonsten erfolgreichen Import der übrigen
+   Aktien, sobald diese eine WKN-Kollision nicht mehr betrifft).
 
 Bei jedem neuen Import lohnt sich ein Blick in die Log-Zusammenfassung auf
-`ERROR`-Zeilen (Fall 1 und 4, nur an der Quelle bzw. manuell behebbar) sowie
-auf `INFO`-Zeilen mit "widerspricht dem tatsächlichen Befund" (Fall 2) bzw.
-"doppelt-XML-escapte Ampersands" (Fall 3) — Letztere werden automatisch
-korrigiert, sind aber ein Hinweis auf die Häufigkeit dieser Datenfehler in
-der Quelle.
+`ERROR`-Zeilen (Fall 1 und 4, führen zum Komplettabbruch — nur an der Quelle
+bzw. manuell behebbar) sowie auf `INFO`-Zeilen mit "widerspricht dem
+tatsächlichen Befund" (Fall 2) bzw. "doppelt-XML-escapte Ampersands" (Fall 3)
+— Letztere werden automatisch korrigiert, sind aber ein Hinweis auf die
+Häufigkeit dieser Datenfehler in der Quelle.
 
 ### Tests (tests/xml-importer/)
 

@@ -16,6 +16,8 @@ qt_add_executable(spm-xml-importer
     main.cpp
     XmlPortfolioParser.h
     XmlPortfolioParser.cpp
+    PortfolioValidator.h
+    PortfolioValidator.cpp
     PortfolioImporter.h
     PortfolioImporter.cpp
     ImportLogger.h

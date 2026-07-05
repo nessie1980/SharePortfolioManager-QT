@@ -19,6 +19,7 @@ add_test(NAME tst_xmlportfolioparser COMMAND tst_xmlportfolioparser)
 # ── PortfolioImporter tests (gegen In-Memory-SQLite) ────────────────────────────
 qt_add_executable(tst_portfolioimporter tst_portfolioimporter.cpp
     ../../tools/xml-importer/XmlPortfolioParser.cpp
+    ../../tools/xml-importer/PortfolioValidator.cpp
     ../../tools/xml-importer/PortfolioImporter.cpp
     ../../tools/xml-importer/ImportLogger.cpp
     ../../app/models/ShareObject.cpp
@@ -46,3 +47,33 @@ target_link_libraries(tst_portfolioimporter
 )
 
 add_test(NAME tst_portfolioimporter COMMAND tst_portfolioimporter)
+
+# ── PortfolioValidator tests (gegen In-Memory-SQLite, reine Vorab-Prüfung) ──────
+qt_add_executable(tst_portfoliovalidator tst_portfoliovalidator.cpp
+    ../../tools/xml-importer/XmlPortfolioParser.cpp
+    ../../tools/xml-importer/PortfolioValidator.cpp
+    ../../app/models/ShareObject.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/DividendObject.cpp
+    ../../app/models/BrokerageObject.cpp
+    ../../app/models/DailyValuesObject.cpp
+    ../../app/repositories/ShareRepository.cpp
+    ../../app/repositories/BuyRepository.cpp
+    ../../app/repositories/SaleRepository.cpp
+    ../../app/repositories/DividendRepository.cpp
+    ../../app/repositories/BrokerageRepository.cpp
+    ../../app/repositories/DailyValuesRepository.cpp
+)
+
+target_include_directories(tst_portfoliovalidator
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/xml-importer
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+target_link_libraries(tst_portfoliovalidator
+    PRIVATE Qt6::Test Qt6::Sql Database
+)
+
+add_test(NAME tst_portfoliovalidator COMMAND tst_portfoliovalidator)
