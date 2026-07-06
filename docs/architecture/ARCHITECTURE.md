@@ -1024,6 +1024,18 @@ Gilt für beide Tabs (Haupttabellen und Footer):
 - **Icons**: `setIconSize(24×24)`; die Entwicklungs-Pfeile liegen als 24-px-PNGs
   vor. Der `CenterIconDelegate` zentriert die Icon-Dekoration in den
   Icon-Spalten (Icon, PrevDayChart, CompleteChart) von Haupttabelle und Footer.
+  Die Icon-Auswahl selbst läuft immer über dieselbe `devIcon(pct)`-Lambda
+  (`pct > 2.0` → PositivStrong, `pct > 0.0` → PositivNormal, `pct < -2.0` →
+  NegativStrong, `pct < 0.0` → NegativNormal, sonst Neutral) — einmal definiert
+  in `populatePortfolioTables()`/`updatePortfolioFooters()`, und seit dem
+  Bugfix vom 06.07.2026 zusätzlich lokal in `onMarketValuesUpdated()` (siehe
+  dort), damit auch ein Einzel-Refresh die Icon-Zellen mit aktualisiert statt
+  nur die Text-Zellen (`setTwoLine`). Zuvor blieb `PrevDayChart` nach einem
+  Einzel-Refresh auf dem Icon-Stand des letzten vollständigen Tabellenaufbaus
+  stehen — ein gestiegener Tageskurs konnte so trotz korrekt grün angezeigter
+  Werte (`+1,20 €`, `+0,26 %`) weiterhin mit einem fallenden Icon dargestellt
+  werden, da `it->setIcon(...)` für `PrevDayChart`/`CompleteChart` im
+  Einzel-Refresh-Pfad schlicht nie aufgerufen wurde.
 - **Zeilen**: Haupttabellen 38 px, Footer 34 px; alternierende Zeilenfarben und
   Gridlinien in Haupttabellen und Footer.
 
@@ -1229,7 +1241,10 @@ Bei `ParserErrorCode::Finished`:
 3. `ShareRepository::updatePrice(guid, curPrice, prevDayPrice, now)` und
    `ShareRepository::updateLastInternetUpdate(guid, now)` in DB speichern.
 4. Beide Grid-Zeilen (FinalValueTable + MarketValueTable) aktualisieren —
-   Kurs und Prozent-Performance-Spalte.
+   Kurs- und Prozent-Performance-Spalten **sowie** die Entwicklungs-Icons
+   (`PrevDayChart`, `CompleteChart`) über dieselbe lokale `devIcon`-Lambda,
+   die auch `populatePortfolioTables()`/`updatePortfolioFooters()` verwenden
+   (Bugfix 06.07.2026 — siehe unten).
 5. Statusmeldung: `"Kurswert aktualisiert: <Name> — <Kurs>"`.
 6. `m_marketDone = true` → wenn auch `m_dailyDone`, `onRefreshShareFinished()` aufrufen.
 

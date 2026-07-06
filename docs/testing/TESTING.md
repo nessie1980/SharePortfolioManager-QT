@@ -1095,6 +1095,19 @@ Aspekte, sobald Parser-Mocking existiert:
   d.h. Edit/Delete/Refresh dürfen sich während eines laufenden Refreshs durch
   die programmatische Selektion in `selectShareRow()` nicht selbst wieder
   aktivieren.
+- **Regressionstest für Icon-Update bei Einzel-Refresh (Bugfix 06.07.2026):**
+  nach `onMarketValuesUpdated()` müssen in **beiden** Tabellen die Icons der
+  Spalten `PrevDayChart` und `CompleteChart` der aktualisierten Zeile dem neu
+  berechneten `v.prevDayPct` bzw. `v.completeProfitPct`/`completeProfitPctMarket`
+  entsprechen — nicht dem Icon-Stand vom letzten `populatePortfolioTables()`.
+  Konkret: Aktie mit zuvor negativem Vortagswert (negatives Icon gesetzt),
+  Refresh liefert einen positiven `prevDayPct` → Icon muss auf PositivNormal/
+  PositivStrong wechseln (und umgekehrt). Dieser Fall wurde vor dem Fix nicht
+  abgedeckt, weil `onMarketValuesUpdated()` die Icon-Zellen schlicht nie
+  anfasste (nur `setTwoLine()` für die Text-Spalten) — Text und Icon liefen
+  dadurch nach einem Einzel-Refresh dauerhaft auseinander, bis der nächste
+  volle `populatePortfolioTables()`-Aufbau (z. B. Neustart) das Icon wieder
+  korrigierte.
 
 @note Ein isolierter Test ohne Parser-Mocking wäre nur über einen
 Refaktor möglich (z.B. `selectShareRow()`/`selectFirstShareRow()` als

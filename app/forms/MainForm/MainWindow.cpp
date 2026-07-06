@@ -1695,6 +1695,19 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
             return palette().color(QPalette::Text);
         };
 
+        // Pick development icon — mirrors the devIcon lambda in
+        // populatePortfolioTables()/updatePortfolioFooters(). Needed here too,
+        // since a single-share refresh must also refresh the PrevDayChart/
+        // CompleteChart icon cells, not just their text (Bugfix: Icon blieb
+        // nach Einzel-Refresh auf dem alten, ggf. fallenden Stand stehen).
+        auto devIcon = [](double pct) -> QIcon {
+            if (pct >  2.0)  return IconProvider::icon(IconProvider::PositivStrong);
+            if (pct >  0.0)  return IconProvider::icon(IconProvider::PositivNormal);
+            if (pct <  -2.0) return IconProvider::icon(IconProvider::NegativStrong);
+            if (pct <  0.0)  return IconProvider::icon(IconProvider::NegativNormal);
+            return IconProvider::icon(IconProvider::Neutral);
+        };
+
         auto setTwoLine = [&](QTableWidget* tbl, int row, int col,
                                const QString& top,    const QColor& tc,
                                const QString& bottom, const QColor& bc) {
@@ -1741,6 +1754,8 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
                        curPriceStr, neutral, prevPriceStr, neutral);
             setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::PrevDay),
                        prevDiffStr, perfColor(v.prevDayDiff), prevPctStr, perfColor(v.prevDayPct));
+            if (auto* it = m_finalValueTable->item(fr, static_cast<int>(FC::PrevDayChart)))
+                it->setIcon(devIcon(v.prevDayPct));
             setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::Performance),
                        profitFinalStr, perfColor(v.profitLossFinal),
                        profitFinalPctStr, perfColor(v.profitLossPctFinal));
@@ -1755,6 +1770,8 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
                        cProfitStr, perfColor(v.completeProfitLoss), cProfitPctStr, perfColor(v.completeProfitPct));
             setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::CompletePurchaseFinalValue),
                        cPurchaseStr, neutral, cCurValStr, neutral);
+            if (auto* it = m_finalValueTable->item(fr, static_cast<int>(FC::CompleteChart)))
+                it->setIcon(devIcon(v.completeProfitPct));
         }
 
         // Update Marktwert row
@@ -1764,6 +1781,8 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
                        curPriceStr, neutral, prevPriceStr, neutral);
             setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::PrevDay),
                        prevDiffStr, perfColor(v.prevDayDiff), prevPctStr, perfColor(v.prevDayPct));
+            if (auto* it = m_marketValueTable->item(mr, static_cast<int>(MC::PrevDayChart)))
+                it->setIcon(devIcon(v.prevDayPct));
             setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::Performance),
                        profitStr, perfColor(v.profitLoss), profitPctStr, perfColor(v.profitLossPct));
             setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::PurchaseMarketValue),
@@ -1777,6 +1796,8 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
                        cProfitMStr, perfColor(v.completeProfitLossMarket), cProfitMPctStr, perfColor(v.completeProfitPctMarket));
             setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::CompletePurchaseMarketValue),
                        cPurchaseMStr, neutral, cCurValMStr, neutral);
+            if (auto* it = m_marketValueTable->item(mr, static_cast<int>(MC::CompleteChart)))
+                it->setIcon(devIcon(v.completeProfitPctMarket));
         }
 
         const QString priceStr = locale.toString(newPrice, 'f', 2);
