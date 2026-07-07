@@ -1256,6 +1256,187 @@ private slots:
                     .isEmpty());
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // MainWindow — Grid-Selektion während "Alle aktualisieren" (07.07.2026)
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // Seeds a 3-share queue and drives onRefreshAll() through
+    // ParserTestUtils::FakeNetworkAccessManager. Reentrancy (Bugfix
+    // 05.07.2026) means each share's completion chains directly into the
+    // next share's startParsing() from within the same callback — so rather
+    // than trying to catch mid-queue selection states with a fixed sleep
+    // (racy), these tests use fakeNam.requestCount() as a deterministic
+    // checkpoint: createRequest() increments it synchronously at the exact
+    // point startParsing() is called, which is itself called synchronously
+    // right after selectShareRow() inside startRefreshForShare() — so
+    // "requestCount() just became N" reliably means "selection is already on
+    // the Nth share".
+
+    /**
+     * Seed an N-share portfolio, each MarketPrice-only with a distinct,
+     * fake-network-routable marketPriceUrl. Named so ShareRepository::findAll()
+     * (ordered by name ascending) — and therefore the "Alle aktualisieren"
+     * queue order — is deterministic (share 0 first, share N-1 last).
+     *
+     * IMPORTANT: both the data table AND the footer table have exactly 3
+     * rows/13(12) columns for the Depotwert(Marktwert) tab (footer = 3 fixed
+     * summary rows) — findFinalTable(window, 3)/findMarketTable(window, 3)
+     * would therefore match EITHER table ambiguously. Never seed exactly 3
+     * shares for tests that locate the data table via row count; use 2 or 4+.
+     *
+     * @return GUIDs in queue order.
+     */
+    QStringList seedRefreshQueuePortfolio(int shareCount, const QString& dbPath)
+    {
+        Q_ASSERT(shareCount != 3); // see collision note above
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        QStringList guids;
+        for (int i = 0; i < shareCount; ++i) {
+            const QString guid = QStringLiteral("g-queue-%1").arg(i);
+            // "AAA", "BBB", "CCC", ... — keeps findAll()'s name-ascending
+            // order equal to insertion order regardless of shareCount.
+            const QString namePrefix = QString(3, QChar(char('A' + i)));
+            ShareObject share(guid, QStringLiteral("QU%1").arg(i),
+                              QStringLiteral("DE000QU0000%1").arg(i),
+                              QStringLiteral("%1 Queue Share").arg(namePrefix));
+            share.setUpdateType(ShareUpdateType::MarketPrice);
+            share.setMarketPriceParsingType(ShareParsingType::ApiOnVista);
+            share.setMarketPriceUrl(
+                QStringLiteral("https://example.com/onvista/%1").arg(guid));
+            share.setMarketPriceEncoding(QStringLiteral("UTF-8"));
+            ShareRepository().insert(share);
+            insertTestBuy(guid, QStringLiteral("depot1"),
+                          QStringLiteral("2020-01-01T00:00:00"), 5.0, 100.0);
+            guids << guid;
+        }
+        AppSettings::instance().setPortfolioPath(dbPath);
+        return guids;
+    }
+
+    static QByteArray onVistaRealTimeJson(double price)
+    {
+        return QStringLiteral(R"({
+            "price": %1,
+            "previousLast": %1,
+            "isoCurrency": "EUR",
+            "idNotation": 1,
+            "idCurrency": 1,
+            "datetimePrice": {
+                "localTime": "2024-01-15T10:30:00",
+                "localTimeZone": "Europe/Berlin",
+                "utcTimeStamp": 1705315800
+            }
+        })").arg(price).toUtf8();
+    }
+
+    void test_onRefreshAll_gridSelectionFollowsQueueProgress_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshAllSelection.db");
+        // 2 shares — see seedRefreshQueuePortfolio() note on why not 3.
+        const QStringList guids = seedRefreshQueuePortfolio(2, dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        for (int i = 0; i < guids.size(); ++i) {
+            fakeNam.setResponse(
+                QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[i])),
+                onVistaRealTimeJson(100.0 + i));
+        }
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl  = findFinalTable(window, 2);
+        QTableWidget* marketTbl = findMarketTable(window, 2);
+        if (!finalTbl)  QFAIL("Depotwert-Datentabelle nicht gefunden");
+        if (!marketTbl) QFAIL("Marktwert-Datentabelle nicht gefunden");
+
+        QMetaObject::invokeMethod(&window, "onRefreshAll", Qt::DirectConnection);
+
+        // Immediately after onRefreshAll() returns, startRefreshForShare()
+        // for share A has already run synchronously (incl. selectShareRow()),
+        // before any fake network response resolves.
+        QCOMPARE(finalTbl->currentRow(),  rowForGuid(finalTbl,  guids[0]));
+        QCOMPARE(marketTbl->currentRow(), rowForGuid(marketTbl, guids[0]));
+
+        // Share A finishes → chains into share B (reentrant startParsing(),
+        // Bugfix 05.07.2026). requestCount() ticking up to 2 is a
+        // deterministic checkpoint for "selection is now on B": createRequest()
+        // increments it synchronously right after selectShareRow() runs
+        // inside startRefreshForShare().
+        QVERIFY2(QTest::qWaitFor([&]{ return fakeNam.requestCount() >= 2; }, 2000),
+                 "Zweite Anfrage (Aktie B) wurde nicht gestellt.");
+        QCOMPARE(finalTbl->currentRow(),  rowForGuid(finalTbl,  guids[1]));
+        QCOMPARE(marketTbl->currentRow(), rowForGuid(marketTbl, guids[1]));
+
+        // Share B finishes, queue empty, no error → selectFirstShareRow()
+        // resets the selection to row 0 in both tables.
+        QVERIFY2(QTest::qWaitFor([&]{
+                     return finalTbl->currentRow() == 0 && marketTbl->currentRow() == 0;
+                 }, 2000),
+                 "Selektion sprang nach Abschluss der Queue nicht auf Zeile 0.");
+        QCOMPARE(fakeNam.requestCount(), 2);
+    }
+
+    void test_onRefreshAll_errorMidQueue_selectionStaysOnFailedShare_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshAllError.db");
+        // 4 shares (A ok, B fails, C+D must never be reached) — see
+        // seedRefreshQueuePortfolio() note on why not 3.
+        const QStringList guids = seedRefreshQueuePortfolio(4, dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[0])),
+            onVistaRealTimeJson(100.0));
+        // Share B (second in queue) fails with a network error.
+        fakeNam.setError(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[1])),
+            QNetworkReply::HostNotFoundError, QStringLiteral("host not found"));
+        // Shares C and D would succeed — must never be reached.
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[2])),
+            onVistaRealTimeJson(102.0));
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[3])),
+            onVistaRealTimeJson(103.0));
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl  = findFinalTable(window, 4);
+        QTableWidget* marketTbl = findMarketTable(window, 4);
+        if (!finalTbl)  QFAIL("Depotwert-Datentabelle nicht gefunden");
+        if (!marketTbl) QFAIL("Marktwert-Datentabelle nicht gefunden");
+
+        QAction* actionRefreshAll = findActionByStatusTip(window,
+            QStringLiteral("Kurse aller Aktien aktualisieren"));
+        QVERIFY(actionRefreshAll);
+
+        QMetaObject::invokeMethod(&window, "onRefreshAll", Qt::DirectConnection);
+        QVERIFY(!actionRefreshAll->isEnabled()); // disabled while the queue runs
+
+        // Wait until the run has actually finished — finaliseRefresh()
+        // re-enables m_actionRefreshAll. This happens once share B's error
+        // has propagated through onMarketValuesUpdated() /
+        // onRefreshShareFinished(), which clears the queue instead of
+        // advancing to shares C/D.
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefreshAll->isEnabled(); }, 2000),
+                 "onRefreshAll() hat nach dem Fehler bei Aktie B nicht beendet "
+                 "(finaliseRefresh() wurde nicht erreicht).");
+
+        // Shares C and D must never have been requested — the queue was
+        // cleared on error, not merely paused.
+        QCOMPARE(fakeNam.requestCount(), 2);
+
+        // Selection stays on the FAILED share (B) — selectFirstShareRow() is
+        // deliberately not called in the error path, so the problem stays
+        // visible instead of the grid jumping back to row 0.
+        QCOMPARE(finalTbl->currentRow(),  rowForGuid(finalTbl,  guids[1]));
+        QCOMPARE(marketTbl->currentRow(), rowForGuid(marketTbl, guids[1]));
+    }
+
     void test_updateWindowTitle_showsFileName()
     {
         openMemoryDb();

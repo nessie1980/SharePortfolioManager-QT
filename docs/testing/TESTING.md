@@ -1145,15 +1145,36 @@ Aspekte sind mit der jetzt vorhandenen Infrastruktur umsetzbar, aber noch
 nicht geschrieben:
 - Footer-Update während `onRefreshAll()` (`refreshPortfolioFooters()`),
   inklusive Zwischenständen zwischen einzelnen Aktien der Queue.
-- Grid-Selektion **während** `onRefreshAll()` läuft (Queue-Fortschritt) sowie
-  der Fehlerfall (`m_errorOccurred`, Selektion bleibt auf der fehlgeschlagenen
-  Aktie stehen, `selectFirstShareRow()` wird nicht aufgerufen).
-- Erfolgreicher Abschluss von "Alle aktualisieren" (Selektion springt auf
-  Zeile 0 via `selectFirstShareRow()`).
 - `onDailyValuesUpdated()`-Pfad (aktuell nur `onMarketValuesUpdated()` über
-  Fake-Netzwerk abgedeckt) und die "Alle aktualisieren"-Verkettung über
-  mehrere Aktien hinweg (analog zu `test_reentrant_start_from_finished_signal_succeeds_viaFakeNetwork`
-  in `tst_parser.cpp`, aber auf `MainWindow`-Ebene).
+  Fake-Netzwerk abgedeckt) — die "Alle aktualisieren"-Verkettung über mehrere
+  Aktien hinweg (analog zu `test_reentrant_start_from_finished_signal_succeeds_viaFakeNetwork`
+  in `tst_parser.cpp`, aber auf `MainWindow`-Ebene) ist über
+  `ShareUpdateType::MarketPrice` bereits abgedeckt (siehe unten), nicht aber
+  über `DailyValues`/`Both`.
+
+### Grid-Selektion während "Alle aktualisieren" — erledigt (07.07.2026)
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_onRefreshAll_gridSelectionFollowsQueueProgress_viaFakeNetwork` | 2-Aktien-Queue über Fake-Netzwerk | Selektion folgt in **beiden** Tabellen jedem Queue-Schritt (Aktie A → Aktie B); nach erfolgreichem Abschluss springt die Selektion via `selectFirstShareRow()` auf Zeile 0 |
+| `test_onRefreshAll_errorMidQueue_selectionStaysOnFailedShare_viaFakeNetwork` | 4-Aktien-Queue, Aktie B (Index 1) liefert `QNetworkReply::HostNotFoundError` | Aktien C/D werden nie angefragt (`fakeNam.requestCount() == 2`, Queue wird bei Fehler geleert statt pausiert); Selektion bleibt auf der fehlgeschlagenen Aktie B stehen, `selectFirstShareRow()` wird **nicht** aufgerufen |
+
+@note Aktienanzahl bewusst **nie 3**: sowohl die Datentabelle als auch die
+Footer-Tabelle (feste 3 Summenzeilen) haben bei 3 Zeilen dieselbe Spalten-
+**und** Zeilenanzahl — `findFinalTable(window, 3)`/`findMarketTable(window, 3)`
+wären dadurch zwischen Daten- und Footer-Tabelle mehrdeutig. Der Helper
+`seedRefreshQueuePortfolio(shareCount, dbPath)` erzwingt das über einen
+`Q_ASSERT`.
+
+@note Reentrancy (Bugfix 05.07.2026) bedeutet, dass eine abgeschlossene Aktie
+direkt aus demselben Callback heraus in `startParsing()` der nächsten Aktie
+verkettet — ein Zwischenzustand mitten in der Queue lässt sich daher nicht
+über einen festen `QTest::qWait()` zuverlässig einfangen (Race). Stattdessen
+dient `fakeNam.requestCount()` als deterministischer Checkpoint:
+`createRequest()` zählt synchron genau in dem Moment hoch, in dem
+`startParsing()` aufgerufen wird — und das passiert in `startRefreshForShare()`
+unmittelbar **nach** `selectShareRow()`. Sobald `requestCount()` auf den
+erwarteten Wert gestiegen ist, steht die Selektion also bereits fest.
 
 ### `buildDailyValuesUrl()` — erledigt (07.07.2026)
 

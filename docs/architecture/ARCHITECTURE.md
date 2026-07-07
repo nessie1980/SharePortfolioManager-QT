@@ -1718,9 +1718,16 @@ Letzterer deckte dabei einen echten, bis dahin unbekannten Bug auf (siehe
 Instanzzustand zu) und direkt getestet, ohne `QMetaObject::invokeMethod`
 (siehe TESTING.md, Abschnitt "`buildDailyValuesUrl()` — erledigt").
 
-Footer-Update während `onRefreshAll()` und Grid-Selektion während der
-"Alle aktualisieren"-Queue (inkl. Fehlerfall) sind weiterhin offen (siehe
-TESTING.md für die vollständige Liste).
+Grid-Selektion während der "Alle aktualisieren"-Queue (Fortschritt über
+mehrere Aktien sowie der Fehlerfall) ist ebenfalls seit 07.07.2026 getestet
+— über eine Mehr-Aktien-Queue plus `fakeNam.requestCount()` als
+deterministischer Checkpoint für Zwischenzustände, die wegen der
+Reentrancy (Bugfix 05.07.2026) sonst racy wären (siehe TESTING.md, Abschnitt
+"Grid-Selektion während 'Alle aktualisieren'").
+
+Footer-Update während `onRefreshAll()` (`refreshPortfolioFooters()`,
+inklusive Zwischenständen zwischen einzelnen Aktien der Queue) ist weiterhin
+offen (siehe TESTING.md für Details).
 
 ---
 
