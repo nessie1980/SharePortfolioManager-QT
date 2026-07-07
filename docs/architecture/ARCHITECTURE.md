@@ -1243,6 +1243,21 @@ Guard hätte die programmatische Selektion aus `selectShareRow()` die drei
 Aktionen mitten im laufenden Refresh versehentlich wieder freigeschaltet,
 obwohl `onRefreshShare()`/`onRefreshAll()` sie explizit deaktiviert hatten.
 
+**Bugfix 07.07.2026 — Lücke im Busy-Guard:** `startRefreshForShare()` ruft
+`selectShareRow()` auf, **bevor** einer der beiden Parser `startParsing()`
+aufruft. Wird eine Tabelle zum allerersten Mal selektiert (z. B.
+`m_marketValueTable`, wenn zuvor nur im Depotwert-Tab selektiert wurde), löst
+`selectShareRow()` dort ein echtes `selectionChanged()` aus — und zu diesem
+Zeitpunkt sind `m_parserMarketValues.isBusy()`/`m_parserDailyValues.isBusy()`
+noch beide `false`. Der Busy-Guard griff in dieser Lücke nicht, wodurch
+`enableShareActions` die drei Aktionen genau in dem Moment wieder freischaltete,
+in dem `onRefreshShare()` sie eben erst deaktiviert hatte. Aufgedeckt durch
+`test_onRefreshShare_busyGuard_selectionDuringRefreshDoesNotReenableActions`
+(siehe TESTING.md). Behoben durch ein zusätzliches Flag `m_refreshInProgress`,
+das in `startRefreshForShare()` **vor** `selectShareRow()` gesetzt und in
+`finaliseRefresh()` zurückgesetzt wird; der Busy-Guard prüft jetzt
+`m_refreshInProgress || m_parserMarketValues.isBusy() || m_parserDailyValues.isBusy()`.
+
 #### Methode selectFirstShareRow() — Grid-Reset nach "Alle aktualisieren"
 
 Selektiert Zeile 0 und ruft `scrollToTop()` in beiden Tabellen auf (No-Op falls
@@ -1681,10 +1696,24 @@ test without a real network" war der Grund dafür) — sie wurde zu
 `test_start_fails_when_noRegexListGiven` umbenannt, und ein echter
 Busy-Guard-Test (`test_start_fails_when_busy_viaFakeNetwork`) kam neu hinzu.
 
-Damit ist die Voraussetzung für die noch ausstehenden MainWindow-Refresh-Flow-Tests
-geschaffen; deren eigentliche Umsetzung (`buildDailyValuesUrl()`,
-`onMarketValuesUpdated()`, Footer-/Grid-Selektions-Tests) ist ein separater, noch
-offener Schritt (siehe TESTING.md, Abschnitt "Refresh-Flow").
+`MainWindow` erhielt darauf aufbauend (ebenfalls 07.07.2026) einen zweiten,
+test-only Konstruktor `MainWindow(QNetworkAccessManager* networkManagerForTesting,
+QWidget* parent = nullptr)`, der den injizierten (Fake-)`QNetworkAccessManager`
+an `m_parserMarketValues` und `m_parserDailyValues` durchreicht. Umgesetzt als
+verhaltensneutraler Refaktor: der komplette bisherige Konstruktor-Body wurde in
+eine private `initialize()`-Methode ausgelagert, die von beiden Konstruktoren
+aufgerufen wird — nur die Parser-Member-Initialisierung unterscheidet sich
+zwischen den beiden Konstruktoren. `tests/forms/CMakeLists.txt` bindet
+`FakeNetworkAccessManager.h/.cpp` aus `tests/parser/` sowie `Qt6::Network` ein.
+
+Erste `tst_mainwindow`-Tests, die den kompletten Pfad `startRefreshForShare()`
+→ `onMarketValuesUpdated()` → Grid-Update darüber abdecken: der
+Icon-Update-Regressionstest (Bugfix 06.07.2026) und der `enableShareActions`-
+Busy-Guard-Test (siehe TESTING.md, Abschnitt "Refresh-Flow", für Details).
+Footer-Update während `onRefreshAll()`, Grid-Selektion während der
+"Alle aktualisieren"-Queue, der zugehörige Fehlerfall sowie
+`buildDailyValuesUrl()` als reine Berechnungsfunktion sind weiterhin offen
+(siehe TESTING.md für die vollständige Liste).
 
 ---
 

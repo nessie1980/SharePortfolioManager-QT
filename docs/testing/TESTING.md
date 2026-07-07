@@ -1099,32 +1099,63 @@ kein eigenständiger Test nötig.
 
 ---
 
-### Refresh-Flow (Kursdaten-Abruf) — Mocking-Infrastruktur vorhanden, Tests noch ausstehend
+### Refresh-Flow (Kursdaten-Abruf) — teilweise umgesetzt (07.07.2026)
 
 Der Kursdaten-Abruf (`onRefreshShare`, `onRefreshAll`, `buildDailyValuesUrl`,
 `onMarketValuesUpdated`, `onDailyValuesUpdated`) ist direkt in `MainWindow`
 implementiert und erfordert echte Netzwerkzugriffe. Der bisherige Blocker —
 kein Weg, `ParserLib::Parser` in Tests von echtem Netzwerk zu entkoppeln — ist
-seit 07.07.2026 behoben: `Parser` besitzt jetzt einen Konstruktor zur
-`QNetworkAccessManager`-Injection, und `ParserTestUtils::FakeNetworkAccessManager`
-(`tests/parser/FakeNetworkAccessManager.h/.cpp`) liefert vorab definierte
-Antworten ohne echten Netzwerkzugriff (siehe ARCHITECTURE.md, "Offene Punkte /
-TODO" sowie den neuen `tst_parser`-Testblock weiter oben).
+seit 07.07.2026 vollständig behoben:
 
-Damit ist die **Voraussetzung** für die Refresh-Flow-Tests geschaffen — die
-eigentlichen Tests für `MainWindow` (Footer-Update, Grid-Selektion, der
-Icon-Update-Regressionstest vom 06.07.2026) sind aber noch **nicht**
-geschrieben. Dafür fehlt noch:
-- `m_parserMarketValues`/`m_parserDailyValues` sind aktuell Werttyp-Member
-  ohne Injection-Möglichkeit von außen — `MainWindow` bräuchte entweder einen
-  (test-only) Konstruktor, der einen `FakeNetworkAccessManager` durchreicht,
-  oder die beiden Parser müssten testseitig über eine geeignete Stelle
-  erreichbar gemacht werden.
-- Aufnahme von `FakeNetworkAccessManager.h/.cpp` in `tests/forms/CMakeLists.txt`
-  (Wiederverwendung aus `tests/parser/`, siehe Hinweis oben).
-- Die eigentlichen Testfälle für die unten aufgeführten Aspekte.
+1. `Parser` besitzt einen Konstruktor zur `QNetworkAccessManager`-Injection;
+   `ParserTestUtils::FakeNetworkAccessManager` (`tests/parser/FakeNetworkAccessManager.h/.cpp`)
+   liefert vorab definierte Antworten ohne echten Netzwerkzugriff (siehe
+   ARCHITECTURE.md, "Offene Punkte / TODO", sowie den `tst_parser`-Testblock
+   weiter oben).
+2. `MainWindow` besitzt jetzt ebenfalls einen Test-Konstruktor:
+   `MainWindow(QNetworkAccessManager* networkManagerForTesting, QWidget* parent = nullptr)`
+   reicht den injizierten (Fake-)`QNetworkAccessManager` an **beide** internen
+   Parser (`m_parserMarketValues`, `m_parserDailyValues`) durch. Umgesetzt als
+   verhaltensneutraler Refaktor: der komplette bisherige Konstruktor-Body
+   wurde in eine private `initialize()`-Methode ausgelagert, die von beiden
+   Konstruktoren aufgerufen wird — einzig die Parser-Member-Initialisierung
+   unterscheidet sich zwischen den beiden Konstruktoren (Member-Initializer-
+   Liste, vor `initialize()`). Der Produktions-Konstruktor
+   `MainWindow(QWidget*)` ist dadurch unverändert im Verhalten.
+   `tests/forms/CMakeLists.txt` bindet `FakeNetworkAccessManager.h/.cpp` aus
+   `tests/parser/` sowie `Qt6::Network` für `tst_mainwindow` ein.
 
-Tests sind bis dahin zurückgestellt.
+Erste Tests, die den kompletten Pfad `startRefreshForShare()` →
+`onMarketValuesUpdated()` → Grid-Update über die echte Produktionslogik (kein
+Fake der Geschäftslogik, nur der Netzwerkantwort) abdecken:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_onRefreshShare_iconRegression_updatesChartIconsViaFakeNetwork` | **Regressionstest Bugfix 06.07.2026:** Aktie mit initial negativem `prevDayPct` (Icon `NegativStrong`), Fake-Netzwerk liefert Kurs mit `prevDayPct = +20%` | Nach `onRefreshShare()` zeigen `PrevDayChart` **und** `CompleteChart` in **beiden** Tabellen (Depotwert + Marktwert) das Icon `PositivStrong`; `fakeNam.requestCount() == 1` |
+| `test_onRefreshShare_busyGuard_selectionDuringRefreshDoesNotReenableActions` | `enableShareActions`-Busy-Guard (`setupCentralWidget()`): `onRefreshShare()` deaktiviert die Aktionen, `startRefreshForShare()` → `selectShareRow()` selektiert `m_marketValueTable` zum ersten Mal (echtes `selectionChanged()`), **bevor** ein Parser `startParsing()` aufruft | `m_actionEdit` bleibt disabled — deckte beim ersten Lauf einen echten Bugfix-07.07.2026-Regressionsfall auf, siehe unten |
+
+Icon-Vergleich: `QIcon` hat kein sinnvolles `operator==` (vergleicht
+Engine-Pointer-Identität, nicht Pixelinhalt) — `IconProvider::icon()` baut bei
+jedem Aufruf ein frisches `QIcon` aus demselben Ressourcenpfad, daher sind
+zwei "gleiche" Icons nie `==`. Der Testhelper `iconsEqual()` vergleicht
+stattdessen `icon.pixmap(24,24).toImage()`.
+
+**Noch offen** — die übrigen in TESTING.md/ARCHITECTURE.md beschriebenen
+Aspekte sind mit der jetzt vorhandenen Infrastruktur umsetzbar, aber noch
+nicht geschrieben:
+- Footer-Update während `onRefreshAll()` (`refreshPortfolioFooters()`),
+  inklusive Zwischenständen zwischen einzelnen Aktien der Queue.
+- Grid-Selektion **während** `onRefreshAll()` läuft (Queue-Fortschritt) sowie
+  der Fehlerfall (`m_errorOccurred`, Selektion bleibt auf der fehlgeschlagenen
+  Aktie stehen, `selectFirstShareRow()` wird nicht aufgerufen).
+- Erfolgreicher Abschluss von "Alle aktualisieren" (Selektion springt auf
+  Zeile 0 via `selectFirstShareRow()`).
+- `buildDailyValuesUrl()` als reine Berechnungsfunktion (siehe unten) — kein
+  Parser-Mocking nötig, aber noch nicht als Testfälle umgesetzt.
+- `onDailyValuesUpdated()`-Pfad (aktuell nur `onMarketValuesUpdated()` über
+  Fake-Netzwerk abgedeckt) und die "Alle aktualisieren"-Verkettung über
+  mehrere Aktien hinweg (analog zu `test_reentrant_start_from_finished_signal_succeeds_viaFakeNetwork`
+  in `tst_parser.cpp`, aber auf `MainWindow`-Ebene).
 
 `buildDailyValuesUrl()` als reine Berechnungsfunktion (kein Netzwerk, kein UI)
 wäre eigenständig testbar und kann bei Bedarf in `tst_mainwindow` ergänzt werden.
@@ -1142,14 +1173,59 @@ bereits die aktualisierten Summen zeigen, nicht erst nach dem letzten Element
 der Queue. Im Fehlerfall (`m_errorOccurred`) darf der Footer für die
 betroffene Aktie nicht aktualisiert werden.
 
-**Grid-Selektion folgt dem Refresh (Feature vom 05.07.2026)** — ebenfalls Teil
-des zurückgestellten Testplans, da `selectShareRow()` aus `startRefreshForShare()`
-und `selectFirstShareRow()` aus `onRefreshShareFinished()` aufgerufen werden und
-damit dieselbe Voraussetzung wie der übrige Refresh-Flow (Parser-Mocking in
-`tst_mainwindow` eingebunden, siehe oben). Beide Methoden sind zudem `private`
-(keine `private slots`), also auch ohne echten Parser-Lauf nicht per
-`QMetaObject::invokeMethod` isoliert aufrufbar. Testbare Aspekte, sobald die
-Refresh-Flow-Tests umgesetzt sind:
+**Grid-Selektion folgt dem Refresh (Feature vom 05.07.2026)** — teilweise bereits
+umgesetzt und getestet, teilweise weiterhin Teil des zurückgestellten
+Refresh-Flow-Testplans.
+
+@note Korrektur (07.07.2026): Diese Datei behauptete bis dahin fälschlich,
+`selectShareRow()`/`selectFirstShareRow()` seien `private` (keine
+`private slots`) und ungetestet. Tatsächlich wurden beide Methoden bereits
+am 05.07.2026 zu `private slots` refaktoriert — verhaltensneutral, einzig um
+`QMetaObject::invokeMethod()`-Aufrufe aus Tests zu ermöglichen, unabhängig
+vom restlichen (Parser-abhängigen) Refresh-Flow — und dafür existieren
+bereits zwei Tests in `tst_mainwindow.cpp`:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_selectShareRow_selectsMatchingGuidInBothTables` | `selectShareRow(guid)` per `QMetaObject::invokeMethod` aufgerufen | `currentRow()` in beiden Tabellen (`m_finalValueTable`, `m_marketValueTable`) zeigt auf die Zeile mit passender GUID |
+| `test_selectShareRow_switchingGuid_movesSelectionToOtherShare` | Zweiter `selectShareRow()`-Aufruf mit anderer GUID (simuliert Queue-Fortschritt bei "Alle aktualisieren") | Selektion wandert zur neuen Aktie |
+
+Beide Tests kommen komplett ohne Parser/Netzwerk aus — die Methoden selbst
+haben keine solche Abhängigkeit, nur ihre *Aufrufer* (`startRefreshForShare()`,
+`onRefreshShareFinished()`) schon. Das war der Grund für den Slot-Refaktor:
+die Selektionslogik isoliert testbar zu machen, ohne auf die
+Parser-Mocking-Infrastruktur warten zu müssen.
+
+**Erledigt (07.07.2026)** — mit `MainWindow(QNetworkAccessManager*, ...)` +
+`FakeNetworkAccessManager` (siehe oben):
+
+- **Regressionstest für Icon-Update bei Einzel-Refresh (Bugfix 06.07.2026):**
+  `test_onRefreshShare_iconRegression_updatesChartIconsViaFakeNetwork` —
+  Aktie mit zuvor negativem Vortagswert (Icon `NegativStrong`), Refresh
+  liefert einen positiven `prevDayPct` (+20 %) → Icon wechselt in **beiden**
+  Tabellen (`PrevDayChart` und `CompleteChart`) auf `PositivStrong`. Dieser
+  Fall wurde vor dem Fix nicht abgedeckt, weil `onMarketValuesUpdated()` die
+  Icon-Zellen schlicht nie anfasste (nur `setTwoLine()` für die
+  Text-Spalten) — Text und Icon liefen dadurch nach einem Einzel-Refresh
+  dauerhaft auseinander, bis der nächste volle `populatePortfolioTables()`-
+  Aufbau (z. B. Neustart) das Icon wieder korrigierte.
+- **`enableShareActions`-Lambda-Busy-Guard — Regressionstest, deckte Bugfix
+  07.07.2026 auf:** `test_onRefreshShare_busyGuard_selectionDuringRefreshDoesNotReenableActions`.
+  `startRefreshForShare()` ruft `selectShareRow()` auf, **bevor** einer der
+  beiden Parser `startParsing()` aufruft. Wurde eine Tabelle (typischerweise
+  `m_marketValueTable`) zuvor noch nie selektiert, löst `selectShareRow()`
+  dort ein echtes `selectionChanged()` aus — zu diesem Zeitpunkt waren
+  `m_parserMarketValues.isBusy()`/`m_parserDailyValues.isBusy()` noch beide
+  `false`, der reine Busy-Guard griff also nicht und `enableShareActions`
+  schaltete Edit/Delete/Refresh genau in dem Moment wieder frei, in dem
+  `onRefreshShare()` sie eben erst deaktiviert hatte. Behoben durch ein
+  zusätzliches Flag `m_refreshInProgress`, gesetzt in `startRefreshForShare()`
+  vor `selectShareRow()`, zurückgesetzt in `finaliseRefresh()` (siehe
+  ARCHITECTURE.md für Details).
+
+**Weiterhin offen** — die folgenden Aspekte hängen ebenfalls am Refresh-Flow,
+sind mit der jetzt vorhandenen Infrastruktur umsetzbar, aber noch nicht
+geschrieben:
 
 - Während `onRefreshAll()` läuft: nach dem Start jeder Aktie in der Queue ist
   in **beiden** Tabellen (`m_finalValueTable`, `m_marketValueTable`) die Zeile
@@ -1164,33 +1240,6 @@ Refresh-Flow-Tests umgesetzt sind:
   bleibt unverändert auf der Aktie stehen, bei der der Fehler auftrat —
   `selectFirstShareRow()` wird nicht aufgerufen, unabhängig davon ob noch
   weitere Aktien in der Queue standen.
-- `enableShareActions`-Lambda (in `setupCentralWidget()`): bleibt No-Op
-  solange `m_parserMarketValues.isBusy() || m_parserDailyValues.isBusy()` —
-  d.h. Edit/Delete/Refresh dürfen sich während eines laufenden Refreshs durch
-  die programmatische Selektion in `selectShareRow()` nicht selbst wieder
-  aktivieren.
-- **Regressionstest für Icon-Update bei Einzel-Refresh (Bugfix 06.07.2026):**
-  nach `onMarketValuesUpdated()` müssen in **beiden** Tabellen die Icons der
-  Spalten `PrevDayChart` und `CompleteChart` der aktualisierten Zeile dem neu
-  berechneten `v.prevDayPct` bzw. `v.completeProfitPct`/`completeProfitPctMarket`
-  entsprechen — nicht dem Icon-Stand vom letzten `populatePortfolioTables()`.
-  Konkret: Aktie mit zuvor negativem Vortagswert (negatives Icon gesetzt),
-  Refresh liefert einen positiven `prevDayPct` → Icon muss auf PositivNormal/
-  PositivStrong wechseln (und umgekehrt). Dieser Fall wurde vor dem Fix nicht
-  abgedeckt, weil `onMarketValuesUpdated()` die Icon-Zellen schlicht nie
-  anfasste (nur `setTwoLine()` für die Text-Spalten) — Text und Icon liefen
-  dadurch nach einem Einzel-Refresh dauerhaft auseinander, bis der nächste
-  volle `populatePortfolioTables()`-Aufbau (z. B. Neustart) das Icon wieder
-  korrigierte.
-
-@note Ein isolierter Test ohne die Einbindung des Parser-Mockings in
-`tst_mainwindow` wäre nur über einen Refaktor möglich (z.B.
-`selectShareRow()`/`selectFirstShareRow()` als `private slots` deklarieren,
-damit sie per `QMetaObject::invokeMethod` direkt aufrufbar sind, unabhängig
-vom restlichen Refresh-Flow). Das wurde hier bewusst nicht gemacht, um die
-Methoden nicht ohne funktionalen Grund zu Slots aufzuwerten; die
-Testabdeckung erfolgt stattdessen zusammen mit dem übrigen Refresh-Flow,
-sobald dessen Tests umgesetzt sind.
 
 ---
 

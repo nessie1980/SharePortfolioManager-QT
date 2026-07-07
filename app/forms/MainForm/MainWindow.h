@@ -28,6 +28,8 @@
 #include <QList>
 #include <QQueue>
 
+class QNetworkAccessManager;
+
 /**
  * @brief Main application window.
  *
@@ -49,6 +51,25 @@ class MainWindow : public QMainWindow
 
 public:
     explicit MainWindow(QWidget* parent = nullptr);
+
+    /**
+     * @brief Test-only constructor: injects a QNetworkAccessManager into both
+     * internal Parser instances (m_parserMarketValues, m_parserDailyValues).
+     *
+     * Lets unit tests exercise the real refresh flow (startRefreshForShare(),
+     * onMarketValuesUpdated(), onDailyValuesUpdated(), onRefreshShareFinished(),
+     * "Alle aktualisieren") against a ParserTestUtils::FakeNetworkAccessManager
+     * (see tests/parser/FakeNetworkAccessManager.h) instead of a real network,
+     * while running through the exact same production code path otherwise.
+     *
+     * @param networkManagerForTesting  Non-null QNetworkAccessManager (typically
+     *        a FakeNetworkAccessManager) to inject into both parsers. Ownership
+     *        stays with the caller. Must not be null — use the
+     *        MainWindow(QWidget*) constructor in production code.
+     * @param parent  Optional parent widget.
+     */
+    explicit MainWindow(QNetworkAccessManager* networkManagerForTesting, QWidget* parent = nullptr);
+
     ~MainWindow() override = default;
 
     // ── Column indices — Final value tab ──────────────────────────────────
@@ -214,6 +235,18 @@ private:
      */
     void createBackup(const QString& portfolioPath);
 private:
+    /**
+     * @brief Shared construction body for both constructors.
+     *
+     * Extracted 07.07.2026 so the test-only MainWindow(QNetworkAccessManager*, ...)
+     * constructor doesn't have to duplicate it — the only difference between
+     * the two constructors is which Parser constructor
+     * m_parserMarketValues/m_parserDailyValues are built with (decided in
+     * each constructor's member initializer list, before this method runs).
+     * No behavioral change versus the previous single-constructor version.
+     */
+    void initialize();
+
     void setupActions();
     void setupMenuBar();
     void setupToolBar();
@@ -414,6 +447,20 @@ private:
     bool               m_marketDone    = false; ///< MarketValues parser finished/idle for current share
     bool               m_dailyDone     = false; ///< DailyValues parser finished/idle for current share
     bool               m_errorOccurred = false; ///< At least one parser failed for current share
+    /**
+     * @brief True from the start of startRefreshForShare() until finaliseRefresh().
+     *
+     * Bugfix 07.07.2026: startRefreshForShare() calls selectShareRow() BEFORE
+     * either Parser's startParsing() — so on the very first refresh (when a
+     * table has never been selected before), selectShareRow() can trigger a
+     * genuine selectionChanged() while m_parserMarketValues.isBusy() and
+     * m_parserDailyValues.isBusy() are still both false, letting the
+     * enableShareActions busy-guard (setupCentralWidget()) slip through and
+     * re-enable Edit/Delete/Refresh mid-refresh. m_refreshInProgress closes
+     * that gap by being set before selectShareRow() runs, independent of
+     * whether either Parser has actually started yet.
+     */
+    bool               m_refreshInProgress = false;
     QAction* m_actionNew                  = nullptr;
     QAction* m_actionOpen                 = nullptr;
     QAction* m_actionSaveAs               = nullptr;

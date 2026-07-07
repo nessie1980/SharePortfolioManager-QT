@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Test Sql Widgets Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Test Sql Widgets Multimedia Network)
 
 qt_add_resources(FORM_TEST_RESOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../../app/resources/resources.qrc
@@ -6,6 +6,8 @@ qt_add_resources(FORM_TEST_RESOURCES
 
 qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/forms/MainForm/MainWindow.cpp
+    ../parser/FakeNetworkAccessManager.h
+    ../parser/FakeNetworkAccessManager.cpp
     ../../app/forms/LoggerSettingsForm/LoggerSettingsForm.cpp
     ../../app/forms/SoundSettingsForm/SoundSettingsForm.cpp
     ../../app/forms/AboutForm/AboutForm.cpp
@@ -99,7 +101,7 @@ set_target_properties(tst_mainwindow PROPERTIES
 )
 
 target_link_libraries(tst_mainwindow
-    PRIVATE Qt6::Test Qt6::Sql Qt6::Widgets Qt6::Multimedia Database Logger Parser
+    PRIVATE Qt6::Test Qt6::Sql Qt6::Widgets Qt6::Multimedia Qt6::Network Database Logger Parser
 )
 
 if(Qt6PdfWidgets_FOUND)

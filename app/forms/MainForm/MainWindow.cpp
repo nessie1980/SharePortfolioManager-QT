@@ -42,6 +42,37 @@
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
+    initialize();
+}
+
+// Test-only constructor (07.07.2026): injects a QNetworkAccessManager into
+// both internal Parser instances so tests can exercise the real refresh flow
+// against a ParserTestUtils::FakeNetworkAccessManager instead of a real
+// network — see tests/parser/FakeNetworkAccessManager.h. The member
+// initializer list is the only difference from the constructor above; the
+// rest of construction is identical and shared via initialize().
+MainWindow::MainWindow(QNetworkAccessManager* networkManagerForTesting, QWidget* parent)
+    : QMainWindow(parent)
+    , m_parserMarketValues(networkManagerForTesting)
+    , m_parserDailyValues(networkManagerForTesting)
+{
+    Q_ASSERT_X(networkManagerForTesting, "MainWindow",
+              "Test-only constructor requires a non-null QNetworkAccessManager "
+              "(e.g. a ParserTestUtils::FakeNetworkAccessManager). Use the "
+              "MainWindow(QWidget*) constructor in production code.");
+    initialize();
+}
+
+// ── initialize ────────────────────────────────────────────────────────────────
+//
+// Shared construction body for both constructors above. Extracted 07.07.2026
+// so the test-only constructor doesn't have to duplicate it — the only thing
+// that differs between the two constructors is which Parser constructor
+// m_parserMarketValues/m_parserDailyValues are built with, which is decided
+// in each constructor's member initializer list, before this method runs.
+// No behavioral change versus the previous single-constructor version.
+void MainWindow::initialize()
+{
     setWindowTitle(tr("Share Portfolio Manager"));
     setMinimumSize(900, 600);
 
@@ -389,7 +420,16 @@ void MainWindow::setupCentralWidget()
         // table selection programmatically to follow the share currently
         // being updated, which would otherwise re-enable these actions via
         // this same selectionChanged handler.
-        if (m_parserMarketValues.isBusy() || m_parserDailyValues.isBusy())
+        //
+        // Bugfix 07.07.2026: m_refreshInProgress is checked IN ADDITION to
+        // Parser::isBusy(), not instead of it — startRefreshForShare() calls
+        // selectShareRow() before either Parser's startParsing(), so on a
+        // table's first-ever selection, isBusy() can still be false at the
+        // exact moment selectShareRow() fires selectionChanged(). Relying on
+        // isBusy() alone let that one selectionChanged() through and
+        // re-enabled the actions mid-refresh.
+        if (m_refreshInProgress ||
+            m_parserMarketValues.isBusy() || m_parserDailyValues.isBusy())
             return;
 
         const bool hasSelection =
@@ -1377,6 +1417,10 @@ void MainWindow::startRefreshForShare(const ShareObject& share)
     m_dailyDone     = false;
     m_errorOccurred = false;
 
+    // Bugfix 07.07.2026: set BEFORE selectShareRow() — see m_refreshInProgress
+    // doc comment in MainWindow.h for why isBusy() alone isn't sufficient here.
+    m_refreshInProgress = true;
+
     // Keep the grid selection in sync with whichever share is currently
     // being updated — both for a single refresh and for every step of the
     // "Alle aktualisieren" queue.
@@ -1563,7 +1607,8 @@ void MainWindow::onRefreshShareFinished()
 
 void MainWindow::finaliseRefresh()
 {
-    m_updateAllFlag = false;
+    m_updateAllFlag     = false;
+    m_refreshInProgress = false;
     m_refreshQueue.clear();
 
     m_marketValueProgress->setValue(0);

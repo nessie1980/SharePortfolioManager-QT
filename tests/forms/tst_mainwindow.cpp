@@ -69,6 +69,9 @@
 #include <QProgressBar>
 #include <QUuid>
 #include "../../app/forms/UiConstants.h"
+#include "../../app/IconProvider.h"
+#include "../parser/FakeNetworkAccessManager.h"
+#include <QUrl>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stub IModelShareAdd — used in Presenter tests to control save/exists results
@@ -631,6 +634,26 @@ private:
         return nullptr;
     }
 
+    /**
+     * QIcon has no meaningful operator== (it compares pointer identity of the
+     * internal engine, not pixel content) — IconProvider::icon() constructs a
+     * fresh QIcon from the same resource path on every call, so two "equal"
+     * icons are never `==`. Compare rendered pixel data instead.
+     */
+    static bool iconsEqual(const QIcon& a, const QIcon& b, int size = 24)
+    {
+        return a.pixmap(size, size).toImage() == b.pixmap(size, size).toImage();
+    }
+
+    /** Find a QAction child by its statusTip() (unique and mnemonic-free, unlike text()). */
+    static QAction* findActionByStatusTip(const MainWindow& w, const QString& statusTip)
+    {
+        for (auto* a : w.findChildren<QAction*>())
+            if (a && a->statusTip() == statusTip)
+                return a;
+        return nullptr;
+    }
+
 private slots:
 
     void initTestCase()
@@ -813,13 +836,17 @@ private slots:
     //
     // selectShareRow() and selectFirstShareRow() are called from within the
     // Parser-dependent refresh flow (startRefreshForShare() /
-    // onRefreshShareFinished()), which itself still requires Parser-Mocking
-    // to be exercised end-to-end (see TESTING.md). Both methods are pure
-    // table helpers with no Parser/network dependency of their own — they
-    // were declared as "private slots" specifically so they can be invoked
-    // directly via QMetaObject::invokeMethod, which lets the actual
-    // selection logic be tested deterministically without touching the
-    // Parser at all.
+    // onRefreshShareFinished()). Both methods are pure table helpers with no
+    // Parser/network dependency of their own — they were declared as
+    // "private slots" specifically so they can be invoked directly via
+    // QMetaObject::invokeMethod, which lets the actual selection logic be
+    // tested deterministically without touching the Parser at all. The tests
+    // below cover exactly that.
+    //
+    // The actual Parser-dependent callers (startRefreshForShare(),
+    // onMarketValuesUpdated(), onRefreshShareFinished()) are covered further
+    // down using the MainWindow(QNetworkAccessManager*, ...) test constructor
+    // together with ParserTestUtils::FakeNetworkAccessManager (07.07.2026).
 
     void test_selectShareRow_selectsMatchingGuidInBothTables()
     {
@@ -929,6 +956,155 @@ private slots:
         // No crash is the actual assertion here; data tables stay empty.
         QTableWidget* finalTbl = findFinalTable(window, 0);
         QVERIFY(finalTbl != nullptr);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // MainWindow — Refresh-Flow über FakeNetworkAccessManager (07.07.2026)
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // Uses the MainWindow(QNetworkAccessManager*, QWidget*) test constructor
+    // together with ParserTestUtils::FakeNetworkAccessManager (see
+    // tests/parser/FakeNetworkAccessManager.h) to exercise
+    // startRefreshForShare() / onMarketValuesUpdated() / onRefreshShareFinished()
+    // through the exact production code path, without any real network access.
+
+    void test_onRefreshShare_iconRegression_updatesChartIconsViaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshIcon.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        // Share starts with a NEGATIVE previous-day performance (curPrice <
+        // prevDayPrice), so populatePortfolioTables() sets a Negativ* icon —
+        // matching the regression scenario from Bugfix 06.07.2026.
+        ShareObject share(QStringLiteral("g-icon"), QStringLiteral("IC01"),
+                          QStringLiteral("DE000IC00001"), QStringLiteral("IconRegression AG"));
+        share.setCurPrice(90.0);
+        share.setPrevDayPrice(100.0);
+        share.setUpdateType(ShareUpdateType::MarketPrice);
+        share.setMarketPriceParsingType(ShareParsingType::ApiOnVista);
+        share.setMarketPriceUrl(QStringLiteral("https://example.com/onvista/quote"));
+        share.setMarketPriceEncoding(QStringLiteral("UTF-8"));
+        ShareRepository().insert(share);
+        insertTestBuy(QStringLiteral("g-icon"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 5.0, 100.0);
+
+        // Yesterday's closing price in daily_values — onMarketValuesUpdated()
+        // fetches prevDay from here, NOT from the share's own prevDayPrice field.
+        DailyValuesRepository dvRepo;
+        dvRepo.upsert(DailyValuesObject(QStringLiteral("g-icon"),
+                                        QDate::currentDate().addDays(-1),
+                                        100.0, 100.0, 100.0, 100.0, 1000.0));
+
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        const QUrl marketUrl(QStringLiteral("https://example.com/onvista/quote"));
+        // +20% vs. the seeded prevDay of 100.0 → PositivStrong (> 2%)
+        fakeNam.setResponse(marketUrl, QByteArrayLiteral(R"({
+            "price": 120.0,
+            "previousLast": 100.0,
+            "isoCurrency": "EUR",
+            "idNotation": 1,
+            "idCurrency": 1,
+            "datetimePrice": {
+                "localTime": "2024-01-15T10:30:00",
+                "localTimeZone": "Europe/Berlin",
+                "utcTimeStamp": 1705315800
+            }
+        })"));
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl  = findFinalTable(window, 1);
+        QTableWidget* marketTbl = findMarketTable(window, 1);
+        if (!finalTbl)  QFAIL("Depotwert-Datentabelle nicht gefunden");
+        if (!marketTbl) QFAIL("Marktwert-Datentabelle nicht gefunden");
+
+        const int finalRow  = rowForGuid(finalTbl,  QStringLiteral("g-icon"));
+        const int marketRow = rowForGuid(marketTbl, QStringLiteral("g-icon"));
+        QVERIFY(finalRow  >= 0);
+        QVERIFY(marketRow >= 0);
+
+        // FinalValueColumn::PrevDayChart = 6, MarketValueColumn::PrevDayChart = 5
+        // FinalValueColumn::CompleteChart = 10, MarketValueColumn::CompleteChart = 9
+        static const int FC_PrevDayChart  = 6;
+        static const int MC_PrevDayChart  = 5;
+        static const int FC_CompleteChart = 10;
+        static const int MC_CompleteChart = 9;
+
+        // Sanity: before the refresh, the icon reflects the initial NEGATIVE
+        // prevDayPct (curPrice 90 vs. prevDayPrice 100 → -10%).
+        QVERIFY(iconsEqual(finalTbl->item(finalRow, FC_PrevDayChart)->icon(),
+                           IconProvider::icon(IconProvider::NegativStrong)));
+
+        finalTbl->setCurrentCell(finalRow, 0);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        // The fake reply resolves via a queued 0ms timer — wait for the icon
+        // to actually flip before asserting (same pattern as tst_parser.cpp).
+        const bool iconUpdated = QTest::qWaitFor([&]() {
+            auto* it = finalTbl->item(finalRow, FC_PrevDayChart);
+            return it && iconsEqual(it->icon(), IconProvider::icon(IconProvider::PositivStrong));
+        }, 2000);
+
+        QVERIFY2(iconUpdated,
+                 "PrevDayChart-Icon (Depotwert) wurde nach dem Einzel-Refresh "
+                 "nicht aktualisiert — Regression Bugfix 06.07.2026.");
+
+        // Must hold for the Marktwert table too, and for CompleteChart.
+        QVERIFY(iconsEqual(marketTbl->item(marketRow, MC_PrevDayChart)->icon(),
+                           IconProvider::icon(IconProvider::PositivStrong)));
+        QVERIFY(iconsEqual(finalTbl->item(finalRow, FC_CompleteChart)->icon(),
+                           marketTbl->item(marketRow, MC_CompleteChart)->icon()));
+
+        QCOMPARE(fakeNam.requestCount(), 1);
+    }
+
+    void test_onRefreshShare_busyGuard_selectionDuringRefreshDoesNotReenableActions()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshBusy.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        ShareObject share(QStringLiteral("g-busy"), QStringLiteral("BS01"),
+                          QStringLiteral("DE000BS00001"), QStringLiteral("Busy AG"));
+        share.setUpdateType(ShareUpdateType::MarketPrice);
+        share.setMarketPriceParsingType(ShareParsingType::ApiOnVista);
+        share.setMarketPriceUrl(QStringLiteral("https://example.com/onvista/busy"));
+        share.setMarketPriceEncoding(QStringLiteral("UTF-8"));
+        ShareRepository().insert(share);
+        insertTestBuy(QStringLiteral("g-busy"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 5.0, 100.0);
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        // No response registered for the busy share's URL — irrelevant here,
+        // since the assertion happens before the fake reply resolves.
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        finalTbl->setCurrentCell(0, 0);
+        QApplication::processEvents(); // let selectionChanged enable the actions
+
+        QAction* actionEdit = findActionByStatusTip(window,
+            QStringLiteral("Ausgewählte Aktie bearbeiten"));
+        QVERIFY(actionEdit);
+        QVERIFY(actionEdit->isEnabled()); // enabled once a row is selected
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        // onRefreshShare() disables actions synchronously, then
+        // startRefreshForShare() -> selectShareRow() re-selects the very same
+        // row, firing selectionChanged() again — the busy-guard in the
+        // enableShareActions lambda (setupCentralWidget()) must keep the
+        // action disabled. Without the guard, this selectionChanged would
+        // re-enable it mid-refresh.
+        QVERIFY(!actionEdit->isEnabled());
     }
 
     void test_updateWindowTitle_showsFileName()
