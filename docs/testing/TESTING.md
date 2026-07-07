@@ -1140,15 +1140,30 @@ jedem Aufruf ein frisches `QIcon` aus demselben Ressourcenpfad, daher sind
 zwei "gleiche" Icons nie `==`. Der Testhelper `iconsEqual()` vergleicht
 stattdessen `icon.pixmap(24,24).toImage()`.
 
-**Noch offen** — mit der jetzt vorhandenen Infrastruktur umsetzbar, aber
-nicht mehr Teil der ursprünglichen Drei-Punkte-Liste (Grid-Selektion,
-`buildDailyValuesUrl()`, Footer-Update — alle drei jetzt erledigt):
-- `onDailyValuesUpdated()`-Pfad (aktuell nur `onMarketValuesUpdated()` über
-  Fake-Netzwerk abgedeckt) — die "Alle aktualisieren"-Verkettung über mehrere
-  Aktien hinweg (analog zu `test_reentrant_start_from_finished_signal_succeeds_viaFakeNetwork`
-  in `tst_parser.cpp`, aber auf `MainWindow`-Ebene) ist über
-  `ShareUpdateType::MarketPrice` bereits abgedeckt (siehe unten), nicht aber
-  über `DailyValues`/`Both`.
+### `onDailyValuesUpdated()`-Pfad — erledigt (08.07.2026)
+
+Bislang war über `FakeNetworkAccessManager` nur der `MarketPrice`-Zweig
+(`onMarketValuesUpdated()`) end-to-end abgedeckt. Analog dazu jetzt auch der
+`DailyValues`-Zweig: Yahoo-History-JSON über Fake-Netzwerk, volle
+Produktionslogik (`buildDailyValuesUrl()` → `ParserLib::Parser` →
+`DailyValuesRepository::upsertList()`), keine eigene Attrappe der
+Geschäftslogik.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_onRefreshShare_dailyValuesOnly_upsertsIntoDailyValuesRepository_viaFakeNetwork` | Einzel-Aktie, `ShareUpdateType::DailyValues`, Yahoo-History mit 2 Handelstagen | `DailyValuesRepository::findByShare()` liefert 2 Einträge (aufsteigend nach Datum, closingPrice 141.5 / 143.0); Statusmeldung "Tageswerte aktualisiert: ... 2 Einträge geholt (Eingefügt: 2 / Aktualisiert: 0 / Unverändert: 0)" erscheint im Status-Log |
+| `test_onRefreshAll_dailyValuesQueue_chainsAcrossTwoShares_viaFakeNetwork` | 2-Aktien-Queue, beide `DailyValues`-only | Reentrante Verkettung analog zu den `MarketPrice`-Queue-Tests (`m_marketDone` ist bei `DailyValues`-only von vornherein `true`, sodass `onDailyValuesUpdated()` allein `onRefreshShareFinished()` auslöst); `requestCount() == 2`; Selektion springt danach via `selectFirstShareRow()` auf Zeile 0; beide Aktien haben je 2 Tageswerte-Einträge |
+| `test_onRefreshShare_bothUpdateType_updatesMarketPriceAndDailyValues_viaFakeNetwork` | Einzel-Aktie, `ShareUpdateType::Both` (OnVista-Realtime + Yahoo-History gleichzeitig) | Beide Parser laufen unabhängig; `onRefreshShareFinished()` (sichtbar über `finaliseRefresh()`/Re-Enable der Action) feuert erst nachdem **beide** `m_marketDone` und `m_dailyDone` `true` sind; `ShareObject::curPrice()` UND `DailyValuesRepository`-Einträge sind beide aktualisiert |
+
+Da für frisch angelegte Aktien noch keine `daily_values` existieren, löst
+`buildDailyValuesUrl()` für `ApiYahoo` deterministisch immer den
+"noch keine Daten"-Zweig auf (`tpl.arg("20y")` → `...?range=20y`) — die
+finale Request-URL ist damit ohne Sonderfall pro Aktie vorhersagbar. Das GUID
+wird dazu bewusst NICHT als `%`-Platzhalter ins URL-Template eingebaut
+(`QString::arg()` würde bei mehrfachem `%1` alle Vorkommen ersetzen, was mit
+dem einzigen von `buildDailyValuesUrl()` selbst gefüllten `%1` = Periodencode
+kollidieren würde), sondern per einfacher String-Konkatenation vor dem
+verbleibenden `%1`.
 
 ### Grid-Selektion während "Alle aktualisieren" — erledigt (07.07.2026)
 

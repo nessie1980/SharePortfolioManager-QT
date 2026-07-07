@@ -1608,6 +1608,252 @@ private slots:
         QCOMPARE(finalFooterDepotstand(footer), before);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // MainWindow — onDailyValuesUpdated()-Pfad (08.07.2026)
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // Bislang war über FakeNetworkAccessManager nur der MarketPrice-Zweig
+    // (onMarketValuesUpdated()) end-to-end abgedeckt. Diese Tests spiegeln
+    // dasselbe Muster für den DailyValues-Zweig: Yahoo-History-JSON über
+    // Fake-Netzwerk, echte Produktionslogik (buildDailyValuesUrl() ->
+    // ParserLib::Parser -> DailyValuesRepository::upsertList()), keine
+    // eigene Test-Attrappe der Geschäftslogik.
+    //
+    // Da für frisch angelegte Aktien noch keine daily_values existieren,
+    // löst buildDailyValuesUrl() für ApiYahoo deterministisch immer den
+    // "noch keine Daten"-Zweig auf: tpl.arg("20y") -> "...?range=20y".
+    // Das GUID wird daher NICHT als %-Platzhalter ins Template eingebaut
+    // (QString::arg() würde bei mehrfachem "%1" alle Vorkommen ersetzen),
+    // sondern per einfacher String-Konkatenation vor dem einzigen
+    // verbleibenden %1 (= Periodencode).
+
+    /// Yahoo-History-JSON mit 2 Handelstagen — identische Werte wie im
+    /// bestehenden test_yahoo_history_json_parsing (tst_parser.cpp) und
+    /// test_webMode_yahooHistory_viaFakeNetwork, damit die erwarteten
+    /// closingPrice-Werte (141.5 / 143.0) an einer einzigen Stelle im
+    /// Projekt als "Referenzwerte" etabliert sind.
+    static QByteArray yahooDailyHistoryJson()
+    {
+        return QByteArrayLiteral(R"({
+            "chart": {
+                "result": [{
+                    "timestamp": [1705315800, 1705402200],
+                    "indicators": {
+                        "quote": [{
+                            "open":   [140.0, 142.0],
+                            "close":  [141.5, 143.0],
+                            "high":   [142.0, 144.0],
+                            "low":    [139.0, 141.0],
+                            "volume": [100000, 120000]
+                        }]
+                    }
+                }]
+            }
+        })");
+    }
+
+    /**
+     * Seed an N-share portfolio, each DailyValues-only, with a distinct,
+     * fake-network-routable dailyValuesUrl (ApiYahoo, ein "%1"-Platzhalter
+     * für den Periodencode — siehe buildDailyValuesUrl()). Keine Aktie hat
+     * bereits daily_values, wodurch buildDailyValuesUrl() garantiert den
+     * "noch keine Daten"-Zweig nimmt (range=20y) — die finale Request-URL
+     * ist damit ohne Sonderfall pro Aktie vorhersagbar.
+     *
+     * Spiegelt seedRefreshQueuePortfolio() (MarketPrice-only) — siehe
+     * dessen Doku-Kommentar zum "nie exakt 3 Aktien seeden"-Hinweis, der
+     * hier identisch gilt.
+     */
+    QStringList seedDailyValuesQueuePortfolio(int shareCount, const QString& dbPath)
+    {
+        Q_ASSERT(shareCount != 3); // siehe Kollisions-Hinweis in seedRefreshQueuePortfolio()
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        QStringList guids;
+        for (int i = 0; i < shareCount; ++i) {
+            const QString guid = QStringLiteral("g-daily-%1").arg(i);
+            const QString namePrefix = QString(3, QChar(char('A' + i)));
+            ShareObject share(guid, QStringLiteral("DV%1").arg(i),
+                              QStringLiteral("DE000DV0000%1").arg(i),
+                              QStringLiteral("%1 Daily Share").arg(namePrefix));
+            share.setUpdateType(ShareUpdateType::DailyValues);
+            share.setDailyValuesParsingType(ShareParsingType::ApiYahoo);
+            share.setDailyValuesUrl(
+                QStringLiteral("https://example.com/yahoo-daily/") + guid +
+                QStringLiteral("?range=%1"));
+            share.setDailyValuesEncoding(QStringLiteral("UTF-8"));
+            ShareRepository().insert(share);
+            insertTestBuy(guid, QStringLiteral("depot1"),
+                          QStringLiteral("2020-01-01T00:00:00"), 5.0, 100.0);
+            guids << guid;
+        }
+        AppSettings::instance().setPortfolioPath(dbPath);
+        return guids;
+    }
+
+    void test_onRefreshShare_dailyValuesOnly_upsertsIntoDailyValuesRepository_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshDailyValuesSingle.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        const QString guid = QStringLiteral("g-daily-single");
+        ShareObject share(guid, QStringLiteral("DV01"),
+                          QStringLiteral("DE000DV00001"), QStringLiteral("DailyValues AG"));
+        share.setUpdateType(ShareUpdateType::DailyValues);
+        share.setDailyValuesParsingType(ShareParsingType::ApiYahoo);
+        share.setDailyValuesUrl(
+            QStringLiteral("https://example.com/yahoo-daily/") + guid +
+            QStringLiteral("?range=%1"));
+        share.setDailyValuesEncoding(QStringLiteral("UTF-8"));
+        ShareRepository().insert(share);
+        insertTestBuy(guid, QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 5.0, 100.0);
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/yahoo-daily/%1?range=20y").arg(guid)),
+            yahooDailyHistoryJson());
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        finalTbl->setCurrentCell(0, 0);
+
+        QAction* actionRefresh = findActionByStatusTip(window,
+            QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+        QVERIFY(actionRefresh);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                 "Einzel-Refresh (DailyValues) hat nicht beendet "
+                 "(finaliseRefresh() nicht erreicht).");
+
+        DailyValuesRepository dvRepo;
+        const auto entries = dvRepo.findByShare(guid);
+        QCOMPARE(entries.size(), 2);
+        // findByShare() ordnet nach date ASC — Reihenfolge damit unabhängig
+        // von Zeitzonen-Details der einzelnen QDate-Werte prüfbar.
+        QVERIFY(entries.first().date() < entries.last().date());
+        QCOMPARE(entries.first().closingPrice(), 141.5);
+        QCOMPARE(entries.last().closingPrice(),  143.0);
+
+        const auto* te = window.findChild<QTextEdit*>();
+        QVERIFY(te);
+        QVERIFY2(te->toPlainText().contains(
+                     QStringLiteral("Tageswerte aktualisiert: DailyValues AG — 2 Einträge "
+                                    "geholt (Eingefügt: 2 / Aktualisiert: 0 / Unverändert: 0)")),
+                 qPrintable(te->toPlainText()));
+    }
+
+    void test_onRefreshAll_dailyValuesQueue_chainsAcrossTwoShares_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshDailyValuesQueue.db");
+        // 2 Aktien — siehe seedRefreshQueuePortfolio()-Hinweis, warum nicht 3.
+        const QStringList guids = seedDailyValuesQueuePortfolio(2, dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        for (const QString& guid : guids) {
+            fakeNam.setResponse(
+                QUrl(QStringLiteral("https://example.com/yahoo-daily/%1?range=20y").arg(guid)),
+                yahooDailyHistoryJson());
+        }
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl  = findFinalTable(window, 2);
+        QTableWidget* marketTbl = findMarketTable(window, 2);
+        if (!finalTbl)  QFAIL("Depotwert-Datentabelle nicht gefunden");
+        if (!marketTbl) QFAIL("Marktwert-Datentabelle nicht gefunden");
+
+        QMetaObject::invokeMethod(&window, "onRefreshAll", Qt::DirectConnection);
+
+        // Dasselbe requestCount()-Checkpoint-Muster wie bei den MarketPrice-
+        // Queue-Tests: gilt hier identisch, da ShareUpdateType::DailyValues
+        // m_marketDone von vornherein auf true setzt (siehe
+        // startRefreshForShare()) — onDailyValuesUpdated() allein löst also
+        // bereits onRefreshShareFinished() aus und verkettet reentrant zur
+        // nächsten Aktie.
+        QVERIFY2(QTest::qWaitFor([&]{ return fakeNam.requestCount() >= 2; }, 2000),
+                 "Zweite Anfrage (Aktie B) wurde nicht gestellt.");
+
+        QVERIFY2(QTest::qWaitFor([&]{
+                     return finalTbl->currentRow() == 0 && marketTbl->currentRow() == 0;
+                 }, 2000),
+                 "Selektion sprang nach Abschluss der DailyValues-Queue nicht auf Zeile 0.");
+
+        DailyValuesRepository dvRepo;
+        for (const QString& guid : guids)
+            QCOMPARE(dvRepo.findByShare(guid).size(), 2);
+    }
+
+    void test_onRefreshShare_bothUpdateType_updatesMarketPriceAndDailyValues_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshBothSingle.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        const QString guid = QStringLiteral("g-both-single");
+        ShareObject share(guid, QStringLiteral("BO01"),
+                          QStringLiteral("DE000BO00001"), QStringLiteral("Both AG"));
+        share.setUpdateType(ShareUpdateType::Both);
+        share.setMarketPriceParsingType(ShareParsingType::ApiOnVista);
+        share.setMarketPriceUrl(QStringLiteral("https://example.com/onvista/") + guid);
+        share.setMarketPriceEncoding(QStringLiteral("UTF-8"));
+        share.setDailyValuesParsingType(ShareParsingType::ApiYahoo);
+        share.setDailyValuesUrl(
+            QStringLiteral("https://example.com/yahoo-daily/") + guid +
+            QStringLiteral("?range=%1"));
+        share.setDailyValuesEncoding(QStringLiteral("UTF-8"));
+        ShareRepository().insert(share);
+        insertTestBuy(guid, QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 5.0, 100.0);
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setResponse(QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guid)),
+                            onVistaRealTimeJson(250.0));
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/yahoo-daily/%1?range=20y").arg(guid)),
+            yahooDailyHistoryJson());
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        finalTbl->setCurrentCell(0, 0);
+
+        QAction* actionRefresh = findActionByStatusTip(window,
+            QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+        QVERIFY(actionRefresh);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        // Beide Parser laufen unabhängig/parallel (doMarket && doDaily);
+        // onRefreshShareFinished() feuert erst, wenn BEIDE m_marketDone UND
+        // m_dailyDone true sind — dass finaliseRefresh() die Action wieder
+        // aktiviert, belegt also, dass wirklich beide Callbacks durchliefen,
+        // nicht nur einer.
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                 "Einzel-Refresh (Both) hat nicht beendet "
+                 "(finaliseRefresh() nicht erreicht).");
+
+        QCOMPARE(fakeNam.requestCount(), 2);
+
+        const ShareObject reloaded = ShareRepository().findByGuid(guid);
+        QCOMPARE(reloaded.curPrice(), 250.0);
+
+        DailyValuesRepository dvRepo;
+        QCOMPARE(dvRepo.findByShare(guid).size(), 2);
+    }
+
     void test_updateWindowTitle_showsFileName()
     {
         openMemoryDb();

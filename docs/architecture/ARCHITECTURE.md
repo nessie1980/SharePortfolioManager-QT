@@ -1718,6 +1718,20 @@ Letzterer deckte dabei einen echten, bis dahin unbekannten Bug auf (siehe
 Instanzzustand zu) und direkt getestet, ohne `QMetaObject::invokeMethod`
 (siehe TESTING.md, Abschnitt "`buildDailyValuesUrl()` — erledigt").
 
+### `onDailyValuesUpdated()`-Pfad (erledigt 08.07.2026)
+
+Analog zu `onMarketValuesUpdated()` (siehe oben) ist jetzt auch der
+`DailyValues`-Zweig über `FakeNetworkAccessManager` end-to-end abgedeckt:
+Einzel-Refresh mit `ShareUpdateType::DailyValues` (Upsert in
+`DailyValuesRepository` + Statusmeldung), reentrante Verkettung über eine
+Zwei-Aktien-Queue (analog zu den `MarketPrice`-Queue-Tests — `m_marketDone`
+ist bei `DailyValues`-only von vornherein `true`, sodass
+`onDailyValuesUpdated()` allein `onRefreshShareFinished()` auslöst), sowie
+`ShareUpdateType::Both`, wo `onRefreshShareFinished()` nachweislich erst
+feuert, wenn beide Parser (Markt- und Tageswerte) unabhängig voneinander
+fertig sind. Details siehe TESTING.md, Abschnitt
+"`onDailyValuesUpdated()`-Pfad".
+
 Grid-Selektion während der "Alle aktualisieren"-Queue (Fortschritt über
 mehrere Aktien sowie der Fehlerfall) ist ebenfalls seit 07.07.2026 getestet
 — über eine Mehr-Aktien-Queue plus `fakeNam.requestCount()` als
