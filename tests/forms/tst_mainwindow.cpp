@@ -1107,6 +1107,155 @@ private slots:
         QVERIFY(!actionEdit->isEnabled());
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // MainWindow — buildDailyValuesUrl() (07.07.2026)
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // Pure, side-effect-free function of its three parameters — no Parser,
+    // no network, no MainWindow instance state touched. Declared `public
+    // static` specifically so it's directly callable here, mirroring the
+    // existing XmlPortfolioParser::normalizeWebSiteUrl() pattern rather than
+    // the "private slot" pattern used for selectShareRow()/selectFirstShareRow()
+    // (which would need Q_DECLARE_METATYPE for the ShareParsingType enum
+    // parameter to work with QMetaObject::invokeMethod's Q_ARG()).
+    //
+    // Date offsets below are relative to QDate::currentDate() (which the
+    // function itself also reads internally) rather than fixed calendar
+    // dates, since the period brackets are defined in month-differences to
+    // "today". addMonths() preserves the day-of-month where possible, which
+    // keeps the month-difference calculation exact except around month-end
+    // edge cases (e.g. day 31 with no equivalent in the target month) — an
+    // accepted, tiny flake risk given buildDailyValuesUrl() has no injectable
+    // "today" to pin down instead.
+
+    void test_buildDailyValuesUrl_normalizesPlaceholdersAndAmpersand()
+    {
+        const QString tpl = QStringLiteral(
+            "https://api.example.com/history?from={0}&amp;period={1}");
+
+        const QString url = MainWindow::buildDailyValuesUrl(
+            tpl, QDate(), ShareParsingType::ApiOnVista);
+
+        QVERIFY2(!url.contains(QStringLiteral("{0}")) &&
+                 !url.contains(QStringLiteral("{1}")),
+                 qPrintable(QStringLiteral("Platzhalter nicht ersetzt: %1").arg(url)));
+        QVERIFY2(!url.contains(QStringLiteral("&amp;")),
+                 qPrintable(QStringLiteral("&amp; nicht aufgelöst: %1").arg(url)));
+        QVERIFY(url.contains(QStringLiteral("&period=")));
+    }
+
+    void test_buildDailyValuesUrl_noExistingData_onVista_returns5YearWindow()
+    {
+        const QString url = MainWindow::buildDailyValuesUrl(
+            QStringLiteral("https://api.example.com/history?from=%1&period=%2"),
+            QDate(), // invalid → no data yet
+            ShareParsingType::ApiOnVista);
+
+        const QDate expectedStart = QDate::currentDate().addYears(-5);
+        QVERIFY(url.contains(QStringLiteral("period=Y5")));
+        QVERIFY(url.contains(expectedStart.toString(QStringLiteral("yyyy-MM-dd"))));
+    }
+
+    void test_buildDailyValuesUrl_noExistingData_yahoo_returns20yPeriod()
+    {
+        const QString url = MainWindow::buildDailyValuesUrl(
+            QStringLiteral("https://api.example.com/chart?range=%1"),
+            QDate(),
+            ShareParsingType::ApiYahoo);
+
+        QCOMPARE(url, QStringLiteral("https://api.example.com/chart?range=20y"));
+    }
+
+    void test_buildDailyValuesUrl_recentData_selectsM1()
+    {
+        const QDate latest = QDate::currentDate().addDays(-5); // well within 1 month
+        const QString url = MainWindow::buildDailyValuesUrl(
+            QStringLiteral("https://api.example.com/history?from=%1&period=%2"),
+            latest, ShareParsingType::ApiOnVista);
+
+        QVERIFY(url.contains(QStringLiteral("period=M1")));
+    }
+
+    void test_buildDailyValuesUrl_dataThreeWeeksOld_selectsM3()
+    {
+        const QDate latest = QDate::currentDate().addMonths(-2); // between 1 and 3 months
+        const QString url = MainWindow::buildDailyValuesUrl(
+            QStringLiteral("https://api.example.com/chart?range=%1"),
+            latest, ShareParsingType::ApiYahoo);
+
+        QCOMPARE(url, QStringLiteral("https://api.example.com/chart?range=3mo"));
+    }
+
+    void test_buildDailyValuesUrl_dataFourMonthsOld_selectsM6()
+    {
+        const QDate latest = QDate::currentDate().addMonths(-4); // between 3 and 6 months
+        const QString url = MainWindow::buildDailyValuesUrl(
+            QStringLiteral("https://api.example.com/chart?range=%1"),
+            latest, ShareParsingType::ApiYahoo);
+
+        QCOMPARE(url, QStringLiteral("https://api.example.com/chart?range=6mo"));
+    }
+
+    void test_buildDailyValuesUrl_dataNineMonthsOld_selectsY1()
+    {
+        const QDate latest = QDate::currentDate().addMonths(-9); // between 6 and 12 months
+        const QString url = MainWindow::buildDailyValuesUrl(
+            QStringLiteral("https://api.example.com/chart?range=%1"),
+            latest, ShareParsingType::ApiYahoo);
+
+        QCOMPARE(url, QStringLiteral("https://api.example.com/chart?range=1y"));
+    }
+
+    void test_buildDailyValuesUrl_dataTwentyMonthsOld_selectsY3()
+    {
+        const QDate latest = QDate::currentDate().addMonths(-20); // between 12 and 36 months
+        const QString url = MainWindow::buildDailyValuesUrl(
+            QStringLiteral("https://api.example.com/chart?range=%1"),
+            latest, ShareParsingType::ApiYahoo);
+
+        QCOMPARE(url, QStringLiteral("https://api.example.com/chart?range=3y"));
+    }
+
+    void test_buildDailyValuesUrl_dataFortyMonthsOld_selectsY5()
+    {
+        const QDate latest = QDate::currentDate().addMonths(-40); // between 36 and 60 months
+        const QString url = MainWindow::buildDailyValuesUrl(
+            QStringLiteral("https://api.example.com/chart?range=%1"),
+            latest, ShareParsingType::ApiYahoo);
+
+        QCOMPARE(url, QStringLiteral("https://api.example.com/chart?range=5y"));
+    }
+
+    void test_buildDailyValuesUrl_dataOverFiveYearsOld_fallsBackToY5()
+    {
+        // diff >= 60 months matches no bracket in the loop — falls through
+        // to the explicit "Fallback: 5 years" branch at the bottom of
+        // buildDailyValuesUrl(), same output as the Y5 in-loop match.
+        const QDate latest = QDate::currentDate().addMonths(-70);
+        const QString url = MainWindow::buildDailyValuesUrl(
+            QStringLiteral("https://api.example.com/history?from=%1&period=%2"),
+            latest, ShareParsingType::ApiOnVista);
+
+        const QDate expectedStart = QDate::currentDate().addMonths(-60);
+        QVERIFY(url.contains(QStringLiteral("period=Y5")));
+        QVERIFY(url.contains(expectedStart.toString(QStringLiteral("yyyy-MM-dd"))));
+    }
+
+    void test_buildDailyValuesUrl_regexParsingType_returnsEmptyString()
+    {
+        // ShareParsingType::Regex isn't a valid parsing strategy for the
+        // DailyValues history endpoint — both the "no data yet" and the
+        // "minimal window" code paths hit their `default: return {};` case.
+        QVERIFY(MainWindow::buildDailyValuesUrl(
+                    QStringLiteral("https://api.example.com/chart?range=%1"),
+                    QDate(), ShareParsingType::Regex)
+                    .isEmpty());
+        QVERIFY(MainWindow::buildDailyValuesUrl(
+                    QStringLiteral("https://api.example.com/chart?range=%1"),
+                    QDate::currentDate().addDays(-5), ShareParsingType::Regex)
+                    .isEmpty());
+    }
+
     void test_updateWindowTitle_showsFileName()
     {
         openMemoryDb();

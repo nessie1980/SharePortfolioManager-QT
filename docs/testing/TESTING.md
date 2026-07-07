@@ -1150,18 +1150,45 @@ nicht geschrieben:
   Aktie stehen, `selectFirstShareRow()` wird nicht aufgerufen).
 - Erfolgreicher Abschluss von "Alle aktualisieren" (Selektion springt auf
   Zeile 0 via `selectFirstShareRow()`).
-- `buildDailyValuesUrl()` als reine Berechnungsfunktion (siehe unten) — kein
-  Parser-Mocking nötig, aber noch nicht als Testfälle umgesetzt.
 - `onDailyValuesUpdated()`-Pfad (aktuell nur `onMarketValuesUpdated()` über
   Fake-Netzwerk abgedeckt) und die "Alle aktualisieren"-Verkettung über
   mehrere Aktien hinweg (analog zu `test_reentrant_start_from_finished_signal_succeeds_viaFakeNetwork`
   in `tst_parser.cpp`, aber auf `MainWindow`-Ebene).
 
-`buildDailyValuesUrl()` als reine Berechnungsfunktion (kein Netzwerk, kein UI)
-wäre eigenständig testbar und kann bei Bedarf in `tst_mainwindow` ergänzt werden.
-Testbare Aspekte wären u.a.: URL-Normalisierung (`{0}`→`%1`, `&amp;`→`&`),
-korrekte Periodenauswahl nach Monatsdifferenz, und Verhalten bei ungültigem
-`latestExistingDate`.
+### `buildDailyValuesUrl()` — erledigt (07.07.2026)
+
+Reine, seiteneffektfreie Funktion ihrer drei Parameter — kein Parser, kein
+Netzwerk, keine `MainWindow`-Instanzzustände. Deswegen `public static`
+gemacht (statt wie `selectShareRow()`/`selectFirstShareRow()` ein `private
+slot` zu werden): der `ShareParsingType`-Enum-Parameter hat kein
+`Q_DECLARE_METATYPE`/`Q_ENUM`, was `Q_ARG()` für `QMetaObject::invokeMethod`
+bräuchte — eine direkte `static`-Methode umgeht das komplett und ist zugleich
+technisch korrekter, da die Methode ohnehin nie `this` verwendet hat. Folgt
+damit demselben Muster wie das bereits bestehende
+`XmlPortfolioParser::normalizeWebSiteUrl()` (öffentliche, pur-statische
+Utility-Methode, direkt getestet).
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_buildDailyValuesUrl_normalizesPlaceholdersAndAmpersand` | `{0}`/`{1}`-Platzhalter und `&amp;` im Template | Keine `{0}`/`{1}`/`&amp;` mehr in der resultierenden URL |
+| `test_buildDailyValuesUrl_noExistingData_onVista_returns5YearWindow` | Ungültiges `latestExistingDate`, OnVista | Periodencode `Y5`, Startdatum = heute − 5 Jahre |
+| `test_buildDailyValuesUrl_noExistingData_yahoo_returns20yPeriod` | Ungültiges `latestExistingDate`, Yahoo | `range=20y` |
+| `test_buildDailyValuesUrl_recentData_selectsM1` | Letzter Datenpunkt vor 5 Tagen | Periodencode `M1` |
+| `test_buildDailyValuesUrl_dataThreeWeeksOld_selectsM3` | Letzter Datenpunkt vor 2 Monaten | `range=3mo` |
+| `test_buildDailyValuesUrl_dataFourMonthsOld_selectsM6` | Letzter Datenpunkt vor 4 Monaten | `range=6mo` |
+| `test_buildDailyValuesUrl_dataNineMonthsOld_selectsY1` | Letzter Datenpunkt vor 9 Monaten | `range=1y` |
+| `test_buildDailyValuesUrl_dataTwentyMonthsOld_selectsY3` | Letzter Datenpunkt vor 20 Monaten | `range=3y` |
+| `test_buildDailyValuesUrl_dataFortyMonthsOld_selectsY5` | Letzter Datenpunkt vor 40 Monaten | `range=5y` |
+| `test_buildDailyValuesUrl_dataOverFiveYearsOld_fallsBackToY5` | Letzter Datenpunkt vor 70 Monaten (kein Bracket in der Schleife matcht) | Fallback-Zweig liefert identisches Ergebnis wie der Y5-Treffer in der Schleife |
+| `test_buildDailyValuesUrl_regexParsingType_returnsEmptyString` | `ShareParsingType::Regex` (keine gültige Strategie für den History-Endpunkt) | Leerer String, sowohl mit gültigem als auch ungültigem `latestExistingDate` |
+
+@note Testdaten sind relativ zu `QDate::currentDate()` formuliert (`addMonths()`/
+`addDays()`), nicht auf feste Kalenderdaten fixiert, da `buildDailyValuesUrl()`
+selbst `QDate::currentDate()` intern liest und kein injizierbares "heute"
+kennt. `addMonths()` erhält den Tag-im-Monat wo möglich, was die
+Monatsdifferenz-Berechnung exakt hält — außer in seltenen Monatsende-
+Randfällen (z. B. Tag 31 ohne Entsprechung im Zielmonat). Minimales,
+akzeptiertes Restrisiko für Testflakiness an bestimmten Kalendertagen.
 
 `refreshPortfolioFooters()` (aufgerufen aus `onRefreshShareFinished()` bei
 Erfolg, siehe ARCHITECTURE.md) lädt alle Aktien neu und ruft

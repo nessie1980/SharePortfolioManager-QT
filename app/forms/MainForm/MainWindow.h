@@ -109,6 +109,39 @@ public:
         Count               = 12
     };
 
+    /**
+     * @brief Build the DailyValues API URL for a share based on existing data.
+     *
+     * Mirrors Helper.BuildDailyValuesUrl() from the C# reference implementation.
+     * If no daily values exist yet, requests 5 years of history.
+     * If data exists, selects the minimal window covering the gap to today:
+     * 1 month / 3 months / 6 months / 1 year / 3 years / 5 years.
+     *
+     * The urlTemplate must contain Qt::QString arg placeholders:
+     * - OnVista: %1 = ISO date (yyyy-MM-dd), %2 = period string (M1/M3/Y1/…)
+     * - Yahoo:   %1 = period string (1mo/3mo/1y/…)
+     *
+     * Declared `public static` (07.07.2026) rather than as a `private slot`
+     * (the pattern used for selectShareRow()/selectFirstShareRow()): unlike
+     * those, this method touches no instance state at all — it's a pure
+     * function of its three parameters — so `static` is both more correct
+     * and lets tests call it directly (`MainWindow::buildDailyValuesUrl(...)`)
+     * without any QMetaObject::invokeMethod involvement. That matters here
+     * specifically because `ShareParsingType` is a plain `enum class` with no
+     * `Q_DECLARE_METATYPE`/`Q_ENUM` registration, which `Q_ARG()` would need
+     * for invokeMethod-by-name; a plain static call sidesteps that
+     * entirely. Mirrors the existing `XmlPortfolioParser::normalizeWebSiteUrl()`
+     * pattern (public static pure-utility method, tested directly).
+     *
+     * @param urlTemplate          Raw URL template from ShareObject::dailyValuesUrl().
+     * @param latestExistingDate   Most recent date in daily_values, invalid if none.
+     * @param parsingType          OnVista or Yahoo parsing strategy.
+     * @return                     Fully resolved URL string, empty on error.
+     */
+    static QString buildDailyValuesUrl(const QString& urlTemplate,
+                                       const QDate&   latestExistingDate,
+                                       ShareParsingType parsingType);
+
 private slots:
     /**
      * @brief Create a new empty portfolio database.
@@ -253,27 +286,6 @@ private:
     void setupCentralWidget();
     void setupStatusBar();
     void restoreWindowGeometry();
-
-    /**
-     * @brief Build the DailyValues API URL for a share based on existing data.
-     *
-     * Mirrors Helper.BuildDailyValuesUrl() from the C# reference implementation.
-     * If no daily values exist yet, requests 5 years of history.
-     * If data exists, selects the minimal window covering the gap to today:
-     * 1 month / 3 months / 6 months / 1 year / 3 years / 5 years.
-     *
-     * The urlTemplate must contain Qt::QString arg placeholders:
-     * - OnVista: %1 = ISO date (yyyy-MM-dd), %2 = period string (M1/M3/Y1/…)
-     * - Yahoo:   %1 = period string (1mo/3mo/1y/…)
-     *
-     * @param urlTemplate          Raw URL template from ShareObject::dailyValuesUrl().
-     * @param latestExistingDate   Most recent date in daily_values, invalid if none.
-     * @param parsingType          OnVista or Yahoo parsing strategy.
-     * @return                     Fully resolved URL string, empty on error.
-     */
-    QString buildDailyValuesUrl(const QString& urlTemplate,
-                                const QDate&   latestExistingDate,
-                                ShareParsingType parsingType) const;
 
     /**
      * @brief Start the parser(s) for a single share.

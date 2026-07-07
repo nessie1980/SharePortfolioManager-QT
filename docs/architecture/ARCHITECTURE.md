@@ -1710,10 +1710,17 @@ Erste `tst_mainwindow`-Tests, die den kompletten Pfad `startRefreshForShare()`
 → `onMarketValuesUpdated()` → Grid-Update darüber abdecken: der
 Icon-Update-Regressionstest (Bugfix 06.07.2026) und der `enableShareActions`-
 Busy-Guard-Test (siehe TESTING.md, Abschnitt "Refresh-Flow", für Details).
-Footer-Update während `onRefreshAll()`, Grid-Selektion während der
-"Alle aktualisieren"-Queue, der zugehörige Fehlerfall sowie
-`buildDailyValuesUrl()` als reine Berechnungsfunktion sind weiterhin offen
-(siehe TESTING.md für die vollständige Liste).
+Letzterer deckte dabei einen echten, bis dahin unbekannten Bug auf (siehe
+"Bugfix 07.07.2026 — Lücke im Busy-Guard" oben).
+
+`buildDailyValuesUrl()` wurde ebenfalls 07.07.2026 abgeschlossen — von
+`private const` auf `public static` umgestellt (die Methode griff nie auf
+Instanzzustand zu) und direkt getestet, ohne `QMetaObject::invokeMethod`
+(siehe TESTING.md, Abschnitt "`buildDailyValuesUrl()` — erledigt").
+
+Footer-Update während `onRefreshAll()` und Grid-Selektion während der
+"Alle aktualisieren"-Queue (inkl. Fehlerfall) sind weiterhin offen (siehe
+TESTING.md für die vollständige Liste).
 
 ---
 

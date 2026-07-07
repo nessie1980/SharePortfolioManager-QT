@@ -1292,7 +1292,7 @@ void MainWindow::createBackup(const QString& portfolioPath)
 
 QString MainWindow::buildDailyValuesUrl(const QString& urlTemplate,
                                         const QDate&   latestExistingDate,
-                                        ShareParsingType parsingType) const
+                                        ShareParsingType parsingType)
 {
     // Mirrors Helper.BuildDailyValuesUrl() from the C# reference implementation.
     //
