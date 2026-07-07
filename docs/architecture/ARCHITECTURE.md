@@ -1725,9 +1725,14 @@ deterministischer Checkpoint für Zwischenzustände, die wegen der
 Reentrancy (Bugfix 05.07.2026) sonst racy wären (siehe TESTING.md, Abschnitt
 "Grid-Selektion während 'Alle aktualisieren'").
 
-Footer-Update während `onRefreshAll()` (`refreshPortfolioFooters()`,
-inklusive Zwischenständen zwischen einzelnen Aktien der Queue) ist weiterhin
-offen (siehe TESTING.md für Details).
+Footer-Update bei Refresh (`refreshPortfolioFooters()`, aufgerufen aus
+`onRefreshShareFinished()` nur im Erfolgsfall, vor dem Verketten zur nächsten
+Aktie in der Queue) ist ebenfalls seit 07.07.2026 getestet: Update nach
+Einzel-Refresh, inkrementelles Update zwischen den Aktien einer
+"Alle aktualisieren"-Queue (nicht erst am Ende), sowie dass der Footer im
+Fehlerfall unverändert bleibt (siehe TESTING.md, Abschnitt "Footer-Update bei
+Refresh"). Damit sind alle drei ursprünglich offenen Refresh-Flow-Testpunkte
+(Grid-Selektion, `buildDailyValuesUrl()`, Footer-Update) abgeschlossen.
 
 ---
 

@@ -1437,6 +1437,177 @@ private slots:
         QCOMPARE(marketTbl->currentRow(), rowForGuid(marketTbl, guids[1]));
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // MainWindow — Footer-Update bei Refresh (07.07.2026)
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // refreshPortfolioFooters() is called from onRefreshShareFinished() on
+    // success — these tests confirm it actually fires (footer text changes
+    // from its pre-refresh baseline), fires BETWEEN queue steps rather than
+    // only once at the very end, and does NOT fire when a refresh fails.
+    //
+    // Deliberately asserting "changed from baseline" rather than a
+    // hand-derived exact total: the footer total is computed by
+    // ShareCalculator::portfolioTotalsFinal() across brokerage/dividend/
+    // FIFO logic that's already covered by its own dedicated tests
+    // elsewhere — duplicating that formula here would risk testing the
+    // test's own (possibly wrong) arithmetic rather than the actual wiring
+    // question, which is simply: did refreshPortfolioFooters() run, and
+    // when.
+
+    /// Depotwert-Footer, Zeile 2 ("Aktueller Depotstand"), Top-Text.
+    static QString finalFooterDepotstand(QTableWidget* footer)
+    {
+        auto* item = footer->item(2, static_cast<int>(MainWindow::FinalValueColumn::PurchaseFinalValue));
+        return item ? item->data(TwoLineRole::Top).toString() : QString();
+    }
+
+    void test_onRefreshShare_footerUpdatesImmediately_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshFooterSingle.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        ShareObject share(QStringLiteral("g-footer"), QStringLiteral("FO01"),
+                          QStringLiteral("DE000FO00001"), QStringLiteral("Footer AG"));
+        share.setUpdateType(ShareUpdateType::MarketPrice);
+        share.setMarketPriceParsingType(ShareParsingType::ApiOnVista);
+        share.setMarketPriceUrl(QStringLiteral("https://example.com/onvista/footer"));
+        share.setMarketPriceEncoding(QStringLiteral("UTF-8"));
+        ShareRepository().insert(share);
+        insertTestBuy(QStringLiteral("g-footer"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 5.0, 100.0);
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setResponse(QUrl(QStringLiteral("https://example.com/onvista/footer")),
+                            onVistaRealTimeJson(300.0)); // curPrice starts at 0 → clear jump
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        QTableWidget* footer   = findFinalTable(window, 3); // 1 share ≠ 3 → unambiguous
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        if (!footer)   QFAIL("Depotwert-Footer nicht gefunden");
+
+        const QString before = finalFooterDepotstand(footer);
+
+        finalTbl->setCurrentCell(0, 0);
+        QAction* actionRefresh = findActionByStatusTip(window,
+            QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+        QVERIFY(actionRefresh);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        // finaliseRefresh() re-enables m_actionRefresh once the (single-share,
+        // non-queue) run has fully completed.
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                 "Einzel-Refresh hat nicht beendet (finaliseRefresh() nicht erreicht).");
+
+        const QString after = finalFooterDepotstand(footer);
+        QVERIFY2(after != before,
+                 qPrintable(QStringLiteral(
+                     "Footer 'Aktueller Depotstand' unverändert nach Einzel-Refresh "
+                     "(vorher: '%1', nachher: '%2').").arg(before, after)));
+    }
+
+    void test_onRefreshAll_footerUpdatesBetweenEachShare_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshFooterQueue.db");
+        // 2 shares — see seedRefreshQueuePortfolio() note on why not 3.
+        const QStringList guids = seedRefreshQueuePortfolio(2, dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[0])),
+            onVistaRealTimeJson(300.0));
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[1])),
+            onVistaRealTimeJson(500.0));
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* footer = findFinalTable(window, 3); // 2 shares ≠ 3 → unambiguous
+        if (!footer) QFAIL("Depotwert-Footer nicht gefunden");
+
+        const QString baseline = finalFooterDepotstand(footer);
+
+        QMetaObject::invokeMethod(&window, "onRefreshAll", Qt::DirectConnection);
+
+        // Checkpoint 1: share B's request has started → share A already
+        // finished and refreshPortfolioFooters() already ran for it (it runs
+        // in onRefreshShareFinished() strictly BEFORE the chained
+        // startRefreshForShare() call for B — see requestCount() note in the
+        // grid-selection tests above for why this ordering makes the
+        // checkpoint deterministic). Share B has NOT finished yet at this
+        // point, so this captures a genuine intermediate state.
+        QVERIFY2(QTest::qWaitFor([&]{ return fakeNam.requestCount() >= 2; }, 2000),
+                 "Zweite Anfrage (Aktie B) wurde nicht gestellt.");
+        const QString afterShareA = finalFooterDepotstand(footer);
+        QVERIFY2(afterShareA != baseline,
+                 qPrintable(QStringLiteral(
+                     "Footer nach Abschluss von Aktie A (noch vor Aktie B) "
+                     "unverändert — Update erfolgt offenbar erst am Ende der "
+                     "Queue statt nach jeder Aktie ('%1').").arg(afterShareA)));
+
+        // Checkpoint 2: whole run finished → footer reflects share B too,
+        // i.e. differs again from the after-A intermediate snapshot.
+        QVERIFY2(QTest::qWaitFor([&]{
+                     return finalFooterDepotstand(footer) != afterShareA;
+                 }, 2000),
+                 "Footer wurde nach Abschluss von Aktie B nicht erneut aktualisiert.");
+    }
+
+    void test_onRefreshShare_footerNotUpdated_onNetworkError_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshFooterError.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        ShareObject share(QStringLiteral("g-footer-err"), QStringLiteral("FE01"),
+                          QStringLiteral("DE000FE00001"), QStringLiteral("FooterError AG"));
+        share.setUpdateType(ShareUpdateType::MarketPrice);
+        share.setMarketPriceParsingType(ShareParsingType::ApiOnVista);
+        share.setMarketPriceUrl(QStringLiteral("https://example.com/onvista/footer-err"));
+        share.setMarketPriceEncoding(QStringLiteral("UTF-8"));
+        ShareRepository().insert(share);
+        insertTestBuy(QStringLiteral("g-footer-err"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 5.0, 100.0);
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setError(QUrl(QStringLiteral("https://example.com/onvista/footer-err")),
+                         QNetworkReply::HostNotFoundError, QStringLiteral("host not found"));
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        QTableWidget* footer   = findFinalTable(window, 3); // 1 share ≠ 3 → unambiguous
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        if (!footer)   QFAIL("Depotwert-Footer nicht gefunden");
+
+        const QString before = finalFooterDepotstand(footer);
+
+        finalTbl->setCurrentCell(0, 0);
+        QAction* actionRefresh = findActionByStatusTip(window,
+            QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+        QVERIFY(actionRefresh);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                 "Einzel-Refresh (Fehlerfall) hat nicht beendet "
+                 "(finaliseRefresh() nicht erreicht).");
+
+        // onRefreshShareFinished() returns before calling
+        // refreshPortfolioFooters() when m_errorOccurred is set — the footer
+        // must be byte-for-byte unchanged.
+        QCOMPARE(finalFooterDepotstand(footer), before);
+    }
+
     void test_updateWindowTitle_showsFileName()
     {
         openMemoryDb();

@@ -1140,11 +1140,9 @@ jedem Aufruf ein frisches `QIcon` aus demselben Ressourcenpfad, daher sind
 zwei "gleiche" Icons nie `==`. Der Testhelper `iconsEqual()` vergleicht
 stattdessen `icon.pixmap(24,24).toImage()`.
 
-**Noch offen** — die übrigen in TESTING.md/ARCHITECTURE.md beschriebenen
-Aspekte sind mit der jetzt vorhandenen Infrastruktur umsetzbar, aber noch
-nicht geschrieben:
-- Footer-Update während `onRefreshAll()` (`refreshPortfolioFooters()`),
-  inklusive Zwischenständen zwischen einzelnen Aktien der Queue.
+**Noch offen** — mit der jetzt vorhandenen Infrastruktur umsetzbar, aber
+nicht mehr Teil der ursprünglichen Drei-Punkte-Liste (Grid-Selektion,
+`buildDailyValuesUrl()`, Footer-Update — alle drei jetzt erledigt):
 - `onDailyValuesUpdated()`-Pfad (aktuell nur `onMarketValuesUpdated()` über
   Fake-Netzwerk abgedeckt) — die "Alle aktualisieren"-Verkettung über mehrere
   Aktien hinweg (analog zu `test_reentrant_start_from_finished_signal_succeeds_viaFakeNetwork`
@@ -1175,6 +1173,30 @@ dient `fakeNam.requestCount()` als deterministischer Checkpoint:
 `startParsing()` aufgerufen wird — und das passiert in `startRefreshForShare()`
 unmittelbar **nach** `selectShareRow()`. Sobald `requestCount()` auf den
 erwarteten Wert gestiegen ist, steht die Selektion also bereits fest.
+
+### Footer-Update bei Refresh — erledigt (07.07.2026)
+
+`refreshPortfolioFooters()` wird aus `onRefreshShareFinished()` nur im
+Erfolgsfall aufgerufen (vor dem Verketten zur nächsten Aktie in der Queue,
+falls vorhanden) — im Fehlerfall (`m_errorOccurred`) kehrt die Methode vorher
+zurück.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_onRefreshShare_footerUpdatesImmediately_viaFakeNetwork` | Einzel-Refresh (keine Queue), Kurs springt von 0 auf 300 | Depotwert-Footer "Aktueller Depotstand" (Zeile 2) ändert sich gegenüber dem Vorher-Zustand |
+| `test_onRefreshAll_footerUpdatesBetweenEachShare_viaFakeNetwork` | 2-Aktien-Queue, unterschiedliche neue Kurse pro Aktie | Footer ändert sich bereits zum Zeitpunkt, an dem Aktie B ihre Anfrage stellt (`fakeNam.requestCount() == 2`, Aktie B selbst also noch nicht fertig) — `refreshPortfolioFooters()` läuft für Aktie A nachweislich **vor** dem Verketten zu Aktie B, nicht erst am Ende der Queue; ändert sich danach ein weiteres Mal nach Abschluss von Aktie B |
+| `test_onRefreshShare_footerNotUpdated_onNetworkError_viaFakeNetwork` | Einzel-Refresh liefert `QNetworkReply::HostNotFoundError` | Footer "Aktueller Depotstand" bleibt exakt unverändert |
+
+@note Bewusst keine hartkodierten Erwarteten-Summen: Der Footer-Gesamtwert
+wird von `ShareCalculator::portfolioTotalsFinal()` über Brokerage-/Dividenden-/
+FIFO-Logik berechnet, die bereits an anderer Stelle eigenständig getestet ist
+(siehe `tests/utils/tst_sharecalculator.cpp`). Eine zweite, von Hand
+hergeleitete Erwartungssumme hier hätte primär das Risiko, die eigene
+(möglicherweise falsche) Testarithmetik statt der eigentlichen Verdrahtungs-
+frage zu prüfen — nämlich schlicht: läuft `refreshPortfolioFooters()`
+überhaupt, und zu welchem Zeitpunkt. Die Tests vergleichen daher den
+Footer-Text vor/nach Refresh auf Änderung/Gleichheit statt auf einen
+bestimmten Zahlenwert.
 
 ### `buildDailyValuesUrl()` — erledigt (07.07.2026)
 
