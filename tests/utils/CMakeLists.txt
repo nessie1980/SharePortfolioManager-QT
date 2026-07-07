@@ -21,4 +21,6 @@ target_link_libraries(tst_sharecalculator
     PRIVATE Qt6::Test Qt6::Sql Database
 )
 
+set_target_properties(tst_sharecalculator PROPERTIES AUTOMOC ON)
+
 add_test(NAME tst_sharecalculator COMMAND tst_sharecalculator)

@@ -13,6 +13,8 @@ target_link_libraries(tst_websitesconfig
     PRIVATE Qt6::Test Parser
 )
 
+set_target_properties(tst_websitesconfig PROPERTIES AUTOMOC ON)
+
 add_test(NAME tst_websitesconfig COMMAND tst_websitesconfig)
 
 # ── DocumentsConfig tests ─────────────────────────────────────────────────────
@@ -28,5 +30,7 @@ target_include_directories(tst_documentsconfig
 target_link_libraries(tst_documentsconfig
     PRIVATE Qt6::Test Parser
 )
+
+set_target_properties(tst_documentsconfig PROPERTIES AUTOMOC ON)
 
 add_test(NAME tst_documentsconfig COMMAND tst_documentsconfig)

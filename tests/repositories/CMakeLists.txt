@@ -16,6 +16,8 @@ target_link_libraries(tst_buyrepository
     PRIVATE Qt6::Test Qt6::Sql Database
 )
 
+set_target_properties(tst_buyrepository PROPERTIES AUTOMOC ON)
+
 add_test(NAME tst_buyrepository COMMAND tst_buyrepository)
 
 # ── SaleRepository tests ──────────────────────────────────────────────────────
@@ -36,6 +38,8 @@ target_link_libraries(tst_salerepository
     PRIVATE Qt6::Test Qt6::Sql Database
 )
 
+set_target_properties(tst_salerepository PROPERTIES AUTOMOC ON)
+
 add_test(NAME tst_salerepository COMMAND tst_salerepository)
 
 # ── DividendRepository tests ──────────────────────────────────────────────────
@@ -51,6 +55,8 @@ target_include_directories(tst_dividendrepository
 target_link_libraries(tst_dividendrepository
     PRIVATE Qt6::Test Qt6::Sql Database
 )
+
+set_target_properties(tst_dividendrepository PROPERTIES AUTOMOC ON)
 
 add_test(NAME tst_dividendrepository COMMAND tst_dividendrepository)
 
@@ -68,6 +74,8 @@ target_link_libraries(tst_sharerepository
     PRIVATE Qt6::Test Qt6::Sql Database
 )
 
+set_target_properties(tst_sharerepository PROPERTIES AUTOMOC ON)
+
 add_test(NAME tst_sharerepository COMMAND tst_sharerepository)
 
 # ── BrokerageRepository tests ─────────────────────────────────────────────────
@@ -84,6 +92,8 @@ target_link_libraries(tst_brokeragerepository
     PRIVATE Qt6::Test Qt6::Sql Database
 )
 
+set_target_properties(tst_brokeragerepository PROPERTIES AUTOMOC ON)
+
 add_test(NAME tst_brokeragerepository COMMAND tst_brokeragerepository)
 
 # ── DailyValuesRepository tests ───────────────────────────────────────────────
@@ -99,5 +109,7 @@ target_include_directories(tst_dailyvaluesrepository
 target_link_libraries(tst_dailyvaluesrepository
     PRIVATE Qt6::Test Qt6::Sql Database
 )
+
+set_target_properties(tst_dailyvaluesrepository PROPERTIES AUTOMOC ON)
 
 add_test(NAME tst_dailyvaluesrepository COMMAND tst_dailyvaluesrepository)

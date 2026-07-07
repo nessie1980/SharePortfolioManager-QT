@@ -10,4 +10,6 @@ target_link_libraries(tst_database
     PRIVATE Qt6::Test Qt6::Sql Database
 )
 
+set_target_properties(tst_database PROPERTIES AUTOMOC ON)
+
 add_test(NAME tst_database COMMAND tst_database)

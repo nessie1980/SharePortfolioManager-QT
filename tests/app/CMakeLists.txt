@@ -13,6 +13,8 @@ target_link_libraries(tst_appstartup
     PRIVATE Qt6::Test Qt6::Sql Qt6::Widgets Database
 )
 
+set_target_properties(tst_appstartup PROPERTIES AUTOMOC ON)
+
 add_test(NAME tst_appstartup COMMAND tst_appstartup)
 
 # ── IconProvider tests ────────────────────────────────────────────────────────
@@ -32,5 +34,7 @@ target_include_directories(tst_iconprovider
 target_link_libraries(tst_iconprovider
     PRIVATE Qt6::Test Qt6::Widgets
 )
+
+set_target_properties(tst_iconprovider PROPERTIES AUTOMOC ON)
 
 add_test(NAME tst_iconprovider COMMAND tst_iconprovider)

@@ -14,6 +14,8 @@ target_link_libraries(tst_xmlportfolioparser
     PRIVATE Qt6::Test Qt6::Core
 )
 
+set_target_properties(tst_xmlportfolioparser PROPERTIES AUTOMOC ON)
+
 add_test(NAME tst_xmlportfolioparser COMMAND tst_xmlportfolioparser)
 
 # ── PortfolioImporter tests (gegen In-Memory-SQLite) ────────────────────────────
@@ -46,6 +48,8 @@ target_link_libraries(tst_portfolioimporter
     PRIVATE Qt6::Test Qt6::Sql Database
 )
 
+set_target_properties(tst_portfolioimporter PROPERTIES AUTOMOC ON)
+
 add_test(NAME tst_portfolioimporter COMMAND tst_portfolioimporter)
 
 # ── PortfolioValidator tests (gegen In-Memory-SQLite, reine Vorab-Prüfung) ──────
@@ -75,5 +79,7 @@ target_include_directories(tst_portfoliovalidator
 target_link_libraries(tst_portfoliovalidator
     PRIVATE Qt6::Test Qt6::Sql Database
 )
+
+set_target_properties(tst_portfoliovalidator PROPERTIES AUTOMOC ON)
 
 add_test(NAME tst_portfoliovalidator COMMAND tst_portfoliovalidator)

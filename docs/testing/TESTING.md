@@ -1177,6 +1177,17 @@ Fehlende Quelldateien in `tst_mainwindow` — jede neue Form muss in
 `AUTOMOC ON` fehlt — `Q_OBJECT`-Klassen in Unterverzeichnissen werden nicht
 verarbeitet. Symptom: vtable-Linker-Fehler.
 
+@note In der Praxis tritt dieses Symptom im Projekt aktuell nicht auf: Die
+Root-`CMakeLists.txt` ruft `qt_standard_project_setup()` auf, bevor irgendein
+`add_subdirectory()` folgt. Das setzt `CMAKE_AUTOMOC` (und `CMAKE_AUTOUIC`)
+projektweit auf `ON` und vererbt sich an alle danach definierten Targets —
+auch ohne expliziten Eintrag pro Target. Trotzdem setzt jedes Target im
+Projekt (Stand 07.07.2026) zusätzlich `set_target_properties(<target>
+PROPERTIES AUTOMOC ON)` explizit, rein defensiv/dokumentierend: falls die
+Reihenfolge in der Root-`CMakeLists.txt` sich künftig ändert oder ein Target
+isoliert in ein anderes Projekt übernommen wird, bleibt das Verhalten
+nachvollziehbar statt implizit vom globalen Default abhängig.
+
 `ViewBuyEdit`/`ViewShareEdit` brauchen `DocumentsConfig*` — Konstruktoren verlangen
 einen gültigen (oder `nullptr`-) Zeiger. In Tests kann `nullptr` übergeben werden
 wenn keine Parsing-Funktionalität getestet wird.
