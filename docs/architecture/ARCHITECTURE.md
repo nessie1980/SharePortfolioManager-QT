@@ -803,13 +803,15 @@ wird die Prüfung übersprungen — kein False-Positive für Dokumente ohne Iden
 | `TaxAtSource` | `taxAtSource` | — |
 | `CapitalGainTax` | `capitalGainsTax` | — |
 | `SolidarityTax` | `solidarityTax` | — |
-| `PriceAtPayday` | `priceAtPayday` | — (totes Mapping, siehe Hinweis unten) |
 | `ExchangeRate` | `exchangeRatio` | — |
 | `Currency` | `currency` | — |
 
-> Hinweis: Kein `Document Type="Dividend"` in `Documents.xml` definiert aktuell ein
-> `PriceAtPayday`-Feld — das Mapping wird nie ausgelöst. Details siehe
+> Hinweis (Stand 08.07.2026): Das frühere `PriceAtPayday`-Mapping wurde entfernt
+> — kein `Document Type="Dividend"` in `Documents.xml` definierte je ein
+> `PriceAtPayday`-Feld, der Eintrag war totes Gewicht. Details siehe
 > **"Totes Mapping: `PriceAtPayday` in `xmlNameToViewField()`"** unter "Offene Punkte / TODO".
+> `knownXmlNames` in `populateFromResult()` enthält den Namen weiterhin (bewusst
+> unangetastet, siehe dort).
 
 #### Dividenden-Übersicht — Frozen-Footer-Layout:
 
@@ -1625,16 +1627,22 @@ Sprache ohne Neubuild änderbar durch Austausch der `.qm`-Datei.
 
 ## Offene Punkte / TODO
 
-### Totes Mapping: `PriceAtPayday` in `xmlNameToViewField()` (geklärt 07.07.2026)
+### Totes Mapping: `PriceAtPayday` in `xmlNameToViewField()` (entfernt 08.07.2026)
 
-`PresenterDividendEdit::xmlNameToViewField()` enthält ein Mapping
-`"PriceAtPayday" → "priceAtPayday"`. Geprüft und geklärt: **Keine** Bank-Konfiguration
-in `app/config/Documents.xml` definiert für `Document Type="Dividend"` ein
-`PriceAtPayday`-Feld — das Mapping ist totes Gewicht ohne Laufzeitauswirkung, kein
-Widerspruch zur Doku ("automatisch aus `daily_values` befüllt, sonst manuell", siehe
-DividendForm-Details → Auto-Fill). Optionaler Cleanup für später: Zeile aus der Map
-entfernen, um Verwirrung bei künftiger Fehlersuche zu vermeiden — keine funktionale
-Dringlichkeit.
+`PresenterDividendEdit::xmlNameToViewField()` enthielt ein Mapping
+`"PriceAtPayday" → "priceAtPayday"`. Geprüft und geklärt (07.07.2026): **Keine**
+Bank-Konfiguration in `app/config/Documents.xml` definiert für
+`Document Type="Dividend"` ein `PriceAtPayday`-Feld — das Mapping war totes Gewicht
+ohne Laufzeitauswirkung, kein Widerspruch zur Doku ("automatisch aus `daily_values`
+befüllt, sonst manuell", siehe DividendForm-Details → Auto-Fill). Die Zeile wurde
+entfernt, um Verwirrung bei künftiger Fehlersuche zu vermeiden.
+
+Bewusst unangetastet: `knownXmlNames` in `populateFromResult()` enthält
+`"PriceAtPayday"` weiterhin — der Eintrag wird dort seit jeher per
+`viewField.isEmpty() -> continue` übersprungen (unabhängig vom Mapping, da kein
+Bank-Konfig das Feld ohnehin liefert). Eine Entfernung dort wäre eine zusätzliche,
+vom eigentlichen Cleanup-Ziel unabhängige Verhaltensänderung des optionalen
+Fortschritts-Zählers — bewusst als separater, eigenständiger Punkt ausgeklammert.
 
 ### BackupSettingsForm (geplant, noch nicht implementiert)
 

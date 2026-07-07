@@ -518,7 +518,6 @@ QString PresenterDividendEdit::xmlNameToViewField(const QString& xmlName)
         { QStringLiteral("TaxAtSource"),    QStringLiteral("taxAtSource")    },
         { QStringLiteral("CapitalGainTax"), QStringLiteral("capitalGainsTax")},
         { QStringLiteral("SolidarityTax"),  QStringLiteral("solidarityTax")  },
-        { QStringLiteral("PriceAtPayday"),  QStringLiteral("priceAtPayday")  },
         { QStringLiteral("ExchangeRate"),   QStringLiteral("exchangeRatio")  },
         { QStringLiteral("Currency"),       QStringLiteral("currency")       },
     };
