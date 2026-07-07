@@ -747,13 +747,14 @@ void ViewDividendEdit::setForeignCurrencyEnabled(bool enabled)
 
 // ── Field status ──────────────────────────────────────────────────────────────
 
-void ViewDividendEdit::setFieldOk(const QString& field, const QString& value)
+void ViewDividendEdit::setFieldOk(const QString& field, const QString& value,
+                                  const QString& tooltip)
 {
     auto* lbl = m_statusLabels.value(field);
     if (lbl) {
         m_fieldStates[field] = FieldState::Ok;
         lbl->setPixmap(IconProvider::icon(IconProvider::SearchOk).pixmap(16, 16));
-        lbl->setToolTip(tr("Eingabe gültig"));
+        lbl->setToolTip(tooltip.isEmpty() ? tr("Eingabe gültig") : tooltip);
         lbl->setVisible(true);
     }
 

@@ -691,6 +691,13 @@ Konfiguration & Settings:
 die jeweiligen Interfaces ohne echte UI oder Datenbank.
 `StubModelDividendEdit::loadShare()` gibt ein ungültiges `ShareObject{}` zurück —
 die WKN/ISIN-Prüfung im Presenter wird damit übersprungen (korrekt für Unit-Tests).
+`StubModelDividendEdit::findClosingPriceForDate()` ist über `hasClosingPrice` /
+`closingPriceToReturn` konfigurierbar und zeichnet den letzten Aufruf auf
+(`findClosingPriceForDateCalled`, `lastClosingPriceShareGuid`, `lastClosingPriceDate`).
+`StubViewDividendEdit::setFieldOk()` zeichnet Feld, Wert und Tooltip des letzten
+Aufrufs auf (`lastFieldOkField/-Value/-Tooltip`) und schreibt den Wert für
+`priceAtPayday` zusätzlich zurück in `m_priceAtPayday`, analog zum echten
+`ViewDividendEdit`-Verhalten.
 
 ModelDividendEdit (Datenbanktests):
 | Test | Beschreibung | Prüft |
@@ -701,6 +708,9 @@ ModelDividendEdit (Datenbanktests):
 | `test_modelDividendEdit_documentExists_notFound_returnsFalse` | Pfad nicht in DB | `documentExists()` = false |
 | `test_modelDividendEdit_documentExists_emptyPath_returnsFalse` | Leerer Pfad | Early Return = false |
 | `test_modelDividendEdit_loadDividends_orderedByDate` | Dividenden nach Datum aufsteigend | `dateTime[0]` < `dateTime[1]` |
+| `test_modelDividendEdit_findClosingPriceForDate_found_returnsTrue` | Schlusskurs für Datum in `daily_values` vorhanden | Rückgabe `true`, `outPrice` = gespeicherter Closing-Wert |
+| `test_modelDividendEdit_findClosingPriceForDate_notFound_returnsFalse` | Kein Eintrag für Datum in `daily_values` | Rückgabe `false` |
+| `test_modelDividendEdit_findClosingPriceForDate_zeroClosing_returnsFalse` | Eintrag vorhanden, aber `closing` = 0 | Rückgabe `false` (kein sinnvoller Kurs) |
 
 ---
 
@@ -745,6 +755,21 @@ ViewDividendEdit — Fremdwährungs-Modus:
 | `test_viewDividendEdit_loadDividend_withoutFC_checkboxUnchecked` | Dividende ohne FC laden | Checkbox nicht angehakt |
 | `test_presenterDividendEdit_onDateEdited_validDate_setsOk` | Gültiges Datum → Ok-Icon | kein Fehler-Dialog |
 | `test_presenterDividendEdit_onDateEdited_sentinelDate_setsError` | Sentinel 2000-01-01 → Error-Icon | Icon-Only, kein Dialog |
+| `test_presenterDividendEdit_onDateEdited_dailyValueFound_fillsPriceAtPayday` | Datum geändert, Model liefert Schlusskurs | `findClosingPriceForDate` aufgerufen mit korrektem shareGuid/Datum, `priceAtPayday()` = gelieferter Preis, Tooltip gesetzt |
+| `test_presenterDividendEdit_onDateEdited_noDailyValue_leavesPriceAtPaydayUnchanged` | Datum geändert, kein Treffer in `daily_values` | `priceAtPayday()` bleibt unverändert (bereits manuell gesetzter Wert bleibt erhalten) |
+| `test_presenterDividendEdit_onDateEdited_invalidDate_doesNotQueryDailyValue` | Sentinel-Datum → ungültig | `findClosingPriceForDate` wird **nicht** aufgerufen |
+
+@note Die Lookup-Logik sitzt in der gemeinsamen privaten Hilfsmethode
+`applyDailyValuePriceAtPayday()`, die sowohl von `onDateEdited()` als auch von
+`populateFromResult()` (direkt nach dem Parsen, mit dem tatsächlich geparsten Datum)
+aufgerufen wird. Der zweite Aufrufpfad ist nicht separat unit-getestet — die
+Parse-Pipeline hängt an `ParserLib::Parser`/`QProcess` (pdftotext) und ist wie beim
+Refresh-Flow (siehe "Offene Punkte / TODO") noch nicht gemockt. Manuell verifiziert
+am 07.07.2026: Preis wird nach dem Einlesen eines Dividenden-Dokuments korrekt anhand
+des geparsten Auszahlungsdatums gesetzt, auch wenn zuvor durch einen beiläufigen
+Fokuswechsel auf das Datumsfeld (noch mit Default "heute") ein abweichender
+Zwischenwert gesetzt wurde.
+
 | `test_presenterDividendEdit_onRateEdited_valid_setsOk` | Rate > 0 → Ok-Icon | kein Fehler-Dialog |
 | `test_presenterDividendEdit_onRateEdited_zero_setsError` | Rate = 0 → Error-Icon | Icon-Only, kein Dialog |
 | `test_presenterDividendEdit_onVolumeEdited_valid_setsOk` | Volume > 0 → Ok-Icon | kein Fehler-Dialog |

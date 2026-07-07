@@ -50,6 +50,8 @@
 #include "../../app/forms/DividendForm/ModelDividendEdit.h"
 #include "../../app/forms/DividendForm/PresenterDividendEdit.h"
 #include "../../app/models/DividendObject.h"
+#include "../../app/repositories/DailyValuesRepository.h"
+#include "../../app/models/DailyValuesObject.h"
 
 #include "../../app/forms/BrokeragesForm/IViewBrokerageEdit.h"
 #include "../../app/forms/BrokeragesForm/IModelBrokerageEdit.h"
@@ -4660,12 +4662,30 @@ public:
     bool                  docExists    = false;
     QString               errorMsg;
 
+    // findClosingPriceForDate() Konfiguration/Aufzeichnung
+    bool           hasClosingPrice      = false;
+    double         closingPriceToReturn = 0.0;
+    mutable bool   findClosingPriceForDateCalled = false;
+    mutable QString lastClosingPriceShareGuid;
+    mutable QDate   lastClosingPriceDate;
+
     bool addDividendCalled    = false;
     bool updateDividendCalled = false;
     bool removeDividendCalled = false;
 
     QList<DividendObject> loadDividends(const QString&) const override { return dividends; }
     ShareObject           loadShare(const QString&)     const override { return ShareObject{}; }
+
+    bool findClosingPriceForDate(const QString& shareGuid, const QDate& date,
+                                 double& outPrice) const override
+    {
+        findClosingPriceForDateCalled = true;
+        lastClosingPriceShareGuid     = shareGuid;
+        lastClosingPriceDate          = date;
+        if (!hasClosingPrice) return false;
+        outPrice = closingPriceToReturn;
+        return true;
+    }
 
     bool addDividend(const DividendObject&)    override { addDividendCalled    = true; return addResult;    }
     bool updateDividend(const DividendObject&) override { updateDividendCalled = true; return updateResult; }
@@ -4705,6 +4725,11 @@ public:
     QString lastError;
     bool    closed                 = false;
 
+    // setFieldOk() — letzter Aufruf (für Auto-Fill-Assertions)
+    QString lastFieldOkField;
+    QString lastFieldOkValue;
+    QString lastFieldOkTooltip;
+
     // IViewDividendEdit — read
     QString dateTime()              const override { return m_dateTime; }
     double  rate()                  const override { return m_rate; }
@@ -4730,7 +4755,18 @@ public:
 
     void setForeignCurrencyEnabled(bool)    override {}
 
-    void setFieldOk(const QString&, const QString&) override {}
+    void setFieldOk(const QString& field, const QString& value,
+                    const QString& tooltip = QString()) override
+    {
+        lastFieldOkField   = field;
+        lastFieldOkValue   = value;
+        lastFieldOkTooltip = tooltip;
+        // Mirrors ViewDividendEdit::setFieldOk() writing the value back into
+        // the widget — needed so priceAtPayday() reflects an auto-filled
+        // value in tests, the same way the real QLineEdit would.
+        if (field == QStringLiteral("priceAtPayday") && !value.isEmpty())
+            m_priceAtPayday = value.toDouble();
+    }
     void setFieldError(const QString&)              override {}
     void setDocumentPreview(const QString&)         override {}
 
@@ -4860,6 +4896,47 @@ private slots:
         const auto list = model.loadDividends(makeShareGuid());
         QCOMPARE(list.size(), 2);
         QVERIFY(list.at(0).dateTime() < list.at(1).dateTime());
+    }
+
+    void test_modelDividendEdit_findClosingPriceForDate_found_returnsTrue()
+    {
+        openMemoryDb();
+        ShareRepository sr;
+        sr.insert(ShareObject(makeShareGuid(), QStringLiteral("TST"),
+                               QStringLiteral("DE000TST0001"), QStringLiteral("Test AG")));
+
+        DailyValuesRepository dvRepo;
+        dvRepo.upsert(DailyValuesObject(makeShareGuid(), QDate(2025, 12, 17),
+                                        203.50, 204.71, 205.00, 203.00, 1000.0));
+
+        ModelDividendEdit model;
+        double price = 0.0;
+        QVERIFY(model.findClosingPriceForDate(makeShareGuid(), QDate(2025, 12, 17), price));
+        QCOMPARE(price, 204.71);
+    }
+
+    void test_modelDividendEdit_findClosingPriceForDate_notFound_returnsFalse()
+    {
+        openMemoryDb();
+        ModelDividendEdit model;
+        double price = 0.0;
+        QVERIFY(!model.findClosingPriceForDate(makeShareGuid(), QDate(2025, 12, 17), price));
+    }
+
+    void test_modelDividendEdit_findClosingPriceForDate_zeroClosing_returnsFalse()
+    {
+        openMemoryDb();
+        ShareRepository sr;
+        sr.insert(ShareObject(makeShareGuid(), QStringLiteral("TST"),
+                               QStringLiteral("DE000TST0001"), QStringLiteral("Test AG")));
+
+        DailyValuesRepository dvRepo;
+        dvRepo.upsert(DailyValuesObject(makeShareGuid(), QDate(2025, 12, 17),
+                                        0.0, 0.0, 0.0, 0.0, 0.0));
+
+        ModelDividendEdit model;
+        double price = 0.0;
+        QVERIFY(!model.findClosingPriceForDate(makeShareGuid(), QDate(2025, 12, 17), price));
     }
 
     // ── PresenterDividendEdit (Stub-Tests) ────────────────────────────────
@@ -5336,6 +5413,55 @@ private slots:
         // No crash and no error shown
         p.onDateEdited();
         QVERIFY(view.lastError.isEmpty());
+    }
+
+    void test_presenterDividendEdit_onDateEdited_dailyValueFound_fillsPriceAtPayday()
+    {
+        StubViewDividendEdit view;
+        view.m_dateTime         = QStringLiteral("2025-12-17T00:00:00");
+        view.m_priceAtPayday    = 0.0;  // noch nicht ausgefüllt
+        StubModelDividendEdit model;
+        model.hasClosingPrice      = true;
+        model.closingPriceToReturn = 204.71;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onDateEdited();
+
+        QVERIFY(model.findClosingPriceForDateCalled);
+        QCOMPARE(model.lastClosingPriceShareGuid, makeShareGuid());
+        QCOMPARE(model.lastClosingPriceDate, QDate(2025, 12, 17));
+        QCOMPARE(view.lastFieldOkField, QStringLiteral("priceAtPayday"));
+        QCOMPARE(view.priceAtPayday(), 204.71);
+        QVERIFY(!view.lastFieldOkTooltip.isEmpty());  // "Aus Tageswerten übernommen ..."
+    }
+
+    void test_presenterDividendEdit_onDateEdited_noDailyValue_leavesPriceAtPaydayUnchanged()
+    {
+        StubViewDividendEdit view;
+        view.m_dateTime      = QStringLiteral("2025-12-17T00:00:00");
+        view.m_priceAtPayday = 45.0;  // bereits manuell eingegeben
+        StubModelDividendEdit model;
+        model.hasClosingPrice = false;  // kein Treffer in der DB
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onDateEdited();
+
+        QVERIFY(model.findClosingPriceForDateCalled);
+        // Kein Treffer → Feld bleibt unverändert, kein setFieldOk("priceAtPayday", ...)
+        QCOMPARE(view.priceAtPayday(), 45.0);
+        QVERIFY(view.lastFieldOkField != QStringLiteral("priceAtPayday"));
+    }
+
+    void test_presenterDividendEdit_onDateEdited_invalidDate_doesNotQueryDailyValue()
+    {
+        StubViewDividendEdit view;
+        view.m_dateTime = QStringLiteral("2000-01-01T00:00:00");  // Sentinel — ungültig
+        StubModelDividendEdit model;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onDateEdited();
+
+        QVERIFY(!model.findClosingPriceForDateCalled);
     }
 
     void test_presenterDividendEdit_onDateEdited_sentinelDate_setsError()

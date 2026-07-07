@@ -20,6 +20,22 @@ ShareObject ModelDividendEdit::loadShare(const QString& shareGuid) const
     return m_shareRepo.findByGuid(shareGuid);
 }
 
+// ── findClosingPriceForDate ────────────────────────────────────────────────────
+
+bool ModelDividendEdit::findClosingPriceForDate(const QString& shareGuid,
+                                                const QDate&    date,
+                                                double&         outPrice) const
+{
+    const DailyValuesObject dailyValue =
+        m_dailyValuesRepo.findByShareAndDate(shareGuid, date);
+
+    if (!dailyValue.isValid() || dailyValue.closingPrice() <= 0.0)
+        return false;
+
+    outPrice = dailyValue.closingPrice();
+    return true;
+}
+
 // ── addDividend ───────────────────────────────────────────────────────────────
 
 bool ModelDividendEdit::addDividend(const DividendObject& dividend)

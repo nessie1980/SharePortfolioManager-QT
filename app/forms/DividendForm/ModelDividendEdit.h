@@ -5,6 +5,7 @@
 #include "IModelDividendEdit.h"
 #include "../../repositories/DividendRepository.h"
 #include "../../repositories/ShareRepository.h"
+#include "../../repositories/DailyValuesRepository.h"
 
 /**
  * @brief Concrete model for the "Dividenden" dialog.
@@ -19,6 +20,10 @@ public:
     QList<DividendObject> loadDividends(const QString& shareGuid) const override;
     ShareObject           loadShare(const QString& shareGuid)     const override;
 
+    bool findClosingPriceForDate(const QString& shareGuid,
+                                 const QDate&    date,
+                                 double&         outPrice) const override;
+
     bool addDividend(const DividendObject& dividend)    override;
     bool updateDividend(const DividendObject& dividend) override;
     bool removeDividend(const QString& dividendGuid)    override;
@@ -29,7 +34,8 @@ public:
     QString lastError() const override { return m_lastError; }
 
 private:
-    DividendRepository m_dividendRepo;
-    ShareRepository    m_shareRepo;
-    mutable QString    m_lastError;
+    DividendRepository   m_dividendRepo;
+    ShareRepository      m_shareRepo;
+    DailyValuesRepository m_dailyValuesRepo;
+    mutable QString      m_lastError;
 };

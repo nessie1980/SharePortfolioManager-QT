@@ -698,7 +698,7 @@ und beeinflussen keine `volumeSold`-Felder oder FIFO-Berechnungen.
 | Datum der Auszahlung | `QDateEdit` | Datum nach Sentinel 2000-01-01 |
 | Dividendensatz | `QLineEdit` (QDoubleValidator) | > 0 |
 | Anteile am Auszahlungstag | `QLineEdit` (QDoubleValidator) | > 0 |
-| Preis der Aktie am Auszahlungstag | `QLineEdit` (QDoubleValidator) | > 0, **immer manuell einzugeben** — wird nicht vom Parser geliefert |
+| Preis der Aktie am Auszahlungstag | `QLineEdit` (QDoubleValidator) | > 0, **automatisch aus `daily_values` befüllt, sonst manuell** (siehe unten) |
 
 #### Optionale Felder:
 
@@ -712,6 +712,56 @@ und beeinflussen keine `volumeSold`-Felder oder FIFO-Berechnungen.
 | Kapitalertragssteuer | `QLineEdit` | ≥ 0 |
 | Solidaritätszuschlag | `QLineEdit` | ≥ 0 |
 | Dokument | `QLineEdit` read-only + Browse-Button | Duplikat-Check aktienübergreifend |
+
+#### Auto-Fill: Preis der Aktie am Auszahlungstag (ergänzt 06.07.2026, erweitert 07.07.2026)
+
+`priceAtPayday` wird automatisch aus den gespeicherten Tageswerten (`daily_values`)
+befüllt, sofern für das jeweilige Datum ein Schlusskurs vorliegt. Die Lookup-Logik
+sitzt in der privaten Hilfsmethode `PresenterDividendEdit::applyDailyValuePriceAtPayday(date)`
+und wird von zwei Stellen aus aufgerufen:
+
+```
+①  QDateEdit::editingFinished                    ②  Nach erfolgreichem PDF-Parsen
+       ↓                                                ↓ (Date-Feld aus Parser-Ergebnis geparst)
+   onDateEdited()                                  populateFromResult()
+       ↓ (Datum gültig, > Sentinel 2000-01-01)          ↓ (parsedDate gültig)
+       └──────────────────┬───────────────────────────────┘
+                           ↓
+        applyDailyValuePriceAtPayday(date)
+                           ↓
+        IModelDividendEdit::findClosingPriceForDate(shareGuid, date, outPrice)
+                           ↓ (ModelDividendEdit delegiert an DailyValuesRepository::findByShareAndDate())
+        Treffer mit closing > 0?
+            Ja  → setFieldOk("priceAtPayday", closingPrice, "Aus Tageswerten übernommen (Kurs vom TT.MM.JJJJ)")
+                  + refreshDerivedValues() (Dividenden-Rendite aktualisiert sich mit)
+            Nein → Feld bleibt unverändert — manuelle Eingabe weiterhin nötig/möglich
+```
+
+Wichtige Designentscheidungen:
+- **Überschreibt einen bereits vorhandenen Wert** bei jeder Datumsänderung mit Treffer —
+  auch einen zuvor manuell eingegebenen. Der Nutzer kann den Wert danach jederzeit
+  wieder von Hand korrigieren (kein Sperren des Felds).
+- **Kein Treffer → keine Änderung.**
+- **Pfad ② (Preis-Abgleich direkt nach dem Parsen) ist notwendig, nicht nur bequem.**
+  Ursprünglich war angenommen, für das Default-Datum "heute" (beim frischen Öffnen
+  des Dialogs) läge ohnehin noch kein Schlusskurs vor, sodass Pfad ① allein reicht.
+  In der Praxis bestätigt (07.07.2026): Wenn beim Öffnen des Datei-Auswahldialogs
+  ("Dokument auswählen") das Datumsfeld kurz den Fokus verliert — noch mit dem
+  Default-Datum "heute" befüllt — feuert `editingFinished` und Pfad ① schlägt ggf.
+  **erfolgreich** zu, weil für den aktuellen Tag durchaus schon ein Tageswert
+  vorliegen kann (z. B. durch einen zuvor gelaufenen Refresh). Das Ergebnis wäre ein
+  falscher, an "heute" hängender Preis, der stehen bliebe, weil das anschließende
+  Setzen des tatsächlichen Dokumentdatums per `setDate()` **kein** `editingFinished`
+  auslöst. Pfad ② behebt das: Nach dem Parsen wird der Abgleich zwangsläufig
+  nochmal mit dem tatsächlichen Dokumentdatum ausgeführt und überschreibt einen
+  eventuellen "heute"-Fehltreffer.
+- **Tooltip als Unterscheidungsmerkmal:** `IViewDividendEdit::setFieldOk()` erhält einen
+  optionalen dritten Parameter `tooltip`, damit automatisch befüllte Werte
+  ("Aus Tageswerten übernommen (Kurs vom ...)") sich vom Standard-Tooltip
+  ("Eingabe gültig") bei manueller Eingabe unterscheiden lassen. Leerer String → Standard-Tooltip.
+- **Keine Währungsumrechnung nötig:** `daily_values.closing` liegt ebenso wie `rate` immer
+  in EUR vor, unabhängig vom Fremdwährungs-Modus der Dividende — kein Äpfel-mit-Birnen-Vergleich
+  bei der Dividenden-Rendite.
 
 #### Abgeleitete Werte (read-only, automatisch berechnet):
 
@@ -753,9 +803,13 @@ wird die Prüfung übersprungen — kein False-Positive für Dokumente ohne Iden
 | `TaxAtSource` | `taxAtSource` | — |
 | `CapitalGainTax` | `capitalGainsTax` | — |
 | `SolidarityTax` | `solidarityTax` | — |
-| `PriceAtPayday` | `priceAtPayday` | — (manuell) |
+| `PriceAtPayday` | `priceAtPayday` | — (totes Mapping, siehe Hinweis unten) |
 | `ExchangeRate` | `exchangeRatio` | — |
 | `Currency` | `currency` | — |
+
+> Hinweis: Kein `Document Type="Dividend"` in `Documents.xml` definiert aktuell ein
+> `PriceAtPayday`-Feld — das Mapping wird nie ausgelöst. Details siehe
+> **"Totes Mapping: `PriceAtPayday` in `xmlNameToViewField()`"** unter "Offene Punkte / TODO".
 
 #### Dividenden-Übersicht — Frozen-Footer-Layout:
 
@@ -1555,6 +1609,17 @@ Sprache ohne Neubuild änderbar durch Austausch der `.qm`-Datei.
 ---
 
 ## Offene Punkte / TODO
+
+### Totes Mapping: `PriceAtPayday` in `xmlNameToViewField()` (geklärt 07.07.2026)
+
+`PresenterDividendEdit::xmlNameToViewField()` enthält ein Mapping
+`"PriceAtPayday" → "priceAtPayday"`. Geprüft und geklärt: **Keine** Bank-Konfiguration
+in `app/config/Documents.xml` definiert für `Document Type="Dividend"` ein
+`PriceAtPayday`-Feld — das Mapping ist totes Gewicht ohne Laufzeitauswirkung, kein
+Widerspruch zur Doku ("automatisch aus `daily_values` befüllt, sonst manuell", siehe
+DividendForm-Details → Auto-Fill). Optionaler Cleanup für später: Zeile aus der Map
+entfernen, um Verwirrung bei künftiger Fehlersuche zu vermeiden — keine funktionale
+Dringlichkeit.
 
 ### BackupSettingsForm (geplant, noch nicht implementiert)
 

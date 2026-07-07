@@ -164,10 +164,13 @@ void PresenterDividendEdit::onDateEdited()
 {
     const QDate d = QDate::fromString(
         m_view->dateTime().left(10), Qt::ISODate);
-    if (d.isValid() && d > QDate(2000, 1, 1))
-        m_view->setFieldOk(QStringLiteral("date"), QString());
-    else
+    if (!d.isValid() || d <= QDate(2000, 1, 1)) {
         m_view->setFieldError(QStringLiteral("date"));
+        return;
+    }
+
+    m_view->setFieldOk(QStringLiteral("date"), QString());
+    applyDailyValuePriceAtPayday(d);
 }
 
 void PresenterDividendEdit::onRateEdited()
@@ -192,6 +195,22 @@ void PresenterDividendEdit::onPriceAtPaydayEdited()
         m_view->setFieldOk(QStringLiteral("priceAtPayday"), QString());
     else
         m_view->setFieldError(QStringLiteral("priceAtPayday"));
+}
+
+// ── applyDailyValuePriceAtPayday ──────────────────────────────────────────────
+
+void PresenterDividendEdit::applyDailyValuePriceAtPayday(const QDate& date)
+{
+    double closingPrice = 0.0;
+    if (!m_model->findClosingPriceForDate(m_shareGuid, date, closingPrice))
+        return;  // Kein Treffer in der DB → Feld bleibt unverändert.
+
+    m_view->setFieldOk(
+        QStringLiteral("priceAtPayday"),
+        QString::number(closingPrice, 'f', 2),
+        QObject::tr("Aus Tageswerten übernommen (Kurs vom %1)")
+            .arg(date.toString(QStringLiteral("dd.MM.yyyy"))));
+    refreshDerivedValues();
 }
 
 void PresenterDividendEdit::onExchangeRatioEdited()
@@ -421,6 +440,8 @@ void PresenterDividendEdit::populateFromResult(
     };
 
     int found = 0, requiredFound = 0;
+    QDate parsedDate;  // für den Preis-Abgleich unten benötigt
+
     for (const QString& xmlName : knownXmlNames) {
         const QString viewField = xmlNameToViewField(xmlName);
         if (viewField.isEmpty()) continue;
@@ -428,12 +449,28 @@ void PresenterDividendEdit::populateFromResult(
         if (result.contains(xmlName)) {
             const QList<QString>& values = result[xmlName];
             if (!values.isEmpty() && !values.first().trimmed().isEmpty()) {
-                m_view->setFieldOk(viewField, values.first().trimmed());
+                const QString value = values.first().trimmed();
+                m_view->setFieldOk(viewField, value);
                 ++found;
                 if (requiredXmlNames.contains(xmlName)) ++requiredFound;
+
+                if (xmlName == QStringLiteral("Date")) {
+                    QDate d = QDate::fromString(value, QStringLiteral("d.M.yyyy"));
+                    if (!d.isValid()) d = QDate::fromString(value, Qt::ISODate);
+                    parsedDate = d;
+                }
             }
         }
     }
+
+    // "Preis der Aktie am Auszahlungstag" mit dem GEPARSTEN Datum abgleichen —
+    // nicht mit dem Datum, das vor dem Parsen im Formular stand. Ohne diesen
+    // Schritt könnte ein Wert stehen bleiben, der zuvor über einen
+    // beiläufigen Fokuswechsel auf das (noch mit dem Default "heute"
+    // gefüllte) Datumsfeld ausgelöst wurde, bevor das eigentliche
+    // Dokumentdatum bekannt war (siehe ARCHITECTURE.md, DividendForm-Details).
+    if (parsedDate.isValid())
+        applyDailyValuePriceAtPayday(parsedDate);
 
     m_view->onParseFinished();
 

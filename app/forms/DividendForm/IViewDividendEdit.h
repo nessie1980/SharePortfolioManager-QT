@@ -51,10 +51,14 @@ public:
     // ── Field status ──────────────────────────────────────────────────────
     /**
      * @brief Set a field's value and mark it as Ok (green checkmark).
-     * @param field  Field key matching m_inputWidgets / m_statusLabels.
-     * @param value  Locale-aware string value from the parser.
+     * @param field   Field key matching m_inputWidgets / m_statusLabels.
+     * @param value   Locale-aware string value from the parser.
+     * @param tooltip Optional tooltip override (e.g. to indicate the value
+     *                was auto-filled from stored daily values rather than
+     *                entered/parsed). Empty string keeps the default tooltip.
      */
-    virtual void setFieldOk(const QString& field, const QString& value) = 0;
+    virtual void setFieldOk(const QString& field, const QString& value,
+                            const QString& tooltip = QString()) = 0;
 
     /**
      * @brief Mark a field as Error (red cross icon).

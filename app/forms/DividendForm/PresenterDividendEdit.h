@@ -11,6 +11,7 @@
 #include <QString>
 #include <QList>
 #include <QMap>
+#include <QDate>
 
 /**
  * @brief Presenter for the "Dividenden hinzufügen / editieren" dialog (MVP pattern).
@@ -67,6 +68,16 @@ private:
     void    reloadOverview();
     void    refreshDerivedValues();
     QString validateInput() const;
+
+    /**
+     * @brief Look up the closing price for @p date via IModelDividendEdit and,
+     *        on a hit, overwrite "priceAtPayday" with it. No-op on a miss.
+     *        Shared by onDateEdited() (manual date edit) and
+     *        populateFromResult() (date parsed from a PDF document) so both
+     *        paths use the actually-current payout date rather than a
+     *        possibly stale one (see ARCHITECTURE.md, DividendForm-Details).
+     */
+    void applyDailyValuePriceAtPayday(const QDate& date);
 
     void startParserForText(const QString& pdfText);
     void populateFromResult(const QMap<QString, QList<QString>>& result);

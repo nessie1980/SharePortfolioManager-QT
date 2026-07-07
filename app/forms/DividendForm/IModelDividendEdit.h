@@ -5,6 +5,7 @@
 #include "../../models/DividendObject.h"
 #include "../../models/ShareObject.h"
 
+#include <QDate>
 #include <QList>
 #include <QString>
 
@@ -23,6 +24,20 @@ public:
 
     /** Load the share this dialog was opened for (used for WKN/ISIN validation). */
     virtual ShareObject           loadShare(const QString& shareGuid)     const = 0;
+
+    /**
+     * @brief Look up the closing price for a share on a given date from the
+     *        `daily_values` table, e.g. to auto-fill "Preis der Aktie am
+     *        Auszahlungstag" when the payout date changes.
+     * @param shareGuid  GUID of the share.
+     * @param date       Trading date to look up.
+     * @param outPrice   Out-parameter receiving the closing price on success.
+     * @return true if a daily value entry with a closing price > 0 exists
+     *         for that exact date; false otherwise (@p outPrice untouched).
+     */
+    virtual bool findClosingPriceForDate(const QString& shareGuid,
+                                         const QDate&    date,
+                                         double&         outPrice) const = 0;
 
     // ── Create ────────────────────────────────────────────────────────────
 
