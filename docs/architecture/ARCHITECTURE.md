@@ -1637,12 +1637,22 @@ ohne Laufzeitauswirkung, kein Widerspruch zur Doku ("automatisch aus `daily_valu
 befüllt, sonst manuell", siehe DividendForm-Details → Auto-Fill). Die Zeile wurde
 entfernt, um Verwirrung bei künftiger Fehlersuche zu vermeiden.
 
-Bewusst unangetastet: `knownXmlNames` in `populateFromResult()` enthält
-`"PriceAtPayday"` weiterhin — der Eintrag wird dort seit jeher per
-`viewField.isEmpty() -> continue` übersprungen (unabhängig vom Mapping, da kein
-Bank-Konfig das Feld ohnehin liefert). Eine Entfernung dort wäre eine zusätzliche,
-vom eigentlichen Cleanup-Ziel unabhängige Verhaltensänderung des optionalen
-Fortschritts-Zählers — bewusst als separater, eigenständiger Punkt ausgeklammert.
+Bewusst zunächst unangetastet gelassen (08.07.2026), inzwischen ebenfalls erledigt
+(siehe unten): `knownXmlNames` in `populateFromResult()` enthielt `"PriceAtPayday"`
+weiterhin — der Eintrag wurde dort seit jeher per `viewField.isEmpty() -> continue`
+übersprungen (unabhängig vom Mapping, da kein Bank-Konfig das Feld ohnehin liefert).
+
+### Folgepunkt: `PriceAtPayday` auch aus `knownXmlNames` entfernt (erledigt 08.07.2026)
+
+Da `"PriceAtPayday"` in `knownXmlNames` mitgezählt wurde (`optionalTotal =
+knownXmlNames.size() - reqTotal`), aber wegen des fehlenden Mappings nie als
+gefunden zählen konnte (`optionalFound`), lief die Statusanzeige
+("Analyse OK — X/Y Pflicht, N/M Optional") beim DividendForm strukturell nie auf
+das volle `M` — selbst wenn alle real vorhandenen optionalen Felder erkannt
+wurden. Der Eintrag wurde jetzt auch aus `knownXmlNames` entfernt, `optionalTotal`
+sinkt dadurch korrekt um 1 und der Zähler kann wieder sein volles Maximum
+erreichen. Keine bestehenden Tests hängen an einer festen `optionalTotal`-Zahl für
+das DividendForm.
 
 ### BackupSettingsForm (geplant, noch nicht implementiert)
 

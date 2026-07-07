@@ -433,7 +433,7 @@ void PresenterDividendEdit::populateFromResult(
     static const QStringList knownXmlNames = {
         "Date", "Time", "Volume", "DividendRate",
         "TaxAtSource", "CapitalGainTax", "SolidarityTax",
-        "PriceAtPayday", "ExchangeRate", "Currency"
+        "ExchangeRate", "Currency"
     };
     static const QStringList requiredXmlNames = {
         "Date", "Volume", "DividendRate"
