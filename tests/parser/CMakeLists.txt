@@ -1,6 +1,9 @@
 find_package(Qt6 REQUIRED COMPONENTS Test Network)
 
-qt_add_executable(tst_parser tst_parser.cpp)
+qt_add_executable(tst_parser tst_parser.cpp
+    FakeNetworkAccessManager.h
+    FakeNetworkAccessManager.cpp
+)
 
 target_link_libraries(tst_parser
     PRIVATE

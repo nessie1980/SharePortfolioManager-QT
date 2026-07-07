@@ -47,7 +47,34 @@ public:
      */
     static QString version() { return QStringLiteral("1.0.0"); }
 
+    /**
+     * @brief Construct a Parser with its own internally owned QNetworkAccessManager.
+     *
+     * This is the constructor used in production code (e.g. MainWindow's
+     * m_parserMarketValues / m_parserDailyValues). The QNetworkAccessManager
+     * is created with `this` as parent and destroyed automatically together
+     * with the Parser.
+     */
     explicit Parser(QObject* parent = nullptr);
+
+    /**
+     * @brief Construct a Parser using an externally provided QNetworkAccessManager.
+     *
+     * Ownership of @p networkManager stays with the caller — Parser neither
+     * deletes nor reparents it.
+     *
+     * This constructor exists as a test seam: it lets unit tests inject a
+     * QNetworkAccessManager subclass (see ParserTestUtils::FakeNetworkAccessManager
+     * in tests/parser/) that intercepts createRequest() and returns a canned
+     * QNetworkReply instead of performing a real HTTP request. That way the
+     * full Parser state machine — URL building call sites, busy/reentrancy
+     * handling, regex parsing, OnVista/Yahoo JSON mapping, error codes — can
+     * be exercised end-to-end without any network access.
+     *
+     * @param networkManager  Externally owned QNetworkAccessManager to use for all requests.
+     * @param parent          Optional QObject parent for the Parser instance itself.
+     */
+    explicit Parser(QNetworkAccessManager* networkManager, QObject* parent = nullptr);
 
     /// Set the parsing configuration before calling startParsing().
     void setParsingValues(const ParsingValues& values);

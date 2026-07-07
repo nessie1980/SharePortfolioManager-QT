@@ -1636,6 +1636,56 @@ Optionen bieten:
 Die Einstellungen werden in `AppSettings` (INI) gespeichert und von `createBackup()`
 ausgelesen. `BackupSettingsForm` folgt dem MVP-Pattern analog zu `LoggerSettingsForm`.
 
+### Parser-Mocking-Infrastruktur (erledigt 07.07.2026)
+
+`ParserLib::Parser` besaß bisher keinen Test-Seam — der `QNetworkAccessManager`
+wurde intern erzeugt (`new QNetworkAccessManager(this)`), sodass Tests, die den
+Web-Modus durchlaufen wollten, echte Netzwerkzugriffe gebraucht hätten. Das war
+der Hauptgrund, warum die Refresh-Flow-Tests (siehe TESTING.md, Abschnitt
+"Refresh-Flow") bislang zurückgestellt waren.
+
+Gelöst über einen zweiten `Parser`-Konstruktor:
+
+```cpp
+explicit Parser(QObject* parent = nullptr);                                    // bestehend, unveraendert
+explicit Parser(QNetworkAccessManager* networkManager, QObject* parent = nullptr); // neu
+```
+
+Der injizierte `QNetworkAccessManager` bleibt im Besitz des Aufrufers — `Parser`
+löscht und reparentet ihn nicht. Für Tests existiert dazu
+`ParserTestUtils::FakeNetworkAccessManager` (`tests/parser/FakeNetworkAccessManager.h/.cpp`):
+eine `QNetworkAccessManager`-Subklasse, die `createRequest()` überschreibt und statt
+eines echten HTTP-Requests eine vorab per `setResponse()`/`setError()` hinterlegte
+Antwort über einen internen `FakeNetworkReply` (`QNetworkReply`-Subklasse) liefert.
+Die Auslieferung erfolgt über `QTimer::singleShot(0, ...)`, damit Tests weiterhin
+einen Event-Loop-Durchlauf abwarten müssen (`QSignalSpy::wait()`) — der reale
+Timing-Charakter des asynchronen Downloads bleibt damit erhalten, nur eben ohne
+Netzwerk.
+
+Bewusst **kein** `IParser`-Interface: `Parser` ist eine `QObject`-Klasse mit einem
+echten Qt-Signal (`parserUpdated`); ein Interface hätte entweder Mehrfachvererbung
+von `QObject` oder einen Bruch mit dem Signal/Slot-Muster erzwungen, nur um
+Mockbarkeit zu erkaufen. Die gewählte Lösung ändert an der Produktions-API von
+`Parser` und `MainWindow` nichts (zweiter Konstruktor ist rein additiv) und lässt
+den echten Parser-Code (Regex-Matching, OnVista-/Yahoo-JSON-Mapping, Busy-/
+Reentrancy-Handling) unverändert durch die Tests laufen, statt ihn in einem
+Fake nachzubilden.
+
+`tests/parser/tst_parser.cpp` nutzt die neue Infrastruktur für mehrere
+Web-Modus-Tests (Regex, OnVista-Realtime, Yahoo-History, Netzwerkfehler,
+Busy-Guard, Reentrancy-Regression) — siehe TESTING.md für die vollständige
+Testliste. Dabei wurde auch eine bestehende Inkonsistenz bereinigt: die frühere
+Testmethode `test_start_fails_when_busy` prüfte tatsächlich nur den
+`NoRegexListGiven`-Guard, nie echtes Busy-Verhalten (der Kommentar "Can't easily
+test without a real network" war der Grund dafür) — sie wurde zu
+`test_start_fails_when_noRegexListGiven` umbenannt, und ein echter
+Busy-Guard-Test (`test_start_fails_when_busy_viaFakeNetwork`) kam neu hinzu.
+
+Damit ist die Voraussetzung für die noch ausstehenden MainWindow-Refresh-Flow-Tests
+geschaffen; deren eigentliche Umsetzung (`buildDailyValuesUrl()`,
+`onMarketValuesUpdated()`, Footer-/Grid-Selektions-Tests) ist ein separater, noch
+offener Schritt (siehe TESTING.md, Abschnitt "Refresh-Flow").
+
 ---
 
 ---

@@ -18,6 +18,11 @@ Parser::Parser(QObject* parent)
     , m_networkManager(new QNetworkAccessManager(this))
 {}
 
+Parser::Parser(QNetworkAccessManager* networkManager, QObject* parent)
+    : QObject(parent)
+    , m_networkManager(networkManager)
+{}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 void Parser::setParsingValues(const ParsingValues& values)
 {

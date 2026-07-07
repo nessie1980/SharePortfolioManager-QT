@@ -79,11 +79,26 @@ Executable: `tst_parser`
 | `test_regex_parsing_all_matches` | Alle Treffer sammeln | `foundPosition = -1` liefert alle Matches |
 | `test_regex_no_match_result_empty_false` | Pflichtfeld fehlt | `ParserErrorCode::ParsingFailed` |
 | `test_regex_no_match_result_empty_true` | Optionales Feld fehlt | `ParserErrorCode::Finished` |
-| `test_start_fails_when_busy` | Guard: keine RegExList | `ParserErrorCode::NoRegexListGiven` |
-| `test_reentrant_start_from_finished_signal_succeeds` | **Regressionstest Bugfix 05.07.2026:** reentranter `startParsing()`-Aufruf auf demselben Parser-Objekt aus dem `parserUpdated(Finished)`-Handler heraus (simuliert die Verkettung von "Alle aktualisieren" zur nächsten Aktie) | Zweiter `startParsing()`-Aufruf liefert `true` statt `BusyFailed` (-2); finaler Zustand `Finished` mit den Werten des zweiten Aufrufs; `isBusy() == false` danach |
-| `test_onvista_realtime_json_parsing` | OnVista JSON Deserialisierung | Preis, Währung, Vortagskurs korrekt |
-| `test_onvista_history_json_parsing` | OnVista Historie JSON | Anzahl Einträge, Eröffnungskurs korrekt |
-| `test_yahoo_history_json_parsing` | Yahoo Finance Historie JSON | Timestamps, Schlusskurs korrekt |
+| `test_start_fails_when_noRegexListGiven` | Guard: keine RegExList (bis 06.07.2026 fälschlich `test_start_fails_when_busy` genannt, siehe Hinweis unten) | `ParserErrorCode::NoRegexListGiven` |
+| `test_reentrant_start_from_finished_signal_succeeds` | **Regressionstest Bugfix 05.07.2026 (Text-Modus):** reentranter `startParsing()`-Aufruf auf demselben Parser-Objekt aus dem `parserUpdated(Finished)`-Handler heraus (simuliert die Verkettung von "Alle aktualisieren" zur nächsten Aktie) | Zweiter `startParsing()`-Aufruf liefert `true` statt `BusyFailed` (-2); finaler Zustand `Finished` mit den Werten des zweiten Aufrufs; `isBusy() == false` danach |
+| `test_onvista_realtime_json_parsing` | OnVista JSON Deserialisierung (direkt, ohne Parser) | Preis, Währung, Vortagskurs korrekt |
+| `test_onvista_history_json_parsing` | OnVista Historie JSON (direkt, ohne Parser) | Anzahl Einträge, Eröffnungskurs korrekt |
+| `test_yahoo_history_json_parsing` | Yahoo Finance Historie JSON (direkt, ohne Parser) | Timestamps, Schlusskurs korrekt |
+| `test_webMode_regexParsing_viaFakeNetwork` | Web-Modus Ende-zu-Ende über `FakeNetworkAccessManager` (neu 07.07.2026) | `createRequest()` wird 1× aufgerufen, korrekte URL, `Finished`, Regex-Ergebnis korrekt |
+| `test_webMode_onVistaRealTime_viaFakeNetwork` | Web-Modus, `ParsingType::OnVistaRealTime` über Fake-Netzwerk | `Finished`, `searchResult["Currency"]`/`["Price"]` korrekt |
+| `test_webMode_yahooHistory_viaFakeNetwork` | Web-Modus, `ParsingType::YahooHistoryData` über Fake-Netzwerk | `Finished`, `dailyValuesList` korrekt befüllt |
+| `test_webMode_networkError_viaFakeNetwork` | Simulierter Netzwerkfehler (`FakeNetworkAccessManager::setError()`) | `ParserErrorCode::NetworkError`, `isBusy() == false` danach |
+| `test_start_fails_when_busy_viaFakeNetwork` | **Echter Busy-Guard-Test (neu 07.07.2026):** zweiter `startParsing()`-Aufruf während ein Fake-Download noch aussteht | Zweiter Aufruf liefert `false` mit `ParserErrorCode::BusyFailed` |
+| `test_reentrant_start_from_finished_signal_succeeds_viaFakeNetwork` | Wie `test_reentrant_start_from_finished_signal_succeeds`, aber über den echten Web-Modus-Codepfad (`createRequest()` → `onDownloadFinished()` → `doRegexParsing()` → `finish()`) statt der Text-Modus-Abkürzung | Wie oben, zusätzlich `fakeNam.requestCount() == 2` |
+
+@note Umbenennung `test_start_fails_when_busy` → `test_start_fails_when_noRegexListGiven`
+(07.07.2026): Der ursprüngliche Test prüfte trotz seines Namens nie echtes
+Busy-Verhalten, sondern ausschließlich den `NoRegexListGiven`-Guard — der
+Kommentar im Code ("Can't easily test without a real network — just verify
+guard works...") war der ehrliche Grund dafür, aber Name und Testinhalt
+liefen dauerhaft auseinander. Mit der Parser-Mocking-Infrastruktur (siehe
+ARCHITECTURE.md, "Offene Punkte / TODO") ist ein echter Busy-Test jetzt
+möglich und wurde als `test_start_fails_when_busy_viaFakeNetwork` ergänzt.
 
 Regressionstest `test_reentrant_start_from_finished_signal_succeeds`
 (tst_parser.cpp): Deckt den Bugfix vom 05.07.2026 ab, bei dem
@@ -95,10 +110,24 @@ direkt aus dem `onDailyValuesUpdated()`-Callback heraus in
 `m_parserDailyValues.startParsing()` auf dem noch als "busy" markierten
 Parser-Objekt fehlschlug (`BusyFailed`, -2) — sichtbar als
 `"Tageswerte: Fehler beim Abruf von ... (-2)"` direkt nach einer schnell
-abgeschlossenen vorherigen Aktie. Der Test ruft `startParsing()` reentrant
-aus dem `parserUpdated`-Signal-Handler heraus auf (Text-Modus, daher
-synchron und ohne Netzwerk-Mocking testbar) und verifiziert, dass der
-zweite Aufruf erfolgreich ist.
+abgeschlossenen vorherigen Aktie. Der ursprüngliche Test ruft `startParsing()`
+reentrant aus dem `parserUpdated`-Signal-Handler heraus auf (Text-Modus, daher
+synchron und ohne Netzwerk-Mocking testbar); die Variante
+`..._viaFakeNetwork` (07.07.2026) reproduziert dieselbe Verkettung zusätzlich
+über den tatsächlichen Web-Modus-Codepfad, den MainWindow in Produktion nutzt.
+
+### tests/parser/FakeNetworkAccessManager — Test-Utility (neu 07.07.2026)
+
+Keine eigene Executable — `FakeNetworkAccessManager.h/.cpp` ist eine
+`QNetworkAccessManager`-Subklasse, die über die neue
+`Parser(QNetworkAccessManager*, QObject*)`-Konstruktor-Injection
+(siehe ARCHITECTURE.md) in `tst_parser` eingebunden wird. Details zur
+Funktionsweise (Ownership, `FakeNetworkReply`, `QTimer::singleShot(0, ...)`)
+stehen als Doxygen-Kommentare direkt im Header. Gedacht zur Wiederverwendung
+durch zukünftige `tst_mainwindow`-Refresh-Flow-Tests (siehe Abschnitt
+"Refresh-Flow" weiter unten) — dafür ist noch die Aufnahme der Datei in
+`tests/forms/CMakeLists.txt` nötig, was Teil der eigentlichen
+Refresh-Flow-Test-Implementierung ist, nicht dieser Vorstufe.
 
 ---
 
@@ -1070,13 +1099,32 @@ kein eigenständiger Test nötig.
 
 ---
 
-### Refresh-Flow (Kursdaten-Abruf) — noch nicht getestet
+### Refresh-Flow (Kursdaten-Abruf) — Mocking-Infrastruktur vorhanden, Tests noch ausstehend
 
 Der Kursdaten-Abruf (`onRefreshShare`, `onRefreshAll`, `buildDailyValuesUrl`,
 `onMarketValuesUpdated`, `onDailyValuesUpdated`) ist direkt in `MainWindow`
-implementiert und erfordert echte Netzwerkzugriffe — Unit-Tests mit dem
-Qt-Test-Framework sind daher nur mit Mocking der `ParserLib::Parser`-Klasse
-oder via Stub-URLs sinnvoll. Tests sind zurückgestellt.
+implementiert und erfordert echte Netzwerkzugriffe. Der bisherige Blocker —
+kein Weg, `ParserLib::Parser` in Tests von echtem Netzwerk zu entkoppeln — ist
+seit 07.07.2026 behoben: `Parser` besitzt jetzt einen Konstruktor zur
+`QNetworkAccessManager`-Injection, und `ParserTestUtils::FakeNetworkAccessManager`
+(`tests/parser/FakeNetworkAccessManager.h/.cpp`) liefert vorab definierte
+Antworten ohne echten Netzwerkzugriff (siehe ARCHITECTURE.md, "Offene Punkte /
+TODO" sowie den neuen `tst_parser`-Testblock weiter oben).
+
+Damit ist die **Voraussetzung** für die Refresh-Flow-Tests geschaffen — die
+eigentlichen Tests für `MainWindow` (Footer-Update, Grid-Selektion, der
+Icon-Update-Regressionstest vom 06.07.2026) sind aber noch **nicht**
+geschrieben. Dafür fehlt noch:
+- `m_parserMarketValues`/`m_parserDailyValues` sind aktuell Werttyp-Member
+  ohne Injection-Möglichkeit von außen — `MainWindow` bräuchte entweder einen
+  (test-only) Konstruktor, der einen `FakeNetworkAccessManager` durchreicht,
+  oder die beiden Parser müssten testseitig über eine geeignete Stelle
+  erreichbar gemacht werden.
+- Aufnahme von `FakeNetworkAccessManager.h/.cpp` in `tests/forms/CMakeLists.txt`
+  (Wiederverwendung aus `tests/parser/`, siehe Hinweis oben).
+- Die eigentlichen Testfälle für die unten aufgeführten Aspekte.
+
+Tests sind bis dahin zurückgestellt.
 
 `buildDailyValuesUrl()` als reine Berechnungsfunktion (kein Netzwerk, kein UI)
 wäre eigenständig testbar und kann bei Bedarf in `tst_mainwindow` ergänzt werden.
@@ -1097,10 +1145,11 @@ betroffene Aktie nicht aktualisiert werden.
 **Grid-Selektion folgt dem Refresh (Feature vom 05.07.2026)** — ebenfalls Teil
 des zurückgestellten Testplans, da `selectShareRow()` aus `startRefreshForShare()`
 und `selectFirstShareRow()` aus `onRefreshShareFinished()` aufgerufen werden und
-damit denselben Parser-Mocking-Bedarf haben wie der übrige Refresh-Flow. Beide
-Methoden sind zudem `private` (keine `private slots`), also auch ohne echten
-Parser-Lauf nicht per `QMetaObject::invokeMethod` isoliert aufrufbar. Testbare
-Aspekte, sobald Parser-Mocking existiert:
+damit dieselbe Voraussetzung wie der übrige Refresh-Flow (Parser-Mocking in
+`tst_mainwindow` eingebunden, siehe oben). Beide Methoden sind zudem `private`
+(keine `private slots`), also auch ohne echten Parser-Lauf nicht per
+`QMetaObject::invokeMethod` isoliert aufrufbar. Testbare Aspekte, sobald die
+Refresh-Flow-Tests umgesetzt sind:
 
 - Während `onRefreshAll()` läuft: nach dem Start jeder Aktie in der Queue ist
   in **beiden** Tabellen (`m_finalValueTable`, `m_marketValueTable`) die Zeile
@@ -1134,13 +1183,14 @@ Aspekte, sobald Parser-Mocking existiert:
   volle `populatePortfolioTables()`-Aufbau (z. B. Neustart) das Icon wieder
   korrigierte.
 
-@note Ein isolierter Test ohne Parser-Mocking wäre nur über einen
-Refaktor möglich (z.B. `selectShareRow()`/`selectFirstShareRow()` als
-`private slots` deklarieren, damit sie per `QMetaObject::invokeMethod`
-direkt aufrufbar sind, unabhängig vom restlichen Refresh-Flow). Das wurde
-hier bewusst nicht gemacht, um die Methoden nicht ohne funktionalen Grund
-zu Slots aufzuwerten; die Testabdeckung erfolgt stattdessen zusammen mit
-dem übrigen Refresh-Flow, sobald Parser-Mocking eingeführt wird.
+@note Ein isolierter Test ohne die Einbindung des Parser-Mockings in
+`tst_mainwindow` wäre nur über einen Refaktor möglich (z.B.
+`selectShareRow()`/`selectFirstShareRow()` als `private slots` deklarieren,
+damit sie per `QMetaObject::invokeMethod` direkt aufrufbar sind, unabhängig
+vom restlichen Refresh-Flow). Das wurde hier bewusst nicht gemacht, um die
+Methoden nicht ohne funktionalen Grund zu Slots aufzuwerten; die
+Testabdeckung erfolgt stattdessen zusammen mit dem übrigen Refresh-Flow,
+sobald dessen Tests umgesetzt sind.
 
 ---
 
