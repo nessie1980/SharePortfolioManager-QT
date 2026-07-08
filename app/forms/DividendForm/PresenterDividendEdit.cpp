@@ -421,9 +421,9 @@ void PresenterDividendEdit::populateFromResult(
                         "Das gewählte Dokument gehört nicht zur aktuell geöffneten Aktie.\n\n"
                         "Dokument:  WKN %1 / ISIN %2\n"
                         "Aktie:     WKN %3")
-                    .arg(parsedWkn.isEmpty() ? QObject::tr("(nicht gefunden)") : parsedWkn)
-                    .arg(parsedIsin.isEmpty() ? QObject::tr("(nicht gefunden)") : parsedIsin)
-                    .arg(shareWkn));
+                    .arg(parsedWkn.isEmpty() ? QObject::tr("(nicht gefunden)") : parsedWkn,
+                         parsedIsin.isEmpty() ? QObject::tr("(nicht gefunden)") : parsedIsin,
+                         shareWkn));
             });
             m_view->onParseFinished();
             return;
