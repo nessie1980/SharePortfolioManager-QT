@@ -1604,6 +1604,15 @@ ohne den Umweg über einen vollständigen Import-Lauf geprüft werden kann.
 | `test_validate_brokerageGuidBuySaleNotFound_isReported` | `GuidBuySale` zeigt auf keine existierende Buy/Sale-GUID | Problem erwähnt "weder als Buy noch als Sale" |
 | `test_validate_brokerageGuidBuySaleAmbiguous_isReported` | Eine GUID wird absichtlich sowohl als Buy- als auch als Sale-GUID verwendet | Problem erwähnt "sowohl als Buy als auch als Sale" |
 | `test_validate_dailyValueUnparsableDate_isReported` | `DailyValue` mit nicht parsbarem Datum | Problem mit `category == "DailyValue"` |
+| `test_validate_shareUnparsableSharePrice_isReported` | `SharePrice="nicht-eine-zahl"` (ergänzt 08.07.2026) | Problem mit `category == "Share"`, `recordId == "SharePrice"` |
+| `test_validate_buyUnparsableVolume_isReported` | Buy mit `Volume="zehn"` (ergänzt 08.07.2026) | Problem mit `category == "Buy"`, erwähnt "Volume" |
+| `test_validate_saleUnparsableSalePrice_isReported` | Sale mit `SalePrice="11,00,00"` (doppeltes Komma, ergänzt 08.07.2026) | Problem mit `category == "Sale"`, erwähnt "SalePrice" |
+| `test_validate_usedBuyUnparsableBuyPrice_isReported` | `<UsedBuy BuyPrice="??">` (ergänzt 08.07.2026) | Problem mit `category == "Sale"`, erwähnt "UsedBuy" und "BuyPrice" |
+| `test_validate_brokerageUnparsableProvision_isReported` | Brokerage mit `Provision="neun-neunzig"` (ergänzt 08.07.2026) | Problem mit `category == "Brokerage"`, erwähnt "Provision" |
+| `test_validate_dividendUnparsableRate_isReported` | Dividende mit `Rate="fünfzig-cent"` (ergänzt 08.07.2026) | Problem mit `category == "Dividend"`, erwähnt "Rate" |
+| `test_validate_dividendForeignCurrencyUnparsableExchangeRatio_isReported` | Fremdwährungs-Dividende mit `ExchangeRatio="ein Euro achtzig"` (ergänzt 08.07.2026) | Problem mit `category == "Dividend"`, erwähnt "ExchangeRatio" |
+| `test_validate_dailyValueUnparsableClose_isReported` | `DailyValue` mit `C="hundert"` (ergänzt 08.07.2026) | Problem mit `category == "DailyValue"`, erwähnt "C" |
+| `test_validate_emptyNumericFields_areAccepted` | Diverse numerische Felder (Share/Buy/Brokerage/Dividend) leer statt gesetzt (ergänzt 08.07.2026) | **Kein** Problem — leer ist laut `Documents.xml` (`ResultEmpty="true"`) ein legitimer "nicht gesetzt"-Zustand, kein Datenfehler |
 | `test_validate_orderNumberAlreadyExistsInDb_isReported` | Neuer Buy mit `OrderNumber`, die bereits unter einer **anderen** GUID in der DB existiert | Problem mit `category == "Buy"`, erwähnt "Datenbank" |
 | `test_validate_brokerageResolvesAgainstExistingDbBuy_noIssue` | Brokerage referenziert einen Buy, der bereits aus einem früheren Import in der DB steht (nicht in der aktuellen Datei) | **Kein** Problem — `GuidBuySale`-Auflösung berücksichtigt auch bereits importierte Daten |
 | `test_validate_sameGuidReimportedWithSameOrderNumber_noIssue` | Derselbe Buy (gleiche GUID, gleiche `OrderNumber`) wird erneut importiert | **Kein** Problem — Idempotenz-Regressionstest (Bug gefunden 05.07.2026 durch `test_importBuy_isIdempotentOnRerun`: DB-Abgleich unterschied ursprünglich nicht zwischen "andere GUID, gleiche OrderNumber" und "dieselbe GUID nochmal") |

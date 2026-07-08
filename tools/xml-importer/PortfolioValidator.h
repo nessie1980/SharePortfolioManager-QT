@@ -52,11 +52,15 @@ struct ValidationIssue
  *   Buy or Sale of the same share — either already in the DB from a
  *   previous import, or present in the current file).
  * - DailyValue: unparsable `D` (date).
- *
- * Deliberately NOT covered (out of scope for this pass, flagged for a
- * possible future extension): parseability of numeric fields other than
- * dates (e.g. `SharePrice`, `Volume`, `Provision` — these still silently
- * fall back to 0.0 via PortfolioImporter::toDouble() on invalid input).
+ * - Numeric fields (added 08.07.2026): every numeric attribute across all
+ *   categories (e.g. `SharePrice`, `Volume`, `Price`, `Provision`,
+ *   `Reduction`, the OHLCV fields of a `DailyValue`, `UsedBuy@BuyVolume`/
+ *   `BuyPrice`/`Reduction`/`Brokerage`, and — for foreign-currency
+ *   dividends — `ExchangeRatio`) must either be empty (a legitimate
+ *   "not set" state that `PortfolioImporter::toDouble()` maps to `0.0`) or
+ *   parsable as a German-format number (comma decimal separator, optional
+ *   dot thousands separator). A non-empty, unparsable value used to fall
+ *   back to `0.0` silently; that is now caught here instead.
  *
  * Pure read-only: only ever queries the database (to check for collisions
  * with already-imported data), never writes to it.
@@ -87,4 +91,13 @@ private:
     /// "dd.MM.yyyy" or "dd.MM.yyyy HH:mm" (time part ignored, mirrors
     /// PortfolioImporter::toDate()'s handling of mixed date/date-time fields).
     static bool isParsableGermanDate(const QString& raw);
+
+    /// Mirrors PortfolioImporter::toDouble()'s parsing exactly (comma decimal
+    /// separator, optional dot thousands separator) so "parsable here" and
+    /// "converts to a real value at import time, not a silent 0.0 fallback"
+    /// stay in sync. An empty string is deliberately treated as valid — most
+    /// of these fields are legitimately optional in the source (see
+    /// Documents.xml `ResultEmpty="true"`), so "not present" is not a data
+    /// error, only "present but garbage" is.
+    static bool isParsableGermanNumber(const QString& raw);
 };

@@ -371,6 +371,177 @@ private slots:
         }));
     }
 
+    // ── Numerische Felder (ergänzt 08.07.2026) ──────────────────────────────
+
+    void test_validate_shareUnparsableSharePrice_isReported()
+    {
+        RawShare share = makeValidShare(QStringLiteral("VAL19"));
+        share.sharePrice = QStringLiteral("nicht-eine-zahl");
+        RawPortfolio portfolio;
+        portfolio.shares.append(share);
+
+        QList<ValidationIssue> issues;
+        QVERIFY(!PortfolioValidator::validate(portfolio, issues));
+        QVERIFY(std::any_of(issues.cbegin(), issues.cend(), [](const ValidationIssue& i) {
+            return i.category == QStringLiteral("Share") && i.recordId == QStringLiteral("SharePrice");
+        }));
+    }
+
+    void test_validate_buyUnparsableVolume_isReported()
+    {
+        RawShare share = makeValidShare(QStringLiteral("VAL20"));
+        RawBuy b = makeValidBuy(newGuid(), QStringLiteral("ORD-1"));
+        b.volume = QStringLiteral("zehn");
+        share.buys.append(b);
+        RawPortfolio portfolio;
+        portfolio.shares.append(share);
+
+        QList<ValidationIssue> issues;
+        QVERIFY(!PortfolioValidator::validate(portfolio, issues));
+        QVERIFY(std::any_of(issues.cbegin(), issues.cend(), [](const ValidationIssue& i) {
+            return i.category == QStringLiteral("Buy") && i.message.contains(QStringLiteral("Volume"));
+        }));
+    }
+
+    void test_validate_saleUnparsableSalePrice_isReported()
+    {
+        RawShare share = makeValidShare(QStringLiteral("VAL21"));
+        RawSale s = makeValidSale(newGuid(), QStringLiteral("ORD-1"), newGuid());
+        s.salePrice = QStringLiteral("11,00,00"); // doppeltes Komma — kein gültiges Format
+        share.sales.append(s);
+        RawPortfolio portfolio;
+        portfolio.shares.append(share);
+
+        QList<ValidationIssue> issues;
+        QVERIFY(!PortfolioValidator::validate(portfolio, issues));
+        QVERIFY(std::any_of(issues.cbegin(), issues.cend(), [](const ValidationIssue& i) {
+            return i.category == QStringLiteral("Sale") && i.message.contains(QStringLiteral("SalePrice"));
+        }));
+    }
+
+    void test_validate_usedBuyUnparsableBuyPrice_isReported()
+    {
+        RawShare share = makeValidShare(QStringLiteral("VAL22"));
+        RawSale s = makeValidSale(newGuid(), QStringLiteral("ORD-1"), newGuid());
+        s.usedBuys[0].buyPrice = QStringLiteral("??");
+        share.sales.append(s);
+        RawPortfolio portfolio;
+        portfolio.shares.append(share);
+
+        QList<ValidationIssue> issues;
+        QVERIFY(!PortfolioValidator::validate(portfolio, issues));
+        QVERIFY(std::any_of(issues.cbegin(), issues.cend(), [](const ValidationIssue& i) {
+            return i.category == QStringLiteral("Sale") &&
+                   i.message.contains(QStringLiteral("UsedBuy")) &&
+                   i.message.contains(QStringLiteral("BuyPrice"));
+        }));
+    }
+
+    void test_validate_brokerageUnparsableProvision_isReported()
+    {
+        RawShare share = makeValidShare(QStringLiteral("VAL23"));
+        const QString buyGuid = newGuid();
+        share.buys.append(makeValidBuy(buyGuid, QStringLiteral("ORD-1")));
+        RawBrokerage b = makeValidBrokerage(newGuid(), buyGuid);
+        b.provision = QStringLiteral("neun-neunzig");
+        share.brokerages.append(b);
+        RawPortfolio portfolio;
+        portfolio.shares.append(share);
+
+        QList<ValidationIssue> issues;
+        QVERIFY(!PortfolioValidator::validate(portfolio, issues));
+        QVERIFY(std::any_of(issues.cbegin(), issues.cend(), [](const ValidationIssue& i) {
+            return i.category == QStringLiteral("Brokerage") &&
+                   i.message.contains(QStringLiteral("Provision"));
+        }));
+    }
+
+    void test_validate_dividendUnparsableRate_isReported()
+    {
+        RawShare share = makeValidShare(QStringLiteral("VAL24"));
+        RawDividend d = makeValidDividend(newGuid());
+        d.rate = QStringLiteral("fünfzig-cent");
+        share.dividends.append(d);
+        RawPortfolio portfolio;
+        portfolio.shares.append(share);
+
+        QList<ValidationIssue> issues;
+        QVERIFY(!PortfolioValidator::validate(portfolio, issues));
+        QVERIFY(std::any_of(issues.cbegin(), issues.cend(), [](const ValidationIssue& i) {
+            return i.category == QStringLiteral("Dividend") && i.message.contains(QStringLiteral("Rate"));
+        }));
+    }
+
+    void test_validate_dividendForeignCurrencyUnparsableExchangeRatio_isReported()
+    {
+        RawShare share = makeValidShare(QStringLiteral("VAL25"));
+        RawDividend d = makeValidDividend(newGuid());
+        d.hasForeignCurrency = true;
+        d.fc.enabled = true;
+        d.fc.exchangeRatio = QStringLiteral("ein Euro achtzig");
+        d.fc.currency = QStringLiteral("en-US");
+        share.dividends.append(d);
+        RawPortfolio portfolio;
+        portfolio.shares.append(share);
+
+        QList<ValidationIssue> issues;
+        QVERIFY(!PortfolioValidator::validate(portfolio, issues));
+        QVERIFY(std::any_of(issues.cbegin(), issues.cend(), [](const ValidationIssue& i) {
+            return i.category == QStringLiteral("Dividend") &&
+                   i.message.contains(QStringLiteral("ExchangeRatio"));
+        }));
+    }
+
+    void test_validate_dailyValueUnparsableClose_isReported()
+    {
+        RawShare share = makeValidShare(QStringLiteral("VAL26"));
+        RawDailyValue e = makeValidDailyValue(QStringLiteral("18.08.2015"));
+        e.close = QStringLiteral("hundert");
+        share.dailyValues.append(e);
+        RawPortfolio portfolio;
+        portfolio.shares.append(share);
+
+        QList<ValidationIssue> issues;
+        QVERIFY(!PortfolioValidator::validate(portfolio, issues));
+        QVERIFY(std::any_of(issues.cbegin(), issues.cend(), [](const ValidationIssue& i) {
+            return i.category == QStringLiteral("DailyValue") && i.message.contains(QStringLiteral("C"));
+        }));
+    }
+
+    void test_validate_emptyNumericFields_areAccepted()
+    {
+        // Leere numerische Felder sind laut Documents.xml (ResultEmpty="true")
+        // ein legitimer "nicht konfiguriert"-Zustand — PortfolioImporter::
+        // toDouble() faellt fuer sie auf 0.0 zurueck, das ist kein Datenfehler.
+        // Nur ein NICHT-leerer, aber unparsbarer Wert darf gemeldet werden.
+        RawShare share = makeValidShare(QStringLiteral("VAL27"));
+        share.sharePriceBefore.clear();
+
+        RawBuy buy = makeValidBuy(newGuid(), QStringLiteral("ORD-1"));
+        buy.volumeSold.clear();
+        share.buys.append(buy);
+
+        RawBrokerage brokerage = makeValidBrokerage(newGuid(), buy.guid);
+        brokerage.brokerFee.clear();
+        brokerage.traderFee.clear();
+        brokerage.reduction.clear();
+        share.brokerages.append(brokerage);
+
+        RawDividend dividend = makeValidDividend(newGuid());
+        dividend.taxAtSource.clear();
+        dividend.capitalGainsTax.clear();
+        dividend.solidarityTax.clear();
+        dividend.price.clear();
+        share.dividends.append(dividend);
+
+        RawPortfolio portfolio;
+        portfolio.shares.append(share);
+
+        QList<ValidationIssue> issues;
+        QVERIFY(PortfolioValidator::validate(portfolio, issues));
+        QVERIFY(issues.isEmpty());
+    }
+
     // ── Abgleich gegen bereits vorhandene DB-Daten ──────────────────────────
 
     void test_validate_orderNumberAlreadyExistsInDb_isReported()

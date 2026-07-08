@@ -20,6 +20,26 @@ bool PortfolioValidator::isParsableGermanDate(const QString& raw)
     return QDate::fromString(datePart, QStringLiteral("dd.MM.yyyy")).isValid();
 }
 
+bool PortfolioValidator::isParsableGermanNumber(const QString& raw)
+{
+    QString s = raw.trimmed();
+    if (s.isEmpty())
+        return true; // legitimately optional in the source — not a data error
+
+    // Mirrors PortfolioImporter::toDouble() exactly: "1.234,56" (thousands
+    // '.' + decimal ',') as well as plain "66,52".
+    if (s.contains(QLatin1Char(',')) && s.contains(QLatin1Char('.'))) {
+        s.remove(QLatin1Char('.'));
+        s.replace(QLatin1Char(','), QLatin1Char('.'));
+    } else if (s.contains(QLatin1Char(','))) {
+        s.replace(QLatin1Char(','), QLatin1Char('.'));
+    }
+
+    bool ok = false;
+    s.toDouble(&ok);
+    return ok;
+}
+
 // ── Share-level checks ───────────────────────────────────────────────────────
 
 void PortfolioValidator::validateShare(const RawShare& share, QList<ValidationIssue>& issues)
@@ -103,6 +123,18 @@ void PortfolioValidator::validateShare(const RawShare& share, QList<ValidationIs
                      .arg(share.lastUpdateShareDate));
     }
 
+    // ── Numerische Felder ─────────────────────────────────────────────────────
+    const auto checkNumber = [&](const QString& fieldName, const QString& raw) {
+        if (!isParsableGermanNumber(raw)) {
+            addIssue(QStringLiteral("Share"), fieldName,
+                     QStringLiteral("Feld \"%1\" mit Wert \"%2\" ist keine gültige Zahl "
+                                   "(erwartet: deutsches Dezimalformat, z. B. \"1234,56\").")
+                         .arg(fieldName, raw));
+        }
+    };
+    checkNumber(QStringLiteral("SharePrice"), share.sharePrice);
+    checkNumber(QStringLiteral("SharePriceBefore"), share.sharePriceBefore);
+
     // ── Vom Parser bereits erkannte, strukturelle Fehler (z.B. <MarketValues>
     //    statt <MarketValue>, siehe XmlPortfolioParser::parseShare()) ─────────
     for (const QString& parseError : share.parseErrors) {
@@ -176,6 +208,8 @@ void PortfolioValidator::validateBuys(const RawShare& share, const QString& exis
     }
 
     for (const RawBuy& b : share.buys) {
+        const QString recordId = b.guid.isEmpty() ? b.orderNumber : b.guid;
+
         if (b.guid.trimmed().isEmpty()) {
             issues.append(ValidationIssue{
                 share.wkn, share.name, QStringLiteral("Buy"), b.orderNumber,
@@ -183,9 +217,22 @@ void PortfolioValidator::validateBuys(const RawShare& share, const QString& exis
         }
         if (!isParsableGermanDate(b.date)) {
             issues.append(ValidationIssue{
-                share.wkn, share.name, QStringLiteral("Buy"), b.guid.isEmpty() ? b.orderNumber : b.guid,
+                share.wkn, share.name, QStringLiteral("Buy"), recordId,
                 QStringLiteral("Datum \"%1\" nicht parsbar (erwartet: dd.MM.yyyy).").arg(b.date) });
         }
+
+        const auto checkNumber = [&](const QString& fieldName, const QString& raw) {
+            if (!isParsableGermanNumber(raw)) {
+                issues.append(ValidationIssue{
+                    share.wkn, share.name, QStringLiteral("Buy"), recordId,
+                    QStringLiteral("Feld \"%1\" mit Wert \"%2\" ist keine gültige Zahl "
+                                  "(erwartet: deutsches Dezimalformat, z. B. \"1234,56\").")
+                        .arg(fieldName, raw) });
+            }
+        };
+        checkNumber(QStringLiteral("Volume"), b.volume);
+        checkNumber(QStringLiteral("VolumeSold"), b.volumeSold);
+        checkNumber(QStringLiteral("Price"), b.price);
 
         const QString orderNumber = b.orderNumber.trimmed();
         if (!orderNumber.isEmpty()) {
@@ -229,6 +276,8 @@ void PortfolioValidator::validateSales(const RawShare& share, const QString& exi
     }
 
     for (const RawSale& s : share.sales) {
+        const QString recordId = s.guid.isEmpty() ? s.orderNumber : s.guid;
+
         if (s.guid.trimmed().isEmpty()) {
             issues.append(ValidationIssue{
                 share.wkn, share.name, QStringLiteral("Sale"), s.orderNumber,
@@ -236,9 +285,25 @@ void PortfolioValidator::validateSales(const RawShare& share, const QString& exi
         }
         if (!isParsableGermanDate(s.date)) {
             issues.append(ValidationIssue{
-                share.wkn, share.name, QStringLiteral("Sale"), s.guid.isEmpty() ? s.orderNumber : s.guid,
+                share.wkn, share.name, QStringLiteral("Sale"), recordId,
                 QStringLiteral("Datum \"%1\" nicht parsbar (erwartet: dd.MM.yyyy).").arg(s.date) });
         }
+
+        const auto checkNumber = [&](const QString& fieldName, const QString& raw) {
+            if (!isParsableGermanNumber(raw)) {
+                issues.append(ValidationIssue{
+                    share.wkn, share.name, QStringLiteral("Sale"), recordId,
+                    QStringLiteral("Feld \"%1\" mit Wert \"%2\" ist keine gültige Zahl "
+                                  "(erwartet: deutsches Dezimalformat, z. B. \"1234,56\").")
+                        .arg(fieldName, raw) });
+            }
+        };
+        checkNumber(QStringLiteral("Volume"), s.volume);
+        checkNumber(QStringLiteral("SalePrice"), s.salePrice);
+        checkNumber(QStringLiteral("TaxAtSource"), s.taxAtSource);
+        checkNumber(QStringLiteral("CapitalGainsTax"), s.capitalGainsTax);
+        checkNumber(QStringLiteral("SolidarityTax"), s.solidarityTax);
+        checkNumber(QStringLiteral("Reduction"), s.reduction);
 
         const QString orderNumber = s.orderNumber.trimmed();
         if (!orderNumber.isEmpty()) {
@@ -271,6 +336,20 @@ void PortfolioValidator::validateSales(const RawShare& share, const QString& exi
                     QStringLiteral("<UsedBuy BuyGuid=\"%1\"> Datum \"%2\" nicht parsbar.")
                         .arg(u.buyGuid, u.buyDate) });
             }
+
+            const auto checkUsedBuyNumber = [&](const QString& fieldName, const QString& raw) {
+                if (!isParsableGermanNumber(raw)) {
+                    issues.append(ValidationIssue{
+                        share.wkn, share.name, QStringLiteral("Sale"), s.guid,
+                        QStringLiteral("<UsedBuy BuyGuid=\"%1\"> Feld \"%2\" mit Wert \"%3\" ist "
+                                      "keine gültige Zahl (erwartet: deutsches Dezimalformat, "
+                                      "z. B. \"1234,56\").").arg(u.buyGuid, fieldName, raw) });
+                }
+            };
+            checkUsedBuyNumber(QStringLiteral("BuyVolume"), u.buyVolume);
+            checkUsedBuyNumber(QStringLiteral("BuyPrice"), u.buyPrice);
+            checkUsedBuyNumber(QStringLiteral("Reduction"), u.reduction);
+            checkUsedBuyNumber(QStringLiteral("Brokerage"), u.brokerage);
         }
     }
 }
@@ -299,6 +378,8 @@ void PortfolioValidator::validateBrokerages(const RawShare& share, const QString
     }
 
     for (const RawBrokerage& b : share.brokerages) {
+        const QString recordId = b.guid.isEmpty() ? b.guidBuySale : b.guid;
+
         if (b.guid.trimmed().isEmpty()) {
             issues.append(ValidationIssue{
                 share.wkn, share.name, QStringLiteral("Brokerage"), b.guidBuySale,
@@ -306,10 +387,23 @@ void PortfolioValidator::validateBrokerages(const RawShare& share, const QString
         }
         if (!isParsableGermanDate(b.date)) {
             issues.append(ValidationIssue{
-                share.wkn, share.name, QStringLiteral("Brokerage"),
-                b.guid.isEmpty() ? b.guidBuySale : b.guid,
+                share.wkn, share.name, QStringLiteral("Brokerage"), recordId,
                 QStringLiteral("Datum \"%1\" nicht parsbar (erwartet: dd.MM.yyyy).").arg(b.date) });
         }
+
+        const auto checkNumber = [&](const QString& fieldName, const QString& raw) {
+            if (!isParsableGermanNumber(raw)) {
+                issues.append(ValidationIssue{
+                    share.wkn, share.name, QStringLiteral("Brokerage"), recordId,
+                    QStringLiteral("Feld \"%1\" mit Wert \"%2\" ist keine gültige Zahl "
+                                  "(erwartet: deutsches Dezimalformat, z. B. \"1234,56\").")
+                        .arg(fieldName, raw) });
+            }
+        };
+        checkNumber(QStringLiteral("Provision"), b.provision);
+        checkNumber(QStringLiteral("BrokerFee"), b.brokerFee);
+        checkNumber(QStringLiteral("TraderFee"), b.traderFee);
+        checkNumber(QStringLiteral("Reduction"), b.reduction);
 
         const QString guidBuySale = b.guidBuySale.trimmed();
         if (guidBuySale.isEmpty()) {
@@ -341,6 +435,8 @@ void PortfolioValidator::validateBrokerages(const RawShare& share, const QString
 void PortfolioValidator::validateDividends(const RawShare& share, QList<ValidationIssue>& issues)
 {
     for (const RawDividend& d : share.dividends) {
+        const QString recordId = d.guid.isEmpty() ? d.date : d.guid;
+
         if (d.guid.trimmed().isEmpty()) {
             issues.append(ValidationIssue{
                 share.wkn, share.name, QStringLiteral("Dividend"), d.date,
@@ -348,9 +444,31 @@ void PortfolioValidator::validateDividends(const RawShare& share, QList<Validati
         }
         if (!isParsableGermanDate(d.date)) {
             issues.append(ValidationIssue{
-                share.wkn, share.name, QStringLiteral("Dividend"), d.guid.isEmpty() ? d.date : d.guid,
+                share.wkn, share.name, QStringLiteral("Dividend"), recordId,
                 QStringLiteral("Datum \"%1\" nicht parsbar (erwartet: dd.MM.yyyy).").arg(d.date) });
         }
+
+        const auto checkNumber = [&](const QString& fieldName, const QString& raw) {
+            if (!isParsableGermanNumber(raw)) {
+                issues.append(ValidationIssue{
+                    share.wkn, share.name, QStringLiteral("Dividend"), recordId,
+                    QStringLiteral("Feld \"%1\" mit Wert \"%2\" ist keine gültige Zahl "
+                                  "(erwartet: deutsches Dezimalformat, z. B. \"1234,56\").")
+                        .arg(fieldName, raw) });
+            }
+        };
+        checkNumber(QStringLiteral("Rate"), d.rate);
+        checkNumber(QStringLiteral("Volume"), d.volume);
+        checkNumber(QStringLiteral("TaxAtSource"), d.taxAtSource);
+        checkNumber(QStringLiteral("CapitalGainTax"), d.capitalGainsTax);
+        checkNumber(QStringLiteral("SolidarityTax"), d.solidarityTax);
+        checkNumber(QStringLiteral("PriceAtPayday"), d.price);
+        // ExchangeRatio nur relevant, wenn ein <ForeignCurrency>-Element im
+        // Quell-XML überhaupt vorhanden war (unabhängig vom Flag="Checked"-
+        // Status — ein kaputter Wechselkurs ist auch dann ein Datenfehler,
+        // wenn die Fremdwährung gerade nicht aktiv genutzt wird).
+        if (d.hasForeignCurrency)
+            checkNumber(QStringLiteral("ExchangeRatio"), d.fc.exchangeRatio);
     }
 }
 
@@ -364,6 +482,21 @@ void PortfolioValidator::validateDailyValues(const RawShare& share, QList<Valida
                 share.wkn, share.name, QStringLiteral("DailyValue"), e.date,
                 QStringLiteral("Datum \"%1\" nicht parsbar (erwartet: dd.MM.yyyy).").arg(e.date) });
         }
+
+        const auto checkNumber = [&](const QString& fieldName, const QString& raw) {
+            if (!isParsableGermanNumber(raw)) {
+                issues.append(ValidationIssue{
+                    share.wkn, share.name, QStringLiteral("DailyValue"), e.date,
+                    QStringLiteral("Feld \"%1\" mit Wert \"%2\" ist keine gültige Zahl "
+                                  "(erwartet: deutsches Dezimalformat, z. B. \"1234,56\").")
+                        .arg(fieldName, raw) });
+            }
+        };
+        checkNumber(QStringLiteral("C"), e.close);
+        checkNumber(QStringLiteral("O"), e.open);
+        checkNumber(QStringLiteral("T"), e.top);
+        checkNumber(QStringLiteral("B"), e.bottom);
+        checkNumber(QStringLiteral("V"), e.volume);
     }
 }
 

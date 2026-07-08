@@ -1654,6 +1654,35 @@ sinkt dadurch korrekt um 1 und der Zähler kann wieder sein volles Maximum
 erreichen. Keine bestehenden Tests hängen an einer festen `optionalTotal`-Zahl für
 das DividendForm.
 
+### Numerische Felder im XML-Importer (erledigt 08.07.2026)
+
+`PortfolioValidator` prüfte bislang nur Datumsfelder auf Parsbarkeit — nicht
+numerische Felder wie `SharePrice`, `Volume` oder `Provision`. Ein
+nicht-parsbarer, aber nicht-leerer Wert fiel dadurch beim Import weiterhin
+lautlos auf `0.0` zurück (`PortfolioImporter::toDouble()`), statt den Import
+wie bei allen anderen Datenfehlern komplett zu blockieren.
+
+Neue private Hilfsmethode `PortfolioValidator::isParsableGermanNumber()`
+spiegelt die Parsing-Logik von `PortfolioImporter::toDouble()` exakt (Komma
+als Dezimaltrennzeichen, optionaler Punkt als Tausendertrennzeichen), damit
+"hier parsbar" und "ergibt beim Import einen echten Wert statt eines
+0.0-Fallbacks" deckungsgleich bleiben. Ein **leerer** String gilt bewusst als
+gültig — viele dieser Felder sind laut `Documents.xml` (`ResultEmpty="true"`)
+legitim optional; nur ein nicht-leerer, aber unparsbarer Wert ist ein
+Datenfehler.
+
+Die Prüfung wurde in alle bestehenden `validateXxx()`-Methoden eingebaut:
+`SharePrice`/`SharePriceBefore` (Share), `Volume`/`VolumeSold`/`Price` (Buy),
+`Volume`/`SalePrice`/`TaxAtSource`/`CapitalGainsTax`/`SolidarityTax`/
+`Reduction` (Sale) sowie je `UsedBuy`: `BuyVolume`/`BuyPrice`/`Reduction`/
+`Brokerage`, `Provision`/`BrokerFee`/`TraderFee`/`Reduction` (Brokerage),
+`Rate`/`Volume`/`TaxAtSource`/`CapitalGainTax`/`SolidarityTax`/
+`PriceAtPayday` (Dividend) sowie `ExchangeRatio` bei Fremdwährungs-Dividenden
+(nur geprüft, wenn ein `<ForeignCurrency>`-Element im Quell-XML überhaupt
+vorhanden war), und `C`/`O`/`T`/`B`/`V` (DailyValue). Siehe Abschnitt
+"Validierung vor dem Import" oben für die aktualisierte Prüftabelle, sowie
+TESTING.md für die neuen Testfälle in `tst_portfoliovalidator`.
+
 ### BackupSettingsForm (geplant, noch nicht implementiert)
 
 Ein dedizierter Konfigurationsdialog für Backup-Einstellungen soll künftig folgende
@@ -1984,11 +2013,14 @@ Geprüft wird pro Aktie:
 | Brokerage | `GuidBuySale` muss genau einen Buy oder eine Sale dieser Aktie treffen (aktuelle Datei oder bereits in der DB), nicht keinen und nicht beide |
 | DailyValue | `D` (Datum) parsbar |
 | Aktienübergreifend (pro Aktie) | GUIDs von Buy/Sale/Brokerage/Dividend derselben Aktie müssen untereinander eindeutig sein |
+| Numerische Felder (ergänzt 08.07.2026) | Jedes numerische Attribut über alle Kategorien hinweg (`SharePrice`/`SharePriceBefore`; Buy `Volume`/`VolumeSold`/`Price`; Sale `Volume`/`SalePrice`/`TaxAtSource`/`CapitalGainsTax`/`SolidarityTax`/`Reduction` sowie je `UsedBuy`: `BuyVolume`/`BuyPrice`/`Reduction`/`Brokerage`; Brokerage `Provision`/`BrokerFee`/`TraderFee`/`Reduction`; Dividend `Rate`/`Volume`/`TaxAtSource`/`CapitalGainTax`/`SolidarityTax`/`PriceAtPayday` sowie bei Fremdwährung `ExchangeRatio`; DailyValue `C`/`O`/`T`/`B`/`V`) muss entweder leer sein (legitimer "nicht gesetzt"-Zustand, siehe unten) oder im deutschen Zahlenformat parsbar |
 
-Bewusst **nicht** abgedeckt: Parsbarkeit numerischer Felder außer Daten (z. B.
-`SharePrice`, `Volume`, `Provision` fallen bei ungültiger Eingabe weiterhin
-lautlos auf `0.0` zurück, siehe `PortfolioImporter::toDouble()`) — eine
-mögliche Erweiterung für eine künftige Sitzung.
+Bei den numerischen Feldern gilt dieselbe Kulanz wie beim Datumsformat: ein
+**leerer** Wert ist kein Fehler — viele dieser Felder sind laut
+`Documents.xml` (`ResultEmpty="true"`) legitim optional, und
+`PortfolioImporter::toDouble("")` liefert bewusst `0.0`. Ein Problem liegt nur
+vor, wenn ein Feld **nicht-leer, aber nicht als Zahl parsbar** ist — genau der
+Fall, der vor dieser Erweiterung lautlos auf `0.0` zurückfiel.
 
 Bei einem Fehlschlag wird ein strukturierter Bericht geloggt, gruppiert nach
 Aktie (WKN + Name), darunter alle gefundenen Probleme dieser Aktie, damit auf
