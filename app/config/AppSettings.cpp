@@ -74,6 +74,13 @@ void AppSettings::load(const QString& path)
     // ── API Keys ─────────────────────────────────────────────────────────
     m_apiKeyYahoo   = settings.value(QStringLiteral("API/KeyYahoo"),   m_apiKeyYahoo).toString();
     m_apiKeyOnVista = settings.value(QStringLiteral("API/KeyOnVista"), m_apiKeyOnVista).toString();
+
+    // ── Backup ───────────────────────────────────────────────────────────
+    m_backupEnabled    = settings.value(QStringLiteral("Backup/Enabled"),    m_backupEnabled).toBool();
+    m_backupMaxCount   = settings.value(QStringLiteral("Backup/MaxCount"),   m_backupMaxCount).toInt();
+    m_backupNamePrefix = settings.value(QStringLiteral("Backup/NamePrefix"), m_backupNamePrefix).toString();
+    m_backupDateFormat = settings.value(QStringLiteral("Backup/DateFormat"), m_backupDateFormat).toString();
+    m_backupDirectory  = settings.value(QStringLiteral("Backup/Directory"),  m_backupDirectory).toString();
 }
 
 void AppSettings::save()
@@ -116,6 +123,13 @@ void AppSettings::save()
     // ── API Keys ─────────────────────────────────────────────────────────
     settings.setValue(QStringLiteral("API/KeyYahoo"),   m_apiKeyYahoo);
     settings.setValue(QStringLiteral("API/KeyOnVista"), m_apiKeyOnVista);
+
+    // ── Backup ───────────────────────────────────────────────────────────
+    settings.setValue(QStringLiteral("Backup/Enabled"),    m_backupEnabled);
+    settings.setValue(QStringLiteral("Backup/MaxCount"),   m_backupMaxCount);
+    settings.setValue(QStringLiteral("Backup/NamePrefix"), m_backupNamePrefix);
+    settings.setValue(QStringLiteral("Backup/DateFormat"), m_backupDateFormat);
+    settings.setValue(QStringLiteral("Backup/Directory"),  m_backupDirectory);
 }
 
 // ── Setters ───────────────────────────────────────────────────────────────────
@@ -227,5 +241,35 @@ void AppSettings::setSoundUpdateFile(const QString& filename)
 void AppSettings::setSoundErrorFile(const QString& filename)
 {
     m_soundErrorFile = filename;
+    save();
+}
+
+void AppSettings::setBackupEnabled(bool value)
+{
+    m_backupEnabled = value;
+    save();
+}
+
+void AppSettings::setBackupMaxCount(int value)
+{
+    m_backupMaxCount = value;
+    save();
+}
+
+void AppSettings::setBackupNamePrefix(const QString& value)
+{
+    m_backupNamePrefix = value;
+    save();
+}
+
+void AppSettings::setBackupDateFormat(const QString& value)
+{
+    m_backupDateFormat = value;
+    save();
+}
+
+void AppSettings::setBackupDirectory(const QString& value)
+{
+    m_backupDirectory = value;
     save();
 }

@@ -182,6 +182,45 @@ public:
      */
     void setLogColors(const QList<QColor>& colors);
 
+    // ── Backup ───────────────────────────────────────────────────────────
+    bool    backupEnabled()    const { return m_backupEnabled; }    ///< Backup beim Öffnen ein-/ausschalten
+    int     backupMaxCount()   const { return m_backupMaxCount; }   ///< Wie viele Backups vorgehalten werden
+    QString backupNamePrefix() const { return m_backupNamePrefix; } ///< Präfix des Backup-Dateinamens (z. B. "Backup")
+    QString backupDateFormat() const { return m_backupDateFormat; } ///< Qt-Datumsformat für den Zeitstempel im Dateinamen
+    /// Zielverzeichnis für Backups; leer = gleicher Ordner wie die Portfolio-Datei
+    QString backupDirectory()  const { return m_backupDirectory; }
+
+    /**
+     * @brief Enable or disable automatic backups on portfolio open and save.
+     * @param value  true to enable.
+     */
+    void setBackupEnabled(bool value);
+
+    /**
+     * @brief Set the maximum number of backups to keep and save.
+     * @param value  Number of backups (rotation deletes the oldest beyond this).
+     */
+    void setBackupMaxCount(int value);
+
+    /**
+     * @brief Set the backup filename prefix and save.
+     * @param value  Prefix string (e.g. "Backup"). Empty falls back to "Backup".
+     */
+    void setBackupNamePrefix(const QString& value);
+
+    /**
+     * @brief Set the Qt date format used for the backup filename timestamp and save.
+     * @param value  Qt date format string (e.g. "yyyy_MM_dd_HH_mm_ss").
+     *               Empty falls back to "yyyy_MM_dd_HH_mm_ss".
+     */
+    void setBackupDateFormat(const QString& value);
+
+    /**
+     * @brief Set the target directory for backups and save.
+     * @param value  Absolute directory path, or empty to use the portfolio's own folder.
+     */
+    void setBackupDirectory(const QString& value);
+
 private:
     explicit AppSettings(QObject* parent = nullptr);
 
@@ -226,4 +265,11 @@ private:
     // API keys
     QString m_apiKeyYahoo;
     QString m_apiKeyOnVista;
+
+    // Backup
+    bool    m_backupEnabled    = true;
+    int     m_backupMaxCount   = 5;
+    QString m_backupNamePrefix = QStringLiteral("Backup");
+    QString m_backupDateFormat = QStringLiteral("yyyy_MM_dd_HH_mm_ss");
+    QString m_backupDirectory;   // leer = gleicher Ordner wie die Portfolio-Datei
 };

@@ -489,6 +489,7 @@ private:
     QAction* m_actionLanguage             = nullptr;
     QAction* m_actionLogger               = nullptr;
     QAction* m_actionSound                = nullptr;
+    QAction* m_actionBackup               = nullptr;
 
     // ── Actions — API Settings ────────────────────────────────────────────
     QAction* m_actionApiKeyYahoo          = nullptr;

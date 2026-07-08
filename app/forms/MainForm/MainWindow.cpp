@@ -7,6 +7,7 @@
 #include "../../core/Database.h"
 #include "../LoggerSettingsForm/LoggerSettingsForm.h"
 #include "../SoundSettingsForm/SoundSettingsForm.h"
+#include "../BackupSettingsForm/BackupSettingsForm.h"
 #include "../AboutForm/AboutForm.h"
 #include "../ApiSettingsForm/ApiSettingsForm.h"
 #include "../../repositories/ShareRepository.h"
@@ -28,6 +29,7 @@
 #include <QFile>
 #include <QDir>
 #include <QDateTime>
+#include <algorithm>
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
 #include "../BackupProgressForm/BackupProgressDialog.h"
 #include <QTime>
@@ -200,6 +202,12 @@ void MainWindow::setupActions()
         SoundSettingsForm dialog(this);
         dialog.exec();
     });
+    m_actionBackup   = new QAction(IconProvider::icon(IconProvider::MenuSettings),
+                                   tr("&Backup..."), this);
+    connect(m_actionBackup, &QAction::triggered, this, [this]() {
+        BackupSettingsForm dialog(this);
+        dialog.exec();
+    });
 
     // ── API Settings ──────────────────────────────────────────────────────
     m_actionApiKeyYahoo = new QAction(IconProvider::icon(IconProvider::MenuKey),
@@ -238,6 +246,7 @@ void MainWindow::setupMenuBar()
     settingsMenu->addSeparator();
     settingsMenu->addAction(m_actionLogger);
     settingsMenu->addAction(m_actionSound);
+    settingsMenu->addAction(m_actionBackup);
 
     QMenu* apiMenu = menuBar()->addMenu(tr("&API-Einstellung"));
     apiMenu->addAction(m_actionApiKeyYahoo);
@@ -655,6 +664,7 @@ void MainWindow::disableAllControls()
     m_actionLanguage->setEnabled(false);
     m_actionLogger->setEnabled(false);
     m_actionSound->setEnabled(false);
+    m_actionBackup->setEnabled(false);
     m_actionApiKeyYahoo->setEnabled(false);
 
     // Disable portfolio tabs
@@ -1239,21 +1249,50 @@ void MainWindow::onDeleteShare()
 // ─────────────────────────────────────────────────────────────────────────────
 void MainWindow::createBackup(const QString& portfolioPath)
 {
-    constexpr int kMaxBackups = 5;
+    const auto& settings = AppSettings::instance();
+
+    // BackupSettingsForm — "Backup aktivieren" (Standard: an). Ist Backup
+    // deaktiviert, wird die Methode ohne Statusmeldung sofort verlassen —
+    // analog zum bisherigen Verhalten, wenn die Portfolio-Datei fehlt.
+    if (!settings.backupEnabled()) {
+        qInfo() << "[MainWindow] Backup deaktiviert (Einstellungen) — kein Backup erstellt.";
+        return;
+    }
 
     const QFileInfo fi(portfolioPath);
     if (!fi.exists())
         return;
 
-    const QString dir      = fi.absolutePath();
+    // Zielverzeichnis: konfiguriertes Backup-Verzeichnis, sonst (Standard,
+    // leer) wie bisher der Ordner der Portfolio-Datei selbst.
+    QString dir = settings.backupDirectory();
+    if (dir.isEmpty())
+        dir = fi.absolutePath();
+
+    if (!QDir(dir).exists() && !QDir().mkpath(dir)) {
+        qWarning() << "[MainWindow] Backup-Verzeichnis konnte nicht angelegt werden:" << dir;
+        addStatusMessage(tr("Backup-Verzeichnis konnte nicht angelegt werden: %1").arg(dir),
+                         MessageType::Warning);
+        return;
+    }
+
     const QString baseName = fi.baseName();                 // e.g. "ShareList"
     const QString suffix   = fi.suffix();                   // e.g. "db"
-    const QString timestamp =
-        QDateTime::currentDateTime().toString(QStringLiteral("yyyy_MM_dd_HH_mm_ss"));
 
-    // Backup_ShareList_2026_06_16_21_59_30.db
-    const QString backupName = QStringLiteral("Backup_%1_%2.%3")
-                                   .arg(baseName, timestamp, suffix);
+    // Defensive Fallback auf die Standardwerte — BackupSettingsForm::saveSettings()
+    // verhindert leere Werte zwar bereits vor dem Speichern, aber AppSettings
+    // liest auch eine von Hand editierte INI ein, daher hier zusätzlich abgesichert.
+    const QString prefixRaw = settings.backupNamePrefix().trimmed();
+    const QString prefix    = prefixRaw.isEmpty() ? QStringLiteral("Backup") : prefixRaw;
+    const QString dateFormatRaw = settings.backupDateFormat().trimmed();
+    const QString dateFormat    = dateFormatRaw.isEmpty()
+        ? QStringLiteral("yyyy_MM_dd_HH_mm_ss") : dateFormatRaw;
+    const QString timestamp = QDateTime::currentDateTime().toString(dateFormat);
+
+    // <Präfix>_ShareList_2026_06_16_21_59_30.db — mit Standardeinstellungen
+    // identisch zum bisherigen fest codierten Schema.
+    const QString backupName = QStringLiteral("%1_%2_%3.%4")
+                                   .arg(prefix, baseName, timestamp, suffix);
     const QString backupPath = dir + QDir::separator() + backupName;
 
     // Show progress dialog — copy runs in background thread
@@ -1270,20 +1309,54 @@ void MainWindow::createBackup(const QString& portfolioPath)
     qInfo() << "[MainWindow] Backup created:" << backupPath;
     addStatusMessage(tr("Backup erstellt: %1").arg(backupName), MessageType::Info);
 
-    // Keep only the most recent kMaxBackups — delete oldest if exceeded
+    // Keep only the most recent backupMaxCount() — delete oldest if exceeded.
+    //
+    // Namensfilter bewusst OHNE Präfix ("*_<Portfolioname>_*.<Endung>" statt
+    // "<Präfix>_<Portfolioname>_*.<Endung>"): "Max. Anzahl Backups" soll eine
+    // Obergrenze über ALLE Backups dieses Portfolios sein, unabhängig davon,
+    // mit welchem Präfix sie jeweils erzeugt wurden. Würde der Filter am
+    // aktuell konfigurierten Präfix festhalten, würde eine Präfix-Änderung in
+    // BackupSettingsForm alle bisherigen Backups aus der Zählung herausfallen
+    // lassen — sie würden nie mehr rotiert und blieben unbegrenzt liegen, weil
+    // sie den neuen Filter nicht mehr treffen. Der Portfolioname (baseName)
+    // plus Endung reicht als Anker aus, um Backups dieses Portfolios von
+    // fremden Dateien im selben Verzeichnis zu unterscheiden.
+    //
+    // Sortierung nach tatsächlichem Änderungsdatum (QFileInfo::lastModified()),
+    // NICHT nach Dateiname: eine rein alphabetische Sortierung wäre nur zufällig
+    // korrekt, solange backupDateFormat() nullgepolstert und groß-nach-klein ist
+    // (wie der Standard "yyyy_MM_dd_HH_mm_ss"). Ändert der Benutzer das Format
+    // in BackupSettingsForm (z. B. auf "dd_MM_yyyy_..."), würde eine
+    // Namens-Sortierung lautlos die falschen Dateien als "älteste" ansehen —
+    // insbesondere wenn ältere Backups noch mit dem alten Format benannt sind
+    // und im selben Namensfilter-Match landen. lastModified() ist von der
+    // gewählten Textdarstellung völlig unabhängig und bleibt daher auch nach
+    // einer Formatänderung korrekt.
+    const int maxBackups = qMax(1, settings.backupMaxCount());
     QDir backupDir(dir);
-    backupDir.setNameFilters({ QStringLiteral("Backup_%1_*.%2").arg(baseName, suffix) });
-    backupDir.setSorting(QDir::Name);  // ISO timestamp → lexicographic = chronological
+    backupDir.setNameFilters({ QStringLiteral("*_%1_*.%2").arg(baseName, suffix) });
+    backupDir.setFilter(QDir::Files);
 
-    const QStringList backups = backupDir.entryList(QDir::Files);
-    if (backups.size() > kMaxBackups) {
-        const int toDelete = backups.size() - kMaxBackups;
+    QFileInfoList backupInfos = backupDir.entryInfoList();
+    std::sort(backupInfos.begin(), backupInfos.end(),
+              [](const QFileInfo& a, const QFileInfo& b) {
+                  return a.lastModified() < b.lastModified();
+              });
+
+    if (backupInfos.size() > maxBackups) {
+        const int toDelete = backupInfos.size() - maxBackups;
         for (int i = 0; i < toDelete; ++i) {
-            const QString oldBackup = dir + QDir::separator() + backups.at(i);
-            if (QFile::remove(oldBackup))
+            const QString oldBackupName = backupInfos.at(i).fileName();
+            const QString oldBackup     = backupInfos.at(i).absoluteFilePath();
+            if (QFile::remove(oldBackup)) {
                 qInfo() << "[MainWindow] Old backup removed:" << oldBackup;
-            else
+                addStatusMessage(tr("Altes Backup entfernt: %1").arg(oldBackupName),
+                                 MessageType::Info);
+            } else {
                 qWarning() << "[MainWindow] Could not remove old backup:" << oldBackup;
+                addStatusMessage(tr("Altes Backup konnte nicht entfernt werden: %1").arg(oldBackupName),
+                                 MessageType::Warning);
+            }
         }
     }
 }

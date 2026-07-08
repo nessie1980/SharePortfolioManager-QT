@@ -121,6 +121,8 @@ set(APP_SOURCES
     forms/LoggerSettingsForm/LoggerSettingsForm.cpp
     forms/SoundSettingsForm/SoundSettingsForm.h
     forms/SoundSettingsForm/SoundSettingsForm.cpp
+    forms/BackupSettingsForm/BackupSettingsForm.h
+    forms/BackupSettingsForm/BackupSettingsForm.cpp
     forms/ApiSettingsForm/ApiSettingsForm.h
     forms/ApiSettingsForm/ApiSettingsForm.cpp
 

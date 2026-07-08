@@ -39,6 +39,7 @@ ctest --output-on-failure
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
 ./bin/tst_buysform
+./bin/tst_backupsettingsform
 ./bin/tst_xmlportfolioparser
 ./bin/tst_portfoliovalidator
 ./bin/tst_portfolioimporter
@@ -249,6 +250,15 @@ MainWindow:
 | `test_soundSettings_saveErrorFile` | Sound-Datei (Fehler) gespeichert | Pfad korrekt geladen |
 | `test_soundSettings_scanFallback` | Kein Sound-Gerät → Fallback | Kein Absturz |
 | `test_soundFile_missingDisablesSound` | Fehlende Sound-Datei deaktiviert Sound | Sound disabled |
+
+@note **BackupSettingsForm (implementiert 08.07.2026):** eigene Fälle in
+`tests/forms/tst_backupsettingsform.cpp` (siehe eigener Abschnitt weiter
+unten), nicht in `tst_mainwindow.cpp` — analog `tst_buysform`/
+`tst_shareeditform`. Regressionstests für `createBackup()` selbst (Rotation,
+Präfix-Änderung, `mkpath()`, Enable/Disable) bleiben dagegen in
+`TestBackupForm` (unten in dieser Datei), da `createBackup()` eine private
+Methode von `MainWindow` ist und dessen volle Konstruktion braucht.
+
 | `test_aboutForm_appVersionSet` | About-Dialog zeigt App-Version | Version-Label nicht leer |
 | `test_aboutForm_pdfConverterDetected` | About-Dialog zeigt PDF-Converter-Status | Label nicht leer |
 | `test_deleteShare_removesShareFromDatabase` | Share + Remove → DB leer | `findAll().size()` = 0 |
@@ -533,6 +543,68 @@ ViewShareEdit:
 | `test_viewShareEdit_marketApiKey_setFromSettingsForYahoo` | Yahoo-Modus → Key aus AppSettings | `marketPriceApiKey()` = gesetzter Key |
 | `test_viewShareEdit_dailyApiKey_setFromSettingsForOnVista` | OnVista-Modus → Key aus AppSettings | `dailyValuesApiKey()` = gesetzter Key |
 | `test_viewShareEdit_refreshSummary_doesNotCrash` | `refreshSummary()` ohne Absturz | Kein Absturz |
+
+---
+
+#### tst_backupsettingsform — BackupSettingsForm (neu, 08.07.2026)
+
+Executable: `tst_backupsettingsform`
+Klasse unter Test: `BackupSettingsForm`, sowie die Backup-Sektion von `AppSettings`
+
+@note Eigene Executable statt Erweiterung von `tst_mainwindow.cpp` — analog
+`tst_buysform`/`tst_shareeditform` (siehe ARCHITECTURE.md, "Neue Forms
+bekommen ihre eigene Test-Executable"). Deutlich schlanker als die anderen
+Form-Tests: `BackupSettingsForm` braucht weder Datenbank noch `MainWindow`,
+Compile-Abhängigkeiten sind nur `AppSettings.cpp` und `IconProvider.cpp`.
+Alle Widgets tragen zu Testzwecken feste `objectName()`s (keine visuelle
+Auswirkung), damit `findChild<T>(name)` eindeutig statt über Konstruktions-
+Reihenfolge sucht — bei drei `QLineEdit`s und mehreren `QLabel`s im Dialog
+wäre Positions-Suche fehleranfällig gewesen.
+
+@note `AppSettings` ist ein Singleton — jeder Test, der Werte ändert, stellt
+am Ende den ursprünglichen Wert wieder her (gleiches Muster wie
+`test_loggerSettings_*`/`test_soundSettings_*` in `tst_mainwindow.cpp`).
+Regressionstests für `createBackup()` selbst (Rotation, Präfix-Änderung,
+`mkpath()`, Enable/Disable) bleiben in `TestBackupForm` (`tst_mainwindow.cpp`),
+da `createBackup()` eine private Methode von `MainWindow` ist.
+
+AppSettings — Backup-Sektion (reiner Speichern/Laden-Roundtrip):
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_backupSettings_saveEnabled` | `backupEnabled` gespeichert und gelesen | Wert korrekt geladen |
+| `test_backupSettings_saveMaxCount` | `backupMaxCount` gespeichert und gelesen | Wert korrekt geladen |
+| `test_backupSettings_saveNamePrefix` | `backupNamePrefix` gespeichert und gelesen | Wert korrekt geladen |
+| `test_backupSettings_saveDateFormat` | `backupDateFormat` gespeichert und gelesen | Wert korrekt geladen |
+| `test_backupSettings_saveDirectory` | `backupDirectory` gespeichert und gelesen | Wert korrekt geladen |
+
+Dialog — Konstruktion & Laden:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_dialog_constructsWithoutCrash` | Dialog öffnet ohne Absturz | Kein Absturz |
+| `test_dialog_loadSettings_populatesEnabledCheckbox` | Checkbox nach `loadSettings()` | Checkbox-Zustand = `backupEnabled()` |
+| `test_dialog_loadSettings_populatesPrefixAndDateFormat` | Präfix- und Datumsformat-Feld nach `loadSettings()` | Beide Felder = konfigurierte Werte |
+| `test_dialog_loadSettings_populatesMaxCountFromKnownValue` | Anzahl-Combobox bei Wert aus der vordefinierten Liste (10) | `currentText()` = "10" |
+| `test_dialog_loadSettings_populatesMaxCountFromCustomValue` | Anzahl-Combobox bei freiem Wert außerhalb der Liste (7) | `setCurrentText()`-Fallback greift, `currentText()` = "7" |
+
+Dialog — Speichern:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_dialog_save_persistsAllFieldsToAppSettings` | Alle fünf Felder geändert + Speichern-Klick | `AppSettings` enthält alle fünf neuen Werte |
+| `test_dialog_save_emptyPrefixFallsBackToDefault` | Präfix-Feld nur Leerzeichen + Speichern | `backupNamePrefix()` = "Backup" |
+| `test_dialog_save_emptyDateFormatFallsBackToDefault` | Datumsformat-Feld leer + Speichern | `backupDateFormat()` = "yyyy_MM_dd_HH_mm_ss" |
+| `test_dialog_save_invalidMaxCountFallsBackToFive` | Anzahl-Feld nicht-numerischer Text ("abc") + Speichern | `backupMaxCount()` = 5, nicht 0 |
+| `test_dialog_cancel_doesNotPersistChanges` | Checkbox im Dialog geändert, dann Abbrechen-Klick | `AppSettings` unverändert |
+
+Dateinamen-Vorschau:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_preview_updatesOnPrefixChange` | Vorschau reagiert live auf Präfix-Eingabe | Vorschautext beginnt mit neuem Präfix |
+| `test_preview_containsPortfolioPlaceholder` | Vorschau enthält erkennbaren Platzhalter | Text enthält `<Portfolioname>` |
+| `test_preview_emptyPrefixShowsDefaultInPreview` | Leeres Präfix-Feld → Vorschau zeigt Default | Vorschautext beginnt mit "Backup_" |
 
 ---
 

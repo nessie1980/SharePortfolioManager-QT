@@ -121,6 +121,7 @@ tst_database            ← Database, Qt6::Sql
 tst_mainwindow          ← alle ShareEditForm-, ShareAddForm-, BuysForm- (Compile-Dep.), SalesForm-, DividendForm-, BrokeragesForm-, OwnMessageBox-, BackupProgressForm-Quelldateien + alle Repositories + ShareCalculator
 tst_buysform            ← BuysForm (ModelBuyEdit, PresenterBuyEdit, ViewBuyEdit) + BuyRepository, BrokerageRepository, ShareRepository
 tst_shareeditform       ← ViewShareEdit + alle vier Sub-Form-Trios als Compile-Dep. (BuysForm, SalesForm, DividendForm, BrokeragesForm) + alle Repositories
+tst_backupsettingsform  ← BackupSettingsForm + AppSettings, IconProvider (kein DB-/MainWindow-Bezug)
 @endcode
 
 ---
@@ -185,6 +186,7 @@ austauschbar und isoliert testbar.
 | BrokeragesForm | `forms/BrokeragesForm/` | ✅ implementiert |
 | OwnMessageBox | `forms/OwnMessageBoxForm/` | ✅ implementiert |
 | BackupProgressForm | `forms/BackupProgressForm/` | ✅ implementiert |
+| BackupSettingsForm | `forms/BackupSettingsForm/` | ✅ implementiert (08.07.2026) |
 | ShareDetailsForm | `forms/ShareDetailsForm/` | ⬜ Code vorhanden, aber nicht MVP-konform und nicht integriert |
 | ChartForm | `forms/ChartForm/` | ⬜ Dateien vorhanden, leer |
 
@@ -1683,20 +1685,82 @@ vorhanden war), und `C`/`O`/`T`/`B`/`V` (DailyValue). Siehe Abschnitt
 "Validierung vor dem Import" oben für die aktualisierte Prüftabelle, sowie
 TESTING.md für die neuen Testfälle in `tst_portfoliovalidator`.
 
-### BackupSettingsForm (geplant, noch nicht implementiert)
+### BackupSettingsForm (erledigt 08.07.2026)
 
-Ein dedizierter Konfigurationsdialog für Backup-Einstellungen soll künftig folgende
-Optionen bieten:
+Dedizierter Konfigurationsdialog für Backup-Einstellungen, analog zu
+`LoggerSettingsForm`/`SoundSettingsForm` als einzelner `QDialog` umgesetzt
+(kein eigenes IView/IModel/Presenter-Triple — für einen reinen
+Einstellungsdialog ohne eigene Geschäftslogik ist das leichtgewichtige Muster
+dieser beiden Vorbilder ausreichend und konsistent zum Rest der
+Settings-Dialoge). Aufrufbar über `Einstellungen → Backup...` in der
+Menüleiste, neben `Logger...` und `Sound...`.
 
 | Einstellung | Beschreibung | Standardwert |
 | ------ | ------ | ------ |
 | Backup aktivieren | Backup beim Öffnen ein-/ausschalten | ✅ aktiv |
-| Max. Anzahl Backups | Wie viele Backups vorgehalten werden | 5 |
-| Namensschema | Präfix und Datumsformat des Backup-Dateinamens | `Backup_<Name>_YYYY_MM_DD_HH_mm_ss` |
-| Backup-Verzeichnis | Zielverzeichnis (Standard: gleicher Ordner wie Portfolio) | Portfolio-Verzeichnis |
+| Max. Anzahl Backups | Wie viele Backups vorgehalten werden (editierbare Combobox: 1/3/5/10/20/50 oder freier Wert) | 5 |
+| Namensschema | Präfix (Textfeld) + Qt-Datumsformat (Textfeld) für den Zeitstempel im Dateinamen, mit Live-Vorschau des resultierenden Dateinamens | Präfix `Backup`, Format `yyyy_MM_dd_HH_mm_ss` |
+| Backup-Verzeichnis | Zielverzeichnis, wählbar über Browse-Button; leer = gleicher Ordner wie die Portfolio-Datei | leer (Portfolio-Verzeichnis) |
 
-Die Einstellungen werden in `AppSettings` (INI) gespeichert und von `createBackup()`
-ausgelesen. `BackupSettingsForm` folgt dem MVP-Pattern analog zu `LoggerSettingsForm`.
+Die Einstellungen liegen in `AppSettings` unter dem INI-Abschnitt `Backup`
+(`backupEnabled()`/`backupMaxCount()`/`backupNamePrefix()`/
+`backupDateFormat()`/`backupDirectory()` mit den zugehörigen Settern, alle
+speichern sofort per `save()` — gleiches Muster wie bei den bestehenden
+Logger-/Sound-Einstellungen). Mit den Standardwerten erzeugt
+`MainWindow::createBackup()` exakt dieselben Dateinamen wie vor dieser
+Änderung (`Backup_<Dateiname>_YYYY_MM_DD_HH_mm_ss.db`) — reines Umstellen auf
+konfigurierbare Werte, keine Verhaltensänderung im Default-Fall.
+
+`createBackup()` liest jetzt vor jedem Lauf:
+
+- **`backupEnabled()`**: ist Backup deaktiviert, kehrt die Methode sofort
+  zurück (kein Log-Eintrag als Statusmeldung, nur `qInfo()` — analog dazu,
+  wie bisher schon eine fehlende Portfolio-Datei still übersprungen wurde).
+- **`backupDirectory()`**: leer → wie bisher `fi.absolutePath()` der
+  Portfolio-Datei. Ist ein eigenes Verzeichnis konfiguriert und existiert es
+  noch nicht, wird es per `QDir::mkpath()` angelegt; schlägt das fehl, wird
+  eine Warn-Statusmeldung ausgegeben und kein Backup erstellt.
+- **`backupNamePrefix()`** / **`backupDateFormat()`**: ersetzen die bisher
+  fest codierten Literale `"Backup"` bzw. `"yyyy_MM_dd_HH_mm_ss"` beim
+  Erzeugen des neuen Dateinamens.
+- **`backupMaxCount()`**: ersetzt das bisherige `constexpr int kMaxBackups = 5`;
+  über `qMax(1, ...)` gegen einen Wert ≤ 0 abgesichert (z. B. falls die INI
+  von Hand manipuliert wurde).
+
+**Rotation: Namensfilter präfix-unabhängig, Sortierung nach Änderungsdatum
+(Nachtrag 08.07.2026):** Auf Nutzer-Rückfrage geprüft — "funktioniert die
+Rotation noch, wenn Präfix oder Datumsformat geändert werden?" — und dabei
+zwei Robustheitslücken behoben:
+
+- **Namensfilter ohne Präfix:** Die Rotation filtert nach
+  `*_<Portfolioname>_*.<Endung>`, nicht nach
+  `<Präfix>_<Portfolioname>_*.<Endung>`. Mit einem präfixgebundenen Filter
+  würde eine Präfix-Änderung in `BackupSettingsForm` alle bisherigen Backups
+  aus der Zählung herausfallen lassen — "Max. Anzahl Backups" gälte dann
+  faktisch nur noch pro Präfix statt insgesamt, und alte Backups blieben nach
+  einer Präfix-Änderung für immer liegen, weil sie den neuen Filter nicht
+  mehr treffen. Der Portfolioname (Basisdateiname) plus Endung reicht als
+  Anker aus, um Backups dieses Portfolios von fremden Dateien im selben
+  Verzeichnis zu unterscheiden.
+- **Sortierung nach `QFileInfo::lastModified()`, nicht nach Dateiname:** Eine
+  rein alphabetische Sortierung wäre nur zufällig korrekt gewesen, solange
+  `backupDateFormat()` nullgepolstert und groß-nach-klein aufgebaut ist (wie
+  der Standard `yyyy_MM_dd_HH_mm_ss`). Ändert der Benutzer das Format
+  nachträglich — z. B. auf `dd_MM_yyyy_HH_mm_ss` (Tag zuerst) — wäre die
+  chronologische Reihenfolge per Namens-Sortierung nicht mehr gegeben,
+  insbesondere wenn ältere Backups noch mit dem alten Format benannt sind und
+  über denselben (präfix-unabhängigen) Namensfilter erfasst werden. Das
+  tatsächliche Änderungsdatum der Datei ist von der gewählten
+  Textdarstellung unabhängig und bleibt daher auch nach einer
+  Formatänderung korrekt.
+- **Leerer/fehlerhafter Präfix bzw. leeres Datumsformat:**
+  `BackupSettingsForm::saveSettings()` ersetzt leere Eingaben bereits vor dem
+  Speichern durch die Standardwerte. `createBackup()` verlässt sich darauf
+  zusätzlich nicht blind, sondern wendet denselben Fallback nochmal auf
+  `settings.backupNamePrefix()`/`settings.backupDateFormat()` an — falls die
+  `settings.ini` einmal von Hand bearbeitet wird und dort ein leerer Wert
+  steht, entsteht kein Dateiname mit führendem `_` oder ein `toString()` mit
+  leerem Formatstring.
 
 ### Parser-Mocking-Infrastruktur (erledigt 07.07.2026)
 

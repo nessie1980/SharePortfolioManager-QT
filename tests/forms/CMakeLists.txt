@@ -10,6 +10,8 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../parser/FakeNetworkAccessManager.cpp
     ../../app/forms/LoggerSettingsForm/LoggerSettingsForm.cpp
     ../../app/forms/SoundSettingsForm/SoundSettingsForm.cpp
+    ../../app/forms/BackupSettingsForm/BackupSettingsForm.h
+    ../../app/forms/BackupSettingsForm/BackupSettingsForm.cpp
     ../../app/forms/AboutForm/AboutForm.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
@@ -291,3 +293,35 @@ add_custom_command(TARGET tst_shareeditform POST_BUILD
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Documents.xml
     COMMENT "Copying config files to ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_backupsettingsform — BackupSettingsForm (einzelner QDialog, kein
+# IView/IModel/Presenter-Triple, analog LoggerSettingsForm/SoundSettingsForm).
+# Eigene Executable statt Erweiterung von tst_mainwindow.cpp (08.07.2026) —
+# braucht weder Datenbank noch MainWindow, daher deutlich schlanker als
+# tst_buysform: nur AppSettings + IconProvider als Compile-Abhängigkeiten.
+# ─────────────────────────────────────────────────────────────────────────────
+
+qt_add_executable(tst_backupsettingsform tst_backupsettingsform.cpp
+    ../../app/forms/BackupSettingsForm/BackupSettingsForm.h
+    ../../app/forms/BackupSettingsForm/BackupSettingsForm.cpp
+    ../../app/config/AppSettings.cpp
+    ../../app/IconProvider.cpp
+    ${FORM_TEST_RESOURCES}
+)
+
+target_include_directories(tst_backupsettingsform
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/BackupSettingsForm
+)
+
+set_target_properties(tst_backupsettingsform PROPERTIES
+    AUTOMOC ON
+    AUTORCC ON
+)
+
+target_link_libraries(tst_backupsettingsform
+    PRIVATE Qt6::Test Qt6::Widgets
+)
+
+add_test(NAME tst_backupsettingsform COMMAND tst_backupsettingsform)
