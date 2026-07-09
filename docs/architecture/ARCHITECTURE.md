@@ -57,7 +57,7 @@ spm-qt/
     ├── parser/          # Unit-Tests für Parser
     ├── repositories/    # Unit-Tests für alle Repositories
     ├── database/        # Unit-Tests für Database
-    └── forms/           # Unit-Tests für Forms (MainWindow, ShareAddForm, ShareEditForm, BuysForm, SalesForm, DividendForm, BrokeragesForm, OwnMessageBox, BackupProgressForm)
+    └── forms/           # Unit-Tests für Forms (MainWindow, ShareAddForm, ShareEditForm, BuysForm, SalesForm, DividendForm, BrokeragesForm, OwnMessageBox, BackupProgressForm, ShareDetailsForm)
 @endcode
 
 ---
@@ -122,6 +122,7 @@ tst_mainwindow          ← alle ShareEditForm-, ShareAddForm-, BuysForm- (Compi
 tst_buysform            ← BuysForm (ModelBuyEdit, PresenterBuyEdit, ViewBuyEdit) + BuyRepository, BrokerageRepository, ShareRepository
 tst_shareeditform       ← ViewShareEdit + alle vier Sub-Form-Trios als Compile-Dep. (BuysForm, SalesForm, DividendForm, BrokeragesForm) + alle Repositories
 tst_backupsettingsform  ← BackupSettingsForm + AppSettings, IconProvider (kein DB-/MainWindow-Bezug)
+tst_sharedetailsform    ← PresenterShareDetails über Fake-View/Fake-Model (IViewShareDetails, IModelShareDetails) — keine DB, keine Qt-Widgets, kein ShareCalculator
 @endcode
 
 ---
@@ -187,17 +188,17 @@ austauschbar und isoliert testbar.
 | OwnMessageBox | `forms/OwnMessageBoxForm/` | ✅ implementiert |
 | BackupProgressForm | `forms/BackupProgressForm/` | ✅ implementiert |
 | BackupSettingsForm | `forms/BackupSettingsForm/` | ✅ implementiert (08.07.2026) |
-| ShareDetailsForm | `forms/ShareDetailsForm/` | ⬜ Code vorhanden, aber nicht MVP-konform und nicht integriert |
+| ShareDetailsForm | `forms/ShareDetailsForm/` | 🟨 MVP-Struktur steht, Depotwert-Box implementiert (09.07.2026) — siehe Detailabschnitt |
 | ChartForm | `forms/ChartForm/` | ⬜ Dateien vorhanden, leer |
 
-@note Zu ShareDetailsForm: `ShareDetailsForm.h/.cpp` enthalten bereits einen
-funktionsfähigen Entwurf (Header mit Logo/Name/Kurs, Tabs für Stammdaten/Käufe/
-Verkäufe/Dividenden/Brokerages), allerdings als einzelne `QDialog`-Klasse ohne
-Trennung in `IView`/`IModel`/Presenter. Die Klasse ist in `app/CMakeLists.txt` als
-Build-Quelle eingetragen, wird aber von keiner View aufgerufen (kein Verweis aus
-`MainWindow` oder einer Detail-Ansicht) und hat keine Unit-Tests. Vor einer
-Aktivierung muss der Dialog auf das MVP-Pattern umgestellt und an einen Aufrufpunkt
-(z. B. Doppelklick auf eine Portfolio-Zeile) angebunden werden.
+@note **ShareDetailsForm — Umfang dieser Iteration (09.07.2026):** Nach
+Abgleich mit der C#-Referenzimplementierung (`FrmShareDetails` +
+`TabControl.cs`/`DividendDetails.cs`/`ProfitLossDetails.cs`/
+`BrokerageDetails.cs`) stellte sich heraus, dass ein früherer MVP-Umbau auf
+Basis von `ShareDetailsForm.h/.cpp` (Stammdaten/Käufe/Verkäufe/Dividenden/
+Brokerages-Tabs) strukturell nicht der Referenz entsprach — diese Tabs
+existieren im C# gar nicht. Details siehe Abschnitt "ShareDetailsForm-Details"
+unten.
 
 ---
 
@@ -962,6 +963,145 @@ Die **Typ-Spalte** unterscheidet die Herkunft eines Eintrags:
 
 ---
 
+### ShareDetailsForm-Details (Depotwert-Box implementiert 09.07.2026)
+
+Reine Anzeige-Form (kein Speichern, keine Bearbeitung), Portierung von
+`FrmShareDetails` aus der C#-Referenz. Geöffnet per Doppelklick auf eine Zeile
+in `m_finalValueTable` oder `m_marketValueTable` (MainWindow).
+
+**Wichtiger Hinweis zum Umfang dieser Iteration:** Ein früherer Anlauf hatte
+diese Form ohne Abgleich mit der C#-Referenz gebaut (Tabs für Stammdaten,
+Käufe, Verkäufe, Dividenden, Brokerages) — die Referenz sieht davon nichts vor.
+Die tatsächliche Struktur von `FrmShareDetails` (`ShareDetailsForm.cs` +
+`TabControl.cs`/`DividendDetails.cs`/`ProfitLossDetails.cs`/
+`BrokerageDetails.cs`, C#) ist:
+
+@code{.unparsed}
+FrmShareDetails
+├── Tab "Aktien-Chart"                — Chart der Tagesdaten, Zeitraum-/Intervall-Auswahl
+├── Tab "Komplette Depotbewertung"    — 3 Bestandsberechnungs-Boxen (nur bei Depotwert-Aufruf)
+│   ODER "Komplette Marktbewertung"   — (nur bei Marktwert-Aufruf)
+├── Tab "Gewinne / Verluste (X€)"     — Übersicht + Jahres-Tabs (nur Depotwert-Modus)
+├── Tab "Dividenden (X€)"             — Übersicht + Jahres-Tabs (nur Depotwert-Modus)
+└── Tab "Kosten (X€)"                 — Übersicht + Jahres-Tabs (nur Depotwert-Modus)
+@endcode
+
+`FrmShareDetails` hat zwei Modi (`marketValueOverviewTabSelected`-Flag im
+Konstruktor, je nachdem ob der Aufruf vom Depotwert- oder Marktwert-Tab in
+MainWindow kam): Marktwert-Modus zeigt nur Chart + Marktbewertung; Depotwert-
+Modus zeigt Chart + Depotbewertung + die drei Jahres-Tab-Bereiche.
+
+**Umfang dieser Iteration (auf Nessies Vorgabe eingegrenzt):**
+
+| Teil | Status |
+| ------ | ------ |
+| Chart-Tab | ⬜ Platzhalter (eigenständiger Text "noch nicht implementiert") — bleibt eigenes `ChartForm`-Arbeitspaket, siehe "Offene Punkte / TODO" |
+| Komplette Depotbewertung | ✅ implementiert (diese Iteration) |
+| Komplette Marktbewertung | ⬜ zurückgestellt — Aufrufmodus wird noch nicht unterschieden, Dialog zeigt aktuell immer die Depotwert-Box, unabhängig davon, welcher Portfolio-Tab den Doppelklick ausgelöst hat. Folgt, sobald ein Screenshot der Marktwert-Ansicht vorliegt. |
+| Gewinne/Verluste, Dividenden, Kosten | ⬜ zurückgestellt — Nessies Vorgabe: diese sollen die bereits vorhandenen Übersicht-Widgets aus `ViewSaleEdit`/`ViewDividendEdit`/`ViewBrokerageEdit` wiederverwenden statt eigene Tabellen zu duplizieren. Konkrete Einbindung noch offen. |
+
+#### "Komplette Depotbewertung" — drei Bestandsberechnungs-Boxen
+
+Im C# als mehrspaltiges WinForms-Grid mit Operator-Symbolen zwischen den
+Spalten dargestellt (`Anteile × Preis = Einzahlung`, dann `+ Dividenden`,
+`+ Verkäufe`, `= Summe` usw., alle in einer Zeile über mehrere Spalten). Im
+Qt-Port bewusst vereinfacht zu einer vertikalen Zeilenliste pro Box (Operator |
+Label | Wert), inhaltlich aber 1:1 gleiche Werte/Zeilen — siehe Chat-Verlauf
+09.07.2026. Revisionswürdig, aber als Zwischenlösung akzeptiert.
+
+Alle drei Boxen (`Gesamt-`, `Vortag-`, `Aktuelle Bestandsberechnung`) mappen
+fast vollständig auf bereits vorhandene `ShareValues`-Felder (siehe
+`ShareCalculator.h`). Für die Depotwert-Box mussten zwei rein additive Felder
+ergänzt werden:
+
+- `ShareValues::salePayoutFinal` — rohe Verkaufserlöse MIT Brokerage (Zeile
+  "+ Verkäufe"), bislang nur als lokale Variable in `compute()` vorhanden.
+- `ShareValues::saleProfitLossFinal` — realisierter Gewinn/Verlust aus
+  Verkäufen MIT Brokerage (Zeile "+ Gewinn / Verlust (Verkäufe)"), Depotwert-
+  Pendant zum bereits vorhandenen `saleProfitLoss` (Marktwert-Variante).
+
+Zwei Zeilen sind reine Presenter-Arithmetik über bereits vorhandene Felder
+(keine Repository-Zugriffe, daher bewusst NICHT in `ShareCalculator`):
+
+- Vortag-Box "Gewinn / Verlust" = `volume × prevDayDiff`
+- Aktuelle-Box "Summe" = `curValue + totalDividend + saleProfitLossFinal`
+
+Beide werden mit einer lokalen, in `PresenterShareDetails.cpp` duplizierten
+`roundAway()`-Funktion gerundet (bewusst **nicht** `ShareCalculator::roundAway()`
+aufgerufen) — sonst müsste `tst_sharedetailsform` `ShareCalculator.cpp` und
+damit transitiv alle vier Repositories + `Qt6::Sql` mitkompilieren, was dem
+Ziel eines DB-freien Test-Targets widerspräche. Bei Änderungen an
+`ShareCalculator::roundAway()` muss die Kopie manuell synchron gehalten werden
+(Kommentar im Code verweist darauf).
+
+Vollständiges Feld-Mapping (Depotwert-Modus):
+
+| Box | Zeile | ShareValues-Feld |
+| ------ | ------ | ------ |
+| Gesamt | Anteile / Aktueller Preis / Einzahlungen | `volume` / `curPrice` / `curValue` |
+| Gesamt | + Dividenden | `totalDividend` |
+| Gesamt | + Verkäufe | `salePayoutFinal` |
+| Gesamt | = Summe | `completeCurValue` |
+| Gesamt | − Verkaufte Einzahlungen | `completePurchase` |
+| Gesamt | = Gewinn / Verlust (gesamt) | `completeProfitLoss` (grün/rot) |
+| Gesamt | Entwicklung | `completeProfitPct` (grün/rot) |
+| Vortag | Aktueller Preis / Vortages-Preis / Preis-Entw. | `curPrice` / `prevDayPrice` / `prevDayDiff` (grün/rot) |
+| Vortag | Entwicklung | `prevDayPct` (grün/rot) |
+| Vortag | Anteile × Preis-Entw. = Gewinn/Verlust | `volume × prevDayDiff` (Presenter, grün/rot) |
+| Aktuelle | Anteile / Aktueller Preis / Einzahlungen | `volume` / `curPrice` / `curValue` |
+| Aktuelle | + Dividenden | `totalDividend` |
+| Aktuelle | + Gewinn / Verlust (Verkäufe) | `saleProfitLossFinal` |
+| Aktuelle | = Summe | `curValue + totalDividend + saleProfitLossFinal` (Presenter) |
+
+Farblogik durchgängig `value >= 0.0 ? QColor("green") : QColor("red")` —
+matcht `Color.Green`/`Color.Red` aus der C#-Referenz (`PerformanceValue >= 0`).
+
+`IViewShareDetails` — `setHeaderName()`, `setStatusLine()`,
+`populateGesamtBox()`/`populateVortagBox()`/`populateAktuelleBox()` (je
+`CalculationRows`), `showError()`, `closeDialog()`. `CalculationRow` = reines
+DTO (`operatorSymbol`, `label`, `value`, `color`, `emphasize`) — komplett
+vorformatiert vom Presenter, View rendert nur generisch (`populateBox()`).
+
+`IModelShareDetails` — bewusst minimal: nur `loadShare()` und
+`computeShareValues()` (dünner Pass-Through zu
+`ShareCalculator::compute()`). Keine `loadBuys()`/`loadSales()`/... mehr,
+da die entsprechenden Tabs die bestehenden Sub-Dialog-Widgets wiederverwenden
+sollen statt eigene Datenlisten zu laden.
+
+`PresenterShareDetails` — Wie bei den übrigen Presentern: bei unbekannter GUID
+wird `view->showError()` + `view->closeDialog()` aufgerufen (`loadAndDisplay()`
+liefert `false`) statt den Dialog leer offen zu lassen.
+
+`ViewShareDetails` — `QDialog`, implementiert `IViewShareDetails`. Tab 1
+("Aktien-Chart") ist ein reiner Platzhalter-Text. Tab 2 ("Komplette
+Depotbewertung") enthält drei `QGroupBox`en mit je einem generischen
+Operator/Label/Wert-`QGridLayout` (`createCalculationBox()`/`populateBox()`).
+`hasValidShare()` gibt zurück, ob die im Konstruktor übergebene GUID
+aufgelöst werden konnte — der Aufrufer darf `exec()` nur bei `true` aufrufen.
+
+@note **Bugfix (09.07.2026):** Der Close-Button (`QDialogButtonBox::Close`)
+zeigte "Close" statt "Schließen" — Qt übersetzt Standard-Button-Texte nur,
+wenn Qt's eigene `qtbase_de.qm` per `QTranslator` geladen ist; das Projekt
+lädt aber nur `spm_de.ts`/`spm_en.ts`. `setupUi()` setzt den Text seither
+explizit (`buttonBox->button(QDialogButtonBox::Close)->setText(tr("Schließen"))`)
+statt sich auf die automatische Qt-Übersetzung zu verlassen. Regressionstest:
+`test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText`
+(`tst_mainwindow.cpp`, siehe TESTING.md).
+
+#### Integration in MainWindow
+
+- Doppelklick (`itemDoubleClicked`) auf eine Zeile in `m_finalValueTable`
+  **oder** `m_marketValueTable` öffnet `ViewShareDetails` für die GUID aus
+  Spalte 0 (`Qt::UserRole`).
+- `MainWindow::onPortfolioRowDoubleClicked(QTableWidgetItem*)` liest die GUID,
+  konstruiert `ViewShareDetails`, prüft `hasValidShare()` und ruft nur bei
+  Erfolg `exec()` auf.
+- **Bekannte Lücke dieser Iteration:** Es wird noch nicht unterschieden, ob
+  der Doppelklick aus `m_finalValueTable` oder `m_marketValueTable` kam — der
+  Dialog zeigt immer die Depotwert-Box. Folgt mit dem Marktwert-Modus.
+
+---
+
 ### MainWindow-Details
 
 Das MainWindow ist die zentrale Anwendungsschicht. Es verwaltet Portfolio-Datei,
@@ -1628,6 +1768,28 @@ Sprache ohne Neubuild änderbar durch Austausch der `.qm`-Datei.
 ---
 
 ## Offene Punkte / TODO
+
+### ShareDetailsForm: Marktwert-Modus, Chart-Tab, Gewinne/Dividenden/Kosten (offen, 09.07.2026)
+
+Nach Abgleich mit der C#-Referenz (`FrmShareDetails`) wurde die "Komplette
+Depotbewertung"-Box neu gebaut (siehe "ShareDetailsForm-Details" oben). Drei
+Teile bleiben bewusst offen:
+
+1. **Marktwert-Modus** — `FrmShareDetails` unterscheidet per
+   `marketValueOverviewTabSelected`-Flag zwischen Depotwert- und
+   Marktwert-Aufruf (unterschiedliche Tab-Mengen, brokeragefreie Werte). Der
+   Qt-Port zeigt aktuell immer die Depotwert-Box. Folgt, sobald ein
+   Screenshot der Marktwert-Ansicht der C#-Referenz vorliegt (angekündigt).
+2. **Chart-Tab** — im C# Tab 1 dieses Dialogs (Aktien-Chart mit
+   Zeitraum-/Intervall-Auswahl), im Qt-Port bewusst als Platzhalter
+   zurückgestellt; bleibt eigenes `ChartForm`-Arbeitspaket (siehe
+   "Implementierte Forms" oben).
+3. **Gewinne/Verluste-, Dividenden-, Kosten-Tabs** — im C# je ein
+   verschachteltes TabControl (Übersicht + Jahres-Tabs). Sollen laut Vorgabe
+   die bereits vorhandenen Übersicht-Widgets aus `ViewSaleEdit`/
+   `ViewDividendEdit`/`ViewBrokerageEdit` wiederverwenden statt eigene
+   Tabellen zu duplizieren — konkrete Einbindung (Widget-Extraktion vs.
+   Embedding vs. neue schlanke Read-Only-Variante) noch nicht entschieden.
 
 ### Totes Mapping: `PriceAtPayday` in `xmlNameToViewField()` (entfernt 08.07.2026)
 

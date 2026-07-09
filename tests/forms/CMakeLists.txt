@@ -31,6 +31,14 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/forms/ShareEditForm/PresenterShareEdit.cpp
     ../../app/forms/ShareEditForm/ViewShareEdit.h
     ../../app/forms/ShareEditForm/ViewShareEdit.cpp
+    ../../app/forms/ShareDetailsForm/IViewShareDetails.h
+    ../../app/forms/ShareDetailsForm/IModelShareDetails.h
+    ../../app/forms/ShareDetailsForm/ModelShareDetails.h
+    ../../app/forms/ShareDetailsForm/ModelShareDetails.cpp
+    ../../app/forms/ShareDetailsForm/PresenterShareDetails.h
+    ../../app/forms/ShareDetailsForm/PresenterShareDetails.cpp
+    ../../app/forms/ShareDetailsForm/ViewShareDetails.h
+    ../../app/forms/ShareDetailsForm/ViewShareDetails.cpp
     ../../app/forms/BuysForm/IViewBuyEdit.h
     ../../app/forms/BuysForm/IModelBuyEdit.h
     ../../app/forms/BuysForm/ModelBuyEdit.h
@@ -325,3 +333,42 @@ target_link_libraries(tst_backupsettingsform
 )
 
 add_test(NAME tst_backupsettingsform COMMAND tst_backupsettingsform)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_sharedetailsform — PresenterShareDetails (Fake-View/Fake-Model, siehe
+# ARCHITECTURE.md "ShareDetailsForm-Details"). Deckt aktuell nur die
+# "Komplette Depotbewertung"-Box ab (neu gebaut 09.07.2026, nach Abgleich mit
+# der C#-Referenz FrmShareDetails). Kein QDialog, keine Datenbank, kein
+# ShareCalculator.cpp nötig — braucht nur PresenterShareDetails.cpp und
+# ShareObject.cpp (für dessen Volltyp-Konstruktor) als Compile-Abhängigkeit.
+# ModelShareDetails.cpp wird bewusst NICHT mitkompiliert — die Tests laufen
+# ausschließlich gegen die Fake-Implementierungen von IViewShareDetails/
+# IModelShareDetails, ohne Repository- oder Qt6::Sql-Abhängigkeit.
+# Schlankstes Test-Target im Projekt.
+# ─────────────────────────────────────────────────────────────────────────────
+
+qt_add_executable(tst_sharedetailsform tst_sharedetailsform.cpp
+    ../../app/forms/ShareDetailsForm/IViewShareDetails.h
+    ../../app/forms/ShareDetailsForm/IModelShareDetails.h
+    ../../app/forms/ShareDetailsForm/PresenterShareDetails.h
+    ../../app/forms/ShareDetailsForm/PresenterShareDetails.cpp
+    ../../app/models/ShareObject.cpp
+)
+
+target_include_directories(tst_sharedetailsform
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/ShareDetailsForm
+)
+
+set_target_properties(tst_sharedetailsform PROPERTIES
+    AUTOMOC ON
+)
+
+# Qt6::Gui wird ausschließlich für QColor (PresenterShareDetails.h) benötigt —
+# kommt bereits transitiv über die oben angeforderte Komponente Widgets mit,
+# eine eigene find_package()-Komponente ist dafür nicht nötig.
+target_link_libraries(tst_sharedetailsform
+    PRIVATE Qt6::Test Qt6::Core Qt6::Gui
+)
+
+add_test(NAME tst_sharedetailsform COMMAND tst_sharedetailsform)

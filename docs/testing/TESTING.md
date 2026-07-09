@@ -265,6 +265,9 @@ Methode von `MainWindow` ist und dessen volle Konstruktion braucht.
 | `test_deleteShare_nonExistentGuid_returnsFalse` | Nicht-existente GUID → kein Absturz | DB bleibt leer |
 | `test_deleteShare_actionDeleteDisabledAtStart` | Entfernen-Aktion ohne Selektion deaktiviert | `isEnabled()` = false |
 | `test_deleteShare_actionDeleteEnabledAfterSelection` | Entfernen-Aktion nach Zeilenauswahl aktiv | `isEnabled()` = true |
+| `test_onPortfolioRowDoubleClicked_nullItem_doesNotCrash` | Doppelklick-Slot mit `item == nullptr` | Kein Absturz |
+| `test_onPortfolioRowDoubleClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole) | Kein Absturz, kein modaler Dialog |
+| `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText` | `ViewShareDetails` direkt konstruiert | `hasValidShare()` = true, Fenstertitel = Aktienname, Close-Button = "Schließen" |
 
 ModelShareAdd:
 | Test | Beschreibung | Prüft |
@@ -605,6 +608,60 @@ Dateinamen-Vorschau:
 | `test_preview_updatesOnPrefixChange` | Vorschau reagiert live auf Präfix-Eingabe | Vorschautext beginnt mit neuem Präfix |
 | `test_preview_containsPortfolioPlaceholder` | Vorschau enthält erkennbaren Platzhalter | Text enthält `<Portfolioname>` |
 | `test_preview_emptyPrefixShowsDefaultInPreview` | Leeres Präfix-Feld → Vorschau zeigt Default | Vorschautext beginnt mit "Backup_" |
+
+---
+
+#### tst_sharedetailsform — ShareDetailsForm (neu gebaut, 09.07.2026)
+
+Executable: `tst_sharedetailsform`
+Klasse unter Test: `PresenterShareDetails`
+
+@note Deckt ausschließlich den "Komplette Depotbewertung"-Umfang dieser
+Iteration ab (siehe ARCHITECTURE.md, "ShareDetailsForm-Details") — Chart-Tab
+(Platzhalter), Marktwert-Modus sowie Gewinne/Verluste-, Dividenden- und
+Kosten-Tabs sind zurückgestellt und haben dementsprechend noch keine Tests.
+
+@note Wie schon beim vorherigen Anlauf: **weder** Datenbank **noch**
+`QWidget` **noch** `ShareCalculator` werden instanziiert.
+`PresenterShareDetails` kennt View und Model ausschließlich über
+`IViewShareDetails`/`IModelShareDetails` — `FakeModelShareDetails::
+computeShareValues()` liefert ein von Hand befülltes `ShareValues`
+zurück, `FakeViewShareDetails` speichert die drei `CalculationRows`-Listen
+(`gesamtRows`/`vortagRows`/`aktuelleRows`) nur zwischen. Ein
+`findRow(rows, label)`-Helfer sucht Zeilen über ihr (übersetztes) Label,
+statt sich auf feste Index-Positionen zu verlassen.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_loadAndDisplay_shareNotFound_showsErrorAndCloses` | Unbekannte GUID | `loadAndDisplay()` liefert `false`, `showError()`/`closeDialog()` aufgerufen, keine Boxen befüllt |
+| `test_loadAndDisplay_validShare_setsHeaderAndStatusLine` | Gültige Aktie, kein Internet-Update | Fenstertitel = Aktienname, StatusLine enthält "noch nicht aktualisiert" und "Aktie" |
+| `test_loadAndDisplay_lastInternetUpdateSet_appearsInStatusLine` | `ShareObject::setLastInternetUpdate()` gesetzt | StatusLine enthält das Datum statt "noch nicht aktualisiert", enthält "Fonds" |
+| `test_loadAndDisplay_gesamtBox_mapsShareValuesFieldsDirectly` | `ShareValues` mit den Screenshot-Beispielwerten (40 Stk., 484,40€, ...) | "Einzahlungen"/"Verkäufe"/"Gewinn / Verlust (gesamt)"/"Entwicklung" exakt wie im Screenshot, Farbe grün, `emphasize` auf "="-Zeilen |
+| `test_loadAndDisplay_gesamtBox_negativeProfitLoss_setsRedColor` | `completeProfitLoss < 0` | Farbe = `Qt::red` |
+| `test_loadAndDisplay_vortagBox_computesProfitLossFromVolumeTimesDiff` | `volume=40`, `prevDayDiff=41,90` | "Gewinn / Verlust" = 1676,00€ (40×41,90, exakt wie Screenshot), Farbe grün |
+| `test_loadAndDisplay_vortagBox_negativeDiff_setsRedColor` | `prevDayDiff < 0` | Farbe = `Qt::red`, Produkt korrekt negativ |
+| `test_loadAndDisplay_aktuelleBox_sumAddsCurValueDividendAndSaleProfitLoss` | `curValue=19376`, `totalDividend=0`, `saleProfitLossFinal=-252,20` | "Summe" = 19123,80€ (Presenter-Arithmetik, kein `ShareCalculator`-Feld) |
+
+@note **`lastInternetUpdate()`-Zweig (erledigt 09.07.2026):** `ShareObject`
+besitzt `setLastInternetUpdate(const QString&)` — der zuvor als offen
+markierte Test ist jetzt oben in der Tabelle enthalten.
+
+@note **`tst_mainwindow.cpp` (erledigt 09.07.2026):** Drei Tests decken
+`ViewShareDetails`/`onPortfolioRowDoubleClicked()` auf MainWindow-Seite ab —
+siehe eigener Abschnitt weiter unten unter "tests/forms/ — MainWindow" bzw.
+direkt in `tst_mainwindow.cpp` (Suchbegriff `onPortfolioRowDoubleClicked`/
+`shareDetailsDialog`):
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_onPortfolioRowDoubleClicked_nullItem_doesNotCrash` | Doppelklick-Slot mit `item == nullptr` | Kein Absturz |
+| `test_onPortfolioRowDoubleClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole) | Kein Absturz, kein modaler Dialog |
+| `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText` | `ViewShareDetails` direkt konstruiert (kein `exec()`, analog `test_shareAddDialog_canBeConstructed`) | `hasValidShare()` = true, Fenstertitel = Aktienname, Close-Button-Text = "Schließen" (Regressionstest für den qtbase-Übersetzungs-Bugfix vom 09.07.2026) |
+
+Bewusst weiterhin **nicht** getestet: der "gültige GUID → `dlg.exec()`"-Pfad
+in `onPortfolioRowDoubleClicked()` selbst — ein echter modaler `QDialog::exec()`
+würde den (headless) Testlauf blockieren, exakt dieselbe Konvention wie bei
+`onEditShare()`/`onDeleteShare()` in derselben Datei.
 
 ---
 
@@ -1163,11 +1220,20 @@ Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
 | `test_marktwert_emptyDetails_sameResult` | Regression "viel zu hoch" | Ergebnis identisch trotz **leerer** `SaleBuyDetails` (Aggregat-basiert) |
 | `test_marktwert_columnIdentity` | Spalten-Identität | `Kpl. Marktwert = Kpl. Einzahlung + Kpl. Entwicklung` |
 | `test_marktwert_fullySold` | Position komplett verkauft | `volume = 0`, `purchaseValue = 0`, realisierte G/V mit Gebühren |
+| `test_depotwert_saleProfitLossFinal_matchesRealizedWhenFullySold` | Wie `test_marktwert_fullySold` (gleiche Fixture) | `saleProfitLossFinal == completeProfitLossMarket` (Algebra-Invariante, held = 0), `salePayoutFinal` (1292,00) |
 | `test_marktwert_noSales` | keine Verkäufe | reine unrealisierte Entwicklung, `Kpl. Marktwert == curValue` |
 | `test_prevDay_diffAndPct` | Vortagswerte | `prevDayDiff`, `prevDayPct` |
 
 `TwoLineDelegate` und `CenterIconDelegate` sind Header-only ohne `Q_OBJECT` —
 kein eigenständiger Test nötig.
+
+@note **`salePayoutFinal`/`saleProfitLossFinal` (erledigt 09.07.2026):**
+`test_depotwert_finalFields` prüft jetzt zusätzlich beide neuen Felder anhand
+derselben Kernfixture (`salePayoutFinal` = 510,00€, `saleProfitLossFinal` =
+106,04€, mit Cross-Check gegen `completeProfitLoss`). Ergänzend prüft
+`test_depotwert_saleProfitLossFinal_matchesRealizedWhenFullySold` die reine
+Algebra-Invarianz `saleProfitLossFinal == completeProfitLossMarket` im
+Fully-Sold-Fall (held = 0), unabhängig von Hand nachgerechneten Zahlen.
 
 ---
 

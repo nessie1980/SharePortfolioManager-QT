@@ -206,6 +206,19 @@ private slots:
         CMP_MONEY(v.completeCurValue,   1885.00);
         CMP_MONEY(v.completeProfitLoss, 272.10);
         CMP_MONEY(v.completeProfitPct,  272.10 / 1612.90 * 100.0);
+
+        // salePayoutFinal / saleProfitLossFinal (ergänzt 09.07.2026, für die
+        // "Komplette Depotbewertung"-Box in ShareDetailsForm — "+ Verkäufe" /
+        // "+ Gewinn / Verlust (Verkäufe)"-Zeilen):
+        //   saleValue           = round(4 * 130)                     = 520.00
+        //   salePayoutFinal     = round(520 - brokerage(7) + 0 - tax(3)) = 510.00
+        //   soldCostFinal       = completePurchase - purchaseValueFinal
+        //                       = 1612.90 - 1208.94                  = 403.96
+        //   saleProfitLossFinal = salePayoutFinal - soldCostFinal    = 106.04
+        // Cross-check: profitLossFinal + saleProfitLossFinal + totalDividend
+        //            = 166.06 + 106.04 + 0                           = 272.10 = completeProfitLoss ✓
+        CMP_MONEY(v.salePayoutFinal,     510.00);
+        CMP_MONEY(v.saleProfitLossFinal, 106.04);
     }
 
     // ── Depotwert: brokerage AND reduction prorated per held lot ───────────
@@ -289,6 +302,26 @@ private slots:
         CMP_MONEY(v.profitLossPct,            0.0);   // guarded division
         CMP_MONEY(v.completeProfitLossMarket, 282.0); // realized only, incl. fees
         CMP_MONEY(v.completeCurValueMarket,   1282.0);
+    }
+
+    // ── saleProfitLossFinal: identisch zu completeProfitLossMarket, sobald
+    // nichts mehr gehalten wird (held = 0 → unrealisierter Anteil entfällt in
+    // beiden Formeln, es bleibt nur der realisierte, brokeragehaltige G/V).
+    // Ergänzt 09.07.2026 für die ShareDetailsForm-Depotwert-Box
+    // ("+ Gewinn / Verlust (Verkäufe)"-Zeile) — reine Algebra-Prüfung, ohne
+    // von Hand nachgerechnete Zahlen.
+    void test_depotwert_saleProfitLossFinal_matchesRealizedWhenFullySold()
+    {
+        addBuy(10.0, 10.0, 100.0, 10.0, 0.0);
+        addSale(10.0, 130.0, 8.0, 0.0, 0.0, {});
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 125.0, 120.0);
+
+        CMP_MONEY(v.saleProfitLossFinal, v.completeProfitLossMarket);
+        CMP_MONEY(v.saleProfitLossFinal, 282.0);
+
+        // salePayoutFinal = round(10*130 - brokerage(8) + 0 - tax(0)) = 1292.00
+        CMP_MONEY(v.salePayoutFinal, 1292.0);
     }
 
     // ── Edge case: no sales — complete == current, identity trivially holds

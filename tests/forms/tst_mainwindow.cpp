@@ -20,10 +20,12 @@
 #include <QRegularExpression>
 #include <QProcess>
 #include <QDialog>
+#include <QDialogButtonBox>
 
 #include "../../app/forms/MainForm/MainWindow.h"
 #include "../../app/forms/MainForm/TwoLineDelegate.h"  // TwoLineRole::Top/Bottom
 #include "../../app/forms/ShareAddForm/ViewShareAdd.h"
+#include "../../app/forms/ShareDetailsForm/ViewShareDetails.h"
 #include "../../app/forms/ShareAddForm/ModelShareAdd.h"
 #include "../../app/forms/ShareAddForm/IViewShareAdd.h"
 #include "../../app/forms/ShareAddForm/IModelShareAdd.h"
@@ -3862,6 +3864,87 @@ private slots:
         }
         if (!deleteAction) QFAIL("Delete action not found");
         QVERIFY(deleteAction->isEnabled());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // MainWindow — onPortfolioRowDoubleClicked (ShareDetailsForm, 09.07.2026)
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // Only the early-return guard paths (null item / empty GUID) are covered
+    // here — same convention already used for onEditShare()/onDeleteShare()
+    // in this file: the "valid GUID" path constructs ViewShareDetails and
+    // calls dlg.exec(), which shows a real modal QDialog and blocks the
+    // (headless) test indefinitely, so it is intentionally not invoked
+    // directly. The invalid-GUID path is likewise not exercised via a real
+    // ViewShareDetails construction here, because PresenterShareDetails
+    // reports that case through view->showError() -> OwnMessageBox::critical(),
+    // itself a blocking modal dialog. Both the "share not found" branch and
+    // the row-formatting logic that ViewShareDetails renders are already
+    // covered without any modal dialog in tst_sharedetailsform.cpp, which
+    // drives PresenterShareDetails through a FakeViewShareDetails/
+    // FakeModelShareDetails pair instead.
+
+    void test_onPortfolioRowDoubleClicked_nullItem_doesNotCrash()
+    {
+        openMemoryDb();
+        MainWindow window;
+
+        QMetaObject::invokeMethod(&window, "onPortfolioRowDoubleClicked",
+                                  Qt::DirectConnection,
+                                  Q_ARG(QTableWidgetItem*, nullptr));
+
+        QVERIFY(true); // Reaching this line without a crash is the assertion.
+    }
+
+    void test_onPortfolioRowDoubleClicked_emptyGuid_doesNotCrash()
+    {
+        seedDepotwertPortfolio();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* tbl = findFinalTable(window, 1); // data table, 1 share row
+        if (!tbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+
+        QTableWidgetItem* item = tbl->item(0, 0); // WKN cell, column 0
+        if (!item) QFAIL("WKN-Zelle fehlt");
+
+        // Blank the GUID on an otherwise-valid row so the slot takes its
+        // shareGuid.isEmpty() early-return path instead of constructing
+        // ViewShareDetails — see class-comment above for why a genuinely
+        // unresolvable GUID isn't exercised directly in this test file.
+        item->setData(Qt::UserRole, QString());
+
+        QMetaObject::invokeMethod(&window, "onPortfolioRowDoubleClicked",
+                                  Qt::DirectConnection,
+                                  Q_ARG(QTableWidgetItem*, item));
+
+        QVERIFY(true); // No crash, no modal dialog opened.
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ViewShareDetails — direct construction (no exec(), same rationale as
+    // test_shareAddDialog_canBeConstructed for ViewShareAdd)
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText()
+    {
+        const QString shareGuid = insertTestShare();
+
+        ViewShareDetails dlg(shareGuid);
+
+        QVERIFY(dlg.hasValidShare());
+        QCOMPARE(dlg.windowTitle(), QStringLiteral("Test AG")); // insertTestShare()'s share name
+
+        // Regression: QDialogButtonBox::Close only auto-translates to
+        // "Schließen" if Qt's own qtbase_de.qm is loaded — this project only
+        // loads spm_de.ts/spm_en.ts, so ViewShareDetails::setupUi() sets the
+        // button text explicitly instead of relying on that.
+        auto* buttonBox = dlg.findChild<QDialogButtonBox*>(QStringLiteral("buttonBox"));
+        if (!buttonBox) QFAIL("buttonBox nicht gefunden");
+
+        QPushButton* closeButton = buttonBox->button(QDialogButtonBox::Close);
+        if (!closeButton) QFAIL("Close-Button nicht gefunden");
+        QCOMPARE(closeButton->text(), QStringLiteral("Schließen"));
     }
 
 }; // end of TestMainWindow

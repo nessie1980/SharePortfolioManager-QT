@@ -92,6 +92,16 @@ struct ShareValues
     double completeCurValue   = 0.0; ///< curValue + sale payouts + dividends
     double completeProfitLoss = 0.0;
     double completeProfitPct  = 0.0;
+
+    /// Raw sale proceeds WITH brokerage (ShareDetailsForm "+ Verkäufe" row) —
+    /// same underlying aggregate that feeds completeCurValue, exposed as its
+    /// own field so callers don't have to re-derive it. Depotwert-Pendant to
+    /// nothing in the Marktwert section (Marktwert has no such raw-proceeds row).
+    double salePayoutFinal = 0.0;
+
+    /// Realized gain/loss from sales WITH brokerage — Depotwert-Pendant to
+    /// saleProfitLoss (which is the brokerage-free Marktwert variant).
+    double saleProfitLossFinal = 0.0;
 };
 
 /**

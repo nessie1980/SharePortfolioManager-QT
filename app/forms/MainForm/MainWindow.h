@@ -255,6 +255,21 @@ private slots:
      */
     void selectShareRow(const QString& guid);
 
+    /**
+     * @brief Opens ShareDetailsForm (read-only) for a double-clicked portfolio row.
+     *
+     * Connected to itemDoubleClicked() of both m_finalValueTable and
+     * m_marketValueTable (setupCentralWidget()). Reads the GUID from column 0
+     * of the clicked row (Qt::UserRole) — same pattern as onEditShare()/
+     * onDeleteShare() — and shows ViewShareDetails modally. If the GUID does
+     * not resolve to a valid share, ViewShareDetails::hasValidShare() is
+     * false; in that case the error has already been reported by the
+     * presenter (showError()) and the dialog is not exec()'d.
+     *
+     * @param item  The QTableWidgetItem that was double-clicked (any column).
+     */
+    void onPortfolioRowDoubleClicked(QTableWidgetItem* item);
+
 private:
     /**
      * @brief Create a timestamped backup of the given portfolio file.

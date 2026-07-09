@@ -8,6 +8,7 @@
 #include "../LoggerSettingsForm/LoggerSettingsForm.h"
 #include "../SoundSettingsForm/SoundSettingsForm.h"
 #include "../BackupSettingsForm/BackupSettingsForm.h"
+#include "../ShareDetailsForm/ViewShareDetails.h"
 #include "../AboutForm/AboutForm.h"
 #include "../ApiSettingsForm/ApiSettingsForm.h"
 #include "../../repositories/ShareRepository.h"
@@ -454,6 +455,13 @@ void MainWindow::setupCentralWidget()
     connect(m_marketValueTable->selectionModel(),
             &QItemSelectionModel::selectionChanged,
             this, enableShareActions);
+
+    // Double-click on a portfolio row opens the read-only share-details dialog
+    // (ShareDetailsForm) — independent of which of the two tabs is active.
+    connect(m_finalValueTable, &QTableWidget::itemDoubleClicked,
+            this, &MainWindow::onPortfolioRowDoubleClicked);
+    connect(m_marketValueTable, &QTableWidget::itemDoubleClicked,
+            this, &MainWindow::onPortfolioRowDoubleClicked);
 
     // ── Main layout: portfolio (expands) + bottom panel (fixed) ──────────
     auto* centralWidget = new QWidget(this);
@@ -1244,6 +1252,33 @@ void MainWindow::onDeleteShare()
         MessageType::Success);
 
     qInfo() << "[MainWindow] Share removed:" << shareName << shareGuid;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+void MainWindow::onPortfolioRowDoubleClicked(QTableWidgetItem* item)
+{
+    if (!item)
+        return;
+
+    QTableWidget* table = item->tableWidget();
+    if (!table)
+        return;
+
+    // The GUID is stored in the WKN cell (column 0) via Qt::UserRole,
+    // regardless of which cell in the row was actually double-clicked.
+    QTableWidgetItem* wknItem = table->item(item->row(), 0);
+    if (!wknItem)
+        return;
+
+    const QString shareGuid = wknItem->data(Qt::UserRole).toString();
+    if (shareGuid.isEmpty())
+        return;
+
+    ViewShareDetails dlg(shareGuid, this);
+    if (!dlg.hasValidShare())
+        return; // Error already reported via showError() inside the presenter
+
+    dlg.exec();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

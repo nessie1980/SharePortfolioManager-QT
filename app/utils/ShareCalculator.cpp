@@ -170,6 +170,13 @@ ShareValues ShareCalculator::compute(const QString& guid,
                            ? (v.completeProfitLoss / v.completePurchase * 100.0)
                            : 0.0;
 
+    // ShareDetailsForm "Komplette Depotbewertung" box needs the raw sale
+    // proceeds and the realized brokerage-inclusive P/L as their own fields
+    // (both already computed above as locals for completeCurValue /
+    // realizedProfitLossWithFees).
+    v.salePayoutFinal     = roundAway(salePayoutFinal);
+    v.saleProfitLossFinal = roundAway(realizedProfitLossWithFees);
+
     return v;
 }
 

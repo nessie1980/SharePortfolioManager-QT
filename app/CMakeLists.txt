@@ -111,8 +111,14 @@ set(APP_SOURCES
     forms/ShareEditForm/ViewShareEdit.cpp
 
     # ── Forms – Details & Chart ───────────────────────────────────────────
-    forms/ShareDetailsForm/ShareDetailsForm.h
-    forms/ShareDetailsForm/ShareDetailsForm.cpp
+    forms/ShareDetailsForm/IViewShareDetails.h
+    forms/ShareDetailsForm/IModelShareDetails.h
+    forms/ShareDetailsForm/ModelShareDetails.h
+    forms/ShareDetailsForm/ModelShareDetails.cpp
+    forms/ShareDetailsForm/PresenterShareDetails.h
+    forms/ShareDetailsForm/PresenterShareDetails.cpp
+    forms/ShareDetailsForm/ViewShareDetails.h
+    forms/ShareDetailsForm/ViewShareDetails.cpp
     forms/ChartForm/ChartForm.h
     forms/ChartForm/ChartForm.cpp
 
