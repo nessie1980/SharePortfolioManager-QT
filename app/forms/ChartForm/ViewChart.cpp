@@ -16,6 +16,7 @@
 #include <QScrollArea>
 #include <QFrame>
 #include <QPen>
+#include <QWheelEvent>
 
 #include <algorithm>
 #include <limits>
@@ -55,6 +56,34 @@ ViewChart::ViewChart(const QString& shareGuid, QWidget* parent)
     setObjectName(QStringLiteral("ViewChart"));
     setupUi();
     m_presenter.loadAndDisplay();
+}
+
+// ── eventFilter ──────────────────────────────────────────────────────────────
+
+bool ViewChart::eventFilter(QObject* watched, QEvent* event)
+{
+    if (event->type() == QEvent::Wheel &&
+        (watched == m_countSpin || watched == m_chartView->viewport())) {
+        applyWheelStep(static_cast<QWheelEvent*>(event));
+        return true; // konsumiert — verhindert bei countSpin die Fokus-
+                      // Abhängigkeit des Default-Verhaltens, bei chartView
+                      // ein Durchreichen an QGraphicsView/dahinterliegende
+                      // Widgets.
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+// ── applyWheelStep ───────────────────────────────────────────────────────────
+
+void ViewChart::applyWheelStep(QWheelEvent* event)
+{
+    // Gleiche Umrechnung von angleDelta() in "Rasten" wie Qt intern in
+    // QAbstractSpinBox::wheelEvent() verwendet — ein Standard-Mausrad-Klick
+    // entspricht 15° bzw. 120 angleDelta-Einheiten.
+    const int numDegrees = event->angleDelta().y() / 8;
+    const int numSteps = numDegrees / 15;
+    if (numSteps != 0)
+        m_countSpin->stepBy(numSteps); // triggert valueChanged() → m_presenter.onControlsChanged()
 }
 
 // ── setupUi ───────────────────────────────────────────────────────────────────
@@ -120,6 +149,18 @@ void ViewChart::setupUi()
     // Leerraum rechts vom Text zu lassen.
     rightScroll->setFixedWidth(380); // 360 Inhaltsbreite + Platz für die Scrollbar
     mainLayout->addWidget(rightScroll);
+
+    // ── Mausrad-Steuerung der "Anzahl" ───────────────────────────────────────
+    // Auf m_countSpin: QAbstractSpinBox::wheelEvent() ignoriert Wheel-Events
+    // ohne Fokus — der Event-Filter fängt sie stattdessen direkt ab, damit
+    // Scrollen ohne vorherigen Klick funktioniert.
+    // Auf m_chartView->viewport() (nicht m_chartView selbst!): QGraphicsView
+    // leitet Wheel-Events intern an seinen Viewport weiter, ein Filter auf
+    // dem QChartView-Objekt würde sie nie sehen. Der Viewport deckt exakt die
+    // Zeichenfläche ab (nicht Legende/Selektion daneben), erfüllt also von
+    // selbst Nessies Vorgabe "nur über der Zeichenfläche" (12.07.2026).
+    m_countSpin->installEventFilter(this);
+    m_chartView->viewport()->installEventFilter(this);
 }
 
 // ── setupLegendeBox ───────────────────────────────────────────────────────────

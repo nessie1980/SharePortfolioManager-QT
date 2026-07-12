@@ -24,6 +24,7 @@
 #include <QPointF>
 
 class QLineSeries;
+class QWheelEvent;
 
 /**
  * @brief Embeddable "Aktien-Chart" widget — ported from the C# reference's
@@ -66,6 +67,16 @@ public:
     void setReferenceLines(const QList<ChartReferenceLine>& lines) override;
     void setRangeInfo(const QString& infoText) override;
     void showError(const QString& message) override;
+
+    /**
+     * @brief Routes Mausrad-Events auf m_countSpin (unabhängig vom Fokus-
+     * Status, siehe applyWheelStep()) und auf m_chartView->viewport() (nur
+     * wenn die Maus direkt über der Chart-Zeichenfläche steht, nicht über
+     * Legende/Selektion) auf dieselbe "Anzahl"-Steuerung durch — ergänzt
+     * 12.07.2026 auf Nessies Vorgabe, portiert vom C#-Referenz-Verhalten
+     * ("Zeitraum per Mausrad direkt im Chart ändern").
+     */
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 signals:
     /**
@@ -110,6 +121,18 @@ private:
      * @param state  true = entering hover, false = leaving it.
      */
     void onReferenceLineHovered(const ChartReferenceLine& line, bool state);
+
+    /**
+     * @brief Gemeinsame Wheel-Logik für m_countSpin und m_chartView-Viewport
+     * (siehe eventFilter()) — rechnet das Wheel-Delta in "Rasten" um (gleiche
+     * Formel wie Qt intern in QAbstractSpinBox::wheelEvent()) und wendet sie
+     * per stepBy() auf m_countSpin an. Löst dadurch automatisch dessen
+     * bestehende valueChanged()-Verbindung zu m_presenter.onControlsChanged()
+     * aus — kein separater Refresh-Aufruf nötig.
+     * Rad nach oben (positives angleDelta().y()) = Anzahl erhöhen (Nessies
+     * Vorgabe 12.07.2026).
+     */
+    void applyWheelStep(QWheelEvent* event);
 
     // ── MVP wiring ────────────────────────────────────────────────────────
     ModelChart     m_model;

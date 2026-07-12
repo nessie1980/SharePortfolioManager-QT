@@ -1498,6 +1498,30 @@ Min/Max- sowie Letzter-Kauf/Verkauf-Legendenzeilen (inkl. Fehlen bei
 fehlenden Käufen/Verkäufen), und dass `onControlsChanged()` vor dem ersten
 `loadAndDisplay()` keinen Effekt hat.
 
+**Mausrad-Steuerung der "Anzahl" (ergänzt 12.07.2026 auf Nessies Vorgabe,
+portiert vom C#-Referenz-Verhalten):** In der C#-Referenz lässt sich der
+Zeitraum sowohl über das "Anzahl"-Feld selbst als auch per Mausrad direkt im
+Chart ändern. Beide Wege sind über `ViewChart::eventFilter()` auf dieselbe
+Logik zurückgeführt:
+
+- **`m_countSpin`:** `QAbstractSpinBox::wheelEvent()` ignoriert Mausrad-
+  Events ohne Fokus — der Event-Filter fängt sie stattdessen direkt ab, damit
+  Scrollen auch ohne vorherigen Klick funktioniert.
+- **`m_chartView->viewport()`, nicht `m_chartView` selbst:** `QChartView`
+  (als `QGraphicsView`-Ableitung) leitet Mausrad-Events intern an seinen
+  Viewport weiter — ein Filter direkt auf dem `QChartView`-Objekt würde sie
+  nie sehen. Der Viewport deckt exakt die Zeichenfläche ab (nicht Legende/
+  Selektion daneben), erfüllt also von selbst Nessies Vorgabe "nur über der
+  Zeichenfläche".
+
+`ViewChart::applyWheelStep()` rechnet `QWheelEvent::angleDelta()` mit der
+gleichen Formel wie Qt intern (`angleDelta().y() / 8 / 15`) in "Rasten" um
+und ruft `m_countSpin->stepBy(numSteps)` — Rad nach oben = Anzahl erhöhen.
+Das löst automatisch die bereits bestehende `valueChanged()`-Verbindung zu
+`m_presenter.onControlsChanged()` aus, ein separater Refresh-Aufruf war nicht
+nötig. Regressionstest: `test_chartWheel_overCountSpinAndChartView_
+changesIntervalCountAndRefreshes` (`tst_mainwindow.cpp`, siehe TESTING.md).
+
 ---
 
 ### MainWindow-Details

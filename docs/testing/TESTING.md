@@ -268,6 +268,7 @@ Methode von `MainWindow` ist und dessen volle Konstruktion braucht.
 | `test_onPortfolioRowDoubleClicked_nullItem_doesNotCrash` | Doppelklick-Slot mit `item == nullptr` | Kein Absturz |
 | `test_onPortfolioRowDoubleClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole) | Kein Absturz, kein modaler Dialog |
 | `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText` | `ViewShareDetails` direkt konstruiert | `hasValidShare()` = true, Fenstertitel = Aktienname, Close-Button = "Schließen" |
+| `test_chartWheel_overCountSpinAndChartView_changesIntervalCountAndRefreshes` | Mausrad-Events (`QWheelEvent`) auf `countSpin` (ohne Fokus) und auf `chartView`-Viewport | Beide erhöhen/verringern `intervalCount()`; löst jeweils einen Refresh aus (siehe ARCHITECTURE.md, "ChartForm-Details") |
 
 ModelShareAdd:
 | Test | Beschreibung | Prüft |
@@ -681,6 +682,17 @@ direkt in `tst_mainwindow.cpp` (Suchbegriff `onPortfolioRowDoubleClicked`/
 | `test_onPortfolioRowDoubleClicked_nullItem_doesNotCrash` | Doppelklick-Slot mit `item == nullptr` | Kein Absturz |
 | `test_onPortfolioRowDoubleClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole) | Kein Absturz, kein modaler Dialog |
 | `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText` | `ViewShareDetails` direkt konstruiert (kein `exec()`, analog `test_shareAddDialog_canBeConstructed`) | `hasValidShare()` = true, Fenstertitel = Aktienname, Close-Button-Text = "Schließen" (Regressionstest für den qtbase-Übersetzungs-Bugfix vom 09.07.2026) |
+
+@note **Mausrad-Steuerung der "Anzahl" (ergänzt 12.07.2026):** Da
+`ViewChart` (anders als `PresenterChart`) echte `QWidget`s und Qt-Charts
+instanziiert, lebt der Regressionstest dafür in `tst_mainwindow.cpp`
+(kompiliert `ViewShareDetails.cpp` → `ViewChart.h` ohnehin bereits, siehe
+"Abhängigkeiten" unten), nicht in `tst_chartform` — analog zur Trennung
+zwischen View- und Presenter-Tests bei den übrigen Formularen.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_chartWheel_overCountSpinAndChartView_changesIntervalCountAndRefreshes` | Ein `QWheelEvent` (positives `angleDelta().y()`) wird per `QCoreApplication::sendEvent()` erst an `countSpin` (ohne vorherigen Fokus-Aufbau) und dann an `chartView`-Viewport geschickt | Beide Wege erhöhen `intervalCount()` (`m_countSpin->value()`) um 1 und lösen über die bestehende `valueChanged()`-Verbindung einen Refresh aus (Chart-Daten ändern sich sichtbar, z. B. via `findChild<QSpinBox*>("countSpin")->value()`) |
 
 Bewusst weiterhin **nicht** getestet: der "gültige GUID → `dlg.exec()`"-Pfad
 in `onPortfolioRowDoubleClicked()` selbst — ein echter modaler `QDialog::exec()`

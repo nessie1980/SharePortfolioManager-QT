@@ -14,6 +14,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QDoubleSpinBox>
+#include <QSpinBox>
+#include <QWheelEvent>
 #include <QComboBox>
 #include <QMenuBar>
 #include <QSqlQuery>
@@ -3945,6 +3947,56 @@ private slots:
         QPushButton* closeButton = buttonBox->button(QDialogButtonBox::Close);
         if (!closeButton) QFAIL("Close-Button nicht gefunden");
         QCOMPARE(closeButton->text(), QStringLiteral("Schließen"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ViewChart — Mausrad-Steuerung der "Anzahl" (ergänzt 12.07.2026, siehe
+    // ARCHITECTURE.md "ChartForm-Details"). ViewChart ist als Tab 1 in
+    // ViewShareDetails eingebettet, countSpin/chartView werden per
+    // findChild() über ihren objectName gefunden (beide privat in ViewChart,
+    // objectName-Suche funktioniert trotzdem widget-übergreifend).
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_chartWheel_overCountSpinAndChartView_changesIntervalCountAndRefreshes()
+    {
+        const QString shareGuid = insertTestShare();
+        ViewShareDetails dlg(shareGuid);
+
+        auto* countSpin = dlg.findChild<QSpinBox*>(QStringLiteral("countSpin"));
+        if (!countSpin) QFAIL("countSpin nicht gefunden");
+        auto* chartView = dlg.findChild<QChartView*>(QStringLiteral("chartView"));
+        if (!chartView) QFAIL("chartView nicht gefunden");
+
+        QCOMPARE(countSpin->value(), 1); // Default
+
+        // Baut ein synthetisches QWheelEvent und schickt es per sendEvent()
+        // direkt an das Ziel-Widget — läuft über dessen installierten
+        // eventFilter() (ViewChart::eventFilter()), exakt derselbe Pfad wie
+        // ein echtes Mausrad-Event vom Fenstersystem.
+        auto sendWheel = [](QWidget* target, int angleDeltaY) {
+            const QPointF pos(target->rect().center());
+            const QPointF globalPos(target->mapToGlobal(pos.toPoint()));
+            QWheelEvent wheelEvent(pos, globalPos, QPoint(0, 0), QPoint(0, angleDeltaY),
+                                   Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QCoreApplication::sendEvent(target, &wheelEvent);
+        };
+
+        // countSpin: bewusst OHNE vorherigen setFocus()-Aufruf — genau das
+        // ist der Fokus-Bug (QAbstractSpinBox::wheelEvent() ignoriert Wheel-
+        // Events ohne Fokus), den der Event-Filter umgeht.
+        sendWheel(countSpin, 120); // Rad nach oben
+        QCOMPARE(countSpin->value(), 2);
+
+        sendWheel(countSpin, -120); // Rad nach unten
+        QCOMPARE(countSpin->value(), 1);
+
+        // chartView-Viewport: derselbe Weg wie über der echten Chart-
+        // Zeichenfläche, muss auf denselben countSpin durchschlagen.
+        sendWheel(chartView->viewport(), 120);
+        QCOMPARE(countSpin->value(), 2);
+
+        sendWheel(chartView->viewport(), -120);
+        QCOMPARE(countSpin->value(), 1);
     }
 
 }; // end of TestMainWindow
