@@ -31,6 +31,15 @@ public:
     virtual QDate latestDailyValueDate(const QString& shareGuid) const = 0;
 
     /**
+     * @brief Earliest (oldest) date with a daily value for this share
+     * (invalid QDate if none) — used by PresenterChart to cap "Anzahl" so
+     * das angezeigte Fenster nicht über den Punkt hinaus wachsen kann, an
+     * dem der älteste vorhandene Wert bereits dargestellt wird (ergänzt
+     * 12.07.2026, auf Nessies Vorgabe).
+     */
+    virtual QDate earliestDailyValueDate(const QString& shareGuid) const = 0;
+
+    /**
      * @brief Cumulative held volume ("Anteile") as of each requested date.
      *
      * For each date in @p dates: sum of all buy volumes with dateTime <= that

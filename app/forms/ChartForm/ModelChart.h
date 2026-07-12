@@ -23,6 +23,8 @@ public:
 
     QDate latestDailyValueDate(const QString& shareGuid) const override;
 
+    QDate earliestDailyValueDate(const QString& shareGuid) const override;
+
     QMap<QDate, double> heldVolumeSeries(const QString& shareGuid,
                                          const QList<QDate>& dates) const override;
 

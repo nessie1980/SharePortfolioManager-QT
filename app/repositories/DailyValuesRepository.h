@@ -112,6 +112,13 @@ public:
     QDate latestDate(const QString& shareGuid) const;
 
     /**
+     * @brief Returns the earliest (oldest) trading date for a share.
+     * @param shareGuid  GUID of the share.
+     * @return The earliest date, or an invalid QDate if no records exist.
+     */
+    QDate earliestDate(const QString& shareGuid) const;
+
+    /**
      * @brief Returns the number of stored daily value records for a share.
      * @param shareGuid  GUID of the share.
      * @return Record count, 0 if none.

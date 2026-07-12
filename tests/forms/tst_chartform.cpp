@@ -45,6 +45,8 @@ public:
     bool                 referenceLinesSet = false;
     QString             lastRangeInfo;
     QString             lastError;
+    int                  lastMaxIntervalCount = -1;
+    bool                 maxIntervalCountSet  = false;
 
     QDate        startDate()      const override { return m_startDate; }
     IntervalUnit intervalUnit()   const override { return m_intervalUnit; }
@@ -59,6 +61,17 @@ public:
         lastDefaultStartDate = date;
         defaultStartDateSet  = true;
         m_startDate          = date; // mirrors ViewChart::setDefaultStartDate()
+    }
+
+    void setMaxIntervalCount(int maxCount) override
+    {
+        lastMaxIntervalCount = maxCount;
+        maxIntervalCountSet  = true;
+        // Bewusst KEIN automatisches Klemmen von m_intervalCount hier, anders
+        // als das echte QSpinBox::setMaximum() — die Presenter-seitige
+        // std::min()-Klammer in PresenterChart::refresh() muss die effektive
+        // Anzahl unabhängig davon korrekt begrenzen, ob die View das UI-
+        // seitig auch tut (siehe ARCHITECTURE.md, "ChartForm-Details").
     }
 
     void setChartData(const QList<ChartSeriesData>& series) override
@@ -128,10 +141,21 @@ public:
     QList<ChartReferenceInfo> m_buysInRange;
     QList<ChartReferenceInfo> m_salesInRange;
 
+    // Erfasst die zuletzt an loadDailyValues() übergebene [from, to]-Spanne —
+    // ergänzt 12.07.2026, um in Tests zu prüfen, dass PresenterChart die
+    // Anzahl-Kappung wirklich VOR der Datenabfrage anwendet, statt die vom
+    // Nutzer angeforderte (ggf. zu große) Anzahl unverändert durchzureichen.
+    mutable QDate lastQueryFrom;
+    mutable QDate lastQueryTo;
+    mutable bool  loadDailyValuesCalled = false;
+
     QList<DailyValuesObject> loadDailyValues(const QString& /*shareGuid*/,
                                               const QDate& from,
                                               const QDate& to) const override
     {
+        lastQueryFrom         = from;
+        lastQueryTo           = to;
+        loadDailyValuesCalled = true;
         QList<DailyValuesObject> result;
         for (const auto& dv : m_dailyValues)
             if (dv.date() >= from && dv.date() <= to)
@@ -142,6 +166,23 @@ public:
     QDate latestDailyValueDate(const QString& /*shareGuid*/) const override
     {
         return m_latestDate;
+    }
+
+    /**
+     * @brief Ältester Termin über ALLE m_dailyValues hinweg (nicht auf ein
+     * Abfrage-Fenster beschränkt) — spiegelt genau das Verhalten von
+     * ModelChart::earliestDailyValueDate()/DailyValuesRepository::
+     * earliestDate() gegen die volle Historie in der DB, nicht gegen einen
+     * bereits gefilterten Ausschnitt.
+     */
+    QDate earliestDailyValueDate(const QString& /*shareGuid*/) const override
+    {
+        QDate earliest;
+        for (const auto& dv : m_dailyValues) {
+            if (!earliest.isValid() || dv.date() < earliest)
+                earliest = dv.date();
+        }
+        return earliest;
     }
 
     QMap<QDate, double> heldVolumeSeries(const QString& /*shareGuid*/,
@@ -488,6 +529,12 @@ private slots:
         FakeModelChart model;
         model.m_latestDate = QDate(2026, 7, 10);
         model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 100.0, 105.0, 106.0, 99.0, 100.0));
+        // Zweiter, deutlich älterer Tageswert — ohne ihn wäre der einzige
+        // vorhandene Wert exakt das Start-Datum selbst, wodurch die seit
+        // 12.07.2026 bestehende Anzahl-Kappung (siehe computeMaxIntervalCount())
+        // das angeforderte 5-Tage-Fenster auf 1 zurückstutzen würde, bevor der
+        // eigentliche Testzweck (Referenzlinien-Filterung) zum Tragen kommt.
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 5, 1),  80.0,  82.0,  83.0,  79.0, 50.0));
         // rangeStart = 05.07.2026 -> nur der zweite Kauf liegt im Fenster.
         model.m_buysInRange = {
             ChartReferenceInfo{ true, QDate(2026, 6, 1), 90.0, 5.0 },
@@ -550,6 +597,105 @@ private slots:
         if (!after) QFAIL("ClosingPrice series missing (after)");
         QCOMPARE(after->dates.size(), 1);
         QCOMPARE(after->dates.at(0), QDate(2026, 7, 10));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Anzahl-Kappung (ergänzt 12.07.2026, auf Nessies Vorgabe): "Anzahl"
+    // darf nicht über den Punkt hinaus wachsen, an dem der älteste
+    // vorhandene Tageswert bereits im Fenster liegt.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_refresh_setsMaxIntervalCount_basedOnEarliestDailyValue()
+    {
+        // Day-Intervall macht die Bezugsrechnung leicht nachvollziehbar: 9
+        // Tage liegen zwischen dem ältesten (01.07.) und dem Start-Datum
+        // (10.07., = Ende des Zeitraums).
+        FakeViewChart view;
+        view.m_intervalUnit  = IntervalUnit::Day;
+        view.m_intervalCount = 3;
+
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 1),  100.0, 101.0, 102.0, 99.0, 100.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 110.0, 111.0, 112.0, 109.0, 100.0));
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        QVERIFY(view.maxIntervalCountSet);
+        QCOMPARE(view.lastMaxIntervalCount, 9); // 10.07. minus 9 Tage = 01.07. (ältester Wert)
+    }
+
+    void test_refresh_intervalCountBeyondMax_clampsQueryToEarliestDate()
+    {
+        // Angeforderte Anzahl (50) liegt weit über dem, was an Historie
+        // existiert (nur 9 Tage bis zum ältesten Wert). PresenterChart muss
+        // die tatsächlich abgefragte Spanne auf den erreichbaren Maximalwert
+        // kappen, statt eine rangeStart weit vor dem ältesten Wert zu
+        // berechnen — geprüft über FakeModelChart::lastQueryFrom, nicht nur
+        // über das Ergebnis (das bei zu wenig Historie ohnehin identisch
+        // aussähe).
+        FakeViewChart view;
+        view.m_intervalUnit  = IntervalUnit::Day;
+        view.m_intervalCount = 50;
+
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 1),  100.0, 101.0, 102.0, 99.0, 100.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 110.0, 111.0, 112.0, 109.0, 100.0));
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        QCOMPARE(view.lastMaxIntervalCount, 9);
+        QVERIFY(model.loadDailyValuesCalled);
+        // 10.07. minus 9 (gekappte) Tage = 01.07. — NICHT 10.07. minus 50
+        // Tage (22.05.), wie es die unbegrenzte Anzahl ergäbe.
+        QCOMPARE(model.lastQueryFrom, QDate(2026, 7, 1));
+    }
+
+    void test_refresh_singleValueAtRangeEnd_maxIntervalCountStaysAtOne()
+    {
+        // Nur ein einziger Tageswert existiert, exakt am Start-Datum (=Ende
+        // des Zeitraums) selbst — es gibt nichts Älteres zu erreichen,
+        // "Anzahl" darf über 1 hinaus gar nicht erst wachsen.
+        FakeViewChart view;
+        view.m_intervalUnit  = IntervalUnit::Month;
+        view.m_intervalCount = 1;
+
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 100.0, 105.0, 106.0, 99.0, 1000.0));
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        QCOMPARE(view.lastMaxIntervalCount, 1);
+    }
+
+    void test_onControlsChanged_countAboveMax_clampsEffectiveQueryRange()
+    {
+        // Simuliert ein Mausrad-/Spinbox-Event, das die Anzahl über den
+        // erreichbaren Maximalwert hinaus erhöht — in der echten View würde
+        // QSpinBox::setMaximum() (siehe ViewChart::setMaxIntervalCount())
+        // das bereits verhindern; hier wird die Presenter-Seite unabhängig
+        // davon geprüft, da FakeViewChart absichtlich NICHT automatisch
+        // klemmt (siehe FakeViewChart::setMaxIntervalCount()).
+        FakeViewChart view;
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 1),  100.0, 101.0, 102.0, 99.0, 100.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 110.0, 111.0, 112.0, 109.0, 100.0));
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        view.m_intervalUnit  = IntervalUnit::Day;
+        view.m_intervalCount = 50;
+        presenter.onControlsChanged();
+
+        QCOMPARE(view.lastMaxIntervalCount, 9);
+        QCOMPARE(model.lastQueryFrom, QDate(2026, 7, 1));
     }
 };
 

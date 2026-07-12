@@ -23,6 +23,13 @@ QDate ModelChart::latestDailyValueDate(const QString& shareGuid) const
     return m_dailyValuesRepo.latestDate(shareGuid);
 }
 
+// ── earliestDailyValueDate ─────────────────────────────────────────────────────
+
+QDate ModelChart::earliestDailyValueDate(const QString& shareGuid) const
+{
+    return m_dailyValuesRepo.earliestDate(shareGuid);
+}
+
 // ── heldVolumeSeries ──────────────────────────────────────────────────────────
 
 QMap<QDate, double> ModelChart::heldVolumeSeries(const QString& shareGuid,

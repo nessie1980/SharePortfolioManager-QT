@@ -111,7 +111,20 @@ void PresenterChart::refresh()
 {
     const QDate rangeEnd = m_view->startDate();
     const IntervalUnit unit = m_view->intervalUnit();
-    const int count = std::max(1, m_view->intervalCount());
+
+    // Obergrenze für "Anzahl" — verhindert, dass sich das Fenster über den
+    // Punkt hinaus vergrößern lässt, an dem der älteste vorhandene Tageswert
+    // bereits dargestellt wird (ergänzt 12.07.2026, auf Nessies Vorgabe).
+    // Wird unabhängig davon berechnet, ob die aktuelle "Anzahl" sie bereits
+    // überschreitet — setMaxIntervalCount() lässt die View das UI-seitig
+    // (Spinbox-Maximum) durchsetzen, der anschließende std::min() macht die
+    // Presenter-Logik selbst aber unabhängig davon korrekt, ob die View das
+    // tatsächlich tut (z. B. in Tests mit einer einfachen Fake-View).
+    const QDate earliestDate = m_model->earliestDailyValueDate(m_shareGuid);
+    const int maxCount = computeMaxIntervalCount(rangeEnd, unit, earliestDate);
+    m_view->setMaxIntervalCount(maxCount);
+
+    const int count = std::min(maxCount, std::max(1, m_view->intervalCount()));
     const QDate rangeStart = computeRangeStart(rangeEnd, unit, count);
 
     const auto dailyValues = m_model->loadDailyValues(m_shareGuid, rangeStart, rangeEnd);
@@ -259,6 +272,32 @@ QDate PresenterChart::computeRangeStart(const QDate& rangeEnd, IntervalUnit unit
     case IntervalUnit::Year:  return rangeEnd.addYears(-count);
     }
     return rangeEnd.addMonths(-count);
+}
+
+// ── computeMaxIntervalCount ───────────────────────────────────────────────────
+
+int PresenterChart::computeMaxIntervalCount(const QDate& rangeEnd, IntervalUnit unit,
+                                            const QDate& earliestDate)
+{
+    // Kein Tageswert überhaupt vorhanden, oder der älteste liegt bereits
+    // auf/nach rangeEnd selbst -> es gibt nichts mehr zu erreichen, "Anzahl"
+    // bleibt bei ihrem Minimum von 1 (spiegelt m_countSpin's Minimum in
+    // ViewChart).
+    if (!earliestDate.isValid() || earliestDate >= rangeEnd)
+        return 1;
+
+    // Wächst "Anzahl" so lange, wie das nächstgrößere Fenster den ältesten
+    // Wert noch nicht überschritten hat (rangeStart(count+1) >= earliestDate
+    // bedeutet: der älteste Wert liegt noch im oder am Rand des Fensters).
+    // Sobald das nicht mehr gilt, würde eine weitere Vergrößerung ohnehin
+    // keine zusätzlichen Daten mehr zeigen — genau der von Nessie
+    // beschriebene Fall.
+    int count = 1;
+    while (count < kIntervalCountCeiling &&
+           computeRangeStart(rangeEnd, unit, count + 1) >= earliestDate) {
+        ++count;
+    }
+    return count;
 }
 
 // ── Formatting helpers ────────────────────────────────────────────────────────

@@ -45,9 +45,35 @@ private:
     void refresh();
 
     static QDate computeRangeStart(const QDate& rangeEnd, IntervalUnit unit, int count);
+
+    /**
+     * @brief Largest "Anzahl" for which the displayed window still reaches
+     * back to, but not past, @p earliestDate — ergänzt 12.07.2026 auf
+     * Nessies Vorgabe: weiteres Erhöhen soll gestoppt werden, sobald der
+     * älteste vorhandene Wert bereits im Fenster liegt.
+     *
+     * Kein geschlossener Ausdruck für Monat/Jahr möglich (unterschiedliche
+     * Monatslängen — addMonths() clamped den Tag, z.B. 31.01. minus 1 Monat
+     * = 28./29.02.), daher eine einfache, robuste Schleife statt einer
+     * Formel. @p earliestDate ungültig oder bereits auf/nach @p rangeEnd ->
+     * mindestens 1 bleibt immer erlaubt (spiegelt m_countSpin's Minimum in
+     * ViewChart).
+     * @param rangeEnd      Aktuelles Start-Datum (= Ende des Zeitraums).
+     * @param unit           Aktuelle Interval-Einheit.
+     * @param earliestDate   Ältester vorhandener Tageswert für die Aktie
+     *                       (ungültig, falls keiner existiert).
+     * @return Größte zulässige "Anzahl", mindestens 1.
+     */
+    static int computeMaxIntervalCount(const QDate& rangeEnd, IntervalUnit unit,
+                                       const QDate& earliestDate);
+
     static QString formatEuro(double value);
     static QString formatPercent(double value);
     static QString formatNumber(double value, int decimals);
+
+    /** Deckelt die Schleife in computeMaxIntervalCount() — spiegelt
+     *  ViewChart::setupSelektionBox()'s m_countSpin->setRange(1, 999). */
+    static constexpr int kIntervalCountCeiling = 999;
 
     IViewChart*  m_view;
     IModelChart* m_model;

@@ -36,6 +36,16 @@ public:
     virtual void setDefaultStartDate(const QDate& date) = 0;
 
     /**
+     * @brief Upper bound for "Anzahl" — the largest value for which the
+     * displayed window still reaches back to, but not past, the oldest
+     * available daily value. Called on every refresh(), independent of
+     * whether the bound actually changed since the last call (ergänzt
+     * 12.07.2026, auf Nessies Vorgabe: weiteres Erhöhen soll gestoppt
+     * werden, sobald der älteste vorhandene Wert bereits dargestellt wird).
+     */
+    virtual void setMaxIntervalCount(int maxCount) = 0;
+
+    /**
      * @brief Replaces the plotted series entirely (all currently visible
      * series at once, since QtCharts axis ranges depend on all of them together).
      */

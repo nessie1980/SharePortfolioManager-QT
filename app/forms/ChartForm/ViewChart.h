@@ -61,6 +61,7 @@ public:
 
     // ── IViewChart: setters (written by the Presenter) ──────────────────────
     void setDefaultStartDate(const QDate& date) override;
+    void setMaxIntervalCount(int maxCount) override;
     void setChartData(const QList<ChartSeriesData>& series) override;
     void showEmptyChart(const QString& message) override;
     void setLegendEntries(const LegendEntries& entries) override;

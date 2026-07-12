@@ -184,6 +184,19 @@ QDate DailyValuesRepository::latestDate(const QString& shareGuid) const
     return QDate::fromString(sqlQuery.value(0).toString(), Qt::ISODate);
 }
 
+QDate DailyValuesRepository::earliestDate(const QString& shareGuid) const
+{
+    QSqlQuery sqlQuery(QSqlDatabase::database("spm_main"));
+    sqlQuery.prepare("SELECT MIN(date) FROM daily_values WHERE share_guid = :sg");
+    sqlQuery.bindValue(":sg", shareGuid);
+
+    if (!sqlQuery.exec() || !sqlQuery.next() || sqlQuery.value(0).isNull()) {
+        m_lastError = sqlQuery.lastError();
+        return QDate{};
+    }
+    return QDate::fromString(sqlQuery.value(0).toString(), Qt::ISODate);
+}
+
 int DailyValuesRepository::count(const QString& shareGuid) const
 {
     QSqlQuery sqlQuery(QSqlDatabase::database("spm_main"));

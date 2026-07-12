@@ -1522,6 +1522,46 @@ Das löst automatisch die bereits bestehende `valueChanged()`-Verbindung zu
 nötig. Regressionstest: `test_chartWheel_overCountSpinAndChartView_
 changesIntervalCountAndRefreshes` (`tst_mainwindow.cpp`, siehe TESTING.md).
 
+**Obergrenze für "Anzahl" (ergänzt 12.07.2026 auf Nessies Vorgabe):** Ohne
+Begrenzung ließ sich "Anzahl" beliebig weit über den Punkt hinaus erhöhen, an
+dem der älteste vorhandene Tageswert bereits im Fenster lag — jede weitere
+Vergrößerung zeigte exakt dieselben Daten, ohne dass das für den Nutzer
+erkennbar war. Die Begrenzung sitzt komplett im `PresenterChart` (Business-
+Logik), nicht im `ViewChart` — reine MVP-Trennung, die View bleibt dumm.
+
+- **`DailyValuesRepository::earliestDate()`** (Gegenstück zu `latestDate()`,
+  `MIN(date)`) → `IModelChart::earliestDailyValueDate()` →
+  `ModelChart::earliestDailyValueDate()` reichen das durch.
+- **`PresenterChart::computeMaxIntervalCount(rangeEnd, unit, earliestDate)`**
+  berechnet bei jedem `refresh()` die größte "Anzahl", für die das Fenster
+  den ältesten Wert gerade noch (aber nicht darüber hinaus) erreicht. Kein
+  geschlossener Ausdruck für Monat/Jahr möglich (unterschiedliche
+  Monatslängen — `addMonths()` clamped den Tag, z. B. 31.01. minus 1 Monat =
+  28./29.02.), daher eine einfache, auf `kIntervalCountCeiling = 999`
+  gedeckelte Schleife über `computeRangeStart()` statt einer Formel — robust
+  für alle vier `IntervalUnit`-Werte, ohne Sonderfälle.
+- **`IViewChart::setMaxIntervalCount(int)`** reicht das Ergebnis an die View
+  durch. `ViewChart::setMaxIntervalCount()` ruft `m_countSpin->setMaximum()`
+  auf (Signal geblockt — verhindert einen rekursiven `onControlsChanged()`-
+  Aufruf, falls der aktuelle Wert dabei automatisch heruntergeklemmt wird).
+  Das wirkt automatisch auf **alle** Eingabewege — Pfeiltasten, Tippen und
+  die oben beschriebene Mausrad-Steuerung —, da Qt `QSpinBox` intern immer
+  an `maximum()` clamped.
+- **Zusätzlich presenter-seitig geklemmt:** `refresh()` begrenzt die
+  tatsächlich für die Datenabfrage verwendete Anzahl selbst per
+  `std::min(maxCount, ...)`, unabhängig davon, ob die View den Wert schon
+  korrekt heruntergeklemmt hat. Macht die Presenter-Logik durch Fakes
+  eigenständig testbar (`FakeViewChart` in `tst_chartform.cpp` klemmt
+  bewusst NICHT automatisch, siehe TESTING.md) und robust gegen künftige
+  View-Implementierungen, die das UI-seitige Clamping anders lösen.
+
+Regressionstests: `test_refresh_setsMaxIntervalCount_basedOnEarliestDailyValue`,
+`test_refresh_intervalCountBeyondMax_clampsQueryToEarliestDate`,
+`test_refresh_singleValueAtRangeEnd_maxIntervalCountStaysAtOne`,
+`test_onControlsChanged_countAboveMax_clampsEffectiveQueryRange`
+(alle `tst_chartform.cpp`), sowie `test_earliestDate`
+(`tst_dailyvaluesrepository.cpp`) — siehe TESTING.md.
+
 ---
 
 ### MainWindow-Details

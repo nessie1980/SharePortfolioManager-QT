@@ -282,6 +282,18 @@ private slots:
         QCOMPARE(repo.latestDate(k_shareGuid), QDate(2024, 6, 15));
     }
 
+    void test_earliestDate()
+    {
+        DailyValuesRepository repo;
+        QVERIFY(!repo.earliestDate(k_shareGuid).isValid()); // empty → invalid date
+
+        repo.upsert(makeEntry(QDate(2024, 6, 15)));
+        repo.upsert(makeEntry(QDate(2024, 6, 13)));
+        repo.upsert(makeEntry(QDate(2024, 6, 14)));
+
+        QCOMPARE(repo.earliestDate(k_shareGuid), QDate(2024, 6, 13));
+    }
+
     void test_count()
     {
         DailyValuesRepository repo;

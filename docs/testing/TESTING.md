@@ -169,6 +169,12 @@ neuen/geänderten und unveränderten Zeilen unterscheiden):
 - `test_upsertList_backwardCompatible_withoutStats` — Aufruf ohne `stats`-Parameter verhält
   sich unverändert wie vor der Erweiterung.
 
+`test_earliestDate` (tst_dailyvaluesrepository.cpp, ergänzt 12.07.2026):
+Gegenstück zu `test_latestDate` — `DailyValuesRepository::earliestDate()` (`MIN(date)`)
+liefert bei leerer Tabelle eine ungültige `QDate`, sonst das älteste Datum unabhängig von
+der Einfügereihenfolge. Grundlage für die Anzahl-Kappung im Chart-Tab, siehe
+`tst_chartform.cpp` unten und ARCHITECTURE.md, "ChartForm-Details".
+
 ---
 
 ### tests/database/ — Database Unit-Tests
@@ -730,10 +736,30 @@ vom System-Locale der Baumaschine abhängen würden.
 | `test_refresh_noReferenceEntries_whenModelReturnsInvalid` | `latestBuy`/`latestSale` bleiben `ChartReferenceInfo{}` (ungültig) | Keine "Letzter Kauf"/"Letzter Verkauf"-Zeilen in der Legende |
 | `test_refresh_referenceLines_latestBuyIsBlueOlderIsTurquoise` | Zwei Käufe im Zeitraum (`buysInRange`, mit Preis+Stückzahl), einer davon der global letzte (ergänzt 12.07.2026) | Global letzter Kauf → `Qt::blue`, älterer Kauf → `QColor(0, 170, 170)` (Türkis); `kind`/`price`/`volume` korrekt aus `ChartReferenceInfo` übernommen |
 | `test_refresh_referenceLines_latestSaleIsRedOlderIsOrange` | Zwei Verkäufe im Zeitraum (`salesInRange`), einer davon der global letzte | Global letzter Verkauf → `Qt::red`, älterer Verkauf → `QColor(255, 140, 0)` (Orange); `kind == Sale`, `price` korrekt |
-| `test_refresh_referenceLines_onlyDatesWithinComputedRange` | `Interval=Day`, `Anzahl=5`; zwei Käufe, nur einer im berechneten Fenster | Nur das im Fenster liegende Datum erscheint in `setReferenceLines()` |
+| `test_refresh_referenceLines_onlyDatesWithinComputedRange` | `Interval=Day`, `Anzahl=5`; zwei Käufe, nur einer im berechneten Fenster; zweiter, deutlich älterer Tageswert (01.05.2026) in der Fixture, damit die seit 12.07.2026 bestehende Anzahl-Kappung das Fenster nicht auf 1 zurückstutzt (siehe unten) | Nur das im Fenster liegende Datum erscheint in `setReferenceLines()` |
 | `test_loadAndDisplay_noData_clearsReferenceLines` | Keine Tageswerte vorhanden | `setReferenceLines({})` wird trotzdem aufgerufen (leere Liste, kein veralteter Zustand) |
 | `test_onControlsChanged_beforeAnyData_doesNotCrashOrRefresh` | `onControlsChanged()` ohne vorheriges `loadAndDisplay()` | Kein `setChartData()`/`showEmptyChart()`-Aufruf (internes `m_hasData`-Guard) |
 | `test_onControlsChanged_afterLoad_reflectsNewIntervalCount` | Interval/Anzahl nach dem ersten Laden geändert | Serie wird bei erneutem `onControlsChanged()` mit dem neuen Zeitfenster neu berechnet |
+
+**Anzahl-Kappung (ergänzt 12.07.2026 auf Nessies Vorgabe, siehe
+ARCHITECTURE.md "ChartForm-Details"):** `FakeModelChart::earliestDailyValueDate()`
+liefert das kleinste Datum über **alle** `m_dailyValues` hinweg (nicht auf
+das gerade abgefragte Fenster beschränkt) — spiegelt damit exakt
+`DailyValuesRepository::earliestDate()` gegen die volle Historie in der DB.
+`FakeModelChart::lastQueryFrom`/`lastQueryTo` erfassen zusätzlich die zuletzt
+an `loadDailyValues()` übergebene Spanne, um zu beweisen, dass wirklich die
+*gekappte* Anfrage abgesetzt wird — nicht nur, dass das Ergebnis zufällig
+gleich aussieht. `FakeViewChart::setMaxIntervalCount()` klemmt bewusst
+**nicht** automatisch (anders als das echte `QSpinBox::setMaximum()`), damit
+die Tests wirklich die Presenter-seitige `std::min()`-Klemmung prüfen, nicht
+ein zufälliges Zusammenspiel mit View-Verhalten.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_refresh_setsMaxIntervalCount_basedOnEarliestDailyValue` | Ältester Wert 01.07.2026, Start-Datum 10.07.2026, `Interval=Day` | `setMaxIntervalCount(9)` — 9 Tage zwischen ältestem Wert und Start-Datum |
+| `test_refresh_intervalCountBeyondMax_clampsQueryToEarliestDate` | `Anzahl=50` angefordert, aber nur 9 Tage Historie vorhanden | `lastMaxIntervalCount == 9`; `FakeModelChart::lastQueryFrom == 01.07.2026` (nicht 22.05.2026, wie die ungekappte Anzahl 50 ergäbe) |
+| `test_refresh_singleValueAtRangeEnd_maxIntervalCountStaysAtOne` | Einziger Tageswert exakt am Start-Datum selbst | `setMaxIntervalCount(1)` — nichts Älteres zu erreichen |
+| `test_onControlsChanged_countAboveMax_clampsEffectiveQueryRange` | Nach `loadAndDisplay()` wird `Anzahl` per `onControlsChanged()` auf 50 gesetzt (simuliert Mausrad-/Spinbox-Event über die Grenze hinaus) | `lastMaxIntervalCount == 9`, `lastQueryFrom` bleibt auf die gekappte Spanne begrenzt |
 
 Bewusst weiterhin **nicht** getestet: `ViewChart` selbst (QtCharts-Rendering,
 Achsen-Rebuild, Legende-Layout, Hover-Tooltip via `onSeriesHovered()`,

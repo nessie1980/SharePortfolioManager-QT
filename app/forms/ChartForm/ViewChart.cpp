@@ -271,6 +271,18 @@ void ViewChart::setDefaultStartDate(const QDate& date)
     m_startDateEdit->setDate(date);
 }
 
+void ViewChart::setMaxIntervalCount(int maxCount)
+{
+    // Geblockt: PresenterChart::refresh() ruft dies bei jedem Refresh auf —
+    // der dabei ausgelöste interne Clamp (falls der aktuelle Wert die neue
+    // Obergrenze überschreitet) darf kein valueChanged() feuern und damit
+    // einen erneuten, rekursiven onControlsChanged()-Aufruf auslösen. Der
+    // angezeigte Wert wird trotzdem korrekt geklemmt — QSpinBox hält seinen
+    // internen Wert unabhängig vom Signal immer innerhalb [minimum, maximum].
+    const QSignalBlocker blocker(m_countSpin);
+    m_countSpin->setMaximum(std::max(1, maxCount));
+}
+
 void ViewChart::setChartData(const QList<ChartSeriesData>& series)
 {
     m_stack->setCurrentIndex(0);
