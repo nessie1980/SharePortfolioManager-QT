@@ -15,13 +15,14 @@
 ViewShareDetails::ViewShareDetails(const QString& shareGuid, bool marketValueMode, QWidget* parent)
     : QDialog(parent)
     , m_presenter(*this, m_model, shareGuid, marketValueMode)
+    , m_shareGuid(shareGuid)
 {
     setObjectName(QStringLiteral("ViewShareDetails"));
-    // TODO: once the chart tab computes a display window, restore the C#
-    // reference's full title ("{Name} - Zeitraum: ... / Entwicklung: ...").
-    // For now the window title is just the share name (setHeaderName()).
-    setMinimumSize(900, 600);
-    resize(1100, 700);
+    // Nochmals verbreitert (12.07.2026, zweite Anpassung) — Ziel: die langen
+    // Legende-Zeilen ("422,40€ - 198,36€ = 224,04€ (112,95 %)") sollen nach
+    // Möglichkeit immer einzeilig bleiben, nicht nur meistens.
+    setMinimumSize(1150, 600);
+    resize(1550, 780);
 
     setupUi();
 
@@ -69,22 +70,11 @@ void ViewShareDetails::setupUi()
 
 void ViewShareDetails::setupChartTab()
 {
-    // Placeholder — the chart itself is tracked as its own ChartForm work
-    // item (see ARCHITECTURE.md, "Offene Punkte / TODO") and intentionally
-    // not embedded here yet, even though the C# reference has it as tab 1
-    // of this same dialog.
-    auto* placeholder = new QWidget();
-    placeholder->setObjectName(QStringLiteral("chartPlaceholder"));
+    auto* chartView = new ViewChart(m_shareGuid, m_tabs);
+    connect(chartView, &ViewChart::titleInfoChanged,
+            this, &ViewShareDetails::onChartTitleInfoChanged);
 
-    auto* layout = new QVBoxLayout(placeholder);
-    auto* label  = new QLabel(tr("Der Aktien-Chart ist noch nicht implementiert."));
-    label->setAlignment(Qt::AlignCenter);
-    QFont f = label->font();
-    f.setItalic(true);
-    label->setFont(f);
-    layout->addWidget(label);
-
-    m_tabs->addTab(placeholder, tr("Aktien-Chart"));
+    m_tabs->addTab(chartView, tr("Aktien-Chart"));
 }
 
 // ── setupDepotwertTab ─────────────────────────────────────────────────────────
@@ -155,6 +145,7 @@ QGroupBox* ViewShareDetails::createCalculationBox(const QString& title, QGridLay
 
 void ViewShareDetails::setHeaderName(const QString& name)
 {
+    m_headerName = name;
     setWindowTitle(name);
 }
 
@@ -200,6 +191,18 @@ void ViewShareDetails::showError(const QString& message)
 void ViewShareDetails::closeDialog()
 {
     QDialog::reject();
+}
+
+// ── onChartTitleInfoChanged ───────────────────────────────────────────────────
+
+void ViewShareDetails::onChartTitleInfoChanged(const QString& infoText)
+{
+    // Empty infoText (no daily values at all for this share) -> fall back to
+    // just the share name, same title as before ChartForm existed. This also
+    // keeps test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText
+    // passing unchanged for shares without seeded daily values.
+    setWindowTitle(infoText.isEmpty() ? m_headerName
+                                       : QStringLiteral("%1 - %2").arg(m_headerName, infoText));
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

@@ -617,9 +617,12 @@ Executable: `tst_sharedetailsform`
 Klasse unter Test: `PresenterShareDetails`
 
 @note Deckt "Komplette Depotbewertung" **und** "Komplette Marktbewertung" ab
-(siehe ARCHITECTURE.md, "ShareDetailsForm-Details") — Chart-Tab (Platzhalter)
-sowie Gewinne/Verluste-, Dividenden- und Kosten-Tabs sind weiterhin
-zurückgestellt und haben dementsprechend noch keine Tests.
+(siehe ARCHITECTURE.md, "ShareDetailsForm-Details"). Der Aktien-Chart-Tab
+selbst ist seit 12.07.2026 implementiert — seine Tests liegen in einer
+eigenen Executable, `tst_chartform` (siehe eigener Abschnitt unten), analog
+zur Trennung von `tst_sharedetailsform`/`tst_shareeditform`. Gewinne/
+Verluste-, Dividenden- und Kosten-Tabs sind weiterhin zurückgestellt und
+haben dementsprechend noch keine Tests.
 
 @note Wie schon beim vorherigen Anlauf: **weder** Datenbank **noch**
 `QWidget` **noch** `ShareCalculator` werden instanziiert.
@@ -683,6 +686,49 @@ Bewusst weiterhin **nicht** getestet: der "gültige GUID → `dlg.exec()`"-Pfad
 in `onPortfolioRowDoubleClicked()` selbst — ein echter modaler `QDialog::exec()`
 würde den (headless) Testlauf blockieren, exakt dieselbe Konvention wie bei
 `onEditShare()`/`onDeleteShare()` in derselben Datei.
+
+---
+
+#### tst_chartform — ChartForm (implementiert 12.07.2026)
+
+Executable: `tst_chartform`
+Klasse unter Test: `PresenterChart`
+
+@note Gleiches Fake-View/Fake-Model-Muster wie `tst_sharedetailsform`: kein
+`QWidget`, keine Qt-Charts-Instanziierung, keine Datenbank.
+`FakeModelChart::latestBuy()`/`latestSale()` geben direkt ein von Hand
+befülltes `ChartReferenceInfo` zurück, ohne echte `BuyObject`/`SaleObject`-
+Instanzen zu benötigen. `initTestCase()` setzt `QLocale::setDefault(QLocale::
+German)` explizit, da dieses Test-Target (anders als die volle App)
+`AppStartup.cpp` nicht mitkompiliert und die Zahlenformat-Assertions sonst
+vom System-Locale der Baumaschine abhängen würden.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_loadAndDisplay_noData_showsEmptyAndClearsRangeInfo` | `latestDailyValueDate()` liefert ungültiges `QDate` | `showEmptyChart()` aufgerufen, `setDefaultStartDate()` **nicht** aufgerufen, `setRangeInfo("")` |
+| `test_loadAndDisplay_withData_setsDefaultStartDateToLatest` | Ein Tageswert vorhanden | `setDefaultStartDate()` erhält das späteste Datum aus `daily_values` |
+| `test_refresh_defaultSelection_onlyClosingPriceSeries` | Default-Selektion der Fake-View (nur `ClosingPrice`) | `setChartData()` enthält genau eine Serie mit den `closingPrice()`-Werten, `axis == ChartAxis::Price` |
+| `test_refresh_dayInterval_computesCorrectRangeStart` | `Interval=Day`, `Anzahl=5`, Start-Datum 10.07.2026 | Nur Tageswerte ab (inkl.) 05.07.2026 landen in der Serie — bestätigt `computeRangeStart()` |
+| `test_refresh_heldVolumeSeries_usesModelValuesAndOwnAxis` | `HeldVolume` selektiert | Serie übernimmt `ModelChart::heldVolumeSeries()`-Werte 1:1, `axis == ChartAxis::HeldVolume` |
+| `test_refresh_tradedVolumeSeries_usesDailyValuesVolumeAndOwnAxis` | `TradedVolume` selektiert (ergänzt 12.07.2026) | Serie übernimmt `DailyValuesObject::volume()` direkt (kein Model-Aufruf nötig), `axis == ChartAxis::TradedVolume` |
+| `test_refresh_heldAndTradedVolume_useDifferentAxes` | `HeldVolume` **und** `TradedVolume` gleichzeitig selektiert | Beide Serien tragen unterschiedliche `ChartAxis`-Werte — eigene dritte Achse statt geteilter Achse (Umstellung 12.07.2026, nach visueller Prüfung durch Nessie) |
+| `test_refresh_noSeriesSelected_showsEmptyMessage` | Alle Selektions-Checkboxen deaktiviert | `showEmptyChart()` statt `setChartData()`, trotz vorhandener Tageswerte |
+| `test_refresh_legendEntries_minMaxForClosingPrice` | Zwei Tageswerte (379,70€/422,40€) | Legende-Eintrag "Schluss-Kurs" enthält beide Werte in der Min/Max-Zeile |
+| `test_refresh_legendEntries_lastBuyAndSaleReference` | `latestBuy`/`latestSale` gesetzt (12.05.2022, 198,36€ bzw. 27.02.2020, 205,25€) | Legende enthält "Letzter Kauf"/"Letzter Verkauf" mit Datum, Preis und Entwicklung (224,04€) relativ zum Range-Max-Schlusskurs |
+| `test_refresh_noReferenceEntries_whenModelReturnsInvalid` | `latestBuy`/`latestSale` bleiben `ChartReferenceInfo{}` (ungültig) | Keine "Letzter Kauf"/"Letzter Verkauf"-Zeilen in der Legende |
+| `test_refresh_referenceLines_latestBuyIsBlueOlderIsTurquoise` | Zwei Käufe im Zeitraum (`buysInRange`, mit Preis+Stückzahl), einer davon der global letzte (ergänzt 12.07.2026) | Global letzter Kauf → `Qt::blue`, älterer Kauf → `QColor(0, 170, 170)` (Türkis); `kind`/`price`/`volume` korrekt aus `ChartReferenceInfo` übernommen |
+| `test_refresh_referenceLines_latestSaleIsRedOlderIsOrange` | Zwei Verkäufe im Zeitraum (`salesInRange`), einer davon der global letzte | Global letzter Verkauf → `Qt::red`, älterer Verkauf → `QColor(255, 140, 0)` (Orange); `kind == Sale`, `price` korrekt |
+| `test_refresh_referenceLines_onlyDatesWithinComputedRange` | `Interval=Day`, `Anzahl=5`; zwei Käufe, nur einer im berechneten Fenster | Nur das im Fenster liegende Datum erscheint in `setReferenceLines()` |
+| `test_loadAndDisplay_noData_clearsReferenceLines` | Keine Tageswerte vorhanden | `setReferenceLines({})` wird trotzdem aufgerufen (leere Liste, kein veralteter Zustand) |
+| `test_onControlsChanged_beforeAnyData_doesNotCrashOrRefresh` | `onControlsChanged()` ohne vorheriges `loadAndDisplay()` | Kein `setChartData()`/`showEmptyChart()`-Aufruf (internes `m_hasData`-Guard) |
+| `test_onControlsChanged_afterLoad_reflectsNewIntervalCount` | Interval/Anzahl nach dem ersten Laden geändert | Serie wird bei erneutem `onControlsChanged()` mit dem neuen Zeitfenster neu berechnet |
+
+Bewusst weiterhin **nicht** getestet: `ViewChart` selbst (QtCharts-Rendering,
+Achsen-Rebuild, Legende-Layout, Hover-Tooltip via `onSeriesHovered()`,
+Rendering der Kauf-/Verkauf-Markerlinien via `setReferenceLines()`) —
+analog zur bestehenden Konvention, dass reine Qt-Widgets-Views ohne eigene
+Logik nicht isoliert unit-getestet werden, solange der Presenter (der die
+eigentliche Logik trägt) abgedeckt ist.
 
 ---
 
@@ -1587,6 +1633,7 @@ müssen den Text vor dem `setFieldOk`-Aufruf setzen.
 | `Qt6::Test` | Qt Test Framework |
 | `Qt6::Sql` | SQLite-Datenbankzugriff |
 | `Qt6::Widgets` | Widget-Tests |
+| `Qt6::Charts` | `tst_mainwindow` (kompiliert `ViewShareDetails.cpp` → `ViewChart.h`) |
 | `Logger` (statisch) | Logger-Lib |
 | `Parser` (statisch) | Parser-Lib |
 | `Database` (statisch) | Database-Lib — wird gelinkt, nicht direkt eingebunden |

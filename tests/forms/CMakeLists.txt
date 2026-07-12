@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Test Sql Widgets Multimedia Network)
+find_package(Qt6 REQUIRED COMPONENTS Test Sql Widgets Multimedia Network Charts)
 
 qt_add_resources(FORM_TEST_RESOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../../app/resources/resources.qrc
@@ -39,6 +39,15 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/forms/ShareDetailsForm/PresenterShareDetails.cpp
     ../../app/forms/ShareDetailsForm/ViewShareDetails.h
     ../../app/forms/ShareDetailsForm/ViewShareDetails.cpp
+    ../../app/forms/ChartForm/ChartTypes.h
+    ../../app/forms/ChartForm/IViewChart.h
+    ../../app/forms/ChartForm/IModelChart.h
+    ../../app/forms/ChartForm/ModelChart.h
+    ../../app/forms/ChartForm/ModelChart.cpp
+    ../../app/forms/ChartForm/PresenterChart.h
+    ../../app/forms/ChartForm/PresenterChart.cpp
+    ../../app/forms/ChartForm/ViewChart.h
+    ../../app/forms/ChartForm/ViewChart.cpp
     ../../app/forms/BuysForm/IViewBuyEdit.h
     ../../app/forms/BuysForm/IModelBuyEdit.h
     ../../app/forms/BuysForm/ModelBuyEdit.h
@@ -111,7 +120,7 @@ set_target_properties(tst_mainwindow PROPERTIES
 )
 
 target_link_libraries(tst_mainwindow
-    PRIVATE Qt6::Test Qt6::Sql Qt6::Widgets Qt6::Multimedia Qt6::Network Database Logger Parser
+    PRIVATE Qt6::Test Qt6::Sql Qt6::Widgets Qt6::Multimedia Qt6::Network Qt6::Charts Database Logger Parser
 )
 
 if(Qt6PdfWidgets_FOUND)
@@ -372,3 +381,41 @@ target_link_libraries(tst_sharedetailsform
 )
 
 add_test(NAME tst_sharedetailsform COMMAND tst_sharedetailsform)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_chartform — PresenterChart (Fake-View/Fake-Model, siehe ARCHITECTURE.md
+# "ChartForm-Details"). Kein QWidget, keine QtCharts-Instanziierung, keine DB —
+# läuft ausschließlich gegen die Fake-Implementierungen von IViewChart/
+# IModelChart, analog tst_sharedetailsform. Braucht nur DailyValuesObject.cpp
+# (für dessen einfachen POCO-Konstruktor) als Compile-Abhängigkeit — Buy-/
+# SaleObject werden nicht gebraucht, da FakeModelChart::latestBuy()/
+# latestSale() direkt ChartReferenceInfo zurückgeben, ohne echte Buy-/
+# SaleObject-Instanzen.
+# ─────────────────────────────────────────────────────────────────────────────
+
+qt_add_executable(tst_chartform tst_chartform.cpp
+    ../../app/forms/ChartForm/ChartTypes.h
+    ../../app/forms/ChartForm/IViewChart.h
+    ../../app/forms/ChartForm/IModelChart.h
+    ../../app/forms/ChartForm/PresenterChart.h
+    ../../app/forms/ChartForm/PresenterChart.cpp
+    ../../app/models/DailyValuesObject.cpp
+)
+
+target_include_directories(tst_chartform
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/ChartForm
+)
+
+set_target_properties(tst_chartform PROPERTIES
+    AUTOMOC ON
+)
+
+# Qt6::Gui wird ausschließlich für QColor (ChartTypes.h) benötigt — kommt
+# bereits transitiv über die oben angeforderte Komponente Widgets mit, eine
+# eigene find_package()-Komponente ist dafür nicht nötig (siehe tst_sharedetailsform).
+target_link_libraries(tst_chartform
+    PRIVATE Qt6::Test Qt6::Core Qt6::Gui
+)
+
+add_test(NAME tst_chartform COMMAND tst_chartform)

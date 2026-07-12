@@ -119,8 +119,15 @@ set(APP_SOURCES
     forms/ShareDetailsForm/PresenterShareDetails.cpp
     forms/ShareDetailsForm/ViewShareDetails.h
     forms/ShareDetailsForm/ViewShareDetails.cpp
-    forms/ChartForm/ChartForm.h
-    forms/ChartForm/ChartForm.cpp
+    forms/ChartForm/ChartTypes.h
+    forms/ChartForm/IViewChart.h
+    forms/ChartForm/IModelChart.h
+    forms/ChartForm/ModelChart.h
+    forms/ChartForm/ModelChart.cpp
+    forms/ChartForm/PresenterChart.h
+    forms/ChartForm/PresenterChart.cpp
+    forms/ChartForm/ViewChart.h
+    forms/ChartForm/ViewChart.cpp
 
     # ── Forms – Settings ──────────────────────────────────────────────────
     forms/LoggerSettingsForm/LoggerSettingsForm.h
@@ -177,6 +184,7 @@ target_link_libraries(SharePortfolioManager
         Qt6::Sql
         Qt6::Network
         Qt6::Multimedia
+        Qt6::Charts
         Database
         Logger
         Parser

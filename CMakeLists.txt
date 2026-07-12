@@ -23,6 +23,7 @@ find_package(Qt6 REQUIRED COMPONENTS
     Sql
     Network
     Multimedia
+    Charts              # ChartForm — Aktien-Chart-Tab in ShareDetailsForm
     LinguistTools      # lupdate / lrelease for i18n
     OPTIONAL_COMPONENTS
     Pdf

@@ -12,6 +12,7 @@
 #include "IViewShareDetails.h"
 #include "ModelShareDetails.h"
 #include "PresenterShareDetails.h"
+#include "../ChartForm/ViewChart.h"
 
 /**
  * @brief Read-only share-details dialog — ported from the C# reference's
@@ -22,8 +23,8 @@
  * which passes marketValueMode based on which table the double-click came from.
  *
  * Current scope (see ARCHITECTURE.md, "ShareDetailsForm-Details"):
- * - "Aktien-Chart" tab: placeholder only — the actual chart is tracked as
- *   its own ChartForm work item and not embedded here (yet).
+ * - "Aktien-Chart" tab: embeds ViewChart (own MVP triad, see ChartForm/) —
+ *   implemented 12.07.2026.
  * - "Komplette Depotbewertung" / "Komplette Marktbewertung" tab: three
  *   "Bestandsberechnung" boxes (Gesamt/Vortag/Aktuelle), rendered as vertical
  *   calculation rows rather than the C# reference's multi-column WinForms
@@ -78,6 +79,18 @@ public:
     void showError(const QString& message) override;
     void closeDialog() override;
 
+private slots:
+    /**
+     * @brief Combines the share name with ViewChart's "Zeitraum: ... /
+     * Entwicklung: ..." info into the full window title — restores the C#
+     * reference's title format, deferred until the chart tab existed
+     * (see ViewShareDetails.cpp, setHeaderName()).
+     * @param infoText  Empty string if ViewChart has no range info yet
+     *                  (e.g. no daily values at all for this share) — in
+     *                  that case the title falls back to just the share name.
+     */
+    void onChartTitleInfoChanged(const QString& infoText);
+
 private:
     // ── Setup ──────────────────────────────────────────────────────────────
     void setupUi();
@@ -94,6 +107,8 @@ private:
     ModelShareDetails     m_model;
     PresenterShareDetails m_presenter;
     bool                  m_validShare = false;
+    QString               m_shareGuid;  ///< Stored for setupChartTab() (ViewChart construction).
+    QString               m_headerName; ///< Share name, combined with ViewChart's range info for the window title.
 
     // ── Widgets ────────────────────────────────────────────────────────────
     QLabel*     m_statusLine        = nullptr;

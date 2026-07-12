@@ -15,6 +15,7 @@ Entwickelt mit Qt/C++ für Windows und Linux.
 | Bereich | Technologie | Begründung |
 | ------ | ------ | ------ |
 | UI-Framework | Qt Widgets | Plattformunabhängig, ausgereift |
+| Charting | Qt Charts (Qt6::Charts) | Offizielles Qt-Modul, keine eigene QPainter-Chart-Implementierung nötig (Aktien-Chart-Tab in ShareDetailsForm) |
 | Datenspeicherung | SQLite (QSqlDatabase) | Filterung per SQL, skalierbar, kein Server nötig |
 | Mehrsprachigkeit | Qt i18n (.ts / .qm) | Eingebaut, kein Neubuild bei Sprachwechsel |
 | HTTP / REST | QNetworkAccessManager | Eingebaut in Qt, async, plattformübergreifend |
@@ -123,6 +124,7 @@ tst_buysform            ← BuysForm (ModelBuyEdit, PresenterBuyEdit, ViewBuyEdi
 tst_shareeditform       ← ViewShareEdit + alle vier Sub-Form-Trios als Compile-Dep. (BuysForm, SalesForm, DividendForm, BrokeragesForm) + alle Repositories
 tst_backupsettingsform  ← BackupSettingsForm + AppSettings, IconProvider (kein DB-/MainWindow-Bezug)
 tst_sharedetailsform    ← PresenterShareDetails über Fake-View/Fake-Model (IViewShareDetails, IModelShareDetails) — keine DB, keine Qt-Widgets, kein ShareCalculator
+tst_chartform           ← PresenterChart über Fake-View/Fake-Model (IViewChart, IModelChart) — keine DB, keine Qt-Widgets, keine Qt-Charts-Instanziierung
 @endcode
 
 ---
@@ -188,8 +190,8 @@ austauschbar und isoliert testbar.
 | OwnMessageBox | `forms/OwnMessageBoxForm/` | ✅ implementiert |
 | BackupProgressForm | `forms/BackupProgressForm/` | ✅ implementiert |
 | BackupSettingsForm | `forms/BackupSettingsForm/` | ✅ implementiert (08.07.2026) |
-| ShareDetailsForm | `forms/ShareDetailsForm/` | 🟨 MVP-Struktur steht, Depotwert- und Marktwert-Box implementiert (10.07.2026) — siehe Detailabschnitt |
-| ChartForm | `forms/ChartForm/` | ⬜ Dateien vorhanden, leer |
+| ShareDetailsForm | `forms/ShareDetailsForm/` | 🟨 MVP-Struktur steht, Depotwert-/Marktwert-Box und Aktien-Chart-Tab implementiert (12.07.2026) — siehe Detailabschnitt |
+| ChartForm | `forms/ChartForm/` | ✅ implementiert (12.07.2026), eingebettet als Tab 1 von ShareDetailsForm — siehe "ChartForm-Details" |
 
 @note **ShareDetailsForm — Umfang dieser Iteration (09.07.2026):** Nach
 Abgleich mit der C#-Referenzimplementierung (`FrmShareDetails` +
@@ -963,7 +965,7 @@ Die **Typ-Spalte** unterscheidet die Herkunft eines Eintrags:
 
 ---
 
-### ShareDetailsForm-Details (Depotwert-Box implementiert 09.07.2026)
+### ShareDetailsForm-Details (Depotwert-Box implementiert 09.07.2026, Aktien-Chart-Tab implementiert 12.07.2026)
 
 Reine Anzeige-Form (kein Speichern, keine Bearbeitung), Portierung von
 `FrmShareDetails` aus der C#-Referenz. Geöffnet per Doppelklick auf eine Zeile
@@ -995,7 +997,7 @@ Modus zeigt Chart + Depotbewertung + die drei Jahres-Tab-Bereiche.
 
 | Teil | Status |
 | ------ | ------ |
-| Chart-Tab | ⬜ Platzhalter (eigenständiger Text "noch nicht implementiert") — bleibt eigenes `ChartForm`-Arbeitspaket, siehe "Offene Punkte / TODO" |
+| Chart-Tab | ✅ implementiert (12.07.2026) — eigene MVP-Triad (ChartForm/), eingebettet als Tab 1; siehe "ChartForm-Details" unten |
 | Komplette Depotbewertung | ✅ implementiert (09.07.2026) |
 | Komplette Marktbewertung | ✅ implementiert (10.07.2026), gegen echten Screenshot der C#-Referenz abgeglichen |
 | Formel-Validierung gegen echte DB | 🟨 begonnen (10.07.2026) mit einer Ein-Aktien-Datenbank (Allianz SE, 5 Käufe/1 Verkauf/10 Dividenden/reale Historie 2016–2026) — dabei den Rabatt-Bugfix (siehe unten) sowie eine irreführende Label-Benennung gefunden und korrigiert. Berechnungslogik selbst (`completePurchase`/`completePurchaseMarket`) gegen `ShareObjectFinalValue.cs` bestätigt. Validierung der tatsächlichen App-Anzeige (Screenshot-Vergleich) steht noch aus. |
@@ -1185,7 +1187,12 @@ wird `view->showError()` + `view->closeDialog()` aufgerufen (`loadAndDisplay()`
 liefert `false`) statt den Dialog leer offen zu lassen.
 
 `ViewShareDetails` — `QDialog`, implementiert `IViewShareDetails`. Tab 1
-("Aktien-Chart") ist ein reiner Platzhalter-Text. Tab 2 ("Komplette
+("Aktien-Chart") bettet `ViewChart` (eigenes MVP-Triad, siehe
+"ChartForm-Details" unten) direkt als Kind-Widget ein — `setupChartTab()`
+konstruiert es mit der im Konstruktor gespeicherten `m_shareGuid` und
+verbindet dessen `titleInfoChanged`-Signal mit `onChartTitleInfoChanged()`,
+das den Fenstertitel aus Aktienname + Zeitraum/Entwicklung zusammensetzt (s.u.).
+Tab 2 ("Komplette
 Depotbewertung"/"Komplette Marktbewertung", Titel dynamisch per
 `setBoxesTabTitle()`) enthält die graue "Letzte Website-Aktualisierung"-Zeile
 sowie drei `QGroupBox`en mit je einem generischen Operator/Label/Wert-
@@ -1211,6 +1218,285 @@ statt sich auf die automatische Qt-Übersetzung zu verlassen. Regressionstest:
   bestimmt `marketValueMode` anhand `table == m_marketValueTable`, konstruiert
   `ViewShareDetails`, prüft `hasValidShare()` und ruft nur bei Erfolg `exec()`
   auf.
+
+---
+
+### ChartForm-Details (implementiert 12.07.2026)
+
+Eigene MVP-Triad unter `forms/ChartForm/` (`IViewChart`/`IModelChart`/
+`ModelChart`/`PresenterChart`/`ViewChart`), portiert vom Chart-Tab der
+C#-Referenz (`FrmShareDetails`, Tab "Aktien-Chart"). Anders als die übrigen
+`*Edit`-Dialoge ist `ViewChart` ein `QWidget`, kein `QDialog` — es hat kein
+eigenständiges Lebenszyklus-Konzept, sondern wird von `ViewShareDetails::
+setupChartTab()` direkt als Tab 1 des dortigen `QTabWidget` eingebettet
+(gleiche Beziehung wie in der C#-Referenz zwischen `FrmShareDetails` und
+ihrem Chart-Tab).
+
+@code{.unparsed}
+┌── Aktien-Chart-Tab ────────────────────────────────────┬── Legende ─────┐
+│                                                         │  ● Schluss-... │
+│              QChartView (Qt Charts)                    │  ● Letzter...  │
+│                                                         ├── Selektion: ──┤
+│                                                         │  ☑ Schluss-Kurs│
+│                                                         │  ☐ Eröffnungs-…│
+│                                                         │  ☐ Höchstwert  │
+│                                                         │  ☐ Tiefstwert  │
+│                                                         │  ☐ Anteile     │
+│                                                         │  Start-Datum:  │
+│                                                         │  Interval:     │
+│                                                         │  Anzahl:       │
+└─────────────────────────────────────────────────────────┴────────────────┘
+@endcode
+
+**"Start-Datum" ist das Ende des Zeitraums, nicht der Anfang** — matcht die
+C#-Referenz exakt (Screenshot 12.07.2026: Start-Datum=10.7.2026,
+Interval=Month, Anzahl=1 → Zeitraum 10.06.2026–10.07.2026). Der Anfang wird
+in `PresenterChart::computeRangeStart()` rückwärts aus
+Start-Datum − (Anzahl × Interval-Einheit) berechnet (Tag/Woche/Monat/Jahr).
+Anders als der Name vermuten lässt, steuern Interval/Anzahl also nur die
+Größe des angezeigten Fensters, keine Aggregation der Datenpunkte — geplottet
+werden immer die rohen Tageswerte aus `daily_values` im berechneten Fenster.
+
+**Sechs Selektions-Checkboxen** (`SeriesKind`: `ClosingPrice`/`OpeningPrice`/
+`High`/`Low`/`HeldVolume`/`TradedVolume`) — Default nur `ClosingPrice` aktiv,
+wie im C#-Referenz-Screenshot. Jede Serie trägt ein `ChartAxis`-Feld
+(`Price`/`HeldVolume`/`TradedVolume`), das bestimmt, an welcher der drei
+unabhängigen Y-Achsen sie hängt:
+
+- `ClosingPrice`/`OpeningPrice`/`High`/`Low` → gemeinsame Preis-Achse links
+  (`QValueAxis`, "Preis (€)").
+- `HeldVolume` ("Anteile") → eigene Achse rechts, "Anteile" — im Portfolio
+  gehaltener Bestand, kumuliert aus Käufen/Verkäufen bis zum jeweiligen
+  Datum, berechnet in `ModelChart::heldVolumeSeries()` per Sweep über
+  sortierte Buy-/SaleRepository-Listen.
+- `TradedVolume` ("Gehandelte Anteile", ergänzt 12.07.2026 auf Nessies
+  Vorgabe — die C#-Referenz zeigt hier das an der Börse gehandelte
+  Tagesvolumen, nicht den Depotbestand) → eigene weitere Achse rechts,
+  "Gehandelte Anteile". Liest direkt `DailyValuesObject::volume()` (Spalte
+  `daily_values.volume`), kein eigener Model-Aufruf nötig, da dieser Wert
+  schon in den ohnehin geladenen Tageswerten steckt.
+
+@note **Ursprünglich (erste Version, 12.07.2026) teilten sich `HeldVolume`
+und `TradedVolume` eine gemeinsame Stück-Achse.** Nach Nessies visueller
+Prüfung ("das sieht nicht schön aus") auf eine dritte eigene Achse
+umgestellt — Depotbestand (meist zweistellig) und Börsenvolumen (oft
+fünf-/sechsstellig) unterscheiden sich zu stark in der Größenordnung, um
+gemeinsam lesbar zu sein. Qt Charts stapelt mehrere Achsen derselben
+Ausrichtung automatisch nebeneinander, daher können `HeldVolume` und
+`TradedVolume` beide auf `Qt::AlignRight` liegen, ohne sich zu überlappen.
+
+@note **Weiterhin nicht zufriedenstellend (Nessies Rückmeldung, 12.07.2026):**
+Die Drei-Achsen-Optik überzeugt noch nicht. Angedachte Alternative — die
+beiden Checkboxen gegenseitig exklusiv machen, statt an der Achsendarstellung
+weiterzufeilen — ist unter "Offene Punkte / TODO",
+"ChartForm: gegenseitiger Ausschluss 'Anteile'/'Gehandelte Anteile'" notiert.
+
+Alle Achsen werden bei jedem Refresh komplett neu aufgebaut
+(`ViewChart::rebuildAxes()`) statt nur die Range anzupassen, da sich die
+Menge der sichtbaren Serien jederzeit ändern kann.
+
+**"Legende"-Box statt Qt-Charts-eigener Legende:** `m_chart->legend()->hide()`
+— die rechte Box wird stattdessen manuell aus `PresenterChart`-formatierten
+`LegendEntry`-Zeilen aufgebaut (Farbquadrat + fett Titel + Min/Max-Zeile),
+da sie mehr zeigen muss als reine Serien-Namen: "Letzter Kauf:"/"Letzter
+Verkauf:" (aus `ModelChart::latestBuy()`/`latestSale()` — jeweils der letzte
+Eintrag der nach Datum aufsteigend sortierten `BuyRepository`/
+`SaleRepository`-Listen) mit der Entwicklung relativ zum höchsten Schluss-Kurs
+im aktuell angezeigten Zeitraum. Diese beiden Referenzzeilen erscheinen nur,
+wenn für die Aktie tatsächlich Käufe/Verkäufe existieren.
+
+**Fenstertitel:** `PresenterChart::refresh()` baut die Zeile "Zeitraum: ... -
+... / Entwicklung: X€ (Y %)" (erster/letzter Schluss-Kurs im Fenster) und
+gibt sie über `IViewChart::setRangeInfo()` an die View. `ViewChart` emittiert
+das unverändert als eigenes Qt-Signal `titleInfoChanged`, das
+`ViewShareDetails::onChartTitleInfoChanged()` mit dem gespeicherten
+Aktiennamen zum vollständigen C#-Referenz-Fenstertitel kombiniert. Gibt es
+für die Aktie gar keine Tageswerte, bleibt `infoText` leer und der Titel
+fällt auf den reinen Aktiennamen zurück — hält
+`test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText`
+unverändert grün.
+
+**Qt6 QComboBox-Interaktionssignal:** Die Interval-ComboBox verbindet
+`activated(int)`, nicht `currentIndexChanged(int)` — nur echte
+Nutzerauswahl soll `PresenterChart::onControlsChanged()` auslösen (gleiches
+Prinzip wie an anderer Stelle im Projekt bereits etabliert, siehe
+"Key learnings").
+
+@note **Bugfix (12.07.2026):** `clearLegendLayout()` hat die alten
+Zeilen-Widgets vor jedem `setLegendEntries()`-Aufruf bisher per
+`deleteLater()` entfernt. Da `deleteLater()` erst beim nächsten
+Event-Loop-Durchlauf löscht, blieb das alte (schon aus dem Layout entfernte)
+Widget bis dahin an seiner eingefrorenen Position sichtbar, während die neuen
+Zeilen direkt im selben Aufruf darüber gerendert wurden — sichtbar als
+überlappende "Letzter Kauf"/"Letzter Verkauf"-Zeilen, verstärkt durch jede
+zusätzlich aktivierte Selektions-Checkbox (Nessies Rückmeldung: "je mehr ich
+einblende, umso mehr wird rechts die Ausgabe gestaucht"). Behoben durch
+sofortiges `delete` statt `deleteLater()` — exakt dieselbe Konvention wie
+`ViewShareDetails::populateBox()`.
+
+@note **Bugfix (12.07.2026, zweiter Anlauf):** Der Fix oben behob die
+überlappenden "Letzter Kauf"/"Letzter Verkauf"-Zeilen nicht vollständig —
+Nessies nächster Screenshot zeigte weiterhin überlappenden Text zwischen
+`line1` und `line2` innerhalb dieser beiden Einträge, unabhängig von
+`deleteLater()` vs. `delete`. Statt weiter an der verschachtelten
+Konstruktion (QHBoxLayout → eigenes QVBoxLayout → drei einzelne QLabels pro
+Zeile) zu debuggen, wurde die Zeilendarstellung strukturell robuster gebaut:
+**ein einziges** `QLabel` pro Legende-Eintrag mit Rich-Text
+(`<b>Titel</b><br>Zeile1<br>Zeile2`, `setWordWrap(true)`) statt drei
+verschachtelter Widgets in einem eigenen Sub-Layout — damit gibt es pro
+Zeile nur noch eine einzige Widget-Geometrie zu berechnen.
+
+@note **Bugfix (12.07.2026, dritter und finaler Anlauf):** Auch das
+Rich-Text-Label löste das Problem nicht vollständig — Nessies dritter
+Screenshot zeigte die zweite Zeile ("422,40€ - 198,36€ = 224,04€
+(112,95 %)") bei "Letzter Kauf"/"Letzter Verkauf" komplett fehlend statt
+überlappend. Die eigentliche Ursache lag eine Ebene höher: Der rechte
+Bereich (Legende + Selektion) wurde bisher direkt als `QWidget` mit fester
+`setMaximumWidth(280)` ins `mainLayout` gehängt. Reichte die Dialoghöhe bei
+vielen aktiven Serien (bis zu 6 Checkboxen + 2 Referenzzeilen in der
+Legende) nicht aus, hat Qt die Labels unter ihre benötigte Höhe gequetscht —
+je nach Konstellation als überlappender Text (erster Screenshot) oder als
+abgeschnittene letzte Zeile (dieser Screenshot), aber in beiden Fällen
+dieselbe Ursache. Behoben durch eine `QScrollArea`
+(`setWidgetResizable(true)`, Scrollbar horizontal aus) um den gesamten
+rechten Bereich — der Inhalt bekommt jetzt immer seine volle benötigte Höhe
+und scrollt bei Bedarf, statt gestaucht zu werden. Die ersten beiden Fixes
+(sofortiges `delete`, Rich-Text-Label) bleiben trotzdem sinnvoll und wurden
+nicht zurückgebaut.
+
+@note **Dialog verbreitert (12.07.2026):** Auf Nessies Vorgabe zusätzlich der
+naheliegendere Weg genommen, statt sich allein auf die `QScrollArea` zu
+verlassen — `ViewShareDetails` ist jetzt von 900×600/1100×700 auf
+1050×600 (Minimum) / 1400×750 (Startgröße) verbreitert, der rechte Bereich
+in `ViewChart::setupUi()` von 280/300px auf 400/420px. Damit passen lange
+Legende-Zeilen wie "422,40€ - 198,36€ = 224,04€ (112,95 %)" ohne
+Zeilenumbruch, und Scrollen sollte im Normalfall gar nicht mehr nötig sein —
+die `QScrollArea` bleibt trotzdem als Absicherung bestehen (z. B. für sehr
+kleine Bildschirme oder falls künftig weitere Legende-Zeilen dazukommen).
+
+@note **Nochmals verbreitert (12.07.2026, zweite Anpassung):** Auf Nessies
+Vorgabe ("nach Möglichkeit alle Zeilen einzeilig") weiter erhöht —
+`ViewShareDetails` jetzt 1150×600 (Minimum) / 1550×780 (Startgröße), rechter
+Bereich in `ViewChart::setupUi()` von 400/420px auf 500/520px.
+
+@note **Bugfix (12.07.2026):** Die Verbreiterung des rechten Bereichs kam
+zunächst nicht an — `rightScroll` hatte nur `setMaximumWidth(520)`, aber
+keine Mindestbreite. Ohne Stretch-Faktor im umgebenden `QHBoxLayout` nimmt
+sich ein Widget nur so viel Platz, wie sein `sizeHint()` verlangt; die
+zusätzliche Dialogbreite floss komplett an den Chart (`m_stack`, Stretch-
+Faktor 1), der rechte Bereich blieb bei seiner alten, schmalen
+sizeHint-Breite hängen (Nessies Rückmeldung: "Dialog ist breiter, aber nicht
+die Legende"). Behoben durch `setFixedWidth(520)` statt
+`setMaximumWidth(520)`.
+
+@note **Zu breit, wieder reduziert (12.07.2026):** 520px war deutlich zu
+breit — Nessies Screenshot zeigte viel ungenutzten Leerraum rechts neben den
+Legende-Zeilen. Reduziert auf `setFixedWidth(380)` (360px Inhaltsbreite),
+ein moderateres Maß, das die längste Zeile weiterhin einzeilig zeigt. Die
+Dialoggröße selbst (1150×600 / 1550×780) blieb unverändert — der jetzt
+größere Chart-Anteil war nicht Teil der Rückmeldung.
+
+**Bugfix (12.07.2026):** Die Serienfarbe (`ChartSeriesData::color`, in
+`PresenterChart` vergeben — Schluss-Kurs Schwarz, Kauf/Verkauf-Referenzlinien
+Blau/Rot usw.) wurde bisher **vor** `m_chart->addSeries(line)` gesetzt.
+`QChart` wendet sein Theme aber beim Hinzufügen einer Serie an und
+überschreibt dabei eine vorher gesetzte Farbe wieder — Schluss-Kurs erschien
+dadurch blau (erste Theme-Farbe) statt schwarz, obwohl die "Legende"-Box
+(die unabhängig vom Chart-Theme aus `PresenterChart`-Daten gerendert wird)
+korrekt Schwarz zeigte. Nessie ist das an der Diskrepanz Legende ↔ Graph
+aufgefallen. Behoben durch `line->setColor(s.color)` **nach**
+`m_chart->addSeries(line)` in `ViewChart::setChartData()`.
+
+**Hover-Tooltip (ergänzt 12.07.2026):** Portiert vom C#-Referenz-Verhalten
+("Maus über den Graphen bewegen zeigt Datum + Wert als Tooltip"). Jede
+`QLineSeries` wird in `ViewChart::setChartData()` einzeln mit
+`onSeriesHovered()` verbunden (`QLineSeries::hovered(QPointF, bool)`) — Qt
+Charts hat kein chart-weites Hover-Signal, das zusätzlich verrät, welche
+Serie getroffen wurde, daher ein Connect pro Serie statt eines gemeinsamen.
+`point.x()` ist `msecsSinceEpoch` (gleiche Kodierung wie beim Befüllen der
+Serie), `point.y()` der Wert am nächstgelegenen Datenpunkt — Qt Charts liefert
+hier immer den nächsten tatsächlichen Datenpunkt, keine interpolierte
+Mausposition. Preis-Serien werden mit "€" und 2 Nachkommastellen formatiert,
+die beiden Stück-Serien (`HeldVolume`/`TradedVolume`) ohne Nachkommastellen —
+`QToolTip::showText(QCursor::pos(), ...)` bei `state == true`,
+`QToolTip::hideText()` bei `state == false` (Maus verlässt die Linie).
+
+**Vertikale Kauf-/Verkauf-Markerlinien (ergänzt 12.07.2026):** Portiert vom
+C#-Referenz-Verhalten — jeder Kauf/Verkauf, dessen Datum in den aktuell
+angezeigten Zeitraum fällt, bekommt eine gestrichelte vertikale Linie über
+die volle Höhe der Preis-Achse. Farbcodierung identisch zu den
+"Letzter Kauf"/"Letzter Verkauf"-Swatches in der Legende: der global letzte
+Kauf ist Blau, ältere im Zeitraum liegende Käufe Türkis (`QColor(0, 170,
+170)`); der global letzte Verkauf ist Rot, ältere Verkäufe Orange
+(`QColor(255, 140, 0)`, bewusst dunkler/roter als das Tiefstwert-Orange, um
+Verwechslungen zu vermeiden). "Global letzter Kauf/Verkauf" ist dieselbe
+Definition wie bei den Legende-Referenzzeilen (`IModelChart::latestBuy()`/
+`latestSale()`) — fällt der global letzte Kauf/Verkauf außerhalb des
+angezeigten Zeitraums, erscheinen im Zeitraum liegende ältere Käufe/Verkäufe
+trotzdem, nur eben ohne blaue/rote Linie.
+
+- `IModelChart::buyDatesInRange()`/`saleDatesInRange()` liefern alle
+  Kauf-/Verkaufsdaten im Bereich `[rangeStart, rangeEnd]`, `ModelChart`
+  filtert dafür `BuyRepository::findByShare()`/`SaleRepository::findByShare()`
+  clientseitig (keine neue Repository-Methode nötig).
+- `PresenterChart::refresh()` baut daraus `QList<ChartReferenceLine>` und
+  reicht sie über die neue `IViewChart::setReferenceLines()` an die View.
+- `ViewChart::setReferenceLines()` zeichnet jede Linie als eigene
+  `QLineSeries` mit zwei Punkten (`(x, yMin)`–`(x, yMax)` der aktuellen
+  `m_yAxisPrice`-Range, `Qt::DashLine`, `setPointsVisible(false)`) — ohne
+  Preis-Achse (nur "Anteile"/"Gehandelte Anteile" selektiert) werden keine
+  Linien gezeichnet, da es keine sinnvolle Y-Referenz gäbe.
+- Dieselbe Farb-nach-`addSeries()`-Reihenfolge wie beim Schluss-Kurs-Bugfix
+  oben (`m_chart->addSeries(series)` **vor** `series->setPen(...)`).
+- Eigene Widget-Verwaltung (`m_referenceLineSeries`) getrennt von den
+  Daten-Serien, damit `setReferenceLines()` gezielt nur die Markerlinien
+  austauschen kann. Da `setChartData()` aber `m_chart->removeAllSeries()`
+  aufruft (löscht *alle* Serien inkl. der Markerlinien), leert
+  `setChartData()` die Liste zusätzlich ohne erneutes `delete` — sonst würde
+  `setReferenceLines()` beim nächsten Aufruf auf bereits freigegebenen
+  Speicher zeigen. `setReferenceLines()` selbst prüft defensiv
+  `m_chart->series().contains(s)`, bevor es entfernt/löscht, für den Fall
+  eines Aufrufs ohne vorheriges `setChartData()`.
+
+**Hover-Tooltip für die Markerlinien (ergänzt 12.07.2026, zweiter Anlauf):**
+Auf Nessies Vorgabe nachgezogen — jede Kauf-/Verkauf-Markerlinie bekommt
+denselben Hover-Mechanismus wie die Daten-Serien, über einen eigenen Handler
+`ViewChart::onReferenceLineHovered()` statt `onSeriesHovered()`, da
+Markerlinien kein `SeriesKind` haben und Datum/Preis/Stückzahl schon direkt
+in der `ChartReferenceLine` stecken (keine Rückrechnung aus den
+Achsen-Koordinaten wie bei den Daten-Serien nötig). Tooltip-Text:
+"{Kauf/Verkauf}\n{Datum}: {Preis}€\n{Stückzahl} Stk.". Dafür musste
+`ChartReferenceInfo` um ein `volume`-Feld erweitert werden (nur von
+`buysInRange()`/`salesInRange()` befüllt, `latestBuy()`/`latestSale()` lassen
+es bei 0.0 — für die Legende weiterhin nicht gebraucht), und
+`IModelChart::buyDatesInRange()`/`saleDatesInRange()` (reine Datumslisten)
+wurden durch `buysInRange()`/`salesInRange()` (liefern `ChartReferenceInfo`
+mit Datum, Preis **und** Stückzahl) ersetzt.
+`ChartReferenceLine` trägt entsprechend zusätzlich `kind`
+(`ChartReferenceLineKind::Buy`/`Sale`, fürs Tooltip-Label), `price` und
+`volume` — für das reine Zeichnen der Linie selbst weiterhin nur `date` und
+`color` relevant, die Linie geht immer über die volle Preis-Achsen-Höhe.
+
+**Bewusste Vereinfachungen dieser ersten Iteration** (auf Wunsch bei
+Bedarf später verfeinerbar):
+- Zahlenformatierung in der Legende durchgängig mit 2 (Preis/Anteile) bzw.
+  0 Nachkommastellen (Anteile-Min/Max), nicht exakt wie im C#-Screenshot
+  (dort teils 1 Nachkommastelle).
+- Legende-Titeltext für "Letzter Kauf"/"Letzter Verkauf" ist in der
+  Swatch-Farbe (Blau/Rot) statt wie im Referenz-Screenshot grün.
+- Keine eigenen Legende-Einträge für "ältere Käufe"/"ältere Verkäufe"
+  (Türkis/Orange) — nur die Linien selbst im Chart, die Legende zeigt
+  weiterhin nur den jeweils letzten Kauf/Verkauf.
+
+**Tests (`tst_chartform`):** Fake-View/Fake-Model-Paar (analog
+`tst_sharedetailsform`) — kein `QWidget`, keine Qt-Charts-Instanziierung,
+keine Datenbank. Deckt ab: leerer/gefüllter Initialzustand, Default-Selektion
+(nur Schluss-Kurs), Zeitraum-Berechnung für Tag-/Monat-Intervall,
+Anteile-Serie inkl. eigener Achse, gehandelte Anteile (Börsenvolumen)
+inkl. eigener dritter Achse (unterschiedlich von Anteile), "keine Serie ausgewählt"-Leerzustand,
+Min/Max- sowie Letzter-Kauf/Verkauf-Legendenzeilen (inkl. Fehlen bei
+fehlenden Käufen/Verkäufen), und dass `onControlsChanged()` vor dem ersten
+`loadAndDisplay()` keinen Effekt hat.
 
 ---
 
@@ -1881,17 +2167,32 @@ Sprache ohne Neubuild änderbar durch Austausch der `.qm`-Datei.
 
 ## Offene Punkte / TODO
 
-### ShareDetailsForm: Chart-Tab, Gewinne/Dividenden/Kosten (offen, aktualisiert 10.07.2026)
+### ChartForm: gegenseitiger Ausschluss "Anteile"/"Gehandelte Anteile" (offen, notiert 12.07.2026)
+
+Nessie gefällt die aktuelle Drei-Achsen-Lösung (Preis links, Anteile und
+Gehandelte Anteile beide rechts, siehe "ChartForm-Details" oben) optisch
+noch nicht ausreichend. Statt weiter an der Achsen-Darstellung zu feilen,
+angedachte Alternative für eine spätere Session: die beiden Checkboxen
+`HeldVolume` ("Anteile") und `TradedVolume` ("Gehandelte Anteile") werden
+gegenseitig exklusiv — sobald eine der beiden angehakt ist, wird die andere
+in `ViewChart::setupSelektionBox()` deaktiviert (`QCheckBox::setEnabled(false)`),
+sodass zu jedem Zeitpunkt höchstens eine der beiden Volumen-Serien aktiv sein
+kann. Damit bräuchte es nur noch eine gemeinsame "Stück"-Achse statt der
+aktuellen dritten Achse — vereinfacht `ViewChart::rebuildAxes()` wieder
+zurück auf zwei Achsen (Preis + eine Volumen-Achse), macht aber
+`ChartAxis::HeldVolume`/`ChartAxis::TradedVolume` als getrennte Werte
+überflüssig (Rückbau auf ein `bool`- oder gemeinsames Enum-Feld möglich, je
+nachdem was zum Zeitpunkt der Umsetzung sauberer ist). Konkrete UI-Reaktion
+(ausgegraut vs. unsichtbar, Tooltip-Erklärung) noch nicht entschieden.
+
+### ShareDetailsForm: Gewinne/Dividenden/Kosten (offen, aktualisiert 12.07.2026)
 
 Nach Abgleich mit der C#-Referenz (`FrmShareDetails`) wurden die "Komplette
-Depotbewertung"- und "Komplette Marktbewertung"-Boxen neu gebaut (siehe
-"ShareDetailsForm-Details" oben). Zwei Teile bleiben bewusst offen:
+Depotbewertung"- und "Komplette Marktbewertung"-Boxen sowie der Chart-Tab
+neu gebaut (siehe "ShareDetailsForm-Details" und "ChartForm-Details" oben).
+Ein Teil bleibt bewusst offen:
 
-1. **Chart-Tab** — im C# Tab 1 dieses Dialogs (Aktien-Chart mit
-   Zeitraum-/Intervall-Auswahl), im Qt-Port bewusst als Platzhalter
-   zurückgestellt; bleibt eigenes `ChartForm`-Arbeitspaket (siehe
-   "Implementierte Forms" oben).
-2. **Gewinne/Verluste-, Dividenden-, Kosten-Tabs** — im C# je ein
+1. **Gewinne/Verluste-, Dividenden-, Kosten-Tabs** — im C# je ein
    verschachteltes TabControl (Übersicht + Jahres-Tabs), nur im Depotwert-
    Modus sichtbar. Sollen laut Vorgabe die bereits vorhandenen Übersicht-
    Widgets aus `ViewSaleEdit`/`ViewDividendEdit`/`ViewBrokerageEdit`
