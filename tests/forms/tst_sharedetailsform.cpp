@@ -9,6 +9,7 @@
 // (09.07.2026) - siehe ARCHITECTURE.md "ShareDetailsForm-Details".
 
 #include <QtTest>
+#include <QDateTime>
 
 #include "../../app/forms/ShareDetailsForm/PresenterShareDetails.h"
 
@@ -19,6 +20,8 @@ class FakeViewShareDetails : public IViewShareDetails
 public:
     QString headerName;
     QString statusLine;
+    QString websiteUpdateLine;
+    QString boxesTabTitle;
 
     CalculationRows gesamtRows;
     CalculationRows vortagRows;
@@ -29,6 +32,8 @@ public:
 
     void setHeaderName(const QString& name) override { headerName = name; }
     void setStatusLine(const QString& statusText) override { statusLine = statusText; }
+    void setWebsiteUpdateLine(const QString& statusText) override { websiteUpdateLine = statusText; }
+    void setBoxesTabTitle(const QString& title) override { boxesTabTitle = title; }
 
     void populateGesamtBox(const CalculationRows& rows) override { gesamtRows = rows; }
     void populateVortagBox(const CalculationRows& rows) override { vortagRows = rows; }
@@ -108,20 +113,87 @@ private slots:
 
     void test_loadAndDisplay_lastInternetUpdateSet_appearsInStatusLine()
     {
+        // Realistisches Eingabeformat: ShareObject::lastInternetUpdate() liefert
+        // den in der DB gespeicherten ISO-8601-String (z. B. "2026-07-09T20:34:00"),
+        // KEINEN bereits formatierten Text — bestätigt durch Prüfung der echten
+        // Allianz-SE-Validierungs-DB (11.07.2026). PresenterShareDetails muss ihn
+        // über QLocale formatieren (Länderschema-Bug, behoben 11.07.2026).
         FakeViewShareDetails view;
         FakeModelShareDetails model;
 
         model.share = ShareObject(QStringLiteral("g2"), QStringLiteral("XYZ001"),
                                    QStringLiteral("DE000XYZ0019"), QStringLiteral("Test AG"),
                                    ShareType::Fond);
-        model.share.setLastInternetUpdate(QStringLiteral("09.07.2026 20:34"));
+        const QString isoDateTime = QStringLiteral("2026-07-09T20:34:00");
+        model.share.setLastInternetUpdate(isoDateTime);
 
         PresenterShareDetails presenter(view, model, QStringLiteral("g2"));
         QVERIFY(presenter.loadAndDisplay());
 
-        QVERIFY(view.statusLine.contains(QStringLiteral("09.07.2026 20:34")));
+        const QLocale locale;
+        const QString expected = locale.toString(
+            QDateTime::fromString(isoDateTime, Qt::ISODate), QLocale::ShortFormat);
+
+        QVERIFY(view.statusLine.contains(expected));
+        // Regression: der rohe ISO-String darf NICHT mehr unformatiert durchgereicht werden.
+        QVERIFY(!view.statusLine.contains(isoDateTime));
         QVERIFY(!view.statusLine.contains(QStringLiteral("noch nicht aktualisiert")));
         QVERIFY(view.statusLine.contains(QStringLiteral("Fonds")));
+    }
+
+    void test_loadAndDisplay_malformedInternetUpdate_fallsBackToRawString()
+    {
+        // Kein gültiges ISO 8601 -> formatDateTime() zeigt den Rohwert statt
+        // die Zeile stillschweigend verschwinden zu lassen.
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("g2z"), QStringLiteral("XYZ00Z"),
+                                   QStringLiteral("DE000XYZ00Z1"), QStringLiteral("Test AG Z"));
+        model.share.setLastInternetUpdate(QStringLiteral("kein-datum"));
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("g2z"));
+        QVERIFY(presenter.loadAndDisplay());
+
+        QVERIFY(view.statusLine.contains(QStringLiteral("kein-datum")));
+    }
+
+    void test_loadAndDisplay_lastPriceUpdateSet_appearsInWebsiteUpdateLine()
+    {
+        // "Letzte Website-Aktualisierung" = Zeitpunkt der letzten Marktwert-/
+        // Kurs-Aktualisierung, bestätigt von Nessie (10.07.2026) — getrennt
+        // von lastInternetUpdate() (äußere StatusLine, allgemeines Update).
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+
+        model.share = ShareObject(QStringLiteral("g2b"), QStringLiteral("XYZ002"),
+                                   QStringLiteral("DE000XYZ0027"), QStringLiteral("Test AG 2"));
+        const QString isoDateTime = QStringLiteral("2026-07-10T11:53:00");
+        model.share.setLastPriceUpdate(isoDateTime);
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("g2b"));
+        QVERIFY(presenter.loadAndDisplay());
+
+        const QLocale locale;
+        const QString expected = locale.toString(
+            QDateTime::fromString(isoDateTime, Qt::ISODate), QLocale::ShortFormat);
+
+        QVERIFY(view.websiteUpdateLine.contains(expected));
+        QVERIFY(!view.websiteUpdateLine.contains(isoDateTime));
+        QVERIFY(!view.websiteUpdateLine.contains(QStringLiteral("noch nicht aktualisiert")));
+    }
+
+    void test_loadAndDisplay_noPriceUpdate_websiteUpdateLineShowsPlaceholder()
+    {
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("g2c"), QStringLiteral("XYZ003"),
+                                   QStringLiteral("DE000XYZ0035"), QStringLiteral("Test AG 3"));
+        // lastPriceUpdate() bleibt leer (default-konstruiert)
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("g2c"));
+        QVERIFY(presenter.loadAndDisplay());
+
+        QVERIFY(view.websiteUpdateLine.contains(QStringLiteral("noch nicht aktualisiert")));
     }
 
     void test_loadAndDisplay_gesamtBox_mapsShareValuesFieldsDirectly()
@@ -147,14 +219,21 @@ private slots:
 
         const QLocale locale;
 
-        const CalculationRow* purchase = FakeViewShareDetails::findRow(view.gesamtRows, QStringLiteral("Einzahlungen:"));
-        QVERIFY(purchase);
-        QCOMPARE(purchase->value, locale.toString(19376.00, 'f', 2) + QStringLiteral(" €"));
-        QVERIFY(purchase->emphasize);
+        const CalculationRow* bestandswert = FakeViewShareDetails::findRow(view.gesamtRows, QStringLiteral("Aktueller Bestandswert:"));
+        QVERIFY(bestandswert);
+        QCOMPARE(bestandswert->value, locale.toString(19376.00, 'f', 2) + QStringLiteral(" €"));
+        QVERIFY(bestandswert->emphasize);
 
         const CalculationRow* sales = FakeViewShareDetails::findRow(view.gesamtRows, QStringLiteral("Verkäufe:"));
         QVERIFY(sales);
         QCOMPARE(sales->value, locale.toString(33253.75, 'f', 2) + QStringLiteral(" €"));
+
+        // "Alle Einzahlungen:" — Label bewusst umbenannt gegenüber dem C#-Original
+        // ("Verkaufte Einzahlungen"), der Wert (completePurchase) ist die
+        // Summe ALLER Käufe (verkauft + gehalten), von Nessie bestätigt (10.07.2026).
+        const CalculationRow* allDeposits = FakeViewShareDetails::findRow(view.gesamtRows, QStringLiteral("Alle Einzahlungen:"));
+        QVERIFY(allDeposits);
+        QCOMPARE(allDeposits->value, locale.toString(39439.21, 'f', 2) + QStringLiteral(" €"));
 
         const CalculationRow* pl = FakeViewShareDetails::findRow(view.gesamtRows, QStringLiteral("Gewinn / Verlust (gesamt):"));
         QVERIFY(pl);
@@ -204,7 +283,7 @@ private slots:
 
         const QLocale locale;
 
-        const CalculationRow* diff = FakeViewShareDetails::findRow(view.vortagRows, QStringLiteral("Preis-Entw.:"));
+        const CalculationRow* diff = FakeViewShareDetails::findRow(view.vortagRows, QStringLiteral("Kurswert-Entw.:"));
         QVERIFY(diff);
         QCOMPARE(diff->value, locale.toString(41.90, 'f', 2) + QStringLiteral(" €"));
         QCOMPARE(diff->color, QColor(QStringLiteral("green")));
@@ -228,7 +307,7 @@ private slots:
         PresenterShareDetails presenter(view, model, QStringLiteral("g6"));
         QVERIFY(presenter.loadAndDisplay());
 
-        const CalculationRow* diff = FakeViewShareDetails::findRow(view.vortagRows, QStringLiteral("Preis-Entw.:"));
+        const CalculationRow* diff = FakeViewShareDetails::findRow(view.vortagRows, QStringLiteral("Kurswert-Entw.:"));
         QVERIFY(diff);
         QCOMPARE(diff->color, QColor(Qt::red));
 
@@ -268,6 +347,155 @@ private slots:
         QVERIFY(sum);
         QCOMPARE(sum->value, locale.toString(19123.80, 'f', 2) + QStringLiteral(" €"));
         QVERIFY(sum->emphasize);
+    }
+
+    // ── Marktwert-Modus (marketValueMode = true) ────────────────────────────
+    // Fixture-Werte sind der echten C#-Referenz entnommen (Screenshot
+    // "AGIF-Allianz Glo.Eq.Insights", 10.07.2026) und wie folgt gegengerechnet:
+    //   sum        = curValue + salePayoutMarket      = 37969.39 + 7766.03 = 45735.42
+    //   profitLoss = sum - completePurchaseMarket      = 45735.42 - 29442.56 = 16292.86
+    //   profitPct  = profitLoss / completePurchaseMarket * 100 = 55.34 %
+    //   marketValue (Aktuelle "Summe") = curValue + saleProfitLoss = 37969.39 + 152.82 = 38122.21
+
+    void test_loadAndDisplay_marketMode_setsTabTitle()
+    {
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("m1"), QStringLiteral("AGIF001"),
+                                   QStringLiteral("LU0000000001"),
+                                   QStringLiteral("AGIF-Allianz Glo.Eq.Insights"), ShareType::Fond);
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("m1"), /*marketValueMode=*/true);
+        QVERIFY(presenter.loadAndDisplay());
+
+        QCOMPARE(view.boxesTabTitle, QStringLiteral("Komplette Marktbewertung"));
+    }
+
+    void test_loadAndDisplay_depotwertMode_setsTabTitle()
+    {
+        // Regression: default (marketValueMode = false) must still say
+        // "Komplette Depotbewertung", unaffected by the new parameter.
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("m2"), QStringLiteral("WKN002"),
+                                   QStringLiteral("ISIN0000002"), QStringLiteral("Zwei AG"));
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("m2"));
+        QVERIFY(presenter.loadAndDisplay());
+
+        QCOMPARE(view.boxesTabTitle, QStringLiteral("Komplette Depotbewertung"));
+    }
+
+    void test_loadAndDisplay_marketMode_gesamtBox_matchesScreenshotValues()
+    {
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("m3"), QStringLiteral("AGIF001"),
+                                   QStringLiteral("LU0000000001"),
+                                   QStringLiteral("AGIF-Allianz Glo.Eq.Insights"), ShareType::Fond);
+
+        ShareValues& v = model.values;
+        v.volume                = 168.50796;
+        v.curPrice               = 225.327;
+        v.curValue               = 37969.39;
+        v.salePayoutMarket       = 7766.03;
+        v.completePurchaseMarket = 29442.56;
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("m3"), /*marketValueMode=*/true);
+        QVERIFY(presenter.loadAndDisplay());
+
+        const QLocale locale;
+
+        const CalculationRow* div = FakeViewShareDetails::findRow(view.gesamtRows, QStringLiteral("Dividenden:"));
+        QVERIFY(div);
+        QCOMPARE(div->value, QStringLiteral("-"));
+        QCOMPARE(div->color, QColor(Qt::gray));
+
+        const CalculationRow* sales = FakeViewShareDetails::findRow(view.gesamtRows, QStringLiteral("Verkäufe:"));
+        QVERIFY(sales);
+        QCOMPARE(sales->value, locale.toString(7766.03, 'f', 2) + QStringLiteral(" €"));
+
+        const CalculationRow* sum = FakeViewShareDetails::findRow(view.gesamtRows, QStringLiteral("Summe:"));
+        QVERIFY(sum);
+        QCOMPARE(sum->value, locale.toString(45735.42, 'f', 2) + QStringLiteral(" €"));
+
+        const CalculationRow* purchase = FakeViewShareDetails::findRow(
+            view.gesamtRows, QStringLiteral("Alle Einzahlungen:"));
+        QVERIFY(purchase);
+        QCOMPARE(purchase->value, locale.toString(29442.56, 'f', 2) + QStringLiteral(" €"));
+
+        const CalculationRow* pl = FakeViewShareDetails::findRow(
+            view.gesamtRows, QStringLiteral("Gewinn / Verlust (gesamt):"));
+        QVERIFY(pl);
+        QCOMPARE(pl->value, locale.toString(16292.86, 'f', 2) + QStringLiteral(" €"));
+        QCOMPARE(pl->color, QColor(QStringLiteral("green")));
+
+        const CalculationRow* perf = FakeViewShareDetails::findRow(view.gesamtRows, QStringLiteral("Entwicklung:"));
+        QVERIFY(perf);
+        QCOMPARE(perf->value, locale.toString(55.34, 'f', 2) + QStringLiteral(" %"));
+    }
+
+    void test_loadAndDisplay_marketMode_aktuelleBox_matchesScreenshotValues()
+    {
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("m4"), QStringLiteral("AGIF001"),
+                                   QStringLiteral("LU0000000001"),
+                                   QStringLiteral("AGIF-Allianz Glo.Eq.Insights"), ShareType::Fond);
+
+        ShareValues& v = model.values;
+        v.volume        = 168.50796;
+        v.curPrice      = 225.327;
+        v.curValue      = 37969.39;
+        v.saleProfitLoss = 152.82;
+        v.marketValue    = 38122.21;
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("m4"), /*marketValueMode=*/true);
+        QVERIFY(presenter.loadAndDisplay());
+
+        const QLocale locale;
+
+        const CalculationRow* div = FakeViewShareDetails::findRow(view.aktuelleRows, QStringLiteral("Dividenden:"));
+        QVERIFY(div);
+        QCOMPARE(div->value, QStringLiteral("-"));
+        QCOMPARE(div->color, QColor(Qt::gray));
+
+        const CalculationRow* saleProfit = FakeViewShareDetails::findRow(
+            view.aktuelleRows, QStringLiteral("Gewinn / Verlust (Verkäufe):"));
+        QVERIFY(saleProfit);
+        QCOMPARE(saleProfit->value, locale.toString(152.82, 'f', 2) + QStringLiteral(" €"));
+
+        const CalculationRow* sum = FakeViewShareDetails::findRow(view.aktuelleRows, QStringLiteral("Summe:"));
+        QVERIFY(sum);
+        QCOMPARE(sum->value, locale.toString(38122.21, 'f', 2) + QStringLiteral(" €"));
+    }
+
+    void test_loadAndDisplay_marketMode_vortagBox_unaffectedByMode()
+    {
+        // Vortag-Box is mode-independent (no brokerage involved at all) —
+        // same field mapping in both modes.
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("m5"), QStringLiteral("AGIF001"),
+                                   QStringLiteral("LU0000000001"),
+                                   QStringLiteral("AGIF-Allianz Glo.Eq.Insights"), ShareType::Fond);
+
+        ShareValues& v = model.values;
+        v.volume       = 168.50796;
+        v.curPrice     = 225.327;
+        v.prevDayPrice = 225.009;
+        v.prevDayDiff  = 0.318;
+        v.prevDayPct   = 0.318 / 225.009 * 100.0;
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("m5"), /*marketValueMode=*/true);
+        QVERIFY(presenter.loadAndDisplay());
+
+        const QLocale locale;
+
+        // 168.50796 * 0.318 = 53.5945... -> 53.59 (matches the screenshot exactly)
+        const CalculationRow* pl = FakeViewShareDetails::findRow(view.vortagRows, QStringLiteral("Gewinn / Verlust:"));
+        QVERIFY(pl);
+        QCOMPARE(pl->value, locale.toString(53.59, 'f', 2) + QStringLiteral(" €"));
     }
 };
 

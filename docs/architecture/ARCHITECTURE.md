@@ -188,7 +188,7 @@ austauschbar und isoliert testbar.
 | OwnMessageBox | `forms/OwnMessageBoxForm/` | ✅ implementiert |
 | BackupProgressForm | `forms/BackupProgressForm/` | ✅ implementiert |
 | BackupSettingsForm | `forms/BackupSettingsForm/` | ✅ implementiert (08.07.2026) |
-| ShareDetailsForm | `forms/ShareDetailsForm/` | 🟨 MVP-Struktur steht, Depotwert-Box implementiert (09.07.2026) — siehe Detailabschnitt |
+| ShareDetailsForm | `forms/ShareDetailsForm/` | 🟨 MVP-Struktur steht, Depotwert- und Marktwert-Box implementiert (10.07.2026) — siehe Detailabschnitt |
 | ChartForm | `forms/ChartForm/` | ⬜ Dateien vorhanden, leer |
 
 @note **ShareDetailsForm — Umfang dieser Iteration (09.07.2026):** Nach
@@ -996,8 +996,9 @@ Modus zeigt Chart + Depotbewertung + die drei Jahres-Tab-Bereiche.
 | Teil | Status |
 | ------ | ------ |
 | Chart-Tab | ⬜ Platzhalter (eigenständiger Text "noch nicht implementiert") — bleibt eigenes `ChartForm`-Arbeitspaket, siehe "Offene Punkte / TODO" |
-| Komplette Depotbewertung | ✅ implementiert (diese Iteration) |
-| Komplette Marktbewertung | ⬜ zurückgestellt — Aufrufmodus wird noch nicht unterschieden, Dialog zeigt aktuell immer die Depotwert-Box, unabhängig davon, welcher Portfolio-Tab den Doppelklick ausgelöst hat. Folgt, sobald ein Screenshot der Marktwert-Ansicht vorliegt. |
+| Komplette Depotbewertung | ✅ implementiert (09.07.2026) |
+| Komplette Marktbewertung | ✅ implementiert (10.07.2026), gegen echten Screenshot der C#-Referenz abgeglichen |
+| Formel-Validierung gegen echte DB | 🟨 begonnen (10.07.2026) mit einer Ein-Aktien-Datenbank (Allianz SE, 5 Käufe/1 Verkauf/10 Dividenden/reale Historie 2016–2026) — dabei den Rabatt-Bugfix (siehe unten) sowie eine irreführende Label-Benennung gefunden und korrigiert. Berechnungslogik selbst (`completePurchase`/`completePurchaseMarket`) gegen `ShareObjectFinalValue.cs` bestätigt. Validierung der tatsächlichen App-Anzeige (Screenshot-Vergleich) steht noch aus. |
 | Gewinne/Verluste, Dividenden, Kosten | ⬜ zurückgestellt — Nessies Vorgabe: diese sollen die bereits vorhandenen Übersicht-Widgets aus `ViewSaleEdit`/`ViewDividendEdit`/`ViewBrokerageEdit` wiederverwenden statt eigene Tabellen zu duplizieren. Konkrete Einbindung noch offen. |
 
 #### "Komplette Depotbewertung" — drei Bestandsberechnungs-Boxen
@@ -1020,11 +1021,29 @@ ergänzt werden:
   Verkäufen MIT Brokerage (Zeile "+ Gewinn / Verlust (Verkäufe)"), Depotwert-
   Pendant zum bereits vorhandenen `saleProfitLoss` (Marktwert-Variante).
 
+Für die Marktwert-Box (10.07.2026, gegen echten Screenshot abgeglichen —
+Bild "AGIF-Allianz Glo.Eq.Insights") kam ein drittes additives Feld hinzu:
+
+- `ShareValues::salePayoutMarket` — rohe Verkaufserlöse OHNE Brokerage,
+  Marktwert-Pendant zu `salePayoutFinal`.
+
+**Wichtig:** Für die Marktwert-Box `Gesamt-Bestandsberechnung` werden
+bewusst **nicht** `completeCurValueMarket`/`completeProfitLossMarket`/
+`completeProfitPctMarket` verwendet — laut eigenem Doc-Kommentar in
+`ShareCalculator.h` mischen diese den brokeragehaltigen realisierten
+Gewinn/Verlust mit ein ("Komplette Entwicklung = ... + realized P/L WITH
+brokerage"), weil sie für die Portfolio-Grid-Fußzeile gedacht sind. Die
+Detaildialog-Box braucht die reine, brokeragefreie Variante und berechnet sie
+deshalb frisch im Presenter: `curValue + salePayoutMarket −
+completePurchaseMarket`. Die Aktuelle-Box im Marktwert-Modus verwendet dagegen
+`marketValue` (= `curValue + saleProfitLoss`) direkt — dieses Feld war bereits
+vor dieser Iteration vorhanden und mischt keine Brokerage-Anteile ein.
+
 Zwei Zeilen sind reine Presenter-Arithmetik über bereits vorhandene Felder
 (keine Repository-Zugriffe, daher bewusst NICHT in `ShareCalculator`):
 
-- Vortag-Box "Gewinn / Verlust" = `volume × prevDayDiff`
-- Aktuelle-Box "Summe" = `curValue + totalDividend + saleProfitLossFinal`
+- Vortag-Box "Gewinn / Verlust" = `volume × prevDayDiff` (beide Modi)
+- Aktuelle-Box "Summe" (nur Depotwert-Modus) = `curValue + totalDividend + saleProfitLossFinal`
 
 Beide werden mit einer lokalen, in `PresenterShareDetails.cpp` duplizierten
 `roundAway()`-Funktion gerundet (bewusst **nicht** `ShareCalculator::roundAway()`
@@ -1034,29 +1053,122 @@ Ziel eines DB-freien Test-Targets widerspräche. Bei Änderungen an
 `ShareCalculator::roundAway()` muss die Kopie manuell synchron gehalten werden
 (Kommentar im Code verweist darauf).
 
-Vollständiges Feld-Mapping (Depotwert-Modus):
+#### Marktwert- vs. Depotwert-Modus
 
-| Box | Zeile | ShareValues-Feld |
+`PresenterShareDetails`/`ViewShareDetails` nehmen einen `marketValueMode`-Parameter
+(`bool`, Default `false`) entgegen — Pendant zum `marketValueOverviewTabSelected`-
+Flag der C#-Referenz. `MainWindow::onPortfolioRowDoubleClicked()` setzt ihn
+anhand der auslösenden Tabelle (`table == m_marketValueTable`).
+
+Unterschiede zwischen den Modi:
+
+| Zeile | Depotwert | Marktwert |
 | ------ | ------ | ------ |
-| Gesamt | Anteile / Aktueller Preis / Einzahlungen | `volume` / `curPrice` / `curValue` |
-| Gesamt | + Dividenden | `totalDividend` |
-| Gesamt | + Verkäufe | `salePayoutFinal` |
-| Gesamt | = Summe | `completeCurValue` |
-| Gesamt | − Verkaufte Einzahlungen | `completePurchase` |
-| Gesamt | = Gewinn / Verlust (gesamt) | `completeProfitLoss` (grün/rot) |
-| Gesamt | Entwicklung | `completeProfitPct` (grün/rot) |
-| Vortag | Aktueller Preis / Vortages-Preis / Preis-Entw. | `curPrice` / `prevDayPrice` / `prevDayDiff` (grün/rot) |
-| Vortag | Entwicklung | `prevDayPct` (grün/rot) |
-| Vortag | Anteile × Preis-Entw. = Gewinn/Verlust | `volume × prevDayDiff` (Presenter, grün/rot) |
-| Aktuelle | Anteile / Aktueller Preis / Einzahlungen | `volume` / `curPrice` / `curValue` |
-| Aktuelle | + Dividenden | `totalDividend` |
-| Aktuelle | + Gewinn / Verlust (Verkäufe) | `saleProfitLossFinal` |
-| Aktuelle | = Summe | `curValue + totalDividend + saleProfitLossFinal` (Presenter) |
+| Tab-Titel | "Komplette Depotbewertung" | "Komplette Marktbewertung" |
+| Gesamt-/Aktuelle-Box "Dividenden" | echter Wert (`totalDividend`) | deaktiviert: Wert `"-"`, Farbe `Qt::gray` (Dividenden sind ein reines Depotwert-Konzept) |
+| Vortag-Box | identisch in beiden Modi (keine Brokerage involviert) | identisch |
+
+Die deaktivierte Dividenden-Zeile wird über einen kleinen Presenter-Helfer
+`disabledRow(operatorSymbol, label)` erzeugt (Wert `"-"`, `QColor(Qt::gray)`) —
+matcht die ausgegraute Beschriftung im C#-Referenz-Screenshot.
+
+@note **Bugfix (10.07.2026, betrifft Grid UND ShareDetailsForm):** Beim
+Durchgehen der Marktwert-Box fiel auf, dass `ShareCalculator` zwar Brokerage
+(Provision/Broker-Gebühr/Händler-Gebühr) aus allen `...Market`-Feldern
+ausschloss, `Rabatt` (`reduction`) aber weiterhin verrechnete — sowohl bei
+Käufen (`purchaseValueMarket`, `completePurchaseMarket`) als auch bei
+Verkäufen (`salePayoutMarket`). Da Rabatt fachlich nur eine Reduktion der
+Brokerage-Kosten ist (siehe C#-Referenz: "Kosten"- und "Rabatt"-Spalte gehören
+in derselben Tabelle zusammen und sind nur im Depotwert-Modus überhaupt
+sichtbar), gehört er konsequent mit ausgeschlossen. Von Nessie bestätigt:
+Rabatt fliegt jetzt überall aus den Marktwert-Feldern raus — das betrifft
+**auch das Portfolio-Grid selbst** (`m_marketValueTable`), nicht nur diesen
+Dialog, da beide dieselben `ShareValues`-Felder verwenden.
+
+Auswirkung auf `ShareCalculator::compute()`:
+- `purchaseValueMarket`: `heldBuyValue − heldReduction` → `heldBuyValue`
+- `completePurchaseMarket`: `fullBuyValue − buyReduction` → `fullBuyValue`
+- `salePayoutMarket`: `saleValue + sale.reduction() − taxSum()` → `saleValue − taxSum()`
+
+`completeCurValueMarket` bleibt bei einem 100%-gehaltenen Buy algebraisch
+unverändert (Rabatt kürzt sich in `completePurchaseMarket − purchaseValueMarket`
+heraus), `completePurchaseMarket`/`completeProfitLossMarket` einzeln aber
+schon — Details und neu durchgerechnete Werte siehe `tst_sharecalculator.cpp`.
+Depotwert-Felder (`purchaseValueFinal`, `completePurchase`, `salePayoutFinal`
+usw.) sind unverändert — dort gehört Rabatt weiterhin dazu.
+
+Zusätzlich neu (beide Modi, in der C#-Referenz aber übersehen): eine graue
+Statuszeile "Letzte Website- Aktualisierung: ..." **innerhalb** des Depotwert-/
+Marktwert-Tabs (nicht der äußeren Dialog-Statuszeile). Gemappt auf
+`ShareObject::lastPriceUpdate()` — das zweite der beiden Update-Zeitstempel-
+Felder auf `ShareObject` (`lastInternetUpdate()` wird bereits für die äußere
+Statuszeile verwendet). **Von Nessie bestätigt (10.07.2026):** "Letzte
+Website-Aktualisierung" ist der Zeitpunkt der letzten Marktwert-/Kurs-
+Aktualisierung — `lastPriceUpdate()` ist damit das richtige Feld, getrennt
+von `lastInternetUpdate()` (allgemeines Internet-Update, äußere Statuszeile).
+
+@note **Bugfix (11.07.2026):** `ShareObject::lastInternetUpdate()`/
+`lastPriceUpdate()` liefern den in der DB gespeicherten ISO-8601-String roh
+zurück (z. B. `"2026-07-11T00:45:00"`, bestätigt anhand der Allianz-SE-
+Validierungs-DB) — anders als die Datumsfelder der Transaktionsobjekte
+(`BuyObject::dateAsStr()` usw.), die bereits über `QLocale` formatieren.
+Beide Zeilen in `ViewShareDetails` zeigten dadurch den rohen ISO-String statt
+sich am eingestellten Länderschema zu orientieren. `PresenterShareDetails`
+hat jetzt einen `formatDateTime()`-Helfer (parst via `QDateTime::fromString(...,
+Qt::ISODate)`, formatiert via `QLocale().toString(dt, QLocale::ShortFormat)` —
+dieselbe Konvention wie bei den Transaktionsobjekten), mit Fallback auf den
+Rohwert bei nicht parsbaren Strings (Datenintegrität sichtbar statt versteckt).
+
+Vollständiges Feld-Mapping:
+
+| Box | Zeile | Depotwert-Feld | Marktwert-Feld |
+| ------ | ------ | ------ | ------ |
+| Gesamt | Anteile / Aktueller Kurswert / Aktueller Bestandswert | `volume` / `curPrice` / `curValue` | (identisch) |
+| Gesamt | + Dividenden | `totalDividend` | deaktiviert ("-") |
+| Gesamt | + Verkäufe | `salePayoutFinal` | `salePayoutMarket` |
+| Gesamt | = Summe | `completeCurValue` | `curValue + salePayoutMarket` (Presenter) |
+| Gesamt | − Alle Einzahlungen | `completePurchase` | `completePurchaseMarket` |
+| Gesamt | = Gewinn / Verlust (gesamt) | `completeProfitLoss` (grün/rot) | `Summe − completePurchaseMarket` (Presenter, grün/rot) |
+| Gesamt | Entwicklung | `completeProfitPct` (grün/rot) | `Gewinn/Verlust ÷ completePurchaseMarket × 100` (Presenter, grün/rot) |
+| Vortag | Aktueller Kurswert / Vortages-Kurswert / Kurswert-Entw. | `curPrice` / `prevDayPrice` / `prevDayDiff` (grün/rot) | (identisch) |
+| Vortag | Entwicklung | `prevDayPct` (grün/rot) | (identisch) |
+| Vortag | Anteile × Kurswert-Entw. = Gewinn/Verlust | `volume × prevDayDiff` (Presenter, grün/rot) | (identisch) |
+| Aktuelle | Anteile / Aktueller Kurswert / Aktueller Bestandswert | `volume` / `curPrice` / `curValue` | (identisch) |
+| Aktuelle | + Dividenden | `totalDividend` | deaktiviert ("-") |
+| Aktuelle | + Gewinn / Verlust (Verkäufe) | `saleProfitLossFinal` | `saleProfitLoss` |
+| Aktuelle | = Summe | `curValue + totalDividend + saleProfitLossFinal` (Presenter) | `marketValue` |
+
+@note **Label-Korrektur (10.07.2026, gegen echte Datenbank validiert):** Die
+Zeile "− Alle Einzahlungen" (`completePurchase`/`completePurchaseMarket`) hieß im
+C#-Original "Verkaufte Einzahlungen" — irreführend, denn der Wert ist die
+Summe **aller** Käufe (verkauft + noch gehalten), nicht nur der verkauften.
+Bestätigt gegen `ShareObjectFinalValue.cs`:
+`BuyValueBrokerageReduction => AllBuyEntries.BuyValueBrokerageReductionTotal`,
+wobei `AllBuyEntries.AddBuy(...)` bei **jedem** Kauf aufgerufen wird,
+unabhängig vom Verkaufsstatus. Von Nessie bestätigt: Wert war schon korrekt,
+nur das Label wurde auf "Alle Einzahlungen:" korrigiert (Qt-Port weicht hier bewusst
+vom C#-Original-Wortlaut ab).
+
+@note **Label-Korrektur (11.07.2026):** "Aktueller Preis"/"Vortages-Preis"/
+"Preis-Entw." wurden fachlich präzisiert auf "Aktueller Kurswert"/
+"Vortages-Kurswert"/"Kurswert-Entw." — auf Nessies Vorgabe, konsistent in
+allen drei Boxen (Gesamt/Vortag/Aktuelle, beide Modi). Reine Label-Änderung,
+`ShareValues`-Felder (`curPrice`, `prevDayPrice`, `prevDayDiff`) und Werte
+unverändert.
 
 Farblogik durchgängig `value >= 0.0 ? QColor("green") : QColor("red")` —
 matcht `Color.Green`/`Color.Red` aus der C#-Referenz (`PerformanceValue >= 0`).
 
+@note **Label-Korrektur (11.07.2026):** "Einzahlungen" (Zeile `= Einzahlungen:`,
+`curValue` = Anteile × Aktueller Kurswert) wurde auf "Aktueller Bestandswert:"
+korrigiert — "Einzahlungen" impliziert eingezahltes Geld, tatsächlich ist der
+Wert aber der aktuelle Marktwert der gehaltenen Position. Nicht zu verwechseln
+mit der bereits umbenannten Zeile "− Alle Einzahlungen"
+(`completePurchase`/`completePurchaseMarket`, siehe oben) — die heißt
+weiterhin so und ist unverändert.
+
 `IViewShareDetails` — `setHeaderName()`, `setStatusLine()`,
+`setWebsiteUpdateLine()`, `setBoxesTabTitle()`,
 `populateGesamtBox()`/`populateVortagBox()`/`populateAktuelleBox()` (je
 `CalculationRows`), `showError()`, `closeDialog()`. `CalculationRow` = reines
 DTO (`operatorSymbol`, `label`, `value`, `color`, `emphasize`) — komplett
@@ -1074,8 +1186,10 @@ liefert `false`) statt den Dialog leer offen zu lassen.
 
 `ViewShareDetails` — `QDialog`, implementiert `IViewShareDetails`. Tab 1
 ("Aktien-Chart") ist ein reiner Platzhalter-Text. Tab 2 ("Komplette
-Depotbewertung") enthält drei `QGroupBox`en mit je einem generischen
-Operator/Label/Wert-`QGridLayout` (`createCalculationBox()`/`populateBox()`).
+Depotbewertung"/"Komplette Marktbewertung", Titel dynamisch per
+`setBoxesTabTitle()`) enthält die graue "Letzte Website-Aktualisierung"-Zeile
+sowie drei `QGroupBox`en mit je einem generischen Operator/Label/Wert-
+`QGridLayout` (`createCalculationBox()`/`populateBox()`).
 `hasValidShare()` gibt zurück, ob die im Konstruktor übergebene GUID
 aufgelöst werden konnte — der Aufrufer darf `exec()` nur bei `true` aufrufen.
 
@@ -1094,11 +1208,9 @@ statt sich auf die automatische Qt-Übersetzung zu verlassen. Regressionstest:
   **oder** `m_marketValueTable` öffnet `ViewShareDetails` für die GUID aus
   Spalte 0 (`Qt::UserRole`).
 - `MainWindow::onPortfolioRowDoubleClicked(QTableWidgetItem*)` liest die GUID,
-  konstruiert `ViewShareDetails`, prüft `hasValidShare()` und ruft nur bei
-  Erfolg `exec()` auf.
-- **Bekannte Lücke dieser Iteration:** Es wird noch nicht unterschieden, ob
-  der Doppelklick aus `m_finalValueTable` oder `m_marketValueTable` kam — der
-  Dialog zeigt immer die Depotwert-Box. Folgt mit dem Marktwert-Modus.
+  bestimmt `marketValueMode` anhand `table == m_marketValueTable`, konstruiert
+  `ViewShareDetails`, prüft `hasValidShare()` und ruft nur bei Erfolg `exec()`
+  auf.
 
 ---
 
@@ -1769,27 +1881,27 @@ Sprache ohne Neubuild änderbar durch Austausch der `.qm`-Datei.
 
 ## Offene Punkte / TODO
 
-### ShareDetailsForm: Marktwert-Modus, Chart-Tab, Gewinne/Dividenden/Kosten (offen, 09.07.2026)
+### ShareDetailsForm: Chart-Tab, Gewinne/Dividenden/Kosten (offen, aktualisiert 10.07.2026)
 
-Nach Abgleich mit der C#-Referenz (`FrmShareDetails`) wurde die "Komplette
-Depotbewertung"-Box neu gebaut (siehe "ShareDetailsForm-Details" oben). Drei
-Teile bleiben bewusst offen:
+Nach Abgleich mit der C#-Referenz (`FrmShareDetails`) wurden die "Komplette
+Depotbewertung"- und "Komplette Marktbewertung"-Boxen neu gebaut (siehe
+"ShareDetailsForm-Details" oben). Zwei Teile bleiben bewusst offen:
 
-1. **Marktwert-Modus** — `FrmShareDetails` unterscheidet per
-   `marketValueOverviewTabSelected`-Flag zwischen Depotwert- und
-   Marktwert-Aufruf (unterschiedliche Tab-Mengen, brokeragefreie Werte). Der
-   Qt-Port zeigt aktuell immer die Depotwert-Box. Folgt, sobald ein
-   Screenshot der Marktwert-Ansicht der C#-Referenz vorliegt (angekündigt).
-2. **Chart-Tab** — im C# Tab 1 dieses Dialogs (Aktien-Chart mit
+1. **Chart-Tab** — im C# Tab 1 dieses Dialogs (Aktien-Chart mit
    Zeitraum-/Intervall-Auswahl), im Qt-Port bewusst als Platzhalter
    zurückgestellt; bleibt eigenes `ChartForm`-Arbeitspaket (siehe
    "Implementierte Forms" oben).
-3. **Gewinne/Verluste-, Dividenden-, Kosten-Tabs** — im C# je ein
-   verschachteltes TabControl (Übersicht + Jahres-Tabs). Sollen laut Vorgabe
-   die bereits vorhandenen Übersicht-Widgets aus `ViewSaleEdit`/
-   `ViewDividendEdit`/`ViewBrokerageEdit` wiederverwenden statt eigene
-   Tabellen zu duplizieren — konkrete Einbindung (Widget-Extraktion vs.
-   Embedding vs. neue schlanke Read-Only-Variante) noch nicht entschieden.
+2. **Gewinne/Verluste-, Dividenden-, Kosten-Tabs** — im C# je ein
+   verschachteltes TabControl (Übersicht + Jahres-Tabs), nur im Depotwert-
+   Modus sichtbar. Sollen laut Vorgabe die bereits vorhandenen Übersicht-
+   Widgets aus `ViewSaleEdit`/`ViewDividendEdit`/`ViewBrokerageEdit`
+   wiederverwenden statt eigene Tabellen zu duplizieren — konkrete Einbindung
+   (Widget-Extraktion vs. Embedding vs. neue schlanke Read-Only-Variante)
+   noch nicht entschieden.
+
+("Letzte Website-Aktualisierung" → `lastPriceUpdate()` wurde von Nessie am
+10.07.2026 bestätigt, siehe "Marktwert- vs. Depotwert-Modus" oben — kein
+offener Punkt mehr.)
 
 ### Totes Mapping: `PriceAtPayday` in `xmlNameToViewField()` (entfernt 08.07.2026)
 

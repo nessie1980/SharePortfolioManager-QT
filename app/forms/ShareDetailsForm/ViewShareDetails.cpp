@@ -8,12 +8,13 @@
 #include <QFrame>
 #include <QDialogButtonBox>
 #include <QFont>
+#include <QPalette>
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
-ViewShareDetails::ViewShareDetails(const QString& shareGuid, QWidget* parent)
+ViewShareDetails::ViewShareDetails(const QString& shareGuid, bool marketValueMode, QWidget* parent)
     : QDialog(parent)
-    , m_presenter(*this, m_model, shareGuid)
+    , m_presenter(*this, m_model, shareGuid, marketValueMode)
 {
     setObjectName(QStringLiteral("ViewShareDetails"));
     // TODO: once the chart tab computes a display window, restore the C#
@@ -93,10 +94,28 @@ void ViewShareDetails::setupDepotwertTab()
     auto* tab = new QWidget();
     tab->setObjectName(QStringLiteral("depotwertTab"));
 
-    auto* grid = new QGridLayout(tab);
+    auto* tabLayout = new QVBoxLayout(tab);
+    tabLayout->setContentsMargins(0, 0, 0, 0);
+    tabLayout->setSpacing(0);
+
+    // "Letzte Website- Aktualisierung: ..." bar — grey bar spanning the tab
+    // width, matches the C# reference screenshot. Positioned inside this tab
+    // (not the outer dialog), since it's specific to the Depotwert-/
+    // Marktwert-Ansicht (present in both modes).
+    m_websiteUpdateLine = new QLabel();
+    m_websiteUpdateLine->setObjectName(QStringLiteral("websiteUpdateLine"));
+    m_websiteUpdateLine->setContentsMargins(8, 4, 8, 4);
+    m_websiteUpdateLine->setAutoFillBackground(true);
+    QPalette barPalette = m_websiteUpdateLine->palette();
+    barPalette.setColor(QPalette::Window, palette().color(QPalette::Mid));
+    m_websiteUpdateLine->setPalette(barPalette);
+    tabLayout->addWidget(m_websiteUpdateLine);
+
+    auto* grid = new QGridLayout();
     grid->setContentsMargins(12, 12, 12, 12);
     grid->setHorizontalSpacing(16);
     grid->setVerticalSpacing(16);
+    tabLayout->addLayout(grid, 1);
 
     QGroupBox* gesamtBox   = createCalculationBox(tr("Gesamt-Bestandsberechnung"), m_gesamtGrid);
     QGroupBox* vortagBox   = createCalculationBox(tr("Vortag-Bestandsberechnung"), m_vortagGrid);
@@ -115,7 +134,9 @@ void ViewShareDetails::setupDepotwertTab()
     grid->setColumnStretch(1, 1);
     grid->setRowStretch(2, 1);
 
-    m_tabs->addTab(tab, tr("Komplette Depotbewertung"));
+    // Placeholder text — the presenter sets the real title via
+    // setBoxesTabTitle() ("Komplette Depotbewertung"/"Komplette Marktbewertung").
+    m_boxesTabIndex = m_tabs->addTab(tab, QString());
 }
 
 // ── createCalculationBox ──────────────────────────────────────────────────────
@@ -140,6 +161,16 @@ void ViewShareDetails::setHeaderName(const QString& name)
 void ViewShareDetails::setStatusLine(const QString& statusText)
 {
     m_statusLine->setText(statusText);
+}
+
+void ViewShareDetails::setWebsiteUpdateLine(const QString& statusText)
+{
+    m_websiteUpdateLine->setText(statusText);
+}
+
+void ViewShareDetails::setBoxesTabTitle(const QString& title)
+{
+    m_tabs->setTabText(m_boxesTabIndex, title);
 }
 
 // ── IViewShareDetails: Depotwert-Boxen ────────────────────────────────────────

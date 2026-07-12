@@ -56,10 +56,10 @@ ShareValues ShareCalculator::compute(const QString& guid,
     // included in both. Brokerage/reduction are attributed proportionally to
     // the still-held fraction of each buy.
 
-    double purchaseValueMarket = 0.0; // held basis, no brokerage
+    double purchaseValueMarket = 0.0; // held basis, no brokerage, no reduction
     double purchaseValueFinal  = 0.0; // held basis, with brokerage
     double completePurchase    = 0.0; // ALL buys, with brokerage - reduction
-    double completePurchaseMarket = 0.0; // ALL buys, no brokerage (with reduction)
+    double completePurchaseMarket = 0.0; // ALL buys, no brokerage, no reduction
     double netVolume           = 0.0;
 
     for (const BuyObject& buy : buys) {
@@ -73,14 +73,19 @@ ShareValues ShareCalculator::compute(const QString& guid,
         // Complete (Kpl.) Einzahlung: full buy, with brokerage - reduction
         const double fullBuyValue = roundAway(buy.volume() * buy.price());
         completePurchase       += fullBuyValue + buyBrokerage - buyReduction;
-        completePurchaseMarket += fullBuyValue - buyReduction; // Marktwert: no brokerage
+        // Marktwert: no brokerage AND no reduction — Rabatt is a discount on
+        // brokerage costs, so it belongs together with "Kosten" and is
+        // excluded from the Marktwert figures just like the brokerage itself
+        // (confirmed 10.07.2026 — previously reduction was subtracted here,
+        // which was inconsistent with excluding brokerage but not its discount).
+        completePurchaseMarket += fullBuyValue;
 
         if (remVol > 0.0) {
             const double heldBuyValue  = roundAway(remVol * buy.price());
             const double heldBrokerage = roundAway(buyBrokerage * frac);
             const double heldReduction = roundAway(buyReduction * frac);
 
-            purchaseValueMarket += heldBuyValue                 - heldReduction;
+            purchaseValueMarket += heldBuyValue; // no brokerage, no reduction
             purchaseValueFinal  += heldBuyValue + heldBrokerage - heldReduction;
             netVolume           += remVol;
         }
@@ -97,7 +102,8 @@ ShareValues ShareCalculator::compute(const QString& guid,
     // sold shares' buy cost unsubtracted and massively overstate the gain.
     //
     // salePayoutFinal:  net cash from sales WITH brokerage (- tax)
-    // salePayoutMarket: net cash from sales WITHOUT brokerage (- tax)
+    // salePayoutMarket: net cash from sales WITHOUT brokerage AND WITHOUT
+    //                    reduction (- tax) — see reduction comment above.
 
     double salePayoutFinal  = 0.0;
     double salePayoutMarket = 0.0;
@@ -111,7 +117,6 @@ ShareValues ShareCalculator::compute(const QString& guid,
                                      - sale.taxSum());
 
         salePayoutMarket += roundAway(saleValue
-                                      + sale.reduction()
                                       - sale.taxSum());
     }
 
@@ -141,6 +146,7 @@ ShareValues ShareCalculator::compute(const QString& guid,
     v.marketValuePct  = (purchaseValueMarket > 0.0)
                         ? (v.marketValue / purchaseValueMarket * 100.0 - 100.0)
                         : 0.0;
+    v.salePayoutMarket = roundAway(salePayoutMarket);
 
     // Marktwert complete columns.
     v.completePurchaseMarket   = roundAway(completePurchaseMarket);

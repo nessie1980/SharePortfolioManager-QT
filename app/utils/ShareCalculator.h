@@ -12,7 +12,10 @@
  * (Einzahlung / Marktwert, Aktuelle Entwicklung) but fill them with two
  * different value sets:
  *
- * - Marktwert-Tab: held-share cost basis WITHOUT brokerage (with reduction).
+ * - Marktwert-Tab: held-share cost basis WITHOUT brokerage AND WITHOUT
+ *   reduction (Rabatt is a discount on brokerage costs, so it is excluded
+ *   together with brokerage — corrected 10.07.2026, previously reduction
+ *   was still subtracted here even though brokerage itself was excluded).
  * - Depotwert-Tab: held-share cost basis WITH brokerage (with reduction),
  *   plus dividends and realized sale payouts in the complete columns.
  *
@@ -30,17 +33,17 @@
  * - the current market value (held volume x curPrice),
  * - and every aggregate that feeds a displayed cell.
  *
- * ### Marktwert-Tab (no brokerage)
+ * ### Marktwert-Tab (no brokerage, no reduction)
  *
- * - purchaseValue  = held basis: sum(round(remVol x price) - reductionPart)
+ * - purchaseValue  = held basis: sum(round(remVol x price))
  * - curValue       = round(heldVolume x curPrice)
  * - profitLoss      = curValue - purchaseValue          [Aktuelle Entwicklung EUR]
  * - profitLossPct   = profitLoss / purchaseValue x 100  [Aktuelle Entwicklung %]
- * - saleProfitLoss  = realized gain/loss (no brokerage, with reduction)
+ * - saleProfitLoss  = realized gain/loss (no brokerage, no reduction)
  * - marketValue     = curValue + saleProfitLoss         [footer aggregate only]
  *
- * Marktwert complete columns (brokerage-free, internally consistent):
- * - completePurchaseMarket   = all buys: sum(round(vol x price) - reduction)
+ * Marktwert complete columns (brokerage- and reduction-free, internally consistent):
+ * - completePurchaseMarket   = all buys: sum(round(vol x price))
  * - completeCurValueMarket   = completePurchaseMarket + completeProfitLossMarket
  * - completeProfitLossMarket = (curValue - purchaseValue) + realized P/L WITH brokerage
  * - completeProfitPctMarket  = completeProfitLossMarket / completePurchaseMarket x 100
@@ -67,7 +70,7 @@ struct ShareValues
     double prevDayPct   = 0.0;
 
     // -- Marktwert-Tab (no brokerage) --------------------------------------
-    double purchaseValue    = 0.0; ///< Held basis without brokerage (with reduction)
+    double purchaseValue    = 0.0; ///< Held basis without brokerage, without reduction
     double curValue         = 0.0; ///< round(heldVolume x curPrice)
     double profitLoss       = 0.0; ///< Aktuelle Entwicklung EUR (market)
     double profitLossPct    = 0.0; ///< Aktuelle Entwicklung % (market)
@@ -75,8 +78,12 @@ struct ShareValues
     double marketValue      = 0.0; ///< curValue + saleProfitLoss
     double marketValuePct   = 0.0; ///< (marketValue / purchaseValue - 1) x 100
 
-    // -- Marktwert-Tab complete columns (brokerage-free) -------------------
-    double completePurchaseMarket   = 0.0; ///< All buys, no brokerage (with reduction)
+    /// Raw sale proceeds WITHOUT brokerage AND WITHOUT reduction (ShareDetailsForm
+    /// Marktwert-Box "+ Verkäufe" row) — Marktwert-Pendant to salePayoutFinal.
+    double salePayoutMarket = 0.0;
+
+    // -- Marktwert-Tab complete columns (brokerage- and reduction-free) ----
+    double completePurchaseMarket   = 0.0; ///< All buys, no brokerage, no reduction
     double completeCurValueMarket   = 0.0; ///< completePurchaseMarket + completeProfitLossMarket
     double completeProfitLossMarket = 0.0;
     double completeProfitPctMarket  = 0.0;

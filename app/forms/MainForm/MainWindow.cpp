@@ -1274,7 +1274,12 @@ void MainWindow::onPortfolioRowDoubleClicked(QTableWidgetItem* item)
     if (shareGuid.isEmpty())
         return;
 
-    ViewShareDetails dlg(shareGuid, this);
+    // m_marketValueTable triggers the brokerage-free "Komplette Marktbewertung"
+    // mode; any other table (currently only m_finalValueTable) triggers the
+    // default Depotwert mode.
+    const bool marketValueMode = (table == m_marketValueTable);
+
+    ViewShareDetails dlg(shareGuid, marketValueMode, this);
     if (!dlg.hasValidShare())
         return; // Error already reported via showError() inside the presenter
 

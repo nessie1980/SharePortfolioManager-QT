@@ -18,21 +18,21 @@
  * FrmShareDetails.
  *
  * Opened by double-clicking a row in either of the main portfolio tables
- * (Depotwert-/Marktwert-Tab) — see MainWindow::onPortfolioRowDoubleClicked().
+ * (Depotwert-/Marktwert-Tab) — see MainWindow::onPortfolioRowDoubleClicked(),
+ * which passes marketValueMode based on which table the double-click came from.
  *
  * Current scope (see ARCHITECTURE.md, "ShareDetailsForm-Details"):
  * - "Aktien-Chart" tab: placeholder only — the actual chart is tracked as
  *   its own ChartForm work item and not embedded here (yet).
- * - "Komplette Depotbewertung" tab: three "Bestandsberechnung" boxes
- *   (Gesamt/Vortag/Aktuelle), rendered as vertical calculation rows rather
- *   than the C# reference's multi-column WinForms grid — an intentional,
- *   revisitable simplification (see chat history, 09.07.2026).
+ * - "Komplette Depotbewertung" / "Komplette Marktbewertung" tab: three
+ *   "Bestandsberechnung" boxes (Gesamt/Vortag/Aktuelle), rendered as vertical
+ *   calculation rows rather than the C# reference's multi-column WinForms
+ *   grid — an intentional, revisitable simplification (see chat history,
+ *   09.07.2026).
  *
- * Deliberately NOT yet implemented (deferred): Marktwert mode (no
- * MainWindow.cpp mode-switch has been wired up — the dialog always shows
- * the Depotwert box regardless of which portfolio tab triggered the
- * double-click) and the Gewinne/Verluste-, Dividenden- and Kosten-tabs
- * (planned to reuse ViewSaleEdit's/ViewDividendEdit's/ViewBrokerageEdit's
+ * Deliberately NOT yet implemented (deferred): the Gewinne/Verluste-,
+ * Dividenden- and Kosten-tabs (Depotwert-mode-only in the C# reference;
+ * planned to reuse ViewSaleEdit's/ViewDividendEdit's/ViewBrokerageEdit's
  * existing overview widgets rather than duplicating them here).
  *
  * Pure MVP View: contains no repository access and no formatting/business
@@ -46,10 +46,15 @@ class ViewShareDetails : public QDialog, public IViewShareDetails
 public:
     /**
      * @brief Construct and populate the dialog for the given share GUID.
-     * @param shareGuid  GUID of the share to display.
-     * @param parent     Parent widget.
+     * @param shareGuid        GUID of the share to display.
+     * @param marketValueMode  true if opened from the Marktwert portfolio
+     *                         tab (shows "Komplette Marktbewertung", disabled
+     *                         Dividenden rows, brokerage-free figures); false
+     *                         for the Depotwert tab (default).
+     * @param parent           Parent widget.
      */
-    explicit ViewShareDetails(const QString& shareGuid, QWidget* parent = nullptr);
+    explicit ViewShareDetails(const QString& shareGuid, bool marketValueMode = false,
+                              QWidget* parent = nullptr);
     ~ViewShareDetails() override = default;
 
     /**
@@ -63,6 +68,8 @@ public:
     // ── IViewShareDetails ────────────────────────────────────────────────────
     void setHeaderName(const QString& name) override;
     void setStatusLine(const QString& statusText) override;
+    void setWebsiteUpdateLine(const QString& statusText) override;
+    void setBoxesTabTitle(const QString& title) override;
 
     void populateGesamtBox(const CalculationRows& rows) override;
     void populateVortagBox(const CalculationRows& rows) override;
@@ -89,8 +96,10 @@ private:
     bool                  m_validShare = false;
 
     // ── Widgets ────────────────────────────────────────────────────────────
-    QLabel*     m_statusLine = nullptr;
-    QTabWidget* m_tabs       = nullptr;
+    QLabel*     m_statusLine        = nullptr;
+    QTabWidget* m_tabs              = nullptr;
+    QLabel*     m_websiteUpdateLine = nullptr; ///< Inside the Depotwert-/Marktwert-tab.
+    int         m_boxesTabIndex     = -1;      ///< Index of the Depotwert-/Marktwert-tab, for setBoxesTabTitle().
 
     QGridLayout* m_gesamtGrid   = nullptr;
     QGridLayout* m_vortagGrid   = nullptr;

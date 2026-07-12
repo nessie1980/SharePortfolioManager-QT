@@ -11,17 +11,28 @@
 /**
  * @brief Presenter for the share-details dialog.
  *
- * Currently covers the "Komplette Depotbewertung" mode only (the C# reference's
- * TabPgCompleteDepotValue) — the Marktwert mode and the Gewinne/Verluste-,
- * Dividenden- and Kosten-tabs are deliberately out of scope for this iteration
- * (see ARCHITECTURE.md, "ShareDetailsForm-Details").
+ * Covers the "Komplette Depotbewertung" / "Komplette Marktbewertung" mode
+ * (the C# reference's marketValueOverviewTabSelected flag) — the Chart tab
+ * and the Gewinne/Verluste-, Dividenden- and Kosten-tabs are deliberately
+ * out of scope for this iteration (see ARCHITECTURE.md, "ShareDetailsForm-Details").
  *
- * All three "Bestandsberechnung" boxes map almost entirely onto existing
- * ShareValues fields (see ShareCalculator.h). The two exceptions —
- * Vortag-Box "Gewinn / Verlust" (volume x prevDayDiff) and Aktuelle-Box
- * "Summe" (curValue + totalDividend + saleProfitLossFinal) — are simple
- * arithmetic over already-computed fields with no repository access
- * involved, so they are computed here rather than added to ShareCalculator.
+ * Both modes share the same Vortag-Box entirely (no brokerage involved) and
+ * the same "Anteile x Aktueller Preis = Einzahlungen" opening rows of the
+ * Gesamt-/Aktuelle-Box. They differ in:
+ * - Dividenden row: shown normally in Depotwert mode, shown as a disabled
+ *   "-" placeholder in Marktwert mode (dividends are a Depotwert-only concept).
+ * - Gesamt-Box "Verkäufe"/"Verkaufte Einzahlungen"/"Gewinn / Verlust (gesamt)"/
+ *   "Entwicklung": Depotwert mode reads the existing completeCurValue/
+ *   completePurchase/completeProfitLoss/completeProfitPct fields directly.
+ *   Marktwert mode computes curValue + salePayoutMarket - completePurchaseMarket
+ *   fresh in the presenter — deliberately NOT completeCurValueMarket/
+ *   completeProfitLossMarket/completeProfitPctMarket, which mix in the
+ *   brokerage-inclusive realized P/L for the portfolio grid footer (see
+ *   ShareCalculator.h doc comment).
+ * - Aktuelle-Box "Gewinn / Verlust (Verkäufe)"/"Summe": Depotwert mode uses
+ *   saleProfitLossFinal and computes the sum in the presenter; Marktwert mode
+ *   uses the existing saleProfitLoss/marketValue fields directly (marketValue
+ *   already equals curValue + saleProfitLoss).
  *
  * Not a QObject; uses Q_DECLARE_TR_FUNCTIONS for a sensible lupdate context.
  */
@@ -30,7 +41,8 @@ class PresenterShareDetails
     Q_DECLARE_TR_FUNCTIONS(PresenterShareDetails)
 
 public:
-    PresenterShareDetails(IViewShareDetails& view, IModelShareDetails& model, QString shareGuid);
+    PresenterShareDetails(IViewShareDetails& view, IModelShareDetails& model,
+                          QString shareGuid, bool marketValueMode = false);
 
     /**
      * @brief Loads the share and its aggregated ShareValues via the model and
@@ -49,6 +61,9 @@ private:
     CalculationRows buildVortagBox(const ShareValues& v) const;
     CalculationRows buildAktuelleBox(const ShareValues& v) const;
 
+    /** Dividenden row placeholder for Marktwert mode ("-", greyed out). */
+    static CalculationRow disabledRow(const QString& operatorSymbol, const QString& label);
+
     static QString shareTypeToString(ShareType type);
     /** >= 0 -> "green", < 0 -> "red" (matches the C# reference's Color.Green/Color.Red). */
     static QColor  performanceColor(double value);
@@ -56,4 +71,5 @@ private:
     IViewShareDetails&  m_view;
     IModelShareDetails& m_model;
     QString             m_shareGuid;
+    bool                m_marketValueMode;
 };

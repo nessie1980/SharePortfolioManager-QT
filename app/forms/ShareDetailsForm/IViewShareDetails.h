@@ -44,6 +44,12 @@ public:
     /** "Letzte Internet-Aktualisierung: ... / Typ: ..." status line. */
     virtual void setStatusLine(const QString& statusText) = 0;
 
+    /** "Letzte Website-Aktualisierung: ..." bar inside the Depotwert-/Marktwert-tab. */
+    virtual void setWebsiteUpdateLine(const QString& statusText) = 0;
+
+    /** Tab title: "Komplette Depotbewertung" or "Komplette Marktbewertung", depending on mode. */
+    virtual void setBoxesTabTitle(const QString& title) = 0;
+
     virtual void populateGesamtBox(const CalculationRows& rows) = 0;
     virtual void populateVortagBox(const CalculationRows& rows) = 0;
     virtual void populateAktuelleBox(const CalculationRows& rows) = 0;

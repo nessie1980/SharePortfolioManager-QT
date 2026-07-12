@@ -611,15 +611,15 @@ Dateinamen-Vorschau:
 
 ---
 
-#### tst_sharedetailsform — ShareDetailsForm (neu gebaut, 09.07.2026)
+#### tst_sharedetailsform — ShareDetailsForm (Depotwert 09.07., Marktwert 10.07.2026)
 
 Executable: `tst_sharedetailsform`
 Klasse unter Test: `PresenterShareDetails`
 
-@note Deckt ausschließlich den "Komplette Depotbewertung"-Umfang dieser
-Iteration ab (siehe ARCHITECTURE.md, "ShareDetailsForm-Details") — Chart-Tab
-(Platzhalter), Marktwert-Modus sowie Gewinne/Verluste-, Dividenden- und
-Kosten-Tabs sind zurückgestellt und haben dementsprechend noch keine Tests.
+@note Deckt "Komplette Depotbewertung" **und** "Komplette Marktbewertung" ab
+(siehe ARCHITECTURE.md, "ShareDetailsForm-Details") — Chart-Tab (Platzhalter)
+sowie Gewinne/Verluste-, Dividenden- und Kosten-Tabs sind weiterhin
+zurückgestellt und haben dementsprechend noch keine Tests.
 
 @note Wie schon beim vorherigen Anlauf: **weder** Datenbank **noch**
 `QWidget` **noch** `ShareCalculator` werden instanziiert.
@@ -635,16 +635,37 @@ statt sich auf feste Index-Positionen zu verlassen.
 |------|--------------|-------|
 | `test_loadAndDisplay_shareNotFound_showsErrorAndCloses` | Unbekannte GUID | `loadAndDisplay()` liefert `false`, `showError()`/`closeDialog()` aufgerufen, keine Boxen befüllt |
 | `test_loadAndDisplay_validShare_setsHeaderAndStatusLine` | Gültige Aktie, kein Internet-Update | Fenstertitel = Aktienname, StatusLine enthält "noch nicht aktualisiert" und "Aktie" |
-| `test_loadAndDisplay_lastInternetUpdateSet_appearsInStatusLine` | `ShareObject::setLastInternetUpdate()` gesetzt | StatusLine enthält das Datum statt "noch nicht aktualisiert", enthält "Fonds" |
-| `test_loadAndDisplay_gesamtBox_mapsShareValuesFieldsDirectly` | `ShareValues` mit den Screenshot-Beispielwerten (40 Stk., 484,40€, ...) | "Einzahlungen"/"Verkäufe"/"Gewinn / Verlust (gesamt)"/"Entwicklung" exakt wie im Screenshot, Farbe grün, `emphasize` auf "="-Zeilen |
+| `test_loadAndDisplay_lastInternetUpdateSet_appearsInStatusLine` | ISO-8601-Eingabe (`"2026-07-09T20:34:00"`, wie in der DB gespeichert) | StatusLine enthält den über `QLocale::ShortFormat` formatierten Wert, **nicht** den rohen ISO-String; enthält "Fonds" |
+| `test_loadAndDisplay_malformedInternetUpdate_fallsBackToRawString` | Nicht als ISO 8601 parsbarer String | StatusLine zeigt den Rohwert (Fallback statt Verschwinden) |
+| `test_loadAndDisplay_lastPriceUpdateSet_appearsInWebsiteUpdateLine` | ISO-8601-Eingabe (`"2026-07-10T11:53:00"`) | "Letzte Website-Aktualisierung"-Zeile enthält den lokal formatierten Wert, nicht den rohen ISO-String |
+| `test_loadAndDisplay_noPriceUpdate_websiteUpdateLineShowsPlaceholder` | `lastPriceUpdate()` leer | "Letzte Website-Aktualisierung"-Zeile zeigt "noch nicht aktualisiert" |
+| `test_loadAndDisplay_gesamtBox_mapsShareValuesFieldsDirectly` | `ShareValues` mit den Depotwert-Screenshot-Werten (40 Stk., 484,40€, ...) | "Aktueller Bestandswert"/"Verkäufe"/"Alle Einzahlungen"/"Gewinn / Verlust (gesamt)"/"Entwicklung" exakt wie im Screenshot, Farbe grün, `emphasize` auf "="-Zeilen |
 | `test_loadAndDisplay_gesamtBox_negativeProfitLoss_setsRedColor` | `completeProfitLoss < 0` | Farbe = `Qt::red` |
 | `test_loadAndDisplay_vortagBox_computesProfitLossFromVolumeTimesDiff` | `volume=40`, `prevDayDiff=41,90` | "Gewinn / Verlust" = 1676,00€ (40×41,90, exakt wie Screenshot), Farbe grün |
 | `test_loadAndDisplay_vortagBox_negativeDiff_setsRedColor` | `prevDayDiff < 0` | Farbe = `Qt::red`, Produkt korrekt negativ |
 | `test_loadAndDisplay_aktuelleBox_sumAddsCurValueDividendAndSaleProfitLoss` | `curValue=19376`, `totalDividend=0`, `saleProfitLossFinal=-252,20` | "Summe" = 19123,80€ (Presenter-Arithmetik, kein `ShareCalculator`-Feld) |
+| `test_loadAndDisplay_marketMode_setsTabTitle` | `marketValueMode = true` | Tab-Titel = "Komplette Marktbewertung" |
+| `test_loadAndDisplay_depotwertMode_setsTabTitle` | `marketValueMode = false` (Default) — Regression | Tab-Titel = "Komplette Depotbewertung" |
+| `test_loadAndDisplay_marketMode_gesamtBox_matchesScreenshotValues` | `ShareValues` mit den echten Marktwert-Screenshot-Werten (AGIF-Allianz, 168,50796 Stk.) | "Verkäufe"/"Summe"/"Alle Einzahlungen"/"Gewinn / Verlust (gesamt)"/"Entwicklung" exakt wie im Screenshot; "Dividenden" = "-", Farbe `Qt::gray` |
+| `test_loadAndDisplay_marketMode_aktuelleBox_matchesScreenshotValues` | Gleiche Fixture | "Gewinn / Verlust (Verkäufe)" = `saleProfitLoss`, "Summe" = `marketValue`, beide exakt wie im Screenshot; "Dividenden" deaktiviert |
+| `test_loadAndDisplay_marketMode_vortagBox_unaffectedByMode` | Gleiche Fixture, Marktwert-Modus | "Gewinn / Verlust" = 53,59€ (168,50796×0,318, exakt wie im Screenshot) — bestätigt, dass die Vortag-Box modus-unabhängig ist |
 
 @note **`lastInternetUpdate()`-Zweig (erledigt 09.07.2026):** `ShareObject`
 besitzt `setLastInternetUpdate(const QString&)` — der zuvor als offen
 markierte Test ist jetzt oben in der Tabelle enthalten.
+
+@note **`setWebsiteUpdateLine()`/`lastPriceUpdate()` (erledigt 10.07.2026):**
+Von Nessie bestätigt — "Letzte Website-Aktualisierung" ist der Zeitpunkt der
+letzten Marktwert-/Kurs-Aktualisierung, `lastPriceUpdate()` ist damit das
+richtige Feld. Zwei Tests oben decken den gesetzten und den leeren Fall ab.
+
+@note **Länderschema-Bugfix (11.07.2026):** `lastInternetUpdate()`/
+`lastPriceUpdate()` lieferten den rohen ISO-8601-String statt eines
+länderschema-formatierten Werts (z. B. `"2026-07-11T00:45:00"` statt
+`"11.07.2026 00:45"`) — Nessie ist das im Dialog aufgefallen. Behoben über
+einen `formatDateTime()`-Helfer (`QLocale().toString(dt, QLocale::ShortFormat)`,
+gleiche Konvention wie `BuyObject::dateAsStr()` usw.). Drei Tests oben decken
+den formatierten Normalfall sowie den Fallback bei nicht-ISO-Strings ab.
 
 @note **`tst_mainwindow.cpp` (erledigt 09.07.2026):** Drei Tests decken
 `ViewShareDetails`/`onPortfolioRowDoubleClicked()` auf MainWindow-Seite ab —
@@ -1213,11 +1234,11 @@ Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_roundAway_halfAwayFromZero` | Cent-Rundung | half-away-from-zero, positiv/negativ |
-| `test_marktwert_coreScenario` | Kernbeispiel (2 Käufe, 1 Verkauf) | `purchaseValue`, `curValue`, `profitLoss`, `completeProfitLossMarket`, `completeCurValueMarket` + Depotwert-Basis |
+| `test_marktwert_coreScenario` | Kernbeispiel (2 Käufe, 1 Verkauf) | `purchaseValue` (1200,00), `curValue`, `profitLoss` (175,00), `completeProfitLossMarket` (281,04), `completeCurValueMarket` (1881,04), `salePayoutMarket` (517,00) + Depotwert-Basis |
 | `test_depotwert_finalFields` | Depotwert-Tab (mit Brokerage), per-Lot-Zuordnung — gleiche Fixture | `profitLossFinal` (166,06), `profitLossPctFinal`, `purchaseValueFinal` (1208,94), `completeCurValue` (1885,00), `completeProfitLoss` (272,10), `completeProfitPct` |
-| `test_depotwert_partialLotBrokerageAndReduction` | Brokerage UND Rabatt anteilig auf teilverkauftem Lot (6/10 gehalten) | `purchaseValueFinal` (602,65, nicht 604,43), `purchaseValue` (596,69), `profitLossFinal` (-2,65) — Voll-Zuordnung explizit ausgeschlossen |
+| `test_depotwert_partialLotBrokerageAndReduction` | Brokerage UND Rabatt anteilig auf teilverkauftem Lot (6/10 gehalten) | `purchaseValueFinal` (602,65, nicht 604,43), `purchaseValue` (600,00 — Marktwert schließt jetzt auch Rabatt aus), `profitLossFinal` (-2,65) — Voll-Zuordnung explizit ausgeschlossen |
 | `test_depotwert_dividendInCompleteValue` | Netto-Dividende fliesst in die Komplett-Spalten | `completeCurValue` (1012,00 statt 1000,00), `completeProfitLoss` (12,00) |
-| `test_marktwert_emptyDetails_sameResult` | Regression "viel zu hoch" | Ergebnis identisch trotz **leerer** `SaleBuyDetails` (Aggregat-basiert) |
+| `test_marktwert_emptyDetails_sameResult` | Regression "viel zu hoch" | Ergebnis identisch trotz **leerer** `SaleBuyDetails` (Aggregat-basiert); `completeProfitLossMarket` (281,04) |
 | `test_marktwert_columnIdentity` | Spalten-Identität | `Kpl. Marktwert = Kpl. Einzahlung + Kpl. Entwicklung` |
 | `test_marktwert_fullySold` | Position komplett verkauft | `volume = 0`, `purchaseValue = 0`, realisierte G/V mit Gebühren |
 | `test_depotwert_saleProfitLossFinal_matchesRealizedWhenFullySold` | Wie `test_marktwert_fullySold` (gleiche Fixture) | `saleProfitLossFinal == completeProfitLossMarket` (Algebra-Invariante, held = 0), `salePayoutFinal` (1292,00) |
@@ -1227,13 +1248,36 @@ Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
 `TwoLineDelegate` und `CenterIconDelegate` sind Header-only ohne `Q_OBJECT` —
 kein eigenständiger Test nötig.
 
-@note **`salePayoutFinal`/`saleProfitLossFinal` (erledigt 09.07.2026):**
-`test_depotwert_finalFields` prüft jetzt zusätzlich beide neuen Felder anhand
-derselben Kernfixture (`salePayoutFinal` = 510,00€, `saleProfitLossFinal` =
-106,04€, mit Cross-Check gegen `completeProfitLoss`). Ergänzend prüft
+@note **Bugfix (10.07.2026):** Rabatt (`reduction`) wurde in den Marktwert-
+Feldern (`purchaseValueMarket`, `completePurchaseMarket`, `salePayoutMarket`)
+weiterhin verrechnet, obwohl Brokerage dort schon ausgeschlossen war —
+inkonsistent, da Rabatt fachlich zur Brokerage gehört (Kosten-Rabatt-Paar in
+der C#-Referenz). Von Nessie bestätigt und behoben. Betrifft `test_marktwert_
+coreScenario`, `test_depotwert_partialLotBrokerageAndReduction` und
+`test_marktwert_emptyDetails_sameResult` — Sollwerte oben entsprechend neu
+durchgerechnet (`completeCurValueMarket` bleibt bei 100%-gehaltenen Buys
+algebraisch unverändert, `completePurchaseMarket`/`completeProfitLossMarket`
+einzeln ändern sich). Alle anderen Tests nutzen Fixtures mit `reduction = 0`
+und sind unverändert.
+
+@note **`salePayoutFinal`/`saleProfitLossFinal` (erledigt 09.07.2026),
+`salePayoutMarket` (erledigt 10.07.2026):** `test_depotwert_finalFields`
+prüft `salePayoutFinal` (510,00€) und `saleProfitLossFinal` (106,04€) anhand
+der Kernfixture, mit Cross-Check gegen `completeProfitLoss`.
+`test_marktwert_coreScenario` prüft zusätzlich `salePayoutMarket` (517,00€,
+gleiche Fixture, ohne Brokerage und ohne Rabatt). Ergänzend prüft
 `test_depotwert_saleProfitLossFinal_matchesRealizedWhenFullySold` die reine
 Algebra-Invarianz `saleProfitLossFinal == completeProfitLossMarket` im
 Fully-Sold-Fall (held = 0), unabhängig von Hand nachgerechneten Zahlen.
+
+@note **Offen:** `saleProfitLoss` und `marketValue` (beide bereits vor dieser
+Iteration vorhanden) werden jetzt auch von `PresenterShareDetails` für die
+Marktwert-"Aktuelle Bestandsberechnung"-Box verwendet, haben in
+`tst_sharecalculator.cpp` aber weiterhin keine direkte, isolierte Prüfung —
+nur indirekt über `completeProfitLossMarket`/`completeCurValueMarket`, die
+denselben `saleProfitLossMarket`-Rohwert anders verrechnen. Vorbestehende
+Lücke, keine Regression durch diese Iteration, aber jetzt mit höherer
+praktischer Relevanz.
 
 ---
 

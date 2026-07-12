@@ -15,7 +15,11 @@
 //     detail list must NOT overstate the gain,
 //   - the column identity  Kpl. Marktwert = Kpl. Einzahlung + Kpl. Entwicklung,
 //   - cent-exact half-away-from-zero rounding,
-//   - edge cases volume = 0 (fully sold) and no sales.
+//   - edge cases volume = 0 (fully sold) and no sales,
+//   - (10.07.2026) Marktwert figures exclude Rabatt (reduction) as well as
+//     brokerage — Rabatt is a discount on brokerage costs, so it belongs
+//     together with "Kosten" and was previously still subtracted even
+//     though brokerage itself was already excluded.
 
 #include <QtTest>
 #include <QSqlDatabase>
@@ -165,13 +169,29 @@ private slots:
 
         CMP_MONEY(v.volume,                   11.0);
         CMP_MONEY(v.curValue,                 1375.0);
-        CMP_MONEY(v.purchaseValue,            1198.0);  // held basis, no brokerage
-        CMP_MONEY(v.profitLoss,               177.0);   // Aktuelle Entwicklung
-        CMP_MONEY(v.completePurchaseMarket,   1598.0);  // Kpl. Einzahlung
-        CMP_MONEY(v.completeProfitLossMarket, 283.04);  // realized P/L incl. fees
+        // purchaseValue/completePurchaseMarket now exclude Rabatt (reduction)
+        // as well as brokerage — corrected 10.07.2026 (Buy2's reduction 2.00
+        // no longer subtracted; buy1's reduction was already 0, so unaffected
+        // there). Values below recomputed accordingly.
+        CMP_MONEY(v.purchaseValue,            1200.0);  // held basis, no brokerage, no reduction
+        CMP_MONEY(v.profitLoss,               175.0);   // Aktuelle Entwicklung
+        CMP_MONEY(v.completePurchaseMarket,   1600.0);  // Kpl. Einzahlung
+        CMP_MONEY(v.completeProfitLossMarket, 281.04);  // realized P/L incl. fees
+        // completeCurValueMarket is UNCHANGED by the Rabatt fix: Buy2 is 100%
+        // held (frac=1), so its reduction cancelled out of
+        // (completePurchaseMarket - purchaseValueMarket) either way —
+        // completeCurValueMarket = curValue + that difference + realized P/L.
         CMP_MONEY(v.completeCurValueMarket,   1881.04); // Kpl. Marktwert
 
-        // Depotwert basics (with brokerage)
+        // salePayoutMarket (ergänzt 10.07.2026, für die ShareDetailsForm
+        // Marktwert-Box "+ Verkäufe"-Zeile) — Marktwert-Pendant zu
+        // salePayoutFinal, ohne Brokerage und ohne Rabatt. Unverändert durch
+        // den Rabatt-Fix, da die Sale-Rabatt in dieser Fixture bereits 0 ist:
+        //   saleValue = round(4 * 130) = 520.00
+        //   salePayoutMarket = round(520 - tax(3)) = 517.00
+        CMP_MONEY(v.salePayoutMarket, 517.00);
+
+        // Depotwert basics (with brokerage) — unaffected by the Marktwert fix
         CMP_MONEY(v.purchaseValueFinal,       1208.94);
         CMP_MONEY(v.completePurchase,         1612.90);
         CMP_MONEY(v.completeProfitLoss,       272.10);
@@ -237,7 +257,11 @@ private slots:
         const ShareValues v = ShareCalculator::compute(k_shareGuid, 100.0, 100.0);
 
         CMP_MONEY(v.purchaseValueFinal, 602.65);  // per-lot, NOT 604.43
-        CMP_MONEY(v.purchaseValue,      596.69);  // market basis (reduction only)
+        // purchaseValue (Marktwert) now excludes reduction too (corrected
+        // 10.07.2026) — held basis is simply heldVolume x price, no
+        // brokerage-related adjustment of any kind: 6 * 100 = 600.00
+        // (previously 596.69, which still subtracted the prorated reduction).
+        CMP_MONEY(v.purchaseValue,      600.00);
         CMP_MONEY(v.profitLossFinal,    -2.65);
         CMP_MONEY(v.profitLossPctFinal, -2.65 / 602.65 * 100.0);
     }
@@ -271,7 +295,11 @@ private slots:
 
         const ShareValues v = ShareCalculator::compute(k_shareGuid, 125.0, 120.0);
 
-        CMP_MONEY(v.completeProfitLossMarket, 283.04);
+        // completeProfitLossMarket recomputed for the Rabatt fix (10.07.2026,
+        // same fixture as test_marktwert_coreScenario) — completeCurValueMarket
+        // stays identical since Buy2's reduction cancels out of the
+        // (completePurchaseMarket - purchaseValueMarket) difference either way.
+        CMP_MONEY(v.completeProfitLossMarket, 281.04);
         CMP_MONEY(v.completeCurValueMarket,   1881.04);
     }
 
