@@ -38,15 +38,18 @@ QColor seriesColor(SeriesKind kind)
 ChartAxis axisForKind(SeriesKind kind)
 {
     switch (kind) {
-    case SeriesKind::HeldVolume:   return ChartAxis::HeldVolume;
-    case SeriesKind::TradedVolume: return ChartAxis::TradedVolume;
-    default:                       return ChartAxis::Price;
+    case SeriesKind::HeldVolume:
+    case SeriesKind::TradedVolume:
+        return ChartAxis::Volume;
+    default:
+        return ChartAxis::Price;
     }
 }
 
-/** Whether @p kind plots on a "Stück"-type axis (HeldVolume/TradedVolume)
+/** Whether @p kind plots on the "Stück"-Achse (HeldVolume/TradedVolume)
  *  rather than the price axis — used for legend formatting (no "(€)" suffix,
- *  no decimals), independent of which of the two Stück-Achsen it actually is. */
+ *  no decimals). Beide teilen sich seit 12.07.2026 dieselbe ChartAxis::Volume
+ *  (Checkboxen gegenseitig exklusiv, siehe ViewChart::setupSelektionBox()). */
 bool isVolumeKind(SeriesKind kind)
 {
     return axisForKind(kind) != ChartAxis::Price;

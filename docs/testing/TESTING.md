@@ -275,6 +275,7 @@ Methode von `MainWindow` ist und dessen volle Konstruktion braucht.
 | `test_onPortfolioRowDoubleClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole) | Kein Absturz, kein modaler Dialog |
 | `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText` | `ViewShareDetails` direkt konstruiert | `hasValidShare()` = true, Fenstertitel = Aktienname, Close-Button = "Schließen" |
 | `test_chartWheel_overCountSpinAndChartView_changesIntervalCountAndRefreshes` | Mausrad-Events (`QWheelEvent`) auf `countSpin` (ohne Fokus) und auf `chartView`-Viewport | Beide erhöhen/verringern `intervalCount()`; löst jeweils einen Refresh aus (siehe ARCHITECTURE.md, "ChartForm-Details") |
+| `test_chartCheckboxes_heldAndTradedVolumeAreMutuallyExclusive` | `seriesCheckBox_HeldVolume` per `findChild()` angehakt (ergänzt 12.07.2026, siehe ARCHITECTURE.md "ChartForm-Details") | `seriesCheckBox_TradedVolume` wird `setDisabled(true)` und bekommt einen Tooltip; nach dem Abhaken wieder `isEnabled() == true` und Tooltip leer — Prüfung erfolgt symmetrisch in beide Richtungen |
 
 ModelShareAdd:
 | Test | Beschreibung | Prüft |
@@ -727,9 +728,9 @@ vom System-Locale der Baumaschine abhängen würden.
 | `test_loadAndDisplay_withData_setsDefaultStartDateToLatest` | Ein Tageswert vorhanden | `setDefaultStartDate()` erhält das späteste Datum aus `daily_values` |
 | `test_refresh_defaultSelection_onlyClosingPriceSeries` | Default-Selektion der Fake-View (nur `ClosingPrice`) | `setChartData()` enthält genau eine Serie mit den `closingPrice()`-Werten, `axis == ChartAxis::Price` |
 | `test_refresh_dayInterval_computesCorrectRangeStart` | `Interval=Day`, `Anzahl=5`, Start-Datum 10.07.2026 | Nur Tageswerte ab (inkl.) 05.07.2026 landen in der Serie — bestätigt `computeRangeStart()` |
-| `test_refresh_heldVolumeSeries_usesModelValuesAndOwnAxis` | `HeldVolume` selektiert | Serie übernimmt `ModelChart::heldVolumeSeries()`-Werte 1:1, `axis == ChartAxis::HeldVolume` |
-| `test_refresh_tradedVolumeSeries_usesDailyValuesVolumeAndOwnAxis` | `TradedVolume` selektiert (ergänzt 12.07.2026) | Serie übernimmt `DailyValuesObject::volume()` direkt (kein Model-Aufruf nötig), `axis == ChartAxis::TradedVolume` |
-| `test_refresh_heldAndTradedVolume_useDifferentAxes` | `HeldVolume` **und** `TradedVolume` gleichzeitig selektiert | Beide Serien tragen unterschiedliche `ChartAxis`-Werte — eigene dritte Achse statt geteilter Achse (Umstellung 12.07.2026, nach visueller Prüfung durch Nessie) |
+| `test_refresh_heldVolumeSeries_usesModelValuesAndVolumeAxis` | `HeldVolume` selektiert | Serie übernimmt `ModelChart::heldVolumeSeries()`-Werte 1:1, `axis == ChartAxis::Volume` |
+| `test_refresh_tradedVolumeSeries_usesDailyValuesVolumeAndVolumeAxis` | `TradedVolume` selektiert (ergänzt 12.07.2026) | Serie übernimmt `DailyValuesObject::volume()` direkt (kein Model-Aufruf nötig), `axis == ChartAxis::Volume` |
+| `test_refresh_heldAndTradedVolume_shareSameVolumeAxis` | `HeldVolume` **und** `TradedVolume` gleichzeitig selektiert (in der echten UI durch Checkbox-Exklusivität unmöglich, siehe unten) | Beide Serien tragen `ChartAxis::Volume` — Presenter-Ebene kennt keine Exklusivität, das ist bewusst reine View-Logik |
 | `test_refresh_noSeriesSelected_showsEmptyMessage` | Alle Selektions-Checkboxen deaktiviert | `showEmptyChart()` statt `setChartData()`, trotz vorhandener Tageswerte |
 | `test_refresh_legendEntries_minMaxForClosingPrice` | Zwei Tageswerte (379,70€/422,40€) | Legende-Eintrag "Schluss-Kurs" enthält beide Werte in der Min/Max-Zeile |
 | `test_refresh_legendEntries_lastBuyAndSaleReference` | `latestBuy`/`latestSale` gesetzt (12.05.2022, 198,36€ bzw. 27.02.2020, 205,25€) | Legende enthält "Letzter Kauf"/"Letzter Verkauf" mit Datum, Preis und Entwicklung (224,04€) relativ zum Range-Max-Schlusskurs |

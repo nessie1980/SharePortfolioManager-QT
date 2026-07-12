@@ -144,10 +144,12 @@ private:
     QChartView*     m_chartView = nullptr;
     QChart*         m_chart     = nullptr;
     QLabel*         m_emptyLabel = nullptr;
-    QDateTimeAxis*  m_xAxis              = nullptr;
-    QValueAxis*     m_yAxisPrice         = nullptr;
-    QValueAxis*     m_yAxisHeldVolume    = nullptr; ///< "Anteile" (Depotbestand) — eigene Skala
-    QValueAxis*     m_yAxisTradedVolume  = nullptr; ///< "Gehandelte Anteile" (Börsenvolumen) — eigene Skala
+    QDateTimeAxis*  m_xAxis      = nullptr;
+    QValueAxis*     m_yAxisPrice = nullptr;
+    QValueAxis*     m_yAxisVolume = nullptr; ///< "Anteile" ODER "Gehandelte Anteile" — nie beide
+                                              ///< gleichzeitig, da die Checkboxen sich gegenseitig
+                                              ///< ausschließen (siehe setupSelektionBox()); Titel
+                                              ///< wird dynamisch in rebuildAxes() gesetzt.
 
     /** Vertikale Kauf-/Verkauf-Markerlinien — separat von den Daten-Serien
      *  getrackt, damit setReferenceLines() sie gezielt entfernen kann, ohne

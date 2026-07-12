@@ -15,6 +15,7 @@
 #include <QLineEdit>
 #include <QDoubleSpinBox>
 #include <QSpinBox>
+#include <QCheckBox>
 #include <QWheelEvent>
 #include <QComboBox>
 #include <QMenuBar>
@@ -3997,6 +3998,45 @@ private slots:
 
         sendWheel(chartView->viewport(), -120);
         QCOMPARE(countSpin->value(), 1);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ViewChart — gegenseitiger Ausschluss "Anteile"/"Gehandelte Anteile"
+    // (ergänzt 12.07.2026, siehe ARCHITECTURE.md "ChartForm-Details").
+    // Reine View-Ebene (ViewChart::setupSelektionBox()), daher nur über eine
+    // echte ViewChart-Instanz testbar, nicht über tst_chartform.cpp's
+    // FakeViewChart/PresenterChart-Paar.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_chartCheckboxes_heldAndTradedVolumeAreMutuallyExclusive()
+    {
+        const QString shareGuid = insertTestShare();
+        ViewShareDetails dlg(shareGuid);
+
+        auto* heldCb   = dlg.findChild<QCheckBox*>(QStringLiteral("seriesCheckBox_HeldVolume"));
+        auto* tradedCb = dlg.findChild<QCheckBox*>(QStringLiteral("seriesCheckBox_TradedVolume"));
+        if (!heldCb)   QFAIL("seriesCheckBox_HeldVolume nicht gefunden");
+        if (!tradedCb) QFAIL("seriesCheckBox_TradedVolume nicht gefunden");
+
+        QVERIFY(tradedCb->isEnabled());
+        QVERIFY(tradedCb->toolTip().isEmpty());
+
+        heldCb->setChecked(true);
+        QVERIFY(!tradedCb->isEnabled());
+        QVERIFY(!tradedCb->toolTip().isEmpty());
+
+        heldCb->setChecked(false);
+        QVERIFY(tradedCb->isEnabled());
+        QVERIFY(tradedCb->toolTip().isEmpty());
+
+        // Symmetrisch in die andere Richtung.
+        tradedCb->setChecked(true);
+        QVERIFY(!heldCb->isEnabled());
+        QVERIFY(!heldCb->toolTip().isEmpty());
+
+        tradedCb->setChecked(false);
+        QVERIFY(heldCb->isEnabled());
+        QVERIFY(heldCb->toolTip().isEmpty());
     }
 
 }; // end of TestMainWindow

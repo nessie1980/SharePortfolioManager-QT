@@ -308,7 +308,7 @@ private slots:
         QCOMPARE(closing->dates.at(0), QDate(2026, 7, 6));
     }
 
-    void test_refresh_heldVolumeSeries_usesModelValuesAndOwnAxis()
+    void test_refresh_heldVolumeSeries_usesModelValuesAndVolumeAxis()
     {
         FakeViewChart view;
         view.m_selected[SeriesKind::HeldVolume] = true;
@@ -323,12 +323,12 @@ private slots:
 
         const auto* held = view.findSeries(SeriesKind::HeldVolume);
         if (!held) QFAIL("HeldVolume series missing");
-        QCOMPARE(held->axis, ChartAxis::HeldVolume);
+        QCOMPARE(held->axis, ChartAxis::Volume);
         QCOMPARE(held->values.size(), 1);
         QCOMPARE(held->values.at(0), 42.0);
     }
 
-    void test_refresh_tradedVolumeSeries_usesDailyValuesVolumeAndOwnAxis()
+    void test_refresh_tradedVolumeSeries_usesDailyValuesVolumeAndVolumeAxis()
     {
         // TradedVolume ("Gehandelte Anteile") kommt direkt aus DailyValuesObject::
         // volume() (Spalte daily_values.volume) — anders als HeldVolume braucht es
@@ -345,17 +345,24 @@ private slots:
 
         const auto* traded = view.findSeries(SeriesKind::TradedVolume);
         if (!traded) QFAIL("TradedVolume series missing");
-        QCOMPARE(traded->axis, ChartAxis::TradedVolume);
+        QCOMPARE(traded->axis, ChartAxis::Volume);
         QCOMPARE(traded->values.size(), 1);
         QCOMPARE(traded->values.at(0), 1250000.0);
     }
 
-    void test_refresh_heldAndTradedVolume_useDifferentAxes()
+    void test_refresh_heldAndTradedVolume_shareSameVolumeAxis()
     {
-        // Dritte eigene Skala für Gehandelte Anteile (ergänzt 12.07.2026, auf
-        // Nessies Vorgabe nach visueller Prüfung) — Anteile (Depotbestand) und
-        // Gehandelte Anteile (Börsenvolumen) dürfen sich NICHT mehr eine Achse
-        // teilen, da ihre Größenordnungen zu weit auseinanderliegen.
+        // Seit dem Umbau auf gegenseitigen Checkbox-Ausschluss (12.07.2026,
+        // siehe ARCHITECTURE.md "ChartForm-Details") teilen sich HeldVolume
+        // und TradedVolume wieder eine gemeinsame ChartAxis::Volume — die
+        // Exklusivität selbst wird ausschließlich in
+        // ViewChart::setupSelektionBox() durchgesetzt (View-Ebene, siehe
+        // tst_mainwindow.cpp, test_chartCheckboxes_heldAndTradedVolumeAreMutuallyExclusive),
+        // nicht hier auf Presenter-Ebene. Diese FakeView bildet die reale
+        // Exklusivität bewusst nicht nach und erlaubt beide Flags
+        // gleichzeitig — dieser Test prüft nur noch, dass PresenterChart
+        // in diesem (in der echten UI unmöglichen) Fall beiden Serien
+        // dieselbe Achse zuweisen würde.
         FakeViewChart view;
         view.m_selected[SeriesKind::HeldVolume]   = true;
         view.m_selected[SeriesKind::TradedVolume] = true;
@@ -372,9 +379,8 @@ private slots:
         const auto* traded = view.findSeries(SeriesKind::TradedVolume);
         if (!held)   QFAIL("HeldVolume series missing");
         if (!traded) QFAIL("TradedVolume series missing");
-        QCOMPARE(held->axis, ChartAxis::HeldVolume);
-        QCOMPARE(traded->axis, ChartAxis::TradedVolume);
-        QVERIFY(held->axis != traded->axis);
+        QCOMPARE(held->axis, ChartAxis::Volume);
+        QCOMPARE(traded->axis, ChartAxis::Volume);
     }
 
     void test_refresh_noSeriesSelected_showsEmptyMessage()

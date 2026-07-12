@@ -12,13 +12,14 @@
  * @brief The six toggleable data series in the "Aktien-Chart" tab
  * (C# reference: "Selektion"-Checkboxen in FrmShareDetails).
  *
- * ClosingPrice/OpeningPrice/High/Low share the price (€) axis; HeldVolume
+ * ClosingPrice/OpeningPrice/High/Low share the price (€) axis. HeldVolume
  * ("Anteile", im Portfolio gehaltene Stückzahl) und TradedVolume
  * ("Gehandelte Anteile", Börsen-Handelsvolumen des Tages aus
- * daily_values.volume) haben je eine eigene dritte/vierte Y-Achse (siehe
- * ChartAxis) — ihre Größenordnungen unterscheiden sich zu stark, um sich
- * eine Achse zu teilen (Depotbestand meist zweistellig, Börsenvolumen oft
- * fünf-/sechsstellig; siehe ARCHITECTURE.md, "ChartForm-Details").
+ * daily_values.volume) teilen sich seit 12.07.2026 eine gemeinsame
+ * Stück-Achse (siehe ChartAxis) — ihre zugehörigen Checkboxen sind in
+ * ViewChart::setupSelektionBox() gegenseitig exklusiv, es kann also nie
+ * beide Serien gleichzeitig geben (siehe ARCHITECTURE.md,
+ * "ChartForm-Details").
  */
 enum class SeriesKind
 {
@@ -40,12 +41,14 @@ inline QList<SeriesKind> allSeriesKinds()
 }
 
 /**
- * @brief Which Y-axis a series plots against. Three independent scales
- * (added 12.07.2026 — HeldVolume and TradedVolume used to share one
- * "Stück"-axis, but their orders of magnitude differ too much for that to
- * read well; see ARCHITECTURE.md, "ChartForm-Details").
+ * @brief Which Y-axis a series plots against. Two independent scales:
+ * Price and Volume. HeldVolume and TradedVolume both plot against Volume —
+ * they briefly had separate axes (12.07.2026), but since their checkboxes
+ * are now mutually exclusive in ViewChart::setupSelektionBox(), only one of
+ * them can ever be visible at a time, so a shared axis is unambiguous again
+ * (see ARCHITECTURE.md, "ChartForm-Details").
  */
-enum class ChartAxis { Price, HeldVolume, TradedVolume };
+enum class ChartAxis { Price, Volume };
 
 /**
  * @brief Unit for the "Interval"-Auswahl, combined with "Anzahl" to compute

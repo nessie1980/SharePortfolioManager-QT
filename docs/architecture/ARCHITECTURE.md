@@ -1260,36 +1260,44 @@ werden immer die rohen Tageswerte aus `daily_values` im berechneten Fenster.
 **Sechs Selektions-Checkboxen** (`SeriesKind`: `ClosingPrice`/`OpeningPrice`/
 `High`/`Low`/`HeldVolume`/`TradedVolume`) — Default nur `ClosingPrice` aktiv,
 wie im C#-Referenz-Screenshot. Jede Serie trägt ein `ChartAxis`-Feld
-(`Price`/`HeldVolume`/`TradedVolume`), das bestimmt, an welcher der drei
-unabhängigen Y-Achsen sie hängt:
+(`Price`/`Volume`), das bestimmt, an welcher der zwei unabhängigen Y-Achsen
+sie hängt:
 
 - `ClosingPrice`/`OpeningPrice`/`High`/`Low` → gemeinsame Preis-Achse links
   (`QValueAxis`, "Preis (€)").
-- `HeldVolume` ("Anteile") → eigene Achse rechts, "Anteile" — im Portfolio
-  gehaltener Bestand, kumuliert aus Käufen/Verkäufen bis zum jeweiligen
-  Datum, berechnet in `ModelChart::heldVolumeSeries()` per Sweep über
-  sortierte Buy-/SaleRepository-Listen.
+- `HeldVolume` ("Anteile") → Volumen-Achse rechts, Titel "Anteile" — im
+  Portfolio gehaltener Bestand, kumuliert aus Käufen/Verkäufen bis zum
+  jeweiligen Datum, berechnet in `ModelChart::heldVolumeSeries()` per Sweep
+  über sortierte Buy-/SaleRepository-Listen.
 - `TradedVolume` ("Gehandelte Anteile", ergänzt 12.07.2026 auf Nessies
   Vorgabe — die C#-Referenz zeigt hier das an der Börse gehandelte
-  Tagesvolumen, nicht den Depotbestand) → eigene weitere Achse rechts,
-  "Gehandelte Anteile". Liest direkt `DailyValuesObject::volume()` (Spalte
-  `daily_values.volume`), kein eigener Model-Aufruf nötig, da dieser Wert
-  schon in den ohnehin geladenen Tageswerten steckt.
+  Tagesvolumen, nicht den Depotbestand) → dieselbe Volumen-Achse rechts,
+  Titel "Gehandelte Anteile". Liest direkt `DailyValuesObject::volume()`
+  (Spalte `daily_values.volume`), kein eigener Model-Aufruf nötig, da dieser
+  Wert schon in den ohnehin geladenen Tageswerten steckt.
 
-@note **Ursprünglich (erste Version, 12.07.2026) teilten sich `HeldVolume`
-und `TradedVolume` eine gemeinsame Stück-Achse.** Nach Nessies visueller
-Prüfung ("das sieht nicht schön aus") auf eine dritte eigene Achse
-umgestellt — Depotbestand (meist zweistellig) und Börsenvolumen (oft
-fünf-/sechsstellig) unterscheiden sich zu stark in der Größenordnung, um
-gemeinsam lesbar zu sein. Qt Charts stapelt mehrere Achsen derselben
-Ausrichtung automatisch nebeneinander, daher können `HeldVolume` und
-`TradedVolume` beide auf `Qt::AlignRight` liegen, ohne sich zu überlappen.
-
-@note **Weiterhin nicht zufriedenstellend (Nessies Rückmeldung, 12.07.2026):**
-Die Drei-Achsen-Optik überzeugt noch nicht. Angedachte Alternative — die
-beiden Checkboxen gegenseitig exklusiv machen, statt an der Achsendarstellung
-weiterzufeilen — ist unter "Offene Punkte / TODO",
-"ChartForm: gegenseitiger Ausschluss 'Anteile'/'Gehandelte Anteile'" notiert.
+@note **Geschichte der Achsen-Lösung (12.07.2026, drei Anläufe):** Erste
+Version: `HeldVolume` und `TradedVolume` teilten sich eine gemeinsame
+Stück-Achse. Nach Nessies visueller Prüfung ("das sieht nicht schön aus")
+zunächst auf eine dritte, eigene Achse pro Serie umgestellt (Depotbestand
+meist zweistellig, Börsenvolumen oft fünf-/sechsstellig — zu unterschiedliche
+Größenordnungen für eine gemeinsame Achse). Auch das überzeugte optisch noch
+nicht. **Finale Lösung:** Statt weiter an der Achsendarstellung zu feilen,
+sind die beiden Checkboxen `HeldVolume` und `TradedVolume` seither in
+`ViewChart::setupSelektionBox()` gegenseitig exklusiv — sobald eine der
+beiden angehakt wird, deaktiviert (`QCheckBox::setDisabled()`) sie die
+andere und setzt einen erklärenden Tooltip ("Anteile und Gehandelte Anteile
+können nicht gleichzeitig angezeigt werden."), statt sie zu verstecken (die
+Selektionsbox soll beim Umschalten nicht in der Höhe springen). Da es damit
+nie beide Serien gleichzeitig geben kann, ist die dritte Achse überflüssig —
+`ChartAxis` ist wieder auf `Price`/`Volume` reduziert, und beide
+Volumen-Serien teilen sich `m_yAxisVolume`, dessen Titeltext
+`ViewChart::rebuildAxes()` dynamisch aus der tatsächlich vorhandenen Serie
+setzt ("Anteile" bzw. "Gehandelte Anteile"). Die Exklusivität ist bewusst
+reine View-Ebene: `PresenterChart::axisForKind()` kennt nur noch
+`ChartAxis::Volume` für beide `SeriesKind`-Werte, der Presenter selbst weiß
+nichts von der Checkbox-Exklusivität — er fragt über `isSeriesSelected()`
+ohnehin nur ab, was die View tatsächlich als angehakt meldet.
 
 Alle Achsen werden bei jedem Refresh komplett neu aufgebaut
 (`ViewChart::rebuildAxes()`) statt nur die Range anzupassen, da sich die
@@ -2230,24 +2238,6 @@ Sprache ohne Neubuild änderbar durch Austausch der `.qm`-Datei.
 ---
 
 ## Offene Punkte / TODO
-
-### ChartForm: gegenseitiger Ausschluss "Anteile"/"Gehandelte Anteile" (offen, notiert 12.07.2026)
-
-Nessie gefällt die aktuelle Drei-Achsen-Lösung (Preis links, Anteile und
-Gehandelte Anteile beide rechts, siehe "ChartForm-Details" oben) optisch
-noch nicht ausreichend. Statt weiter an der Achsen-Darstellung zu feilen,
-angedachte Alternative für eine spätere Session: die beiden Checkboxen
-`HeldVolume` ("Anteile") und `TradedVolume` ("Gehandelte Anteile") werden
-gegenseitig exklusiv — sobald eine der beiden angehakt ist, wird die andere
-in `ViewChart::setupSelektionBox()` deaktiviert (`QCheckBox::setEnabled(false)`),
-sodass zu jedem Zeitpunkt höchstens eine der beiden Volumen-Serien aktiv sein
-kann. Damit bräuchte es nur noch eine gemeinsame "Stück"-Achse statt der
-aktuellen dritten Achse — vereinfacht `ViewChart::rebuildAxes()` wieder
-zurück auf zwei Achsen (Preis + eine Volumen-Achse), macht aber
-`ChartAxis::HeldVolume`/`ChartAxis::TradedVolume` als getrennte Werte
-überflüssig (Rückbau auf ein `bool`- oder gemeinsames Enum-Feld möglich, je
-nachdem was zum Zeitpunkt der Umsetzung sauberer ist). Konkrete UI-Reaktion
-(ausgegraut vs. unsichtbar, Tooltip-Erklärung) noch nicht entschieden.
 
 ### ShareDetailsForm: Gewinne/Dividenden/Kosten (offen, aktualisiert 12.07.2026)
 

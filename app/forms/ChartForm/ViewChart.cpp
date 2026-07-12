@@ -183,20 +183,50 @@ QGroupBox* ViewChart::setupSelektionBox()
     auto* layout = new QVBoxLayout(box);
 
     // ── Series checkboxes — order matches the C# reference exactly ──────────
-    auto addCheckBox = [this, layout](SeriesKind kind, const QString& label, bool checked) {
+    // objectName je Checkbox (ergänzt 12.07.2026, für den Exklusivitäts-Test
+    // in tst_mainwindow.cpp per findChild() — siehe test_chartCheckboxes_...).
+    auto addCheckBox = [this, layout](SeriesKind kind, const QString& label, bool checked,
+                                       const QString& objectName) {
         auto* cb = new QCheckBox(label);
+        cb->setObjectName(objectName);
         cb->setChecked(checked);
         connect(cb, &QCheckBox::toggled, this, [this](bool) { m_presenter.onControlsChanged(); });
         layout->addWidget(cb);
         m_seriesCheckBoxes.insert(kind, cb);
     };
 
-    addCheckBox(SeriesKind::ClosingPrice, tr("Schluss-Kurs"),     /*checked=*/true);
-    addCheckBox(SeriesKind::OpeningPrice, tr("Eröffnungs-Kurs"),  /*checked=*/false);
-    addCheckBox(SeriesKind::High,         tr("Höchstwert"),       /*checked=*/false);
-    addCheckBox(SeriesKind::Low,          tr("Tiefstwert"),       /*checked=*/false);
-    addCheckBox(SeriesKind::HeldVolume,   tr("Anteile"),          /*checked=*/false);
-    addCheckBox(SeriesKind::TradedVolume, tr("Gehandelte Anteile"), /*checked=*/false);
+    addCheckBox(SeriesKind::ClosingPrice, tr("Schluss-Kurs"),     /*checked=*/true,
+                QStringLiteral("seriesCheckBox_ClosingPrice"));
+    addCheckBox(SeriesKind::OpeningPrice, tr("Eröffnungs-Kurs"),  /*checked=*/false,
+                QStringLiteral("seriesCheckBox_OpeningPrice"));
+    addCheckBox(SeriesKind::High,         tr("Höchstwert"),       /*checked=*/false,
+                QStringLiteral("seriesCheckBox_High"));
+    addCheckBox(SeriesKind::Low,          tr("Tiefstwert"),       /*checked=*/false,
+                QStringLiteral("seriesCheckBox_Low"));
+    addCheckBox(SeriesKind::HeldVolume,   tr("Anteile"),          /*checked=*/false,
+                QStringLiteral("seriesCheckBox_HeldVolume"));
+    addCheckBox(SeriesKind::TradedVolume, tr("Gehandelte Anteile"), /*checked=*/false,
+                QStringLiteral("seriesCheckBox_TradedVolume"));
+
+    // Gegenseitiger Ausschluss "Anteile"/"Gehandelte Anteile" (ergänzt
+    // 12.07.2026, auf Nessies Vorgabe nach visueller Prüfung der vorherigen
+    // Drei-Achsen-Optik — siehe ARCHITECTURE.md, "ChartForm-Details").
+    // Bewusst reine View-Ebene: PresenterChart bekommt davon nichts mit, er
+    // fragt über isSeriesSelected() ohnehin nur die jeweils tatsächlich
+    // angehakte Checkbox ab. Ausgegraut statt versteckt, damit die
+    // Selektionsbox beim Umschalten nicht in der Höhe springt.
+    auto* heldCb   = m_seriesCheckBoxes.value(SeriesKind::HeldVolume);
+    auto* tradedCb = m_seriesCheckBoxes.value(SeriesKind::TradedVolume);
+    const QString exclusivityTooltip =
+        tr("Anteile und Gehandelte Anteile können nicht gleichzeitig angezeigt werden.");
+    connect(heldCb, &QCheckBox::toggled, this, [tradedCb, exclusivityTooltip](bool checked) {
+        tradedCb->setDisabled(checked);
+        tradedCb->setToolTip(checked ? exclusivityTooltip : QString());
+    });
+    connect(tradedCb, &QCheckBox::toggled, this, [heldCb, exclusivityTooltip](bool checked) {
+        heldCb->setDisabled(checked);
+        heldCb->setToolTip(checked ? exclusivityTooltip : QString());
+    });
 
     layout->addSpacing(8);
 
@@ -312,9 +342,8 @@ void ViewChart::setChartData(const QList<ChartSeriesData>& series)
 
         QAbstractAxis* yAxis = nullptr;
         switch (s.axis) {
-        case ChartAxis::Price:        yAxis = m_yAxisPrice;        break;
-        case ChartAxis::HeldVolume:   yAxis = m_yAxisHeldVolume;   break;
-        case ChartAxis::TradedVolume: yAxis = m_yAxisTradedVolume; break;
+        case ChartAxis::Price:  yAxis = m_yAxisPrice;  break;
+        case ChartAxis::Volume: yAxis = m_yAxisVolume; break;
         }
         if (yAxis)
             line->attachAxis(yAxis);
@@ -461,10 +490,9 @@ void ViewChart::clearLegendLayout()
 
 void ViewChart::rebuildAxes(const QList<ChartSeriesData>& series)
 {
-    if (m_xAxis)             { m_chart->removeAxis(m_xAxis);             delete m_xAxis;             m_xAxis = nullptr; }
-    if (m_yAxisPrice)        { m_chart->removeAxis(m_yAxisPrice);        delete m_yAxisPrice;        m_yAxisPrice = nullptr; }
-    if (m_yAxisHeldVolume)   { m_chart->removeAxis(m_yAxisHeldVolume);   delete m_yAxisHeldVolume;   m_yAxisHeldVolume = nullptr; }
-    if (m_yAxisTradedVolume) { m_chart->removeAxis(m_yAxisTradedVolume); delete m_yAxisTradedVolume; m_yAxisTradedVolume = nullptr; }
+    if (m_xAxis)        { m_chart->removeAxis(m_xAxis);        delete m_xAxis;        m_xAxis = nullptr; }
+    if (m_yAxisPrice)   { m_chart->removeAxis(m_yAxisPrice);   delete m_yAxisPrice;   m_yAxisPrice = nullptr; }
+    if (m_yAxisVolume)  { m_chart->removeAxis(m_yAxisVolume);  delete m_yAxisVolume;  m_yAxisVolume = nullptr; }
 
     if (series.isEmpty())
         return;
@@ -481,28 +509,29 @@ void ViewChart::rebuildAxes(const QList<ChartSeriesData>& series)
     m_xAxis->setRange(minDt, maxDt);
     m_chart->addAxis(m_xAxis, Qt::AlignBottom);
 
-    // Three independent scales — Preis, Anteile (Depotbestand) und Gehandelte
-    // Anteile (Börsenvolumen) unterscheiden sich zu stark in ihrer
-    // Größenordnung, um sich eine Achse zu teilen (siehe ARCHITECTURE.md,
-    // "ChartForm-Details"). Qt Charts stapelt mehrere Achsen mit derselben
-    // Ausrichtung automatisch nebeneinander, daher können sowohl Anteile als
-    // auch Gehandelte Anteile auf Qt::AlignRight liegen.
+    // Zwei unabhängige Skalen — Preis links, Stück rechts. Anteile
+    // (Depotbestand) und Gehandelte Anteile (Börsenvolumen) teilen sich seit
+    // 12.07.2026 wieder dieselbe Volumen-Achse: die zugehörigen Checkboxen
+    // sind in setupSelektionBox() gegenseitig exklusiv, es kann also nie
+    // beide Serien gleichzeitig geben — die frühere dritte Achse (getrennt
+    // nach Größenordnung) ist damit hinfällig (siehe ARCHITECTURE.md,
+    // "ChartForm-Details").
     double priceMin  = std::numeric_limits<double>::max(), priceMax  = std::numeric_limits<double>::lowest();
-    double heldMin   = std::numeric_limits<double>::max(), heldMax   = std::numeric_limits<double>::lowest();
-    double tradedMin = std::numeric_limits<double>::max(), tradedMax = std::numeric_limits<double>::lowest();
-    bool hasPrice = false, hasHeld = false, hasTraded = false;
+    double volumeMin = std::numeric_limits<double>::max(), volumeMax = std::numeric_limits<double>::lowest();
+    bool hasPrice = false, hasVolume = false;
+    QString volumeAxisTitle = tr("Anteile"); // Fallback; wird unten je nach tatsächlicher Serie überschrieben
 
     for (const auto& s : series) {
+        if (s.axis == ChartAxis::Volume)
+            volumeAxisTitle = (s.kind == SeriesKind::TradedVolume) ? tr("Gehandelte Anteile") : tr("Anteile");
+
         for (double v : s.values) {
             switch (s.axis) {
             case ChartAxis::Price:
                 priceMin = std::min(priceMin, v); priceMax = std::max(priceMax, v); hasPrice = true;
                 break;
-            case ChartAxis::HeldVolume:
-                heldMin = std::min(heldMin, v); heldMax = std::max(heldMax, v); hasHeld = true;
-                break;
-            case ChartAxis::TradedVolume:
-                tradedMin = std::min(tradedMin, v); tradedMax = std::max(tradedMax, v); hasTraded = true;
+            case ChartAxis::Volume:
+                volumeMin = std::min(volumeMin, v); volumeMax = std::max(volumeMax, v); hasVolume = true;
                 break;
             }
         }
@@ -522,19 +551,12 @@ void ViewChart::rebuildAxes(const QList<ChartSeriesData>& series)
         m_yAxisPrice->setRange(priceMin, priceMax);
         m_chart->addAxis(m_yAxisPrice, Qt::AlignLeft);
     }
-    if (hasHeld) {
-        pad(heldMin, heldMax);
-        m_yAxisHeldVolume = new QValueAxis();
-        m_yAxisHeldVolume->setTitleText(tr("Anteile"));
-        m_yAxisHeldVolume->setRange(heldMin, heldMax);
-        m_chart->addAxis(m_yAxisHeldVolume, Qt::AlignRight);
-    }
-    if (hasTraded) {
-        pad(tradedMin, tradedMax);
-        m_yAxisTradedVolume = new QValueAxis();
-        m_yAxisTradedVolume->setTitleText(tr("Gehandelte Anteile"));
-        m_yAxisTradedVolume->setRange(tradedMin, tradedMax);
-        m_chart->addAxis(m_yAxisTradedVolume, Qt::AlignRight);
+    if (hasVolume) {
+        pad(volumeMin, volumeMax);
+        m_yAxisVolume = new QValueAxis();
+        m_yAxisVolume->setTitleText(volumeAxisTitle);
+        m_yAxisVolume->setRange(volumeMin, volumeMax);
+        m_chart->addAxis(m_yAxisVolume, Qt::AlignRight);
     }
 }
 
