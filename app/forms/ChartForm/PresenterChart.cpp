@@ -289,15 +289,38 @@ int PresenterChart::computeMaxIntervalCount(const QDate& rangeEnd, IntervalUnit 
     if (!earliestDate.isValid() || earliestDate >= rangeEnd)
         return 1;
 
-    // Wächst "Anzahl" so lange, wie das nächstgrößere Fenster den ältesten
-    // Wert noch nicht überschritten hat (rangeStart(count+1) >= earliestDate
-    // bedeutet: der älteste Wert liegt noch im oder am Rand des Fensters).
-    // Sobald das nicht mehr gilt, würde eine weitere Vergrößerung ohnehin
-    // keine zusätzlichen Daten mehr zeigen — genau der von Nessie
-    // beschriebene Fall.
+    // Wächst "Anzahl" so lange, wie das AKTUELLE Fenster den ältesten Wert
+    // noch nicht erreicht hat (rangeStart(count) > earliestDate bedeutet:
+    // der älteste Wert liegt noch VOR dem Fenster, ist also noch nicht
+    // enthalten). Sobald rangeStart(count) <= earliestDate gilt, ist der
+    // älteste Wert erstmals vollständig im Fenster — eine weitere
+    // Vergrößerung würde ohnehin keine zusätzlichen Daten mehr zeigen.
+    //
+    // Bugfix 12.07.2026 (Nessies Rückmeldung: "nicht alle Werte werden
+    // angezeigt, wenn ich den Zeitraum größer mache"): Die vorherige Version
+    // prüfte rangeStart(count + 1) statt rangeStart(count) — bei Intervallen,
+    // deren Schrittweite den ältesten Wert nicht exakt trifft (v. a.
+    // Interval=Monat/Jahr, wo addMonths()/addYears() selten exakt auf das
+    // Datum des ältesten Tageswerts fällt), blieb "Anzahl" dadurch einen
+    // Schritt zu klein — genau das Fenster, das den ältesten Wert korrekt
+    // eingeschlossen hätte, war über die Spinbox nie erreichbar. Bei
+    // Interval=Tag fiel der Fehler nicht auf, weil dort jede Stufe exakt
+    // einen Tag verschiebt und die Grenze fast immer exakt getroffen wird.
+    //
+    // Schleifen-Obergrenze (zweiter Bugfix 12.07.2026, Nessies Rückmeldung:
+    // "beim Intervall Tag ist maximal 999 möglich"): statt der vorherigen
+    // festen Konstante (999 — bei Interval=Tag nur ~2,7 Jahre, deutlich
+    // weniger als real vorhandene Kurshistorien) jetzt die tatsächliche
+    // Tagesspanne zwischen ältestem Wert und rangeEnd — für Interval=Tag die
+    // exakt richtige Grenze, für Woche/Monat/Jahr großzügig genug (jede
+    // Stufe dort ist mindestens so groß wie ein Tag). kAbsoluteSafetyCeiling
+    // bleibt zusätzlich als reine Notbremse gegen korrupte Datumsdaten.
+    const int dynamicCeiling =
+        static_cast<int>(std::min<qint64>(earliestDate.daysTo(rangeEnd), kAbsoluteSafetyCeiling));
+
     int count = 1;
-    while (count < kIntervalCountCeiling &&
-           computeRangeStart(rangeEnd, unit, count + 1) >= earliestDate) {
+    while (count < dynamicCeiling &&
+           computeRangeStart(rangeEnd, unit, count) > earliestDate) {
         ++count;
     }
     return count;

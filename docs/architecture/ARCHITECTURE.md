@@ -1541,13 +1541,50 @@ Logik), nicht im `ViewChart` — reine MVP-Trennung, die View bleibt dumm.
   `MIN(date)`) → `IModelChart::earliestDailyValueDate()` →
   `ModelChart::earliestDailyValueDate()` reichen das durch.
 - **`PresenterChart::computeMaxIntervalCount(rangeEnd, unit, earliestDate)`**
-  berechnet bei jedem `refresh()` die größte "Anzahl", für die das Fenster
-  den ältesten Wert gerade noch (aber nicht darüber hinaus) erreicht. Kein
-  geschlossener Ausdruck für Monat/Jahr möglich (unterschiedliche
-  Monatslängen — `addMonths()` clamped den Tag, z. B. 31.01. minus 1 Monat =
-  28./29.02.), daher eine einfache, auf `kIntervalCountCeiling = 999`
-  gedeckelte Schleife über `computeRangeStart()` statt einer Formel — robust
-  für alle vier `IntervalUnit`-Werte, ohne Sonderfälle.
+  berechnet bei jedem `refresh()` die kleinste "Anzahl", für die das Fenster
+  den ältesten Wert erstmals vollständig einschließt (`rangeStart(count) <=
+  earliestDate`). Kein geschlossener Ausdruck für Monat/Jahr möglich
+  (unterschiedliche Monatslängen — `addMonths()` clamped den Tag, z. B. 31.01.
+  minus 1 Monat = 28./29.02.), daher eine einfache Schleife über
+  `computeRangeStart()` statt einer Formel — robust für alle vier
+  `IntervalUnit`-Werte, ohne Sonderfälle. Die Schleife terminiert dabei immer
+  von selbst (`computeRangeStart()` bewegt sich bei steigendem `count`
+  monoton rückwärts), eine Obergrenze dient nur der Absicherung, nicht der
+  Korrektheit.
+
+  @note **Bugfix 12.07.2026 (Nessies Rückmeldung: "nicht alle Werte werden
+  angezeigt, wenn ich den Zeitraum größer mache"):** Die Schleife prüfte
+  ursprünglich `rangeStart(count + 1)` statt `rangeStart(count)` — ein
+  Off-by-one. Bei Intervallen, deren Schrittweite den ältesten Wert nicht
+  exakt trifft (v. a. Interval=Monat/Jahr, wo `addMonths()`/`addYears()`
+  selten exakt auf das Datum des ältesten Tageswerts fällt), blieb "Anzahl"
+  dadurch systematisch einen Schritt zu klein — genau das Fenster, das den
+  ältesten Wert korrekt eingeschlossen hätte, war über die Spinbox nie
+  erreichbar, die entsprechenden Datenpunkte blieben dauerhaft unsichtbar.
+  Bei Interval=Tag fiel der Fehler nicht auf: dort verschiebt jede Stufe
+  exakt einen Tag, sodass die Fenstergrenze fast immer exakt auf einen
+  vorhandenen Tageswert trifft und der Off-by-one keine sichtbare Wirkung
+  hatte (Zufall der bisherigen Testdaten, nicht Beweis der Korrektheit).
+
+  @note **Zweiter Bugfix 12.07.2026 (Nessies Rückmeldung: "beim Intervall
+  Tag ist maximal 999 möglich"):** Die Schleife war ursprünglich zusätzlich
+  auf eine feste Konstante `kIntervalCountCeiling = 999` gedeckelt, gedacht
+  als reine Sicherheitsbremse gegen eine theoretisch endlose Schleife (siehe
+  oben: die Schleife terminiert an sich immer von selbst). Für
+  Interval=Woche/Monat/Jahr war das großzügig genug (999 Jahre/Monate/Wochen
+  sind absurd viel Historie), für Interval=Tag aber eine echte, spürbare
+  Grenze: 999 Tage sind nur ~2,7 Jahre, deutlich weniger als real vorhandene
+  Kurshistorien (das eigene Allianz-SE-Referenzportfolio allein umfasst
+  bereits 2016–2026, ~3843 Tage). Ersetzt durch `std::min(earliestDate.
+  daysTo(rangeEnd), kAbsoluteSafetyCeiling)`: die tatsächliche Tagesspanne
+  zur ältesten Kurshistorie ist für Interval=Tag die exakt richtige Grenze,
+  für Woche/Monat/Jahr automatisch großzügig genug (jede dortige Stufe ist
+  mindestens so groß wie ein Tag) — skaliert von selbst mit der tatsächlich
+  vorhandenen Historie, ohne erneute Magic Number. `kAbsoluteSafetyCeiling =
+  1000000` bleibt zusätzlich als reine Notbremse gegen korrupte Datumsdaten
+  (z. B. ein kaputtes Datum wie Jahr 1) bestehen — auf Nessies ausdrücklichen
+  Wunsch, obwohl die Schleife dafür rechnerisch nicht nötig wäre (auch
+  Millionen einfacher `QDate`-Berechnungen sind in Millisekunden erledigt).
 - **`IViewChart::setMaxIntervalCount(int)`** reicht das Ergebnis an die View
   durch. `ViewChart::setMaxIntervalCount()` ruft `m_countSpin->setMaximum()`
   auf (Signal geblockt — verhindert einen rekursiven `onControlsChanged()`-
@@ -1566,7 +1603,13 @@ Logik), nicht im `ViewChart` — reine MVP-Trennung, die View bleibt dumm.
 Regressionstests: `test_refresh_setsMaxIntervalCount_basedOnEarliestDailyValue`,
 `test_refresh_intervalCountBeyondMax_clampsQueryToEarliestDate`,
 `test_refresh_singleValueAtRangeEnd_maxIntervalCountStaysAtOne`,
-`test_onControlsChanged_countAboveMax_clampsEffectiveQueryRange`
+`test_onControlsChanged_countAboveMax_clampsEffectiveQueryRange`,
+`test_refresh_monthIntervalNotLandingOnEarliestDate_maxIntervalCountStillReachesIt`,
+`test_refresh_weekIntervalNotLandingOnEarliestDate_maxIntervalCountStillReachesIt`,
+`test_refresh_yearIntervalNotLandingOnEarliestDate_maxIntervalCountStillReachesIt`,
+`test_refresh_monthIntervalLandingExactlyOnEarliestDate_maxIntervalCountDoesNotOvershoot`,
+`test_refresh_dayIntervalWithLongHistory_maxIntervalCountExceedsOldFixedCeiling`,
+`test_refresh_corruptEarliestDate_maxIntervalCountClampedByAbsoluteSafetyCeiling`
 (alle `tst_chartform.cpp`), sowie `test_earliestDate`
 (`tst_dailyvaluesrepository.cpp`) — siehe TESTING.md.
 

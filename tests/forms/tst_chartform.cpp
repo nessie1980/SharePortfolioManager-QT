@@ -703,6 +703,198 @@ private slots:
         QCOMPARE(view.lastMaxIntervalCount, 9);
         QCOMPARE(model.lastQueryFrom, QDate(2026, 7, 1));
     }
+
+    void test_refresh_monthIntervalNotLandingOnEarliestDate_maxIntervalCountStillReachesIt()
+    {
+        // Regressionstest für den Off-by-one-Bugfix vom 12.07.2026 (Nessies
+        // Rückmeldung: "nicht alle Werte werden angezeigt, wenn ich den
+        // Zeitraum größer mache"). Anders als bei Interval=Tag (siehe
+        // test_refresh_setsMaxIntervalCount_basedOnEarliestDailyValue, wo
+        // jede Stufe exakt einen Tag verschiebt und die alte Berechnung
+        // dadurch zufällig richtig lag) landet Interval=Monat hier bewusst
+        // NICHT exakt auf dem Datum des ältesten Werts: Start-Datum ist der
+        // 10., der älteste Wert liegt am 15. eines Monats fünfeinhalb Monate
+        // zuvor. Mit der alten, um eins verschobenen Schleife blieb
+        // maxIntervalCount bei 5 hängen (Fenster ab 10.02.2026 — der Wert
+        // vom 15.01.2026 wäre nie erreichbar gewesen); korrekt ist 6
+        // (Fenster ab 10.01.2026, schließt den 15.01. mit ein).
+        FakeViewChart view;
+        view.m_intervalUnit  = IntervalUnit::Month;
+        view.m_intervalCount = 6;
+
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 1, 15), 100.0, 101.0, 102.0, 99.0, 100.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 110.0, 111.0, 112.0, 109.0, 100.0));
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        QCOMPARE(view.lastMaxIntervalCount, 6);
+        QVERIFY(model.loadDailyValuesCalled);
+        QCOMPARE(model.lastQueryFrom, QDate(2026, 1, 10));
+
+        const auto* closing = view.findSeries(SeriesKind::ClosingPrice);
+        if (!closing) QFAIL("ClosingPrice series missing");
+        QVERIFY(closing->dates.contains(QDate(2026, 1, 15))); // ältester Wert muss enthalten sein
+    }
+
+    void test_refresh_weekIntervalNotLandingOnEarliestDate_maxIntervalCountStillReachesIt()
+    {
+        // Gleicher Off-by-one-Bugfix wie beim Monats-Test oben, hier für
+        // Interval=Woche: Start-Datum 10.07.2026, älteste Wert am
+        // 03.06.2026 — liegt NICHT auf einer vollen 7-Tage-Grenze zum
+        // Start-Datum (die Wochenschritte treffen 05.06., nicht 03.06.).
+        // Alte, um eins verschobene Schleife hätte bei Anzahl=5 gestoppt
+        // (Fenster ab 05.06.2026 — der Wert vom 03.06. wäre draußen
+        // geblieben); korrekt ist 6 (Fenster ab 29.05.2026).
+        FakeViewChart view;
+        view.m_intervalUnit  = IntervalUnit::Week;
+        view.m_intervalCount = 6;
+
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 6, 3),  100.0, 101.0, 102.0, 99.0, 100.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 110.0, 111.0, 112.0, 109.0, 100.0));
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        QCOMPARE(view.lastMaxIntervalCount, 6);
+        QVERIFY(model.loadDailyValuesCalled);
+        QCOMPARE(model.lastQueryFrom, QDate(2026, 5, 29));
+
+        const auto* closing = view.findSeries(SeriesKind::ClosingPrice);
+        if (!closing) QFAIL("ClosingPrice series missing");
+        QVERIFY(closing->dates.contains(QDate(2026, 6, 3))); // ältester Wert muss enthalten sein
+    }
+
+    void test_refresh_yearIntervalNotLandingOnEarliestDate_maxIntervalCountStillReachesIt()
+    {
+        // Gleicher Off-by-one-Bugfix wie oben, hier für Interval=Jahr:
+        // Start-Datum 10.07.2026, ältester Wert am 15.03.2023 — liegt NICHT
+        // auf einer vollen Jahres-Grenze zum Start-Datum (die Jahresschritte
+        // treffen jeweils den 10.07., nie den 15.03.). Alte, um eins
+        // verschobene Schleife hätte bei Anzahl=3 gestoppt (Fenster ab
+        // 10.07.2023 — der Wert vom 15.03.2023 wäre draußen geblieben);
+        // korrekt ist 4 (Fenster ab 10.07.2022).
+        FakeViewChart view;
+        view.m_intervalUnit  = IntervalUnit::Year;
+        view.m_intervalCount = 4;
+
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2023, 3, 15), 100.0, 101.0, 102.0, 99.0, 100.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 110.0, 111.0, 112.0, 109.0, 100.0));
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        QCOMPARE(view.lastMaxIntervalCount, 4);
+        QVERIFY(model.loadDailyValuesCalled);
+        QCOMPARE(model.lastQueryFrom, QDate(2022, 7, 10));
+
+        const auto* closing = view.findSeries(SeriesKind::ClosingPrice);
+        if (!closing) QFAIL("ClosingPrice series missing");
+        QVERIFY(closing->dates.contains(QDate(2023, 3, 15))); // ältester Wert muss enthalten sein
+    }
+
+    void test_refresh_monthIntervalLandingExactlyOnEarliestDate_maxIntervalCountDoesNotOvershoot()
+    {
+        // Pendant zum bereits vorhandenen Tag-Test
+        // (test_refresh_setsMaxIntervalCount_basedOnEarliestDailyValue), hier
+        // für Interval=Monat: ältester Wert trifft die Fenstergrenze EXAKT
+        // (10.07.2026 minus 6 Monate = 10.01.2026). Prüft, dass die
+        // korrigierte Schleife (rangeStart(count) > earliestDate, ohne "+1")
+        // im Gleichheitsfall korrekt stoppt und nicht "eine Stufe zu viel"
+        // liefert — die spiegelbildliche Regression zum ursprünglichen
+        // Off-by-one-Bug.
+        FakeViewChart view;
+        view.m_intervalUnit  = IntervalUnit::Month;
+        view.m_intervalCount = 6;
+
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 1, 10), 100.0, 101.0, 102.0, 99.0, 100.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 110.0, 111.0, 112.0, 109.0, 100.0));
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        QCOMPARE(view.lastMaxIntervalCount, 6); // NICHT 7 — würde nur dieselben Daten nochmal zeigen
+        QVERIFY(model.loadDailyValuesCalled);
+        QCOMPARE(model.lastQueryFrom, QDate(2026, 1, 10));
+
+        const auto* closing = view.findSeries(SeriesKind::ClosingPrice);
+        if (!closing) QFAIL("ClosingPrice series missing");
+        QVERIFY(closing->dates.contains(QDate(2026, 1, 10))); // ältester Wert muss enthalten sein
+    }
+
+    void test_refresh_dayIntervalWithLongHistory_maxIntervalCountExceedsOldFixedCeiling()
+    {
+        // Regressionstest für den zweiten Bugfix vom 12.07.2026 (Nessies
+        // Rückmeldung: "beim Intervall Tag ist maximal 999 möglich"). Die
+        // alte feste Schleifen-Obergrenze (kIntervalCountCeiling = 999) war
+        // bei Interval=Tag eine echte, spürbare Grenze (~2,7 Jahre), keine
+        // reine Sicherheitsbremse — reale Kurshistorien (wie das Allianz-
+        // SE-Referenzportfolio, 2016–2026) reichen deutlich weiter zurück.
+        // Ältester Wert und Start-Datum liegen hier 3843 Tage auseinander
+        // (01.01.2016 bis 10.07.2026) — mit der alten Konstante wäre
+        // maxIntervalCount fälschlich bei 999 hängengeblieben, obwohl
+        // deutlich mehr Historie existiert. Die neue dynamische Grenze
+        // (earliestDate.daysTo(rangeEnd), zusätzlich per
+        // kAbsoluteSafetyCeiling abgesichert) muss die volle Spanne
+        // erreichen.
+        FakeViewChart view;
+        view.m_intervalUnit  = IntervalUnit::Day;
+        view.m_intervalCount = 3843;
+
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2016, 1, 1),  50.0, 51.0, 52.0, 49.0, 100.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 110.0, 111.0, 112.0, 109.0, 100.0));
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        QCOMPARE(view.lastMaxIntervalCount, 3843); // NICHT 999, die alte feste Grenze
+        QVERIFY(model.loadDailyValuesCalled);
+        QCOMPARE(model.lastQueryFrom, QDate(2016, 1, 1));
+
+        const auto* closing = view.findSeries(SeriesKind::ClosingPrice);
+        if (!closing) QFAIL("ClosingPrice series missing");
+        QVERIFY(closing->dates.contains(QDate(2016, 1, 1))); // ältester Wert muss enthalten sein
+    }
+
+    void test_refresh_corruptEarliestDate_maxIntervalCountClampedByAbsoluteSafetyCeiling()
+    {
+        // Deckt die absolute Notbremse (kAbsoluteSafetyCeiling) ab, die von
+        // keinem der obigen Tests tatsächlich ausgelöst wird — die laufen
+        // alle über den normalen dynamischen Pfad (earliestDate.daysTo(
+        // rangeEnd) bleibt dort weit unter der Bremse). Simuliert ein
+        // korruptes/unplausibles Datum in der DB (Jahr -1000, weit vor jeder
+        // realen Kurshistorie) — daysTo(rangeEnd) läge dabei bei rund 1,1
+        // Millionen Tagen, deutlich über kAbsoluteSafetyCeiling (1.000.000).
+        // Erwartung: die Schleife wird exakt bei kAbsoluteSafetyCeiling
+        // gekappt, statt bis zum korrupten Datum hochzulaufen — und der Test
+        // selbst läuft dank der Bremse in Millisekunden statt zu hängen
+        // (eine echte Endlosschleife würde diesen Test zum Timeout bringen).
+        FakeViewChart view;
+        view.m_intervalUnit  = IntervalUnit::Day;
+        view.m_intervalCount = 2000000; // absichtlich weit über jede sinnvolle Grenze angefordert
+
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(-1000, 1, 1), 50.0, 51.0, 52.0, 49.0, 100.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 110.0, 111.0, 112.0, 109.0, 100.0));
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        // 1.000.000 == kAbsoluteSafetyCeiling — NICHT die volle Tagesspanne
+        // zum korrupten Datum (~1,1 Mio.), die Notbremse hat gegriffen.
+        QCOMPARE(view.lastMaxIntervalCount, 1000000);
+    }
 };
 
 QTEST_MAIN(TestChartForm)

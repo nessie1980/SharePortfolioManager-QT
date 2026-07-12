@@ -58,6 +58,21 @@ private:
      * Formel. @p earliestDate ungültig oder bereits auf/nach @p rangeEnd ->
      * mindestens 1 bleibt immer erlaubt (spiegelt m_countSpin's Minimum in
      * ViewChart).
+     *
+     * Die Schleife terminiert immer korrekt von selbst (computeRangeStart()
+     * bewegt sich bei steigendem count monoton rückwärts, egal welche
+     * IntervalUnit), eine feste Obergrenze ist dafür nicht nötig. Trotzdem
+     * zwei Sicherheitsbremsen (ergänzt 12.07.2026, zweiter Anlauf — die
+     * ursprüngliche feste Konstante kIntervalCountCeiling = 999 erwies sich
+     * bei Interval=Tag als echte, spürbare Grenze statt reiner Bremse: 999
+     * Tage sind nur ~2,7 Jahre, deutlich weniger als real vorhandene
+     * Kurshistorien):
+     * 1. earliestDate.daysTo(rangeEnd) — für Interval=Tag die exakt
+     *    richtige Grenze, für Woche/Monat/Jahr großzügig genug (jede Stufe
+     *    dort ist mindestens so groß wie ein Tag), skaliert automatisch mit
+     *    der tatsächlichen Kurshistorie.
+     * 2. kAbsoluteSafetyCeiling — feste Notbremse gegen korrupte Datumsdaten
+     *    (z.B. ein kaputtes Datum wie Jahr 1), unabhängig von Punkt 1.
      * @param rangeEnd      Aktuelles Start-Datum (= Ende des Zeitraums).
      * @param unit           Aktuelle Interval-Einheit.
      * @param earliestDate   Ältester vorhandener Tageswert für die Aktie
@@ -71,9 +86,12 @@ private:
     static QString formatPercent(double value);
     static QString formatNumber(double value, int decimals);
 
-    /** Deckelt die Schleife in computeMaxIntervalCount() — spiegelt
-     *  ViewChart::setupSelektionBox()'s m_countSpin->setRange(1, 999). */
-    static constexpr int kIntervalCountCeiling = 999;
+    /** Absolute Notbremse gegen die Schleife in computeMaxIntervalCount() —
+     *  greift nur bei korrupten Datumsdaten (siehe dortige Doku), nicht im
+     *  Normalbetrieb. Die frühere feste kIntervalCountCeiling = 999 wurde
+     *  ersetzt: sie war für Interval=Tag eine echte, zu enge Grenze statt
+     *  einer reinen Sicherheitsbremse (ergänzt 12.07.2026, zweiter Anlauf). */
+    static constexpr int kAbsoluteSafetyCeiling = 1000000;
 
     IViewChart*  m_view;
     IModelChart* m_model;

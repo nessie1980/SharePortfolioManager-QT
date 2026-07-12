@@ -257,6 +257,14 @@ QGroupBox* ViewChart::setupSelektionBox()
 
     m_countSpin = new QSpinBox();
     m_countSpin->setObjectName(QStringLiteral("countSpin"));
+    // Nur ein kurzlebiger Platzhalter-Wert: PresenterChart::loadAndDisplay()
+    // (läuft bereits im Konstruktor, siehe unten) ruft sofort refresh() auf,
+    // das per setMaxIntervalCount() den tatsächlichen, dynamisch berechneten
+    // Maximalwert setzt (siehe PresenterChart::computeMaxIntervalCount() —
+    // seit 12.07.2026 keine feste Konstante mehr, sondern die tatsächliche
+    // Tagesspanne zur ältesten Kurshistorie plus eine großzügige absolute
+    // Notbremse). Der hier gesetzte Wert 999 ist daher reiner Ausgangspunkt,
+    // kein mit PresenterChart geteiltes Limit mehr.
     m_countSpin->setRange(1, 999);
     m_countSpin->setValue(1);
     connect(m_countSpin, QOverload<int>::of(&QSpinBox::valueChanged),
