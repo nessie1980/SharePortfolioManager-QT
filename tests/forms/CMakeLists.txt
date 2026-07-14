@@ -39,6 +39,10 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/forms/ShareDetailsForm/PresenterShareDetails.cpp
     ../../app/forms/ShareDetailsForm/ViewShareDetails.h
     ../../app/forms/ShareDetailsForm/ViewShareDetails.cpp
+    ../../app/widgets/OverviewTabWidget.h
+    ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/widgets/DocumentPreviewPanel.h
+    ../../app/widgets/DocumentPreviewPanel.cpp
     ../../app/forms/ChartForm/ChartTypes.h
     ../../app/forms/ChartForm/IViewChart.h
     ../../app/forms/ChartForm/IModelChart.h
@@ -345,14 +349,19 @@ add_test(NAME tst_backupsettingsform COMMAND tst_backupsettingsform)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # tst_sharedetailsform — PresenterShareDetails (Fake-View/Fake-Model, siehe
-# ARCHITECTURE.md "ShareDetailsForm-Details"). Deckt aktuell nur die
-# "Komplette Depotbewertung"-Box ab (neu gebaut 09.07.2026, nach Abgleich mit
-# der C#-Referenz FrmShareDetails). Kein QDialog, keine Datenbank, kein
-# ShareCalculator.cpp nötig — braucht nur PresenterShareDetails.cpp und
-# ShareObject.cpp (für dessen Volltyp-Konstruktor) als Compile-Abhängigkeit.
-# ModelShareDetails.cpp wird bewusst NICHT mitkompiliert — die Tests laufen
-# ausschließlich gegen die Fake-Implementierungen von IViewShareDetails/
-# IModelShareDetails, ohne Repository- oder Qt6::Sql-Abhängigkeit.
+# ARCHITECTURE.md "ShareDetailsForm-Details"). Deckt die "Komplette
+# Depotbewertung"-Box (neu gebaut 09.07.2026) sowie, seit 13.07.2026, die
+# Gewinne/Verluste-, Dividenden- und Kosten-Tabs ab (nur Depotwert-Modus).
+# Kein QDialog, keine Datenbank, kein ShareCalculator.cpp nötig — braucht nur
+# PresenterShareDetails.cpp sowie ShareObject.cpp/SaleObject.cpp/
+# DividendObject.cpp/BrokerageObject.cpp (für deren Volltyp-Konstruktoren, da
+# die Fakes in tst_sharedetailsform.cpp echte Instanzen dieser vier Typen
+# konstruieren) als Compile-Abhängigkeit. ModelShareDetails.cpp wird bewusst
+# NICHT mitkompiliert — die Tests laufen ausschließlich gegen die
+# Fake-Implementierungen von IViewShareDetails/IModelShareDetails, ohne
+# Repository- oder Qt6::Sql-Abhängigkeit. OverviewTabWidget wird hier
+# ebenfalls NICHT gebraucht — die drei neuen Tabs werden nur über die reinen
+# Objekt-Listen getestet, die View (mit OverviewTabWidget) selbst ist Fake.
 # Schlankstes Test-Target im Projekt.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -362,6 +371,9 @@ qt_add_executable(tst_sharedetailsform tst_sharedetailsform.cpp
     ../../app/forms/ShareDetailsForm/PresenterShareDetails.h
     ../../app/forms/ShareDetailsForm/PresenterShareDetails.cpp
     ../../app/models/ShareObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/DividendObject.cpp
+    ../../app/models/BrokerageObject.cpp
 )
 
 target_include_directories(tst_sharedetailsform

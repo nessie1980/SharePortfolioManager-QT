@@ -13,6 +13,8 @@
 #include "ModelShareDetails.h"
 #include "PresenterShareDetails.h"
 #include "../ChartForm/ViewChart.h"
+#include "../../widgets/OverviewTabWidget.h"
+#include "../../widgets/DocumentPreviewPanel.h"
 
 /**
  * @brief Read-only share-details dialog — ported from the C# reference's
@@ -30,15 +32,18 @@
  *   calculation rows rather than the C# reference's multi-column WinForms
  *   grid — an intentional, revisitable simplification (see chat history,
  *   09.07.2026).
- *
- * Deliberately NOT yet implemented (deferred): the Gewinne/Verluste-,
- * Dividenden- and Kosten-tabs (Depotwert-mode-only in the C# reference;
- * planned to reuse ViewSaleEdit's/ViewDividendEdit's/ViewBrokerageEdit's
- * existing overview widgets rather than duplicating them here).
+ * - "Gewinne/Verluste" / "Dividenden" / "Kosten" tabs (implementiert
+ *   13.07.2026, nur im Depotwert-Modus): je eine reine Anzeige-Instanz von
+ *   OverviewTabWidget (siehe app/widgets/OverviewTabWidget.h) — dasselbe
+ *   "Übersicht + Jahres-Tabs mit Frozen-Footer"-Muster, das ViewSaleEdit/
+ *   ViewDividendEdit/ViewBrokerageEdit für ihre Editier-Übersichten nutzen,
+ *   hier aber ohne Verbindung zu einem Editier-Formular (rein lesend).
  *
  * Pure MVP View: contains no repository access and no formatting/business
- * logic. All data arrives already formatted via IViewShareDetails, computed
- * by PresenterShareDetails from ModelShareDetails.
+ * logic beyond die reine Tabellen-Darstellung in den drei neuen Tabs (Jahres-
+ * Gruppierung/-Summierung liegt dort bewusst in der View, identisch zum
+ * bestehenden Muster in den Editier-Dialogen — keine Abweichung von der
+ * Architektur-Konvention, die schon dort etabliert ist).
  */
 class ViewShareDetails : public QDialog, public IViewShareDetails
 {
@@ -50,8 +55,9 @@ public:
      * @param shareGuid        GUID of the share to display.
      * @param marketValueMode  true if opened from the Marktwert portfolio
      *                         tab (shows "Komplette Marktbewertung", disabled
-     *                         Dividenden rows, brokerage-free figures); false
-     *                         for the Depotwert tab (default).
+     *                         Dividenden rows, brokerage-free figures, KEINE
+     *                         Gewinne/Verluste-/Dividenden-/Kosten-Tabs);
+     *                         false for the Depotwert tab (default).
      * @param parent           Parent widget.
      */
     explicit ViewShareDetails(const QString& shareGuid, bool marketValueMode = false,
@@ -76,6 +82,10 @@ public:
     void populateVortagBox(const CalculationRows& rows) override;
     void populateAktuelleBox(const CalculationRows& rows) override;
 
+    void populateGewinneVerluste(const QList<SaleObject>& sales) override;
+    void populateDividenden(const QList<DividendObject>& dividends) override;
+    void populateKosten(const QList<BrokerageObject>& brokerages) override;
+
     void showError(const QString& message) override;
     void closeDialog() override;
 
@@ -96,6 +106,9 @@ private:
     void setupUi();
     void setupChartTab();
     void setupDepotwertTab();
+    void setupGewinneVerlusteTab();
+    void setupDividendenTab();
+    void setupKostenTab();
 
     /** Creates one "Gesamt-/Vortag-/Aktuelle Bestandsberechnung" QGroupBox with an empty grid. */
     QGroupBox* createCalculationBox(const QString& title, QGridLayout*& outGrid);
@@ -103,10 +116,18 @@ private:
     /** Generic row rendering shared by all three calculation boxes. */
     static void populateBox(QGridLayout* grid, const CalculationRows& rows);
 
+    /** Erzeugt für eine Zeile einen zentrierten, nicht editierbaren QTableWidgetItem. */
+    static QTableWidgetItem* centeredItem(const QString& text);
+
+    /** Dokument-Icon (PDF/Word/Excel) bzw. "-" für die Dokument-Spalte, identisch
+     *  zur Icon-Auswahl-Logik in ViewDividendEdit/ViewBrokerageEdit. */
+    static QWidget* documentIconWidget(const QString& documentPath);
+
     // ── MVP wiring ─────────────────────────────────────────────────────────
     ModelShareDetails     m_model;
     PresenterShareDetails m_presenter;
     bool                  m_validShare = false;
+    bool                  m_marketValueMode; ///< Steuert, ob die drei neuen Tabs angelegt werden.
     QString               m_shareGuid;  ///< Stored for setupChartTab() (ViewChart construction).
     QString               m_headerName; ///< Share name, combined with ViewChart's range info for the window title.
 
@@ -119,4 +140,15 @@ private:
     QGridLayout* m_gesamtGrid   = nullptr;
     QGridLayout* m_vortagGrid   = nullptr;
     QGridLayout* m_aktuelleGrid = nullptr;
+
+    OverviewTabWidget* m_gewinneVerlusteTab = nullptr; ///< Nur im Depotwert-Modus angelegt.
+    OverviewTabWidget* m_dividendenTab      = nullptr; ///< Nur im Depotwert-Modus angelegt.
+    OverviewTabWidget* m_kostenTab          = nullptr; ///< Nur im Depotwert-Modus angelegt.
+
+    // Je ein eingebettetes Vorschau-Panel rechts neben der jeweiligen
+    // OverviewTabWidget-Instanz, aktualisiert über deren documentActivated()-
+    // Signal (Doppelklick auf die Dokument-Spalte einer Jahres-Tab-Zeile).
+    DocumentPreviewPanel* m_gewinneVerlustePreview = nullptr;
+    DocumentPreviewPanel* m_dividendenPreview      = nullptr;
+    DocumentPreviewPanel* m_kostenPreview          = nullptr;
 };

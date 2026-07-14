@@ -6,6 +6,10 @@
 #include <QList>
 #include <QColor>
 
+#include "../../models/SaleObject.h"
+#include "../../models/DividendObject.h"
+#include "../../models/BrokerageObject.h"
+
 /**
  * @brief One line of a "Bestandsberechnung" box (Gesamt/Vortag/Aktuelle).
  *
@@ -30,6 +34,13 @@ using CalculationRows = QList<CalculationRow>;
  *
  * Implemented by ViewShareDetails (production, QDialog-based) and by a fake
  * in tst_sharedetailsform.cpp for isolated Presenter tests.
+ *
+ * @note Erweitert 13.07.2026 um populateGewinneVerluste()/populateDividenden()/
+ * populateKosten() für die drei neuen, nur im Depotwert-Modus sichtbaren Tabs
+ * (siehe ARCHITECTURE.md, "ShareDetailsForm-Details"). Alle drei sind reine
+ * Objekt-Listen-Übergaben — die View reicht sie unverändert an je eine
+ * OverviewTabWidget-Instanz weiter, die Jahres-Gruppierung und -Summierung
+ * geschieht dort (identisches Muster zu ViewSaleEdit::populateOverview() etc.).
  */
 class IViewShareDetails
 {
@@ -53,6 +64,20 @@ public:
     virtual void populateGesamtBox(const CalculationRows& rows) = 0;
     virtual void populateVortagBox(const CalculationRows& rows) = 0;
     virtual void populateAktuelleBox(const CalculationRows& rows) = 0;
+
+    // ── Gewinne/Verluste-, Dividenden-, Kosten-Tabs (nur Depotwert-Modus) ──
+    // Werden von PresenterShareDetails nur aufgerufen, wenn der Dialog im
+    // Depotwert-Modus geöffnet wurde; die View legt die zugehörigen Tabs auch
+    // nur in diesem Fall an (siehe ViewShareDetails::setupUi()).
+
+    /** Befüllt den "Gewinne/Verluste"-Tab mit allen Verkäufen der Aktie. */
+    virtual void populateGewinneVerluste(const QList<SaleObject>& sales) = 0;
+
+    /** Befüllt den "Dividenden"-Tab mit allen Dividendenzahlungen der Aktie. */
+    virtual void populateDividenden(const QList<DividendObject>& dividends) = 0;
+
+    /** Befüllt den "Kosten"-Tab mit allen Kosten-Einträgen der Aktie. */
+    virtual void populateKosten(const QList<BrokerageObject>& brokerages) = 0;
 
     // ── Fehler / Lifecycle ────────────────────────────────────────────────
     /** Shows a modal error message (QMessageBox::critical convention). */

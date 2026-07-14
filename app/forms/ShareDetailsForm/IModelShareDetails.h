@@ -3,20 +3,27 @@
 #pragma once
 
 #include <QString>
+#include <QList>
 
 #include "../../models/ShareObject.h"
+#include "../../models/SaleObject.h"
+#include "../../models/DividendObject.h"
+#include "../../models/BrokerageObject.h"
 #include "../../utils/ShareCalculator.h"
 
 /**
  * @brief Read-only model interface for the share-details dialog.
  *
- * Deliberately minimal: ShareDetailsForm currently shows only the share's
- * master data and its "Komplette Depotbewertung" (aggregated Depotwert)
- * figures. The Gewinne/Verluste-, Dividenden- and Kosten-tabs planned for
- * later reuse the existing overview widgets from ViewSaleEdit/
- * ViewDividendEdit/ViewBrokerageEdit instead of loading raw Buy/Sale/
- * Dividend/Brokerage lists here — so this interface does not (and should
- * not) grow load*() methods for those.
+ * @note Erweitert 13.07.2026 um loadSales()/loadDividends()/loadBrokerages()
+ * für die Tabs "Gewinne/Verluste", "Dividenden" und "Kosten" (siehe
+ * ARCHITECTURE.md, "ShareDetailsForm-Details"). Diese drei Methoden liefern
+ * dieselben Objekt-Listen, die auch ViewSaleEdit/ViewDividendEdit/
+ * ViewBrokerageEdit über ihre jeweiligen IModel*Edit-Interfaces laden — die
+ * neuen Tabs zeigen sie nur read-only über OverviewTabWidget an, ohne eigene
+ * Berechnungslogik. Kein Widerspruch zur ursprünglichen "bewusst minimal"-
+ * Notiz: die dort ausgeschlossenen load*()-Methoden waren für eigene
+ * Neuberechnungen gedacht, nicht für reines Durchreichen an dieselben
+ * Repository-Aufrufe, die die Editier-Dialoge ohnehin schon nutzen.
  */
 class IModelShareDetails
 {
@@ -36,4 +43,15 @@ public:
     virtual ShareValues computeShareValues(const QString& shareGuid,
                                            double curPrice,
                                            double prevDayPrice) const = 0;
+
+    // ── Gewinne/Verluste-, Dividenden-, Kosten-Tabs (nur Depotwert-Modus) ──
+
+    /** Alle Verkäufe der Aktie, für den "Gewinne/Verluste"-Tab. */
+    virtual QList<SaleObject> loadSales(const QString& shareGuid) const = 0;
+
+    /** Alle Dividendenzahlungen der Aktie, für den "Dividenden"-Tab. */
+    virtual QList<DividendObject> loadDividends(const QString& shareGuid) const = 0;
+
+    /** Alle Kosten-Einträge der Aktie (Kauf/Verkauf/Sonstig), für den "Kosten"-Tab. */
+    virtual QList<BrokerageObject> loadBrokerages(const QString& shareGuid) const = 0;
 };

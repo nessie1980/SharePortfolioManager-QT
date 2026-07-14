@@ -7,6 +7,10 @@
 // instanziiert. Die Zuordnung ShareValues-Feld -> Box-Zeile ist gegen
 // TabControl.cs (C#-Referenz) sowie ShareCalculator.h abgeglichen
 // (09.07.2026) - siehe ARCHITECTURE.md "ShareDetailsForm-Details".
+//
+// Erweitert 13.07.2026 um die Gewinne/Verluste-, Dividenden- und Kosten-Tabs
+// (nur Depotwert-Modus) - FakeViewShareDetails/FakeModelShareDetails decken
+// die drei neuen Interface-Methoden ab, analog zum bestehenden Muster.
 
 #include <QtTest>
 #include <QDateTime>
@@ -27,6 +31,17 @@ public:
     CalculationRows vortagRows;
     CalculationRows aktuelleRows;
 
+    // Gewinne/Verluste-, Dividenden-, Kosten-Tabs (nur Depotwert-Modus) —
+    // "*Called" getrennt von den Listen selbst, damit Tests auch den Fall
+    // "gar nicht aufgerufen" (Marktwert-Modus) von "mit leerer Liste
+    // aufgerufen" unterscheiden können.
+    QList<SaleObject>      saleRows;
+    bool                    gewinneVerlusteCalled = false;
+    QList<DividendObject>  dividendRows;
+    bool                    dividendenCalled = false;
+    QList<BrokerageObject> brokerageRows;
+    bool                    kostenCalled = false;
+
     QString errorMessage;
     bool    closed = false;
 
@@ -38,6 +53,22 @@ public:
     void populateGesamtBox(const CalculationRows& rows) override { gesamtRows = rows; }
     void populateVortagBox(const CalculationRows& rows) override { vortagRows = rows; }
     void populateAktuelleBox(const CalculationRows& rows) override { aktuelleRows = rows; }
+
+    void populateGewinneVerluste(const QList<SaleObject>& sales) override
+    {
+        saleRows = sales;
+        gewinneVerlusteCalled = true;
+    }
+    void populateDividenden(const QList<DividendObject>& dividends) override
+    {
+        dividendRows = dividends;
+        dividendenCalled = true;
+    }
+    void populateKosten(const QList<BrokerageObject>& brokerages) override
+    {
+        brokerageRows = brokerages;
+        kostenCalled = true;
+    }
 
     void showError(const QString& message) override { errorMessage = message; }
     void closeDialog() override { closed = true; }
@@ -60,12 +91,20 @@ public:
     ShareObject share; // default-constructed => isValid() == false
     ShareValues values;
 
+    QList<SaleObject>      sales;
+    QList<DividendObject>  dividends;
+    QList<BrokerageObject> brokerages;
+
     ShareObject loadShare(const QString&) const override { return share; }
 
     ShareValues computeShareValues(const QString&, double, double) const override
     {
         return values;
     }
+
+    QList<SaleObject> loadSales(const QString&) const override { return sales; }
+    QList<DividendObject> loadDividends(const QString&) const override { return dividends; }
+    QList<BrokerageObject> loadBrokerages(const QString&) const override { return brokerages; }
 };
 
 // ── Test class ─────────────────────────────────────────────────────────────
@@ -90,6 +129,9 @@ private slots:
         QVERIFY(view.closed);
         QVERIFY(view.headerName.isEmpty());   // nothing else was populated
         QVERIFY(view.gesamtRows.isEmpty());
+        QVERIFY(!view.gewinneVerlusteCalled);
+        QVERIFY(!view.dividendenCalled);
+        QVERIFY(!view.kostenCalled);
     }
 
     void test_loadAndDisplay_validShare_setsHeaderAndStatusLine()
@@ -496,6 +538,59 @@ private slots:
         const CalculationRow* pl = FakeViewShareDetails::findRow(view.vortagRows, QStringLiteral("Gewinn / Verlust:"));
         QVERIFY(pl);
         QCOMPARE(pl->value, locale.toString(53.59, 'f', 2) + QStringLiteral(" €"));
+    }
+
+    // ── Gewinne/Verluste-, Dividenden-, Kosten-Tabs (13.07.2026) ────────────
+
+    void test_loadAndDisplay_marketMode_doesNotPopulateNewTabs()
+    {
+        // Marktwert-Modus: ViewShareDetails legt die drei neuen Tabs gar nicht
+        // erst an (siehe ViewShareDetails::setupUi()) — der Presenter darf sie
+        // dementsprechend auch nicht befüllen, selbst wenn das Model Daten
+        // liefern würde.
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("mv1"), QStringLiteral("AGIF001"),
+                                   QStringLiteral("LU0000000001"),
+                                   QStringLiteral("AGIF-Allianz Glo.Eq.Insights"), ShareType::Fond);
+        model.sales      = { SaleObject(), SaleObject() };
+        model.dividends  = { DividendObject() };
+        model.brokerages = { BrokerageObject(), BrokerageObject(), BrokerageObject() };
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("mv1"), /*marketValueMode=*/true);
+        QVERIFY(presenter.loadAndDisplay());
+
+        QVERIFY(!view.gewinneVerlusteCalled);
+        QVERIFY(!view.dividendenCalled);
+        QVERIFY(!view.kostenCalled);
+        QVERIFY(view.saleRows.isEmpty());
+        QVERIFY(view.dividendRows.isEmpty());
+        QVERIFY(view.brokerageRows.isEmpty());
+    }
+
+    void test_loadAndDisplay_depotwertMode_populatesGewinneVerlusteDividendenKosten()
+    {
+        // Depotwert-Modus: alle drei neuen Tabs werden mit genau den Listen
+        // befüllt, die das Model liefert — reines Durchreichen, keine eigene
+        // Presenter-Logik (siehe PresenterShareDetails::populateGewinneVerluste()
+        // etc.).
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("dv1"), QStringLiteral("WKN008"),
+                                   QStringLiteral("ISIN0000008"), QStringLiteral("Acht AG"));
+        model.sales      = { SaleObject(), SaleObject() };
+        model.dividends  = { DividendObject() };
+        model.brokerages = { BrokerageObject(), BrokerageObject(), BrokerageObject() };
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("dv1")); // default: Depotwert-Modus
+        QVERIFY(presenter.loadAndDisplay());
+
+        QVERIFY(view.gewinneVerlusteCalled);
+        QVERIFY(view.dividendenCalled);
+        QVERIFY(view.kostenCalled);
+        QCOMPARE(view.saleRows.size(), 2);
+        QCOMPARE(view.dividendRows.size(), 1);
+        QCOMPARE(view.brokerageRows.size(), 3);
     }
 };
 

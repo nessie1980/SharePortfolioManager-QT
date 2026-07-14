@@ -2301,6 +2301,35 @@ Ein Teil bleibt bewusst offen:
 10.07.2026 bestätigt, siehe "Marktwert- vs. Depotwert-Modus" oben — kein
 offener Punkt mehr.)
 
+### DocumentPreviewPanel: Existenzprüfung fehlt noch in den Editier-Dialogen (offen, 13.07.2026)
+
+`DocumentPreviewPanel::showDocument()` (neues, wiederverwendbares Vorschau-
+Panel, u. a. verwendet in `ShareDetailsForm`) prüft jetzt per
+`QFileInfo::exists()`, ob die Datei noch existiert, und zeigt andernfalls
+eine Fehlermeldung statt stillschweigend fehlzuschlagen. Dieselbe Prüfung
+fehlt noch in den Editier-Dialogen `ViewBuyEdit`, `ViewSaleEdit`,
+`ViewDividendEdit`, `ViewBrokerageEdit` und `ViewShareAdd` (jeweils
+`openPdfPreview()`) und sollte dort nachgezogen werden — idealerweise im
+Zuge der Umstellung dieser Dialoge auf `DocumentPreviewPanel`/
+`OverviewTabWidget`.
+
+### Spalten-Breiten-Schema für Dokument-Spalten auch in ShareEdit-Grids nachziehen (offen, 14.07.2026)
+
+Für die Jahres-Tabs von `OverviewTabWidget` (Gewinne/Verluste-, Dividenden-,
+Kosten-Tab in `ShareDetailsForm`) hat sich nach mehreren Anläufen folgendes
+Spaltenbreiten-Schema bewährt: erste Spalte (Datum) fest, letzte Spalte
+(Dokument) ebenfalls fest und ausreichend breit (110px — reicht für
+Spaltenkopf-Text "Dokument" plus Icon, ohne abgeschnitten zu werden), alle
+Spalten dazwischen als Stretch (`-1`), sodass sie sich den verbleibenden
+Platz automatisch teilen. Vorherige Versuche mit einer zu schmalen festen
+Dokument-Spalte (36px, aus den Editier-Dialogen übernommen) oder mit
+durchgehend gestreckten Spalten führten je nach verfügbarer Breite zu
+abgeschnittenem oder überlappendem Spaltenkopf-Text.
+
+Dasselbe Schema sollte auf die entsprechenden Grids in `ViewShareEdit` (und
+ggf. weiteren Dialogen mit vergleichbaren Dokument-Spalten) übertragen
+werden — dort ist bislang nicht geprüft, ob dieselbe Problematik besteht.
+
 ### Totes Mapping: `PriceAtPayday` in `xmlNameToViewField()` (entfernt 08.07.2026)
 
 `PresenterDividendEdit::xmlNameToViewField()` enthielt ein Mapping

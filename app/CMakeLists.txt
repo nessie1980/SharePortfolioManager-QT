@@ -51,6 +51,12 @@ set(APP_SOURCES
     utils/ShareCalculator.h
     utils/ShareCalculator.cpp
 
+    # ── Widgets (shared) ──────────────────────────────────────────────────
+    widgets/OverviewTabWidget.h
+    widgets/OverviewTabWidget.cpp
+    widgets/DocumentPreviewPanel.h
+    widgets/DocumentPreviewPanel.cpp
+
     # ── Forms – Buys ──────────────────────────────────────────────────────
     forms/BuysForm/IViewBuyEdit.h
     forms/BuysForm/IModelBuyEdit.h

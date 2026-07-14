@@ -12,9 +12,10 @@
  * @brief Presenter for the share-details dialog.
  *
  * Covers the "Komplette Depotbewertung" / "Komplette Marktbewertung" mode
- * (the C# reference's marketValueOverviewTabSelected flag) — the Chart tab
- * and the Gewinne/Verluste-, Dividenden- and Kosten-tabs are deliberately
- * out of scope for this iteration (see ARCHITECTURE.md, "ShareDetailsForm-Details").
+ * (the C# reference's marketValueOverviewTabSelected flag) plus, seit
+ * 13.07.2026, die drei zusätzlichen Tabs "Gewinne/Verluste", "Dividenden"
+ * und "Kosten" — letztere ausschließlich im Depotwert-Modus (siehe
+ * ARCHITECTURE.md, "ShareDetailsForm-Details").
  *
  * Both modes share the same Vortag-Box entirely (no brokerage involved) and
  * the same "Anteile x Aktueller Preis = Einzahlungen" opening rows of the
@@ -33,6 +34,9 @@
  *   saleProfitLossFinal and computes the sum in the presenter; Marktwert mode
  *   uses the existing saleProfitLoss/marketValue fields directly (marketValue
  *   already equals curValue + saleProfitLoss).
+ * - Gewinne/Verluste-, Dividenden-, Kosten-Tabs: nur im Depotwert-Modus
+ *   überhaupt angelegt (siehe ViewShareDetails::setupUi()) und daher auch
+ *   nur dann von loadAndDisplay() befüllt.
  *
  * Not a QObject; uses Q_DECLARE_TR_FUNCTIONS for a sensible lupdate context.
  */
@@ -46,7 +50,8 @@ public:
 
     /**
      * @brief Loads the share and its aggregated ShareValues via the model and
-     * pushes formatted content into the view.
+     * pushes formatted content into the view. Im Depotwert-Modus zusätzlich
+     * die Gewinne/Verluste-, Dividenden- und Kosten-Tabs.
      *
      * @return false if the share GUID was not found — in that case
      * view->showError() and view->closeDialog() have already been called and
@@ -67,6 +72,15 @@ private:
     static QString shareTypeToString(ShareType type);
     /** >= 0 -> "green", < 0 -> "red" (matches the C# reference's Color.Green/Color.Red). */
     static QColor  performanceColor(double value);
+
+    // ── Gewinne/Verluste-, Dividenden-, Kosten-Tabs (nur Depotwert-Modus) ──
+    // Reine Pass-Throughs: laden die Objekt-Liste vom Model und reichen sie
+    // unverändert an die View weiter. Jahres-Gruppierung/-Summierung
+    // geschieht in der View (OverviewTabWidget), identisch zum bisherigen
+    // Muster in ViewSaleEdit/ViewDividendEdit/ViewBrokerageEdit.
+    void populateGewinneVerluste();
+    void populateDividenden();
+    void populateKosten();
 
     IViewShareDetails&  m_view;
     IModelShareDetails& m_model;

@@ -13,3 +13,18 @@ ShareValues ModelShareDetails::computeShareValues(const QString& shareGuid,
 {
     return ShareCalculator::compute(shareGuid, curPrice, prevDayPrice);
 }
+
+QList<SaleObject> ModelShareDetails::loadSales(const QString& shareGuid) const
+{
+    return m_saleRepo.findByShare(shareGuid);
+}
+
+QList<DividendObject> ModelShareDetails::loadDividends(const QString& shareGuid) const
+{
+    return m_dividendRepo.findByShare(shareGuid);
+}
+
+QList<BrokerageObject> ModelShareDetails::loadBrokerages(const QString& shareGuid) const
+{
+    return m_brokerageRepo.findByShare(shareGuid);
+}

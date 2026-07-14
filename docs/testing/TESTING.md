@@ -619,7 +619,7 @@ Dateinamen-Vorschau:
 
 ---
 
-#### tst_sharedetailsform — ShareDetailsForm (Depotwert 09.07., Marktwert 10.07.2026)
+#### tst_sharedetailsform — ShareDetailsForm (Depotwert 09.07., Marktwert 10.07., Gewinne/Verluste-/Dividenden-/Kosten-Tabs 13.07.2026)
 
 Executable: `tst_sharedetailsform`
 Klasse unter Test: `PresenterShareDetails`
@@ -628,9 +628,15 @@ Klasse unter Test: `PresenterShareDetails`
 (siehe ARCHITECTURE.md, "ShareDetailsForm-Details"). Der Aktien-Chart-Tab
 selbst ist seit 12.07.2026 implementiert — seine Tests liegen in einer
 eigenen Executable, `tst_chartform` (siehe eigener Abschnitt unten), analog
-zur Trennung von `tst_sharedetailsform`/`tst_shareeditform`. Gewinne/
-Verluste-, Dividenden- und Kosten-Tabs sind weiterhin zurückgestellt und
-haben dementsprechend noch keine Tests.
+zur Trennung von `tst_sharedetailsform`/`tst_shareeditform`. Die
+Gewinne/Verluste-, Dividenden- und Kosten-Tabs sind seit 13.07.2026
+implementiert (siehe ARCHITECTURE.md, "Gewinne/Verluste-, Dividenden-,
+Kosten-Tabs") — auf Presenter-Ebene (reines Durchreichen der drei neuen
+`IModelShareDetails::load*()`-Methoden an `IViewShareDetails::populate*()`)
+durch zwei Tests unten abgedeckt. **Nicht** abgedeckt: `OverviewTabWidget`
+und `DocumentPreviewPanel` selbst (kein eigenes Test-Target, siehe
+ARCHITECTURE.md, "Offene Punkte / TODO") — insbesondere die Existenzprüfung in
+`DocumentPreviewPanel::showDocument()` ist bislang durch nichts abgesichert.
 
 @note Wie schon beim vorherigen Anlauf: **weder** Datenbank **noch**
 `QWidget` **noch** `ShareCalculator` werden instanziiert.
@@ -640,7 +646,15 @@ computeShareValues()` liefert ein von Hand befülltes `ShareValues`
 zurück, `FakeViewShareDetails` speichert die drei `CalculationRows`-Listen
 (`gesamtRows`/`vortagRows`/`aktuelleRows`) nur zwischen. Ein
 `findRow(rows, label)`-Helfer sucht Zeilen über ihr (übersetztes) Label,
-statt sich auf feste Index-Positionen zu verlassen.
+statt sich auf feste Index-Positionen zu verlassen. Seit 13.07.2026 zusätzlich:
+`FakeModelShareDetails` hat `sales`/`dividends`/`brokerages`-Member (je
+`QList<SaleObject>`/`QList<DividendObject>`/`QList<BrokerageObject>`,
+manuell befüllbar), `FakeViewShareDetails` speichert die drei per
+`populateGewinneVerluste()`/`populateDividenden()`/`populateKosten()`
+übergebenen Listen in `saleRows`/`dividendRows`/`brokerageRows` sowie je ein
+`gewinneVerlusteCalled`/`dividendenCalled`/`kostenCalled`-Flag — getrennt von
+den Listen selbst, damit Tests "gar nicht aufgerufen" (Marktwert-Modus) von
+"mit leerer Liste aufgerufen" unterscheiden können.
 
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
@@ -660,6 +674,8 @@ statt sich auf feste Index-Positionen zu verlassen.
 | `test_loadAndDisplay_marketMode_gesamtBox_matchesScreenshotValues` | `ShareValues` mit den echten Marktwert-Screenshot-Werten (AGIF-Allianz, 168,50796 Stk.) | "Verkäufe"/"Summe"/"Alle Einzahlungen"/"Gewinn / Verlust (gesamt)"/"Entwicklung" exakt wie im Screenshot; "Dividenden" = "-", Farbe `Qt::gray` |
 | `test_loadAndDisplay_marketMode_aktuelleBox_matchesScreenshotValues` | Gleiche Fixture | "Gewinn / Verlust (Verkäufe)" = `saleProfitLoss`, "Summe" = `marketValue`, beide exakt wie im Screenshot; "Dividenden" deaktiviert |
 | `test_loadAndDisplay_marketMode_vortagBox_unaffectedByMode` | Gleiche Fixture, Marktwert-Modus | "Gewinn / Verlust" = 53,59€ (168,50796×0,318, exakt wie im Screenshot) — bestätigt, dass die Vortag-Box modus-unabhängig ist |
+| `test_loadAndDisplay_marketMode_doesNotPopulateNewTabs` | `marketValueMode = true`, Model liefert 2 Sales/1 Dividend/3 Brokerages | `gewinneVerlusteCalled`/`dividendenCalled`/`kostenCalled` bleiben `false`, `saleRows`/`dividendRows`/`brokerageRows` bleiben leer — `ViewShareDetails` legt die drei Tabs im Marktwert-Modus gar nicht erst an, der Presenter darf sie folglich auch nicht befüllen |
+| `test_loadAndDisplay_depotwertMode_populatesGewinneVerlusteDividendenKosten` | `marketValueMode = false` (Default), gleiche Fixture | Alle drei `*Called`-Flags `true`, `saleRows.size() == 2`/`dividendRows.size() == 1`/`brokerageRows.size() == 3` — reines Durchreichen der Model-Listen, keine Presenter-Logik |
 
 @note **`lastInternetUpdate()`-Zweig (erledigt 09.07.2026):** `ShareObject`
 besitzt `setLastInternetUpdate(const QString&)` — der zuvor als offen

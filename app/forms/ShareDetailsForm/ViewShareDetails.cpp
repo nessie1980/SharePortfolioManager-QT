@@ -3,18 +3,23 @@
 #include "ViewShareDetails.h"
 
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
+#include "../../IconProvider.h"
 
 #include <QHBoxLayout>
 #include <QFrame>
 #include <QDialogButtonBox>
 #include <QFont>
 #include <QPalette>
+#include <QLocale>
+#include <QFileInfo>
+#include <algorithm>
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
 ViewShareDetails::ViewShareDetails(const QString& shareGuid, bool marketValueMode, QWidget* parent)
     : QDialog(parent)
     , m_presenter(*this, m_model, shareGuid, marketValueMode)
+    , m_marketValueMode(marketValueMode)
     , m_shareGuid(shareGuid)
 {
     setObjectName(QStringLiteral("ViewShareDetails"));
@@ -53,6 +58,16 @@ void ViewShareDetails::setupUi()
 
     setupChartTab();
     setupDepotwertTab();
+
+    // Gewinne/Verluste-, Dividenden- und Kosten-Tabs existieren nur im
+    // Depotwert-Modus (matcht die C#-Referenz: FrmShareDetails zeigt sie nur,
+    // wenn der Dialog vom Depotwert- statt vom Marktwert-Tab in MainWindow
+    // geöffnet wurde — siehe ARCHITECTURE.md, "ShareDetailsForm-Details").
+    if (!m_marketValueMode) {
+        setupGewinneVerlusteTab();
+        setupDividendenTab();
+        setupKostenTab();
+    }
 
     // ── Close button ──────────────────────────────────────────────────────
     auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close);
@@ -129,6 +144,97 @@ void ViewShareDetails::setupDepotwertTab()
     m_boxesTabIndex = m_tabs->addTab(tab, QString());
 }
 
+// ── setupGewinneVerlusteTab / setupDividendenTab / setupKostenTab ────────────
+//
+// Layout je Tab: OverviewTabWidget links (nimmt den verbleibenden Platz ein)
+// + DocumentPreviewPanel rechts, fest in der Breite (kDocPreviewPanelWidth).
+// Kein Popup mehr (13.07.2026, auf Wunsch durch eingebettetes Panel ersetzt) —
+// stattdessen aktualisiert ein Doppelklick auf die Dokument-Spalte
+// (OverviewTabWidget::documentActivated()) das Panel direkt, genau wie das
+// Formular in ViewSaleEdit/ViewDividendEdit/ViewBrokerageEdit sein Panel bei
+// Zeilenauswahl aktualisiert.
+//
+// kDocPreviewPanelWidth = 480 ist kein Schätzwert, sondern 1:1 aus den
+// Editier-Dialogen übernommen: dort ist der Dialog fest 1200px breit
+// (`setFixedSize(1200, 760)`) und im Verhältnis 3:2 zwischen Formular und
+// Vorschau-Panel aufgeteilt (`main->addWidget(m_leftPanel, 3); main->
+// addWidget(createPreviewPanel(), 2);`) — 1200 × 2/5 = 480.
+
+namespace {
+constexpr int kDocPreviewPanelWidth = 480;
+
+/**
+ * @brief Baut eine QGroupBox um ein OverviewTabWidget, identisch zu
+ * ViewDividendEdit::createOverviewGroup() (Titel mit zwei führenden
+ * Leerzeichen — Projektkonvention, siehe z.B. "  Dokumenten-Vorschau").
+ */
+QGroupBox* wrapInOverviewGroup(const QString& title, OverviewTabWidget* tabs)
+{
+    auto* gb = new QGroupBox(title);
+    auto* layout = new QVBoxLayout(gb);
+    layout->setContentsMargins(6, 6, 6, 6);
+    layout->addWidget(tabs);
+    return gb;
+}
+} // namespace
+
+void ViewShareDetails::setupGewinneVerlusteTab()
+{
+    auto* wrapper = new QWidget();
+    auto* wrapperLayout = new QHBoxLayout(wrapper);
+    wrapperLayout->setContentsMargins(0, 0, 0, 0);
+
+    m_gewinneVerlusteTab = new OverviewTabWidget();
+    m_gewinneVerlustePreview = new DocumentPreviewPanel(wrapper);
+    m_gewinneVerlustePreview->setFixedWidth(kDocPreviewPanelWidth);
+    connect(m_gewinneVerlusteTab, &OverviewTabWidget::documentActivated,
+            m_gewinneVerlustePreview, &DocumentPreviewPanel::showDocument);
+
+    wrapperLayout->addWidget(
+        wrapInOverviewGroup(tr("  Gewinne / Verluste-Übersicht"), m_gewinneVerlusteTab), 1);
+    wrapperLayout->addWidget(m_gewinneVerlustePreview);
+
+    m_tabs->addTab(wrapper, tr("Gewinne / Verluste"));
+}
+
+void ViewShareDetails::setupDividendenTab()
+{
+    auto* wrapper = new QWidget();
+    auto* wrapperLayout = new QHBoxLayout(wrapper);
+    wrapperLayout->setContentsMargins(0, 0, 0, 0);
+
+    m_dividendenTab = new OverviewTabWidget();
+    m_dividendenPreview = new DocumentPreviewPanel(wrapper);
+    m_dividendenPreview->setFixedWidth(kDocPreviewPanelWidth);
+    connect(m_dividendenTab, &OverviewTabWidget::documentActivated,
+            m_dividendenPreview, &DocumentPreviewPanel::showDocument);
+
+    wrapperLayout->addWidget(
+        wrapInOverviewGroup(tr("  Dividenden-Übersicht"), m_dividendenTab), 1);
+    wrapperLayout->addWidget(m_dividendenPreview);
+
+    m_tabs->addTab(wrapper, tr("Dividenden"));
+}
+
+void ViewShareDetails::setupKostenTab()
+{
+    auto* wrapper = new QWidget();
+    auto* wrapperLayout = new QHBoxLayout(wrapper);
+    wrapperLayout->setContentsMargins(0, 0, 0, 0);
+
+    m_kostenTab = new OverviewTabWidget();
+    m_kostenPreview = new DocumentPreviewPanel(wrapper);
+    m_kostenPreview->setFixedWidth(kDocPreviewPanelWidth);
+    connect(m_kostenTab, &OverviewTabWidget::documentActivated,
+            m_kostenPreview, &DocumentPreviewPanel::showDocument);
+
+    wrapperLayout->addWidget(
+        wrapInOverviewGroup(tr("  Kosten-Übersicht"), m_kostenTab), 1);
+    wrapperLayout->addWidget(m_kostenPreview);
+
+    m_tabs->addTab(wrapper, tr("Kosten"));
+}
+
 // ── createCalculationBox ──────────────────────────────────────────────────────
 
 QGroupBox* ViewShareDetails::createCalculationBox(const QString& title, QGridLayout*& outGrid)
@@ -179,6 +285,306 @@ void ViewShareDetails::populateVortagBox(const CalculationRows& rows)
 void ViewShareDetails::populateAktuelleBox(const CalculationRows& rows)
 {
     populateBox(m_aktuelleGrid, rows);
+}
+
+// ── IViewShareDetails: Gewinne/Verluste-, Dividenden-, Kosten-Tabs ────────────
+
+void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
+{
+    if (!m_gewinneVerlusteTab)
+        return; // Marktwert-Modus — Tab existiert nicht, siehe setupUi()
+
+    // Verifiziert gegen ViewSaleEdit::populateOverview() (13.07.2026): "Auszahlung"
+    // ist SaleObject::payoutBrokerageReduction() direkt — kein Umweg über
+    // saleValueBrokerageReduction()/taxSum() nötig, wie zunächst angenommen.
+    QList<int> years;
+    for (const SaleObject& s : sales)
+        if (!years.contains(s.year()))
+            years.append(s.year());
+    std::sort(years.begin(), years.end(), std::greater<int>());
+
+    const QLocale loc;
+    auto fmtMoney  = [&](double v) { return loc.toString(v, 'f', 2) + QStringLiteral(" €"); };
+    auto fmtVolume = [&](double v) { return loc.toString(v, 'f', 4) + QStringLiteral(" stk."); };
+
+    double totalPayout = 0.0;
+    for (const SaleObject& s : sales)
+        totalPayout += s.payoutBrokerageReduction();
+
+    m_gewinneVerlusteTab->populateOverview(
+        years,
+        tr("Übersicht (%1)").arg(fmtMoney(totalPayout)),
+        { tr("Jahr"), tr("Anteile"), tr("Auszahlung"), tr("Gewinn / Verlust") },
+        { 100, -1, -1, -1 },
+        [&](QTableWidget* data) {
+            data->setRowCount(years.size());
+            for (int i = 0; i < years.size(); ++i) {
+                const int yr = years.at(i);
+                double vol = 0.0, payout = 0.0, gv = 0.0;
+                for (const SaleObject& s : sales) {
+                    if (s.year() != yr) continue;
+                    vol    += s.volume();
+                    payout += s.payoutBrokerageReduction();
+                    gv     += s.profitLossBrokerageReduction();
+                }
+                auto* iYear = centeredItem(QString::number(yr));
+                iYear->setData(Qt::UserRole, yr);
+                data->setItem(i, 0, iYear);
+                data->setItem(i, 1, centeredItem(fmtVolume(vol)));
+                data->setItem(i, 2, centeredItem(fmtMoney(payout)));
+                data->setItem(i, 3, centeredItem(fmtMoney(gv)));
+            }
+        },
+        [&](QTableWidget* footer) {
+            double totVol = 0.0, totGV = 0.0;
+            for (const SaleObject& s : sales) {
+                totVol += s.volume();
+                totGV  += s.profitLossBrokerageReduction();
+            }
+            footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
+            footer->setItem(0, 1, centeredItem(fmtVolume(totVol)));
+            footer->setItem(0, 2, centeredItem(fmtMoney(totalPayout)));
+            footer->setItem(0, 3, centeredItem(fmtMoney(totGV)));
+        },
+        { tr("Datum"), tr("Anteile"), tr("Auszahlung"), tr("Gewinn / Verlust"), tr("Dokument") },
+        { 100, -1, -1, -1, 110 },
+        [&](int year) {
+            double yearPayout = 0.0;
+            for (const SaleObject& s : sales) if (s.year() == year) yearPayout += s.payoutBrokerageReduction();
+            return QStringLiteral("%1 (%2)").arg(year).arg(fmtMoney(yearPayout));
+        },
+        [&](int year, QTableWidget* data) {
+            QList<SaleObject> yearSales;
+            for (const SaleObject& s : sales) if (s.year() == year) yearSales.append(s);
+
+            data->setRowCount(yearSales.size());
+            for (int i = 0; i < yearSales.size(); ++i) {
+                const SaleObject& s = yearSales.at(i);
+
+                auto* iDate = centeredItem(s.dateAsStr());
+                iDate->setData(Qt::UserRole, s.guid());
+                data->setItem(i, 0, iDate);
+                data->setItem(i, 1, centeredItem(fmtVolume(s.volume())));
+                data->setItem(i, 2, centeredItem(fmtMoney(s.payoutBrokerageReduction())));
+                data->setItem(i, 3, centeredItem(fmtMoney(s.profitLossBrokerageReduction())));
+
+                if (!s.document().isEmpty()) {
+                    auto* docItem = new QTableWidgetItem;
+                    docItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                    docItem->setData(Qt::UserRole, s.document());
+                    data->setItem(i, 4, docItem);
+                    data->setCellWidget(i, 4, documentIconWidget(s.document()));
+                } else {
+                    data->setItem(i, 4, centeredItem(QStringLiteral("-")));
+                }
+            }
+        },
+        [&](int year, QTableWidget* footer) {
+            double vol = 0.0, payout = 0.0, gv = 0.0;
+            for (const SaleObject& s : sales) {
+                if (s.year() != year) continue;
+                vol    += s.volume();
+                payout += s.payoutBrokerageReduction();
+                gv     += s.profitLossBrokerageReduction();
+            }
+            footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
+            footer->setItem(0, 1, centeredItem(fmtVolume(vol)));
+            footer->setItem(0, 2, centeredItem(fmtMoney(payout)));
+            footer->setItem(0, 3, centeredItem(fmtMoney(gv)));
+            footer->setItem(0, 4, centeredItem(QStringLiteral("-")));
+        },
+        /*jahresDocColumn=*/4);
+}
+
+void ViewShareDetails::populateDividenden(const QList<DividendObject>& dividends)
+{
+    if (!m_dividendenTab)
+        return; // Marktwert-Modus — Tab existiert nicht, siehe setupUi()
+
+    QList<int> years;
+    for (const DividendObject& d : dividends)
+        if (!years.contains(d.year()))
+            years.append(d.year());
+    std::sort(years.begin(), years.end(), std::greater<int>());
+
+    const QLocale loc;
+    auto fmtMoney  = [&](double v) { return loc.toString(v, 'f', 2) + QStringLiteral(" €"); };
+    auto fmtVolume = [&](double v) { return loc.toString(v, 'f', 4) + QStringLiteral(" stk."); };
+    auto fmtRate   = [&](double v) { return loc.toString(v, 'f', 4) + QStringLiteral(" €"); };
+
+    double totalVal = 0.0;
+    for (const DividendObject& d : dividends)
+        totalVal += d.dividendPayoutWithTaxes();
+
+    m_dividendenTab->populateOverview(
+        years,
+        tr("Übersicht (%1)").arg(fmtMoney(totalVal)),
+        { tr("Jahr"), tr("Dividende") },
+        { 100, -1 },
+        [&](QTableWidget* data) {
+            data->setRowCount(years.size());
+            for (int i = 0; i < years.size(); ++i) {
+                const int yr = years.at(i);
+                double yearVal = 0.0;
+                for (const DividendObject& d : dividends)
+                    if (d.year() == yr) yearVal += d.dividendPayoutWithTaxes();
+
+                auto* iYear = centeredItem(QString::number(yr));
+                iYear->setData(Qt::UserRole, yr);
+                data->setItem(i, 0, iYear);
+                data->setItem(i, 1, centeredItem(fmtMoney(yearVal)));
+            }
+        },
+        [&](QTableWidget* footer) {
+            footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
+            footer->setItem(0, 1, centeredItem(fmtMoney(totalVal)));
+        },
+        { tr("Datum"), tr("Dividendensatz"), tr("Anteile"), tr("Dividende"), tr("Dokument") },
+        { 100, -1, -1, -1, 110 },
+        [&](int year) {
+            double yearTotal = 0.0;
+            for (const DividendObject& d : dividends) if (d.year() == year) yearTotal += d.dividendPayoutWithTaxes();
+            return QStringLiteral("%1 (%2)").arg(year).arg(fmtMoney(yearTotal));
+        },
+        [&](int year, QTableWidget* data) {
+            QList<DividendObject> yearDivs;
+            for (const DividendObject& d : dividends) if (d.year() == year) yearDivs.append(d);
+
+            data->setRowCount(yearDivs.size());
+            for (int i = 0; i < yearDivs.size(); ++i) {
+                const DividendObject& d = yearDivs.at(i);
+
+                auto* iDate = centeredItem(d.dateAsStr());
+                iDate->setData(Qt::UserRole, d.guid());
+                data->setItem(i, 0, iDate);
+                data->setItem(i, 1, centeredItem(fmtRate(d.rate())));
+                data->setItem(i, 2, centeredItem(fmtVolume(d.volume())));
+                data->setItem(i, 3, centeredItem(fmtMoney(d.dividendPayoutWithTaxes())));
+
+                if (!d.document().isEmpty()) {
+                    auto* docItem = new QTableWidgetItem;
+                    docItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                    docItem->setData(Qt::UserRole, d.document());
+                    data->setItem(i, 4, docItem);
+                    data->setCellWidget(i, 4, documentIconWidget(d.document()));
+                } else {
+                    data->setItem(i, 4, centeredItem(QStringLiteral("-")));
+                }
+            }
+        },
+        [&](int year, QTableWidget* footer) {
+            double totVol = 0.0, totDiv = 0.0;
+            for (const DividendObject& d : dividends) {
+                if (d.year() != year) continue;
+                totVol += d.volume();
+                totDiv += d.dividendPayoutWithTaxes();
+            }
+            footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
+            footer->setItem(0, 1, centeredItem(QStringLiteral("-")));
+            footer->setItem(0, 2, centeredItem(fmtVolume(totVol)));
+            footer->setItem(0, 3, centeredItem(fmtMoney(totDiv)));
+            footer->setItem(0, 4, centeredItem(QStringLiteral("-")));
+        },
+        /*jahresDocColumn=*/4);
+}
+
+void ViewShareDetails::populateKosten(const QList<BrokerageObject>& brokerages)
+{
+    if (!m_kostenTab)
+        return; // Marktwert-Modus — Tab existiert nicht, siehe setupUi()
+
+    QList<int> years;
+    for (const BrokerageObject& b : brokerages)
+        if (!years.contains(b.year()))
+            years.append(b.year());
+    std::sort(years.begin(), years.end(), std::greater<int>());
+
+    const QLocale loc;
+    auto fmtMoney = [&](double v) { return loc.toString(v, 'f', 2) + QStringLiteral(" €"); };
+
+    double totalNetto = 0.0;
+    for (const BrokerageObject& b : brokerages)
+        totalNetto += b.brokerageReduction();
+
+    m_kostenTab->populateOverview(
+        years,
+        tr("Übersicht (%1)").arg(fmtMoney(totalNetto)),
+        { tr("Jahr"), tr("Netto-Kosten") },
+        { 80, -1 },
+        [&](QTableWidget* data) {
+            data->setRowCount(years.size());
+            for (int i = 0; i < years.size(); ++i) {
+                const int yr = years.at(i);
+                double netto = 0.0;
+                for (const BrokerageObject& b : brokerages)
+                    if (b.year() == yr) netto += b.brokerageReduction();
+
+                auto* iYear = centeredItem(QString::number(yr));
+                iYear->setData(Qt::UserRole, yr);
+                data->setItem(i, 0, iYear);
+                data->setItem(i, 1, centeredItem(fmtMoney(netto)));
+            }
+        },
+        [&](QTableWidget* footer) {
+            footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
+            footer->setItem(0, 1, centeredItem(fmtMoney(totalNetto)));
+        },
+        { tr("Datum"), tr("Typ"), tr("Ges. Gebühren"), tr("Rabatt"), tr("Netto-Kosten"), tr("Dokument") },
+        { 100, -1, -1, -1, -1, 110 },
+        [&](int year) {
+            double yearNetto = 0.0;
+            for (const BrokerageObject& b : brokerages) if (b.year() == year) yearNetto += b.brokerageReduction();
+            return QStringLiteral("%1 (%2)").arg(year).arg(fmtMoney(yearNetto));
+        },
+        [&](int year, QTableWidget* data) {
+            QList<BrokerageObject> yearBrokerages;
+            for (const BrokerageObject& b : brokerages) if (b.year() == year) yearBrokerages.append(b);
+
+            data->setRowCount(yearBrokerages.size());
+            for (int i = 0; i < yearBrokerages.size(); ++i) {
+                const BrokerageObject& b = yearBrokerages.at(i);
+
+                // "Typ": Kauf (buyGuid gesetzt) / Verkauf (saleGuid gesetzt) /
+                // Sonstig (Standalone-Eintrag) — identisch zu ViewBrokerageEdit.
+                const QString typ = !b.buyGuid().isEmpty()  ? tr("Kauf")
+                                   : !b.saleGuid().isEmpty() ? tr("Verkauf")
+                                                              : tr("Sonstig");
+
+                auto* iDate = centeredItem(b.dateAsStr());
+                iDate->setData(Qt::UserRole, b.guid());
+                data->setItem(i, 0, iDate);
+                data->setItem(i, 1, centeredItem(typ));
+                data->setItem(i, 2, centeredItem(fmtMoney(b.brokerage())));
+                data->setItem(i, 3, centeredItem(fmtMoney(b.reduction())));
+                data->setItem(i, 4, centeredItem(fmtMoney(b.brokerageReduction())));
+
+                if (!b.document().isEmpty()) {
+                    auto* docItem = new QTableWidgetItem;
+                    docItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                    docItem->setData(Qt::UserRole, b.document());
+                    data->setItem(i, 5, docItem);
+                    data->setCellWidget(i, 5, documentIconWidget(b.document()));
+                } else {
+                    data->setItem(i, 5, centeredItem(QStringLiteral("-")));
+                }
+            }
+        },
+        [&](int year, QTableWidget* footer) {
+            double sumGeb = 0.0, sumRabatt = 0.0, sumNetto = 0.0;
+            for (const BrokerageObject& b : brokerages) {
+                if (b.year() != year) continue;
+                sumGeb    += b.brokerage();
+                sumRabatt += b.reduction();
+                sumNetto  += b.brokerageReduction();
+            }
+            footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
+            footer->setItem(0, 1, centeredItem(QStringLiteral("-")));
+            footer->setItem(0, 2, centeredItem(fmtMoney(sumGeb)));
+            footer->setItem(0, 3, centeredItem(fmtMoney(sumRabatt)));
+            footer->setItem(0, 4, centeredItem(fmtMoney(sumNetto)));
+            footer->setItem(0, 5, centeredItem(QStringLiteral("-")));
+        },
+        /*jahresDocColumn=*/5);
 }
 
 // ── IViewShareDetails: Fehler / Lifecycle ─────────────────────────────────────
@@ -245,4 +651,34 @@ void ViewShareDetails::populateBox(QGridLayout* grid, const CalculationRows& row
         grid->addWidget(valueLabel, row, 2);
         ++row;
     }
+}
+
+QTableWidgetItem* ViewShareDetails::centeredItem(const QString& text)
+{
+    auto* item = new QTableWidgetItem(text);
+    item->setTextAlignment(Qt::AlignCenter);
+    item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+    return item;
+}
+
+QWidget* ViewShareDetails::documentIconWidget(const QString& documentPath)
+{
+    // Identisch zur Icon-Auswahl-Logik in ViewDividendEdit::populateOverview()
+    // und ViewBrokerageEdit::makeDocIconWidget().
+    const QString ext = QFileInfo(documentPath).suffix().toLower();
+    IconProvider::IconName iconName;
+    if (ext == QStringLiteral("pdf"))
+        iconName = IconProvider::DocPdfImage16;
+    else if (ext == QStringLiteral("doc") || ext == QStringLiteral("docx"))
+        iconName = IconProvider::DocWordImage16;
+    else if (ext == QStringLiteral("xls") || ext == QStringLiteral("xlsx"))
+        iconName = IconProvider::DocExcelImage16;
+    else
+        iconName = IconProvider::SearchFailed2;
+
+    auto* label = new QLabel;
+    label->setAlignment(Qt::AlignCenter);
+    label->setPixmap(IconProvider::icon(iconName).pixmap(16, 16));
+    label->setToolTip(tr("Doppelklick: Dokument anzeigen\n%1").arg(documentPath));
+    return label;
 }
