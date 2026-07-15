@@ -646,6 +646,27 @@ Test-Target `tst_overviewtabwidget` (siehe eigener Abschnitt unten).
 `ViewShareDetails::onMainTabChanged()` (Reset auf Jahresübersicht bei
 äußerem Tab-Wechsel) ist durch `test_mainTabChanged_resetsOverviewTabsToUebersicht`
 in `tst_mainwindow.cpp` abgedeckt (siehe "tests/forms/ — MainWindow" unten).
+Der Gewinne/Verluste-Tab existiert seit 14.07.2026 in beiden Modi
+(brokeragefrei im Marktwert-Modus, siehe ARCHITECTURE.md, "Marktwert- vs.
+Depotwert-Modus") — auf Presenter-Ebene durch
+`test_loadAndDisplay_marketMode_populatesOnlyGewinneVerluste` abgedeckt, auf
+View-Ebene (Tab-Struktur je Modus) durch `test_marketMode_
+hasOnlyGewinneVerlusteOverviewTab`/`test_depotwertMode_
+hasAllThreeOverviewTabs` und (tatsächliche brokeragefreie vs. Final-Werte,
+über echte DB-Daten statt Fakes) durch `test_marketMode_
+gewinneVerlusteTab_usesBrokerageFreeValues`, alle drei in
+`tst_mainwindow.cpp`.
+
+@note **Entdeckter und behobener Folgefehler (15.07.2026):** Der letztgenannte
+Test schlug beim ersten Durchlauf fehl (490,00 € erwartet, 500,00 € erhalten)
+— nicht wegen der Marktwert/Depotwert-Umschaltung selbst, sondern wegen eines
+unabhängigen, vorbestehenden Bugs in `ModelSaleEdit::addSale()` (fehlender
+Brokerage-Vorwärts-Link `sales.brokerage_guid`, siehe ARCHITECTURE.md,
+"SalesForm-Details"). Drei Tests decken den Fix ab: `test_modelSaleEdit_
+addSale_success` (erweitert), `test_modelSaleEdit_addSale_
+linksBrokerageForwardReference` (neu) und `test_modelSaleEdit_updateSale_
+createsBrokerageIfMissing` (erweitert) — alle in `tst_mainwindow.cpp`, siehe
+Tabelle unten.
 
 @note Wie schon beim vorherigen Anlauf: **weder** Datenbank **noch**
 `QWidget` **noch** `ShareCalculator` werden instanziiert.
@@ -683,7 +704,7 @@ den Listen selbst, damit Tests "gar nicht aufgerufen" (Marktwert-Modus) von
 | `test_loadAndDisplay_marketMode_gesamtBox_matchesScreenshotValues` | `ShareValues` mit den echten Marktwert-Screenshot-Werten (AGIF-Allianz, 168,50796 Stk.) | "Verkäufe"/"Summe"/"Alle Einzahlungen"/"Gewinn / Verlust (gesamt)"/"Entwicklung" exakt wie im Screenshot; "Dividenden" = "-", Farbe `Qt::gray` |
 | `test_loadAndDisplay_marketMode_aktuelleBox_matchesScreenshotValues` | Gleiche Fixture | "Gewinn / Verlust (Verkäufe)" = `saleProfitLoss`, "Summe" = `marketValue`, beide exakt wie im Screenshot; "Dividenden" deaktiviert |
 | `test_loadAndDisplay_marketMode_vortagBox_unaffectedByMode` | Gleiche Fixture, Marktwert-Modus | "Gewinn / Verlust" = 53,59€ (168,50796×0,318, exakt wie im Screenshot) — bestätigt, dass die Vortag-Box modus-unabhängig ist |
-| `test_loadAndDisplay_marketMode_doesNotPopulateNewTabs` | `marketValueMode = true`, Model liefert 2 Sales/1 Dividend/3 Brokerages | `gewinneVerlusteCalled`/`dividendenCalled`/`kostenCalled` bleiben `false`, `saleRows`/`dividendRows`/`brokerageRows` bleiben leer — `ViewShareDetails` legt die drei Tabs im Marktwert-Modus gar nicht erst an, der Presenter darf sie folglich auch nicht befüllen |
+| `test_loadAndDisplay_marketMode_populatesOnlyGewinneVerluste` (ergänzt 14.07.2026, ersetzt `..._doesNotPopulateNewTabs`) | `marketValueMode = true`, Model liefert 2 Sales/1 Dividend/3 Brokerages | `gewinneVerlusteCalled = true`, `saleRows.size() == 2`; `dividendenCalled`/`kostenCalled` bleiben `false`, `dividendRows`/`brokerageRows` bleiben leer — Gewinne/Verluste existiert seit 14.07.2026 in beiden Modi, Dividenden/Kosten bleiben Depotwert-only (siehe ARCHITECTURE.md, "Marktwert- vs. Depotwert-Modus") |
 | `test_loadAndDisplay_depotwertMode_populatesGewinneVerlusteDividendenKosten` | `marketValueMode = false` (Default), gleiche Fixture | Alle drei `*Called`-Flags `true`, `saleRows.size() == 2`/`dividendRows.size() == 1`/`brokerageRows.size() == 3` — reines Durchreichen der Model-Listen, keine Presenter-Logik |
 
 @note **`lastInternetUpdate()`-Zweig (erledigt 09.07.2026):** `ShareObject`
@@ -715,6 +736,19 @@ direkt in `tst_mainwindow.cpp` (Suchbegriff `onPortfolioRowDoubleClicked`/
 | `test_onPortfolioRowDoubleClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole) | Kein Absturz, kein modaler Dialog |
 | `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText` | `ViewShareDetails` direkt konstruiert (kein `exec()`, analog `test_shareAddDialog_canBeConstructed`) | `hasValidShare()` = true, Fenstertitel = Aktienname, Close-Button-Text = "Schließen" (Regressionstest für den qtbase-Übersetzungs-Bugfix vom 09.07.2026) |
 | `test_mainTabChanged_resetsOverviewTabsToUebersicht` (ergänzt 14.07.2026) | Zwei `insertTestBuy()`-Aufrufe in verschiedenen Jahren (erzeugen je einen Brokerage-Eintrag, siehe `insertTestBuy()`) befüllen den Kosten-Tab mit zwei Jahres-Tabs; ein Jahres-Tab wird ausgewählt, dann das äußere `m_tabs` gewechselt | Das per `findChildren<OverviewTabWidget*>()` (über `count() > 1` identifizierte) Kosten-`OverviewTabWidget` springt bei jedem Wechsel des äußeren Tabs zurück auf `currentIndex() == 0` (Übersicht) — Regressionstest für `ViewShareDetails::onMainTabChanged()`, siehe ARCHITECTURE.md, "OverviewTabWidget-Details" |
+| `test_marketMode_hasOnlyGewinneVerlusteOverviewTab` (ergänzt 14.07.2026) | `ViewShareDetails` im Marktwert-Modus konstruiert | Äußerer Tab-Titel "Gewinne/Verluste" vorhanden, "Dividenden"/"Kosten" nicht; genau eine `OverviewTabWidget`-Instanz statt drei |
+| `test_depotwertMode_hasAllThreeOverviewTabs` (ergänzt 14.07.2026, Regression) | `ViewShareDetails` im Depotwert-Modus (Default) konstruiert | Alle drei äußeren Tab-Titel vorhanden, genau drei `OverviewTabWidget`-Instanzen |
+| `test_marketMode_gewinneVerlusteTab_usesBrokerageFreeValues` (ergänzt 14.07.2026, deckte am 15.07.2026 einen unabhängigen `ModelSaleEdit::addSale()`-Bug auf, s.u.) | Ein Verkauf (5 Stk. à 100,00 €) mit eigener Provision (10,00 €), über `ModelSaleEdit::addSale()` real in die DB eingefügt; Gewinne/Verluste-`OverviewTabWidget` per `overviewTabByGroupTitle()`-Helfer (QGroupBox-Titel statt Index) gefunden | Depotwert-Modus zeigt "Auszahlung" = 490,00 € (500,00 € − 10,00 € Provision, über `payoutBrokerageReduction()`); Marktwert-Modus zeigt 500,00 € (brokeragefrei, über `payout()`) — für **dieselben** DB-Daten, direkter Beleg für die `market ? ... : ...`-Umschaltung in `ViewShareDetails::populateGewinneVerluste()` |
+| `test_modelSaleEdit_addSale_success` (erweitert 15.07.2026) | Verkauf mit Provision 9,90 € über `addSale()` gespeichert | Zusätzlich zu `orderNumber()`: `loaded.first().provision() == 9.90` nach `loadSales()` — Regression für den Brokerage-Vorwärts-Link-Bugfix (s.u.) |
+| `test_modelSaleEdit_addSale_linksBrokerageForwardReference` (ergänzt 15.07.2026) | Verkauf ohne Kauf-Anteil, Provision 10,00 € | `payoutBrokerageReduction()` nach `loadSales()` = 490,00 € (nicht 500,00 €, wie vor dem Fix); `loadBrokerage()` (Rückwärts-Link) weiterhin unverändert korrekt |
+| `test_modelSaleEdit_updateSale_createsBrokerageIfMissing` (erweitert 15.07.2026) | Provision 15,00 € beim `updateSale()`-Aufruf, der einen fehlenden Brokerage-Eintrag neu anlegt | Zusätzlich zu `loadBrokerage().provision() == 15.0`: `loadSales()` liefert dieselbe Provision — Regression für denselben Bugfix im `updateSale()`-"Brokerage neu anlegen"-Zweig |
+
+`SaleRepository::updateBrokerageGuid()` selbst hat zusätzlich einen isolierten
+Repository-Unit-Test, `test_updateBrokerageGuid` in
+`tests/repositories/tst_salerepository.cpp` (ergänzt 15.07.2026): Brokerage
+wird absichtlich zunächst nur über den Rückwärts-Link (`sale_guid`) angelegt
+— `findByGuid(guid).provision()` liefert davor 0, nach
+`updateBrokerageGuid()` korrekt 7,5.
 
 @note **Mausrad-Steuerung der "Anzahl" (ergänzt 12.07.2026):** Da
 `ViewChart` (anders als `PresenterChart`) echte `QWidget`s und Qt-Charts

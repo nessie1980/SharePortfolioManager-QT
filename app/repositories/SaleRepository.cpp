@@ -281,6 +281,20 @@ bool SaleRepository::updateDocument(const QString& guid, const QString& document
     return true;
 }
 
+bool SaleRepository::updateBrokerageGuid(const QString& guid, const QString& brokerageGuid)
+{
+    QSqlQuery sqlQuery(QSqlDatabase::database("spm_main"));
+    sqlQuery.prepare("UPDATE sales SET brokerage_guid = :bg WHERE guid = :guid");
+    sqlQuery.bindValue(":bg",   brokerageGuid);
+    sqlQuery.bindValue(":guid", guid);
+
+    if (!sqlQuery.exec()) {
+        m_lastError = sqlQuery.lastError();
+        return false;
+    }
+    return true;
+}
+
 // ── Delete ────────────────────────────────────────────────────────────────────
 
 bool SaleRepository::remove(const QString& guid)

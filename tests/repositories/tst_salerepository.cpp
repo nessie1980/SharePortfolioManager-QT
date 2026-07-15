@@ -6,8 +6,10 @@
 #include <QUuid>
 
 #include "../../app/models/SaleObject.h"
+#include "../../app/models/BrokerageObject.h"
 #include "../../app/repositories/SaleRepository.h"
 #include "../../app/repositories/BuyRepository.h"
+#include "../../app/repositories/BrokerageRepository.h"
 #include "../../app/core/Database.h"
 
 class TestSaleRepository : public QObject
@@ -193,6 +195,45 @@ private slots:
         QCOMPARE(found.volume(),      8.0);
         QCOMPARE(found.salePrice(),   115.0);
         QCOMPARE(found.depotNumber(), QString("D002"));
+    }
+
+    void test_updateBrokerageGuid()
+    {
+        // Regressionstest für den Bugfix vom 15.07.2026 (siehe ARCHITECTURE.md,
+        // "SalesForm-Details", ModelSaleEdit): sales.brokerage_guid ist der
+        // Vorwärts-Link, den findByGuid()/findByShare()/findByShareAndYear()
+        // für ihren Brokerage-JOIN nutzen (kSelectWithBrokerage). Ohne ihn
+        // liefert provision() beim Laden immer 0 zurück, selbst wenn ein
+        // gültiger Brokerage-Datensatz existiert und über den Rückwärts-Link
+        // (brokerage.sale_guid, z.B. BrokerageRepository::findBySaleGuid())
+        // durchaus auffindbar wäre.
+        SaleRepository      repo;
+        BuyRepository       buyRepo;
+        BrokerageRepository brokerageRepo;
+
+        const QString guid          = newGuid();
+        const QString buyGuid       = newGuid();
+        const QString brokerageGuid = newGuid();
+
+        buyRepo.insert(BuyObject(buyGuid, k_shareGuid, "", "BO010",
+                                 "2024-01-01T10:00:00", 10.0, 0.0, 100.0));
+        repo.insert(SaleObject(guid, k_shareGuid, "", "SO010",
+                               "2024-06-01T10:00:00", 5.0, 110.0, makeBuyDetails(buyGuid)));
+
+        // Brokerage separat anlegen, zunächst nur über den Rückwärts-Link
+        // (sale_guid) verknüpft — wie ModelSaleEdit::addSale() es vor dem Fix
+        // tat, ohne sales.brokerage_guid zu setzen.
+        brokerageRepo.insert(BrokerageObject(brokerageGuid, k_shareGuid, QString(), guid,
+                                             "2024-06-01T10:00:00",
+                                             /*provision=*/7.5));
+
+        // Vor dem Vorwärts-Link: der JOIN in findByGuid() findet nichts.
+        QCOMPARE(repo.findByGuid(guid).provision(), 0.0);
+
+        QVERIFY(repo.updateBrokerageGuid(guid, brokerageGuid));
+
+        // Nach dem Vorwärts-Link: provision() kommt korrekt über den JOIN zurück.
+        QCOMPARE(repo.findByGuid(guid).provision(), 7.5);
     }
 
     void test_remove()

@@ -59,12 +59,16 @@ void ViewShareDetails::setupUi()
     setupChartTab();
     setupDepotwertTab();
 
-    // Gewinne/Verluste-, Dividenden- und Kosten-Tabs existieren nur im
-    // Depotwert-Modus (matcht die C#-Referenz: FrmShareDetails zeigt sie nur,
-    // wenn der Dialog vom Depotwert- statt vom Marktwert-Tab in MainWindow
-    // geöffnet wurde — siehe ARCHITECTURE.md, "ShareDetailsForm-Details").
+    // Gewinne/Verluste-Tab existiert seit 14.07.2026 in beiden Modi (Nessies
+    // Vorgabe) — im Marktwert-Modus zeigt er die brokeragefreien Werte
+    // (SaleObject::payout()/profitLoss() statt .../BrokerageReduction(), siehe
+    // populateGewinneVerluste() unten). Dividenden- und Kosten-Tab bleiben
+    // Depotwert-only: beides sind laut C#-Referenz reine Depotwert-Konzepte
+    // (siehe ARCHITECTURE.md, "Marktwert- vs. Depotwert-Modus" — dieselbe
+    // Begründung, aus der auch die Dividenden-Zeile in der Marktwert-Box
+    // deaktiviert ist, bzw. "OverviewTabWidget-Details").
+    setupGewinneVerlusteTab();
     if (!m_marketValueMode) {
-        setupGewinneVerlusteTab();
         setupDividendenTab();
         setupKostenTab();
     }
@@ -314,11 +318,21 @@ void ViewShareDetails::populateAktuelleBox(const CalculationRows& rows)
 void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
 {
     if (!m_gewinneVerlusteTab)
-        return; // Marktwert-Modus — Tab existiert nicht, siehe setupUi()
+        return; // defensiv — Tab wird seit 14.07.2026 immer in setupUi() angelegt
 
-    // Verifiziert gegen ViewSaleEdit::populateOverview() (13.07.2026): "Auszahlung"
-    // ist SaleObject::payoutBrokerageReduction() direkt — kein Umweg über
-    // saleValueBrokerageReduction()/taxSum() nötig, wie zunächst angenommen.
+    // Marktwert-Modus (seit 14.07.2026, Nessies Vorgabe): brokeragefreie
+    // Felder, konsistent zum Rest der Marktwert-Box (siehe ShareCalculator.h,
+    // "Marktwert-Tab (no brokerage, no reduction)"). Depotwert-Modus bleibt
+    // unverändert bei den *BrokerageReduction()-Feldern (verifiziert gegen
+    // ViewSaleEdit::populateOverview(), 13.07.2026).
+    const bool market = m_marketValueMode;
+    auto salePayout = [market](const SaleObject& s) {
+        return market ? s.payout() : s.payoutBrokerageReduction();
+    };
+    auto saleProfitLoss = [market](const SaleObject& s) {
+        return market ? s.profitLoss() : s.profitLossBrokerageReduction();
+    };
+
     QList<int> years;
     for (const SaleObject& s : sales)
         if (!years.contains(s.year()))
@@ -331,7 +345,7 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
 
     double totalPayout = 0.0;
     for (const SaleObject& s : sales)
-        totalPayout += s.payoutBrokerageReduction();
+        totalPayout += salePayout(s);
 
     m_gewinneVerlusteTab->populateOverview(
         years,
@@ -346,8 +360,8 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
                 for (const SaleObject& s : sales) {
                     if (s.year() != yr) continue;
                     vol    += s.volume();
-                    payout += s.payoutBrokerageReduction();
-                    gv     += s.profitLossBrokerageReduction();
+                    payout += salePayout(s);
+                    gv     += saleProfitLoss(s);
                 }
                 auto* iYear = centeredItem(QString::number(yr));
                 iYear->setData(Qt::UserRole, yr);
@@ -361,7 +375,7 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
             double totVol = 0.0, totGV = 0.0;
             for (const SaleObject& s : sales) {
                 totVol += s.volume();
-                totGV  += s.profitLossBrokerageReduction();
+                totGV  += saleProfitLoss(s);
             }
             footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
             footer->setItem(0, 1, centeredItem(fmtVolume(totVol)));
@@ -372,7 +386,7 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
         { 100, -1, -1, -1, 110 },
         [&](int year) {
             double yearPayout = 0.0;
-            for (const SaleObject& s : sales) if (s.year() == year) yearPayout += s.payoutBrokerageReduction();
+            for (const SaleObject& s : sales) if (s.year() == year) yearPayout += salePayout(s);
             return QStringLiteral("%1 (%2)").arg(year).arg(fmtMoney(yearPayout));
         },
         [&](int year, QTableWidget* data) {
@@ -387,8 +401,8 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
                 iDate->setData(Qt::UserRole, s.guid());
                 data->setItem(i, 0, iDate);
                 data->setItem(i, 1, centeredItem(fmtVolume(s.volume())));
-                data->setItem(i, 2, centeredItem(fmtMoney(s.payoutBrokerageReduction())));
-                data->setItem(i, 3, centeredItem(fmtMoney(s.profitLossBrokerageReduction())));
+                data->setItem(i, 2, centeredItem(fmtMoney(salePayout(s))));
+                data->setItem(i, 3, centeredItem(fmtMoney(saleProfitLoss(s))));
 
                 if (!s.document().isEmpty()) {
                     auto* docItem = new QTableWidgetItem;
@@ -406,8 +420,8 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
             for (const SaleObject& s : sales) {
                 if (s.year() != year) continue;
                 vol    += s.volume();
-                payout += s.payoutBrokerageReduction();
-                gv     += s.profitLossBrokerageReduction();
+                payout += salePayout(s);
+                gv     += saleProfitLoss(s);
             }
             footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
             footer->setItem(0, 1, centeredItem(fmtVolume(vol)));

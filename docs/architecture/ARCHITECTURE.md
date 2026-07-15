@@ -447,6 +447,28 @@ zurück — delegiert an `BrokerageRepository::findByBuyGuid()`.
 `removeSale` macht `volumeSold`-Änderungen rückgängig.
 `documentExists()` prüft aktienübergreifend per direkter SQL-Abfrage.
 
+@note **Bugfix: fehlender Brokerage-Vorwärts-Link (15.07.2026).** `SaleRepository`
+kennt zwei FK-Richtungen zwischen `sales` und `brokerage`: den Vorwärts-Link
+`sales.brokerage_guid → brokerage.guid`, den `findByShare()`/`findByGuid()`/
+`findByShareAndYear()` für ihren Brokerage-JOIN nutzen (`kSelectWithBrokerage`),
+und den Rückwärts-Link `brokerage.sale_guid → sales.guid`, den
+`BrokerageRepository::findBySaleGuid()` (und damit `ModelSaleEdit::
+loadBrokerage()`) nutzt. `ModelSaleEdit::addSale()` legte den neuen
+Brokerage-Eintrag bisher nur mit dem Rückwärts-Link an, ohne
+`sales.brokerage_guid` zu setzen — beim erneuten Laden über `loadSales()`
+kam die Provision/Brokerage eines frisch gespeicherten Verkaufs dadurch immer
+als 0 zurück, obwohl der Brokerage-Datensatz selbst korrekt in der DB stand
+(nur eben nicht über den vom SELECT-JOIN genutzten Weg auffindbar). Derselbe
+Bug steckte im "Brokerage neu anlegen"-Zweig von `updateSale()`. Gefunden
+über einen View-Ebene-Test für den brokeragefreien Gewinne/Verluste-Tab im
+Marktwert-Modus (siehe "OverviewTabWidget-Details"), der echte DB-Daten statt
+Fakes verwendet — mit Fakes/direkten `BrokerageRepository`-Zugriffen (wie im
+zuvor einzigen Test für diesen Pfad) war der Bug unsichtbar. Fix: neue
+`SaleRepository::updateBrokerageGuid(guid, brokerageGuid)`-Methode, von
+`addSale()` sowie **beiden** Zweigen von `updateSale()` (auch dem
+`existing.isValid()`-Zweig, zur Absicherung gegen einen vom Aufrufer
+übergebenen veralteten/leeren `sale.brokerageGuid()`-Wert) aufgerufen.
+
 `PresenterSaleEdit` — Vollständige Verkauf-Logik inkl. Letzter-Verkauf-Erkennung,
 Live-Validierung, Parse-Pipeline und Dokument-Duplikat-Check.
 Depot-gefiltertes FIFO für Kaufzuteilung.
@@ -983,7 +1005,7 @@ FrmShareDetails
 ├── Tab "Aktien-Chart"                — Chart der Tagesdaten, Zeitraum-/Intervall-Auswahl
 ├── Tab "Komplette Depotbewertung"    — 3 Bestandsberechnungs-Boxen (nur bei Depotwert-Aufruf)
 │   ODER "Komplette Marktbewertung"   — (nur bei Marktwert-Aufruf)
-├── Tab "Gewinne / Verluste (X€)"     — Übersicht + Jahres-Tabs (nur Depotwert-Modus)
+├── Tab "Gewinne / Verluste (X€)"     — Übersicht + Jahres-Tabs (beide Modi, Marktwert brokeragefrei)
 ├── Tab "Dividenden (X€)"             — Übersicht + Jahres-Tabs (nur Depotwert-Modus)
 └── Tab "Kosten (X€)"                 — Übersicht + Jahres-Tabs (nur Depotwert-Modus)
 @endcode
@@ -1069,10 +1091,37 @@ Unterschiede zwischen den Modi:
 | Tab-Titel | "Komplette Depotbewertung" | "Komplette Marktbewertung" |
 | Gesamt-/Aktuelle-Box "Dividenden" | echter Wert (`totalDividend`) | deaktiviert: Wert `"-"`, Farbe `Qt::gray` (Dividenden sind ein reines Depotwert-Konzept) |
 | Vortag-Box | identisch in beiden Modi (keine Brokerage involviert) | identisch |
+| Gewinne/Verluste-Tab | Werte inkl. Brokerage (`payoutBrokerageReduction()`/`profitLossBrokerageReduction()`) | seit 14.07.2026: brokeragefrei (`payout()`/`profitLoss()`), Tab existiert in beiden Modi |
+| Dividenden-/Kosten-Tab | vorhanden | existiert nicht (reine Depotwert-Konzepte, siehe oben) |
 
 Die deaktivierte Dividenden-Zeile wird über einen kleinen Presenter-Helfer
 `disabledRow(operatorSymbol, label)` erzeugt (Wert `"-"`, `QColor(Qt::gray)`) —
 matcht die ausgegraute Beschriftung im C#-Referenz-Screenshot.
+
+@note **Gewinne/Verluste-Tab im Marktwert-Modus (14.07.2026, Nessies
+Vorgabe):** Ursprünglich (13.07.2026) existierten alle drei neuen Tabs
+(Gewinne/Verluste, Dividenden, Kosten) nur im Depotwert-Modus. Auf Nessies
+Wunsch legt `ViewShareDetails::setupUi()` den Gewinne/Verluste-Tab jetzt in
+beiden Modi an — Dividenden und Kosten bleiben bewusst Depotwert-only, da
+beides laut C#-Referenz reine Depotwert-Konzepte sind (dieselbe Begründung,
+aus der auch die Dividenden-Zeile oben deaktiviert ist). Im Marktwert-Modus
+verwendet `ViewShareDetails::populateGewinneVerluste()` die brokeragefreien
+`SaleObject`-Felder `payout()`/`profitLoss()` statt der Depotwert-Felder
+`payoutBrokerageReduction()`/`profitLossBrokerageReduction()` — konsistent
+zur "Marktwert-Tab (no brokerage, no reduction)"-Formel in
+`ShareCalculator.h`. Die Spaltenüberschriften/-Labels bleiben unverändert
+(kein "brokeragefrei"-Zusatz), analog dazu, dass auch der Rest der
+Marktwert-Box keine solchen Zusätze verwendet. `PresenterShareDetails::
+loadAndDisplay()` ruft `populateGewinneVerluste()` entsprechend in beiden
+Modi auf, `populateDividenden()`/`populateKosten()` weiterhin nur im
+Depotwert-Modus.
+
+@note **Entdeckter Folgefehler (15.07.2026):** Der Regressionstest für obige
+Erweiterung (`test_marketMode_gewinneVerlusteTab_usesBrokerageFreeValues` in
+`tst_mainwindow.cpp`, echte DB-Daten statt Fakes) deckte einen unabhängigen,
+vorbestehenden Bug in `ModelSaleEdit::addSale()` auf (fehlender
+Brokerage-Vorwärts-Link) — siehe "SalesForm-Details"/`ModelSaleEdit` oben
+für die Details des Fixes.
 
 @note **Bugfix (10.07.2026, betrifft Grid UND ShareDetailsForm):** Beim
 Durchgehen der Marktwert-Box fiel auf, dass `ShareCalculator` zwar Brokerage
@@ -2280,14 +2329,16 @@ Sprache ohne Neubuild änderbar durch Austausch der `.qm`-Datei.
 
 ---
 
-### OverviewTabWidget-Details (Gewinne/Verluste-, Dividenden-, Kosten-Tabs, implementiert 13.07.2026, fixierter Übersicht-Tab 14.07.2026)
+### OverviewTabWidget-Details (Gewinne/Verluste-, Dividenden-, Kosten-Tabs, implementiert 13.07.2026, fixierter Übersicht-Tab 14.07.2026, Gewinne/Verluste auf Marktwert-Modus erweitert 14.07.2026)
 
 Wiederverwendbares "Übersicht + Jahres-Tabs"-Anzeige-Widget (siehe
 `app/widgets/OverviewTabWidget.h`), verwendet für die Gewinne/Verluste-,
-Dividenden- und Kosten-Tabs in `ViewShareDetails` (nur im Depotwert-Modus,
-siehe "ShareDetailsForm-Details" oben) — je eine reine Anzeige-Instanz ohne
-Verbindung zu einem Editier-Formular. Die Jahres-Gruppierung/-Summierung
-liegt bewusst in der View, identisch zum Muster in den Editier-Dialogen
+Dividenden- und Kosten-Tabs in `ViewShareDetails` — je eine reine
+Anzeige-Instanz ohne Verbindung zu einem Editier-Formular. Gewinne/Verluste
+existiert in beiden Modi (Marktwert-Modus seit 14.07.2026, siehe
+"Marktwert- vs. Depotwert-Modus" oben), Dividenden und Kosten bleiben
+Depotwert-only. Die Jahres-Gruppierung/-Summierung liegt bewusst in der
+View, identisch zum Muster in den Editier-Dialogen
 (`ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit`, die weiterhin ihre eigene,
 lokale Kopie des Musters haben — die vollständige Umstellung dieser Dialoge
 auf `OverviewTabWidget` ist noch offen, siehe unten).
@@ -2357,6 +2408,24 @@ oder beim Betreten, in jedem Fall aber bevor der Tab wieder sichtbar wird).
 ---
 
 ## Offene Punkte / TODO
+
+### Brokerage-Vorwärts-Link: ModelBuyEdit/ModelBrokerageEdit ungeprüft (offen, 15.07.2026)
+
+Der am 15.07.2026 in `ModelSaleEdit::addSale()`/`updateSale()` gefundene und
+behobene Bug (fehlender Vorwärts-Link `sales.brokerage_guid` beim Anlegen
+eines neuen Brokerage-Eintrags — siehe "SalesForm-Details"/`ModelSaleEdit`
+oben) wurde **nur für den Verkaufs-Pfad** untersucht und gefixt, da genau
+dort ein Test ihn aufgedeckt hat. Ob derselbe Fehler auch in `ModelBuyEdit`
+(Käufe, analoge `buys.brokerage_guid`-Verknüpfung) oder einem eventuellen
+`ModelBrokerageEdit` (direkte Kosten-Bearbeitung) steckt, ist **nicht**
+gegengeprüft — beim Kauf-Pfad deutet der bisher gesehene Code darauf hin,
+dass die Brokerage-GUID dort schon vor dem Insert feststeht und direkt
+mitgegeben wird (kein nachträgliches Verlinken nötig), das ist aber eine
+Vermutung aus früheren Testschnipseln, kein echter Check. Vor dem nächsten
+gezielten Blick auf Käufe/Kosten: `BuyRepository`/`ModelBuyEdit` (und ggf.
+`ModelBrokerageEdit`, falls vorhanden) auf dasselbe Vorwärts-/Rückwärts-Link-
+Muster prüfen, analog zu `SaleRepository::updateBrokerageGuid()` und den
+zugehörigen Tests (`tst_salerepository.cpp`, `tst_mainwindow.cpp`).
 
 ### OverviewTabWidget / onMainTabChanged(): Test-Lücken geschlossen (erledigt, 14.07.2026)
 

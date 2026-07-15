@@ -9,8 +9,11 @@
 // (09.07.2026) - siehe ARCHITECTURE.md "ShareDetailsForm-Details".
 //
 // Erweitert 13.07.2026 um die Gewinne/Verluste-, Dividenden- und Kosten-Tabs
-// (nur Depotwert-Modus) - FakeViewShareDetails/FakeModelShareDetails decken
-// die drei neuen Interface-Methoden ab, analog zum bestehenden Muster.
+// (zunächst nur Depotwert-Modus) - FakeViewShareDetails/FakeModelShareDetails
+// decken die drei neuen Interface-Methoden ab, analog zum bestehenden Muster.
+// Gewinne/Verluste-Tab am 14.07.2026 auf den Marktwert-Modus erweitert
+// (brokeragefreie Werte, siehe ViewShareDetails::populateGewinneVerluste());
+// Dividenden/Kosten bleiben Depotwert-only.
 
 #include <QtTest>
 #include <QDateTime>
@@ -31,10 +34,10 @@ public:
     CalculationRows vortagRows;
     CalculationRows aktuelleRows;
 
-    // Gewinne/Verluste-, Dividenden-, Kosten-Tabs (nur Depotwert-Modus) —
-    // "*Called" getrennt von den Listen selbst, damit Tests auch den Fall
-    // "gar nicht aufgerufen" (Marktwert-Modus) von "mit leerer Liste
-    // aufgerufen" unterscheiden können.
+    // Gewinne/Verluste- (beide Modi), Dividenden-, Kosten-Tabs (Depotwert-
+    // only) — "*Called" getrennt von den Listen selbst, damit Tests auch den
+    // Fall "gar nicht aufgerufen" (Dividenden/Kosten im Marktwert-Modus) von
+    // "mit leerer Liste aufgerufen" unterscheiden können.
     QList<SaleObject>      saleRows;
     bool                    gewinneVerlusteCalled = false;
     QList<DividendObject>  dividendRows;
@@ -540,14 +543,16 @@ private slots:
         QCOMPARE(pl->value, locale.toString(53.59, 'f', 2) + QStringLiteral(" €"));
     }
 
-    // ── Gewinne/Verluste-, Dividenden-, Kosten-Tabs (13.07.2026) ────────────
+    // ── Gewinne/Verluste-, Dividenden-, Kosten-Tabs (13.07.2026, Gewinne/
+    // Verluste auf beide Modi erweitert 14.07.2026) ─────────────────────────
 
-    void test_loadAndDisplay_marketMode_doesNotPopulateNewTabs()
+    void test_loadAndDisplay_marketMode_populatesOnlyGewinneVerluste()
     {
-        // Marktwert-Modus: ViewShareDetails legt die drei neuen Tabs gar nicht
-        // erst an (siehe ViewShareDetails::setupUi()) — der Presenter darf sie
-        // dementsprechend auch nicht befüllen, selbst wenn das Model Daten
-        // liefern würde.
+        // Marktwert-Modus: ViewShareDetails legt seit 14.07.2026 den
+        // Gewinne/Verluste-Tab auch hier an (siehe ViewShareDetails::
+        // setupUi()) — Dividenden-/Kosten-Tab bleiben Depotwert-only, da
+        // beides laut C#-Referenz reine Depotwert-Konzepte sind (siehe
+        // ARCHITECTURE.md, "Marktwert- vs. Depotwert-Modus").
         FakeViewShareDetails view;
         FakeModelShareDetails model;
         model.share = ShareObject(QStringLiteral("mv1"), QStringLiteral("AGIF001"),
@@ -560,10 +565,10 @@ private slots:
         PresenterShareDetails presenter(view, model, QStringLiteral("mv1"), /*marketValueMode=*/true);
         QVERIFY(presenter.loadAndDisplay());
 
-        QVERIFY(!view.gewinneVerlusteCalled);
+        QVERIFY(view.gewinneVerlusteCalled);
         QVERIFY(!view.dividendenCalled);
         QVERIFY(!view.kostenCalled);
-        QVERIFY(view.saleRows.isEmpty());
+        QCOMPARE(view.saleRows.size(), 2);
         QVERIFY(view.dividendRows.isEmpty());
         QVERIFY(view.brokerageRows.isEmpty());
     }

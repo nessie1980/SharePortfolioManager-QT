@@ -76,6 +76,21 @@ public:
      */
     bool updateDocument(const QString& guid, const QString& document);
 
+    /**
+     * @brief Update only the brokerage_guid link of a sale — the forward FK
+     * that findByShare()/findByGuid()/findByShareAndYear() JOINen (siehe
+     * kSelectWithBrokerage: "LEFT JOIN brokerage br ON br.guid =
+     * s.brokerage_guid"). Bugfix 15.07.2026: ModelSaleEdit::addSale() legte
+     * bisher einen Brokerage-Eintrag nur mit dem Rückwärts-Link
+     * (brokerage.sale_guid) an, ohne diesen Vorwärts-Link zu setzen — beim
+     * erneuten Laden über findByShare() lieferte der JOIN dadurch immer 0
+     * für provision/brokerFee/traderFee/reduction (siehe ARCHITECTURE.md).
+     * @param guid           GUID der Sale.
+     * @param brokerageGuid  GUID des verknüpften Brokerage-Eintrags.
+     * @return true on success.
+     */
+    bool updateBrokerageGuid(const QString& guid, const QString& brokerageGuid);
+
     // ── Delete ────────────────────────────────────────────────────────────
     /**
      * @brief Delete a sale and its buy details by GUID.

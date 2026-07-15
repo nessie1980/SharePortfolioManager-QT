@@ -121,6 +121,21 @@ bool ModelSaleEdit::addSale(const SaleObject& sale)
         return false;
     }
 
+    // 2b. Sale zurückverlinken (Vorwärts-FK sales.brokerage_guid, den
+    // SaleRepository::findByShare()/findByGuid()/findByShareAndYear() für
+    // ihren Brokerage-JOIN nutzen — siehe kSelectWithBrokerage). Bugfix
+    // 15.07.2026: fehlte bisher komplett, wodurch ein frisch gespeicherter
+    // Verkauf beim erneuten Laden über loadSales() immer mit Brokerage 0
+    // zurückkam, obwohl der Brokerage-Datensatz selbst korrekt in der DB
+    // stand (nur über den — hier ungenutzten — Rückwärts-Link
+    // brokerage.sale_guid auffindbar, z.B. via loadBrokerage()).
+    if (!m_saleRepo.updateBrokerageGuid(sale.guid(), brokerageGuid)) {
+        m_lastError = QStringLiteral("Verkauf konnte nicht mit Brokerage verknüpft werden: ")
+                      + m_saleRepo.lastError().text();
+        db.rollback();
+        return false;
+    }
+
     // 3. Update volumeSold on all contributing buys
     for (const SaleBuyDetail& detail : sale.saleBuyDetails()) {
         BuyObject buy = m_buyRepo.findByGuid(detail.buyGuid());
@@ -203,6 +218,19 @@ bool ModelSaleEdit::updateSale(const SaleObject& sale)
             db.rollback();
             return false;
         }
+
+        // Vorwärts-Link absichern (Bugfix 15.07.2026, siehe addSale()):
+        // m_saleRepo.update(sale) oben hat sales.brokerage_guid ggf. bereits
+        // mit sale.brokerageGuid() überschrieben — falls der Aufrufer dort
+        // einen leeren/veralteten Wert übergeben hat, bliebe der Link trotz
+        // gültigem Brokerage-Datensatz verwaist. existing.guid() bleibt beim
+        // Update unverändert, ist also immer der korrekte Ziel-Wert.
+        if (!m_saleRepo.updateBrokerageGuid(sale.guid(), existing.guid())) {
+            m_lastError = QStringLiteral("Verkauf konnte nicht mit Brokerage verknüpft werden: ")
+                          + m_saleRepo.lastError().text();
+            db.rollback();
+            return false;
+        }
     } else {
         // No brokerage yet — create one
         const QString brokerageGuid = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -220,6 +248,17 @@ bool ModelSaleEdit::updateSale(const SaleObject& sale)
         if (!m_brokerageRepo.insert(newBrokerage)) {
             m_lastError = QStringLiteral("Brokerage konnte nicht erstellt werden: ")
                           + m_brokerageRepo.lastError().text();
+            db.rollback();
+            return false;
+        }
+
+        // Sale zurückverlinken — derselbe Bugfix wie in addSale() (15.07.2026,
+        // siehe dortiger Kommentar): ohne diesen Vorwärts-Link (sales.
+        // brokerage_guid) findet SaleRepository::findByShare() etc. den
+        // gerade neu angelegten Brokerage-Eintrag beim nächsten Laden nicht.
+        if (!m_saleRepo.updateBrokerageGuid(sale.guid(), brokerageGuid)) {
+            m_lastError = QStringLiteral("Verkauf konnte nicht mit Brokerage verknüpft werden: ")
+                          + m_saleRepo.lastError().text();
             db.rollback();
             return false;
         }

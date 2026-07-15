@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QFile>
 #include <QLocale>
+#include <QGroupBox>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QTableWidget>
@@ -4002,6 +4003,134 @@ private slots:
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Gewinne/Verluste-Tab im Marktwert-Modus (ergänzt 14.07.2026, Nessies
+    // Vorgabe) — Dividenden-/Kosten-Tab bleiben Depotwert-only, da beides
+    // laut C#-Referenz reine Depotwert-Konzepte sind (siehe ARCHITECTURE.md,
+    // "Marktwert- vs. Depotwert-Modus").
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_marketMode_hasOnlyGewinneVerlusteOverviewTab()
+    {
+        const QString shareGuid = insertTestShare();
+        ViewShareDetails dlg(shareGuid, /*marketValueMode=*/true);
+
+        auto* mainTabs = dlg.findChild<QTabWidget*>(QStringLiteral("tabs"));
+        if (!mainTabs) QFAIL("Äußeres m_tabs nicht gefunden");
+
+        bool foundGewinneVerluste = false, foundDividenden = false, foundKosten = false;
+        for (int i = 0; i < mainTabs->count(); ++i) {
+            const QString title = mainTabs->tabText(i);
+            if (title.contains(QStringLiteral("Gewinne"))) foundGewinneVerluste = true;
+            if (title.contains(QStringLiteral("Dividenden"))) foundDividenden = true;
+            if (title.contains(QStringLiteral("Kosten"))) foundKosten = true;
+        }
+        QVERIFY(foundGewinneVerluste);
+        QVERIFY(!foundDividenden);
+        QVERIFY(!foundKosten);
+
+        // Genau eine OverviewTabWidget-Instanz (Gewinne/Verluste) statt drei.
+        QCOMPARE(dlg.findChildren<OverviewTabWidget*>().size(), 1);
+    }
+
+    void test_depotwertMode_hasAllThreeOverviewTabs()
+    {
+        // Regression: der Depotwert-Modus (unverändert) muss weiterhin alle
+        // drei Tabs anlegen.
+        const QString shareGuid = insertTestShare();
+        ViewShareDetails dlg(shareGuid); // Depotwert-Modus (Default)
+
+        auto* mainTabs = dlg.findChild<QTabWidget*>(QStringLiteral("tabs"));
+        if (!mainTabs) QFAIL("Äußeres m_tabs nicht gefunden");
+
+        bool foundGewinneVerluste = false, foundDividenden = false, foundKosten = false;
+        for (int i = 0; i < mainTabs->count(); ++i) {
+            const QString title = mainTabs->tabText(i);
+            if (title.contains(QStringLiteral("Gewinne"))) foundGewinneVerluste = true;
+            if (title.contains(QStringLiteral("Dividenden"))) foundDividenden = true;
+            if (title.contains(QStringLiteral("Kosten"))) foundKosten = true;
+        }
+        QVERIFY(foundGewinneVerluste);
+        QVERIFY(foundDividenden);
+        QVERIFY(foundKosten);
+
+        QCOMPARE(dlg.findChildren<OverviewTabWidget*>().size(), 3);
+    }
+
+    /**
+     * @brief Findet die OverviewTabWidget-Instanz innerhalb der QGroupBox mit
+     * passendem Titel (z.B. "Gewinne / Verluste-Übersicht") — robuster als
+     * eine Index-Annahme über findChildren<OverviewTabWidget*>(), da mehrere
+     * Instanzen gleichzeitig existieren können (siehe wrapInOverviewGroup()
+     * in ViewShareDetails.cpp).
+     */
+    static OverviewTabWidget* overviewTabByGroupTitle(QWidget& root, const QString& titleContains)
+    {
+        for (auto* gb : root.findChildren<QGroupBox*>()) {
+            if (gb->title().contains(titleContains)) {
+                if (auto* w = gb->findChild<OverviewTabWidget*>())
+                    return w;
+            }
+        }
+        return nullptr;
+    }
+
+    void test_marketMode_gewinneVerlusteTab_usesBrokerageFreeValues()
+    {
+        // Regressionstest für die eigentliche fachliche Änderung (14.07.2026):
+        // Marktwert-Modus muss SaleObject::payout()/profitLoss() (brokeragefrei)
+        // verwenden statt payoutBrokerageReduction()/profitLossBrokerageReduction()
+        // (Depotwert-Modus) — siehe ARCHITECTURE.md, "Marktwert- vs.
+        // Depotwert-Modus". Ein Verkauf mit eigener Provision (10,00 €) macht
+        // den Unterschied messbar: saleValue = 5 × 100,00 € = 500,00 €;
+        // Depotwert-Auszahlung = 500,00 € − 10,00 € (Provision) = 490,00 €;
+        // Markt-Auszahlung (ohne Brokerage) = 500,00 € unverändert.
+        const QString shareGuid = insertTestShare();
+        const BuyObject buy = insertTestBuy(shareGuid, QStringLiteral("depot1"),
+                                             QStringLiteral("2024-02-10T10:00:00"), 20.0, 100.0);
+
+        const SaleObject sale(
+            QStringLiteral("sale-market-test"), shareGuid,
+            QStringLiteral("depot1"), QStringLiteral("ORD-MARKET-TEST"),
+            QStringLiteral("2024-06-05T10:00:00"),
+            5.0, 100.0,
+            { SaleBuyDetail(buy.guid(), buy.dateTime(), 5.0, buy.price()) },
+            /*taxAtSource=*/0.0, /*capitalGainsTax=*/0.0, /*solidarityTax=*/0.0,
+            /*brokerageGuid=*/QString(), /*provision=*/10.0);
+        ModelSaleEdit modelSaleEdit;
+        QVERIFY(modelSaleEdit.addSale(sale));
+
+        const QLocale loc;
+        const QString expectedMarketPayout = loc.toString(500.0, 'f', 2) + QStringLiteral(" €");
+        const QString expectedDepotPayout  = loc.toString(490.0, 'f', 2) + QStringLiteral(" €");
+
+        // Depotwert-Modus — Auszahlung inkl. Brokerage.
+        {
+            ViewShareDetails dlg(shareGuid); // Default: Depotwert-Modus
+            auto* gewinneVerluste = overviewTabByGroupTitle(dlg, QStringLiteral("Gewinne"));
+            if (!gewinneVerluste) QFAIL("Gewinne/Verluste-OverviewTabWidget nicht gefunden");
+            auto* tbl = dataTableFromContainer(gewinneVerluste->widget(0)); // Übersicht-Tab
+            if (!tbl) QFAIL("Übersicht-dataTable nicht gefunden");
+            QCOMPARE(tbl->rowCount(), 1); // ein Jahr (2024)
+            auto* item = tbl->item(0, 2); // Spalte "Auszahlung"
+            if (!item) QFAIL("Auszahlung-Zelle nicht gefunden");
+            QCOMPARE(item->text(), expectedDepotPayout);
+        }
+
+        // Marktwert-Modus — dieselben Daten, brokeragefreie Auszahlung.
+        {
+            ViewShareDetails dlg(shareGuid, /*marketValueMode=*/true);
+            auto* gewinneVerluste = overviewTabByGroupTitle(dlg, QStringLiteral("Gewinne"));
+            if (!gewinneVerluste) QFAIL("Gewinne/Verluste-OverviewTabWidget nicht gefunden");
+            auto* tbl = dataTableFromContainer(gewinneVerluste->widget(0));
+            if (!tbl) QFAIL("Übersicht-dataTable nicht gefunden");
+            QCOMPARE(tbl->rowCount(), 1);
+            auto* item = tbl->item(0, 2);
+            if (!item) QFAIL("Auszahlung-Zelle nicht gefunden");
+            QCOMPARE(item->text(), expectedMarketPayout);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // ViewChart — Mausrad-Steuerung der "Anzahl" (ergänzt 12.07.2026, siehe
     // ARCHITECTURE.md "ChartForm-Details"). ViewChart ist als Tab 1 in
     // ViewShareDetails eingebettet, countSpin/chartView werden per
@@ -4237,6 +4366,49 @@ private slots:
         const QList<SaleObject> loaded = model.loadSales(shareGuid);
         QCOMPARE(loaded.size(), 1);
         QCOMPARE(loaded.first().orderNumber(), QStringLiteral("ord-s-1"));
+
+        // Regression (Bugfix 15.07.2026, siehe ARCHITECTURE.md,
+        // "Marktwert- vs. Depotwert-Modus"): provision() muss nach dem
+        // erneuten Laden über loadSales() den beim addSale() übergebenen
+        // Wert (9,90 €) widerspiegeln — vorher kam hier immer 0 zurück, da
+        // addSale() den neu angelegten Brokerage-Eintrag nur über den
+        // Rückwärts-Link (brokerage.sale_guid) verknüpfte, SaleRepository::
+        // findByShare() aber über den Vorwärts-Link (sales.brokerage_guid)
+        // joint.
+        QCOMPARE(loaded.first().provision(), 9.90);
+    }
+
+    void test_modelSaleEdit_addSale_linksBrokerageForwardReference()
+    {
+        // Regressionstest für den Bugfix vom 15.07.2026: Der neu angelegte
+        // Brokerage-Eintrag muss über sales.brokerage_guid (Vorwärts-FK)
+        // auffindbar sein, nicht nur über brokerage.sale_guid (Rückwärts-FK,
+        // den z.B. loadBrokerage()/findBySaleGuid() nutzt). Ein Verkauf mit
+        // eigener Provision (10,00 €) und ohne Kauf-Anteil macht das über
+        // payoutBrokerageReduction() direkt messbar: saleValue = 5 × 100,00 €
+        // = 500,00 €; payoutBrokerageReduction() = 500,00 € − 10,00 € = 490,00 €;
+        // ohne den Fix bliebe es bei 500,00 € (Brokerage 0, siehe payout()).
+        const QString shareGuid = insertTestShare();
+
+        ModelSaleEdit model;
+        const SaleObject sale(
+            QStringLiteral("sale-fwd-link"), shareGuid,
+            QStringLiteral("depot1"), QStringLiteral("ord-fwd-link"),
+            QStringLiteral("2024-06-05T10:00:00"),
+            5.0, 100.0, {},
+            /*taxAtSource=*/0.0, /*capitalGainsTax=*/0.0, /*solidarityTax=*/0.0,
+            /*brokerageGuid=*/QString(), /*provision=*/10.0);
+        QVERIFY(model.addSale(sale));
+
+        const QList<SaleObject> loaded = model.loadSales(shareGuid);
+        QCOMPARE(loaded.size(), 1);
+        QCOMPARE(loaded.first().payoutBrokerageReduction(), 490.0);
+
+        // Der Rückwärts-Link (loadBrokerage()/findBySaleGuid(), unverändert
+        // durch den Fix) muss weiterhin ebenfalls funktionieren.
+        const BrokerageObject brokerage = model.loadBrokerage(sale.guid());
+        QVERIFY(brokerage.isValid());
+        QCOMPARE(brokerage.provision(), 10.0);
     }
 
     void test_modelSaleEdit_addSale_updatesVolumeSoldOnBuy()
@@ -5681,13 +5853,24 @@ private slots:
             QStringLiteral("depot1"), QStringLiteral("ORD-BARE"),
             QStringLiteral("2024-06-05T10:00:00"),
             5.0, 100.0,
-            { SaleBuyDetail(buy.guid(), buy.dateTime(), 5.0, buy.price()) });
+            { SaleBuyDetail(buy.guid(), buy.dateTime(), 5.0, buy.price()) },
+            /*taxAtSource=*/0.0, /*capitalGainsTax=*/0.0, /*solidarityTax=*/0.0,
+            /*brokerageGuid=*/QString(), /*provision=*/15.0);
         QVERIFY(model.updateSale(toUpdate));
 
-        // Brokerage must now exist
+        // Brokerage must now exist (Rückwärts-Link, unverändert durch den Fix).
         const BrokerageObject br = model.loadBrokerage(
             QStringLiteral("sale-no-brokerage"));
         QVERIFY(br.isValid());
+        QCOMPARE(br.provision(), 15.0);
+
+        // Regression (Bugfix 15.07.2026): Der Vorwärts-Link (sales.
+        // brokerage_guid) muss ebenfalls gesetzt sein — ohne ihn käme die
+        // Provision beim Neuladen über loadSales() weiterhin als 0 zurück,
+        // obwohl der Brokerage-Datensatz selbst (s.o.) korrekt existiert.
+        const QList<SaleObject> reloaded = model.loadSales(shareGuid);
+        QCOMPARE(reloaded.size(), 1);
+        QCOMPARE(reloaded.first().provision(), 15.0);
     }
 
     void test_modelSaleEdit_loadSales_orderedByDate()

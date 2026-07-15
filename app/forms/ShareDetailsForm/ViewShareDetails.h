@@ -32,15 +32,20 @@
  *   calculation rows rather than the C# reference's multi-column WinForms
  *   grid — an intentional, revisitable simplification (see chat history,
  *   09.07.2026).
- * - "Gewinne/Verluste" / "Dividenden" / "Kosten" tabs (implementiert
- *   13.07.2026, nur im Depotwert-Modus): je eine reine Anzeige-Instanz von
- *   OverviewTabWidget (siehe app/widgets/OverviewTabWidget.h) — dasselbe
- *   "Übersicht + Jahres-Tabs mit Frozen-Footer"-Muster, das ViewSaleEdit/
- *   ViewDividendEdit/ViewBrokerageEdit für ihre Editier-Übersichten nutzen,
- *   hier aber ohne Verbindung zu einem Editier-Formular (rein lesend).
+ * - "Gewinne/Verluste" / "Dividenden" / "Kosten" tabs: je eine reine
+ *   Anzeige-Instanz von OverviewTabWidget (siehe app/widgets/
+ *   OverviewTabWidget.h) — dasselbe "Übersicht + Jahres-Tabs mit
+ *   Frozen-Footer"-Muster, das ViewSaleEdit/ViewDividendEdit/
+ *   ViewBrokerageEdit für ihre Editier-Übersichten nutzen, hier aber ohne
+ *   Verbindung zu einem Editier-Formular (rein lesend). "Gewinne/Verluste"
+ *   existiert in beiden Modi (implementiert 13.07.2026, auf beide Modi
+ *   erweitert 14.07.2026 — im Marktwert-Modus mit brokeragefreien Werten,
+ *   siehe populateGewinneVerluste()); "Dividenden" und "Kosten" bleiben
+ *   Depotwert-only, da beides laut C#-Referenz reine Depotwert-Konzepte sind
+ *   (siehe ARCHITECTURE.md, "Marktwert- vs. Depotwert-Modus").
  *
  * Pure MVP View: contains no repository access and no formatting/business
- * logic beyond die reine Tabellen-Darstellung in den drei neuen Tabs (Jahres-
+ * logic beyond die reine Tabellen-Darstellung in den neuen Tabs (Jahres-
  * Gruppierung/-Summierung liegt dort bewusst in der View, identisch zum
  * bestehenden Muster in den Editier-Dialogen — keine Abweichung von der
  * Architektur-Konvention, die schon dort etabliert ist).
@@ -55,8 +60,9 @@ public:
      * @param shareGuid        GUID of the share to display.
      * @param marketValueMode  true if opened from the Marktwert portfolio
      *                         tab (shows "Komplette Marktbewertung", disabled
-     *                         Dividenden rows, brokerage-free figures, KEINE
-     *                         Gewinne/Verluste-/Dividenden-/Kosten-Tabs);
+     *                         Dividenden rows, brokerage-free figures,
+     *                         brokeragefreier Gewinne/Verluste-Tab, KEINE
+     *                         Dividenden-/Kosten-Tabs);
      *                         false for the Depotwert tab (default).
      * @param parent           Parent widget.
      */
@@ -139,7 +145,7 @@ private:
     ModelShareDetails     m_model;
     PresenterShareDetails m_presenter;
     bool                  m_validShare = false;
-    bool                  m_marketValueMode; ///< Steuert, ob die drei neuen Tabs angelegt werden.
+    bool                  m_marketValueMode; ///< Steuert Boxen-Titel/-Inhalt sowie, ob Dividenden-/Kosten-Tab zusätzlich angelegt werden (Gewinne/Verluste immer).
     QString               m_shareGuid;  ///< Stored for setupChartTab() (ViewChart construction).
     QString               m_headerName; ///< Share name, combined with ViewChart's range info for the window title.
 

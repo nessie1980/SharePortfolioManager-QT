@@ -107,12 +107,13 @@ bool PresenterShareDetails::loadAndDisplay()
     m_view.populateVortagBox(buildVortagBox(v));
     m_view.populateAktuelleBox(buildAktuelleBox(v));
 
-    // Gewinne/Verluste-, Dividenden- und Kosten-Tabs existieren in der View
-    // nur im Depotwert-Modus (siehe ViewShareDetails::setupUi()) — im
-    // Marktwert-Modus gibt es dafür keine Ziel-Tabs, also auch keine
-    // populate*()-Aufrufe.
+    // Gewinne/Verluste-Tab existiert in der View seit 14.07.2026 in beiden
+    // Modi (siehe ViewShareDetails::setupUi()) und wird daher immer befüllt —
+    // im Marktwert-Modus mit brokeragefreien Werten (siehe ViewShareDetails::
+    // populateGewinneVerluste()). Dividenden- und Kosten-Tab existieren
+    // weiterhin nur im Depotwert-Modus.
+    populateGewinneVerluste();
     if (!m_marketValueMode) {
-        populateGewinneVerluste();
         populateDividenden();
         populateKosten();
     }
@@ -293,7 +294,7 @@ QColor PresenterShareDetails::performanceColor(double value)
     return value >= 0.0 ? QColor(QStringLiteral("green")) : QColor(QStringLiteral("red"));
 }
 
-// ── Gewinne/Verluste-, Dividenden-, Kosten-Tabs (nur Depotwert-Modus) ─────────
+// ── Gewinne/Verluste- (beide Modi), Dividenden-, Kosten-Tabs (Depotwert-only) ─
 
 void PresenterShareDetails::populateGewinneVerluste()
 {
