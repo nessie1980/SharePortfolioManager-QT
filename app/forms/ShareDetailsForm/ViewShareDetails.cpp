@@ -69,6 +69,11 @@ void ViewShareDetails::setupUi()
         setupKostenTab();
     }
 
+    // Beim Wechsel des äußeren Tabs immer auf die Jahresübersicht
+    // zurücksetzen (14.07.2026, Nessies Vorgabe) — siehe onMainTabChanged().
+    connect(m_tabs, &QTabWidget::currentChanged,
+            this, &ViewShareDetails::onMainTabChanged);
+
     // ── Close button ──────────────────────────────────────────────────────
     auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close);
     buttonBox->setObjectName(QStringLiteral("buttonBox"));
@@ -233,6 +238,23 @@ void ViewShareDetails::setupKostenTab()
     wrapperLayout->addWidget(m_kostenPreview);
 
     m_tabs->addTab(wrapper, tr("Kosten"));
+}
+
+// ── onMainTabChanged ──────────────────────────────────────────────────────────
+
+void ViewShareDetails::onMainTabChanged(int index)
+{
+    Q_UNUSED(index);
+    // Immer alle drei zurücksetzen (nicht nur die neu aktive) — einfacher als
+    // Index-Tracking und funktional gleichwertig: Der Reset passiert entweder
+    // beim Verlassen (während der Tab schon unsichtbar ist) oder beim
+    // Betreten, je nachdem welche Instanz gerade betroffen ist.
+    if (m_gewinneVerlusteTab)
+        m_gewinneVerlusteTab->setCurrentIndex(0);
+    if (m_dividendenTab)
+        m_dividendenTab->setCurrentIndex(0);
+    if (m_kostenTab)
+        m_kostenTab->setCurrentIndex(0);
 }
 
 // ── createCalculationBox ──────────────────────────────────────────────────────

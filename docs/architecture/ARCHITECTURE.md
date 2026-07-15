@@ -2280,22 +2280,113 @@ Sprache ohne Neubuild änderbar durch Austausch der `.qm`-Datei.
 
 ---
 
+### OverviewTabWidget-Details (Gewinne/Verluste-, Dividenden-, Kosten-Tabs, implementiert 13.07.2026, fixierter Übersicht-Tab 14.07.2026)
+
+Wiederverwendbares "Übersicht + Jahres-Tabs"-Anzeige-Widget (siehe
+`app/widgets/OverviewTabWidget.h`), verwendet für die Gewinne/Verluste-,
+Dividenden- und Kosten-Tabs in `ViewShareDetails` (nur im Depotwert-Modus,
+siehe "ShareDetailsForm-Details" oben) — je eine reine Anzeige-Instanz ohne
+Verbindung zu einem Editier-Formular. Die Jahres-Gruppierung/-Summierung
+liegt bewusst in der View, identisch zum Muster in den Editier-Dialogen
+(`ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit`, die weiterhin ihre eigene,
+lokale Kopie des Musters haben — die vollständige Umstellung dieser Dialoge
+auf `OverviewTabWidget` ist noch offen, siehe unten).
+
+@note **Fixierter Übersicht-Tab (14.07.2026, auf Nessies Vorgabe):** Bei
+vielen Jahren an Historie zeigte ein einzelnes `QTabWidget` Scroll-Pfeile an,
+sobald die Tab-Leiste zu breit wurde — dabei konnte der Übersicht-Tab
+(bisher Index 0) mit aus dem Sichtbereich scrollen. `QTabWidget`/`QTabBar`
+unterstützen "angepinnte" Tabs nicht nativ. `OverviewTabWidget` baut daher
+intern kein `QTabWidget` mehr auf, sondern zwei nebeneinanderliegende
+`QTabBar`s (`m_pinnedBar` mit dem einzelnen, nie scrollenden "Übersicht"-Tab;
+`m_yearsBar` mit den Jahres-Tabs, scrollt bei Bedarf) über einem gemeinsamen
+`QStackedWidget` (`m_stack`), getrennt durch einen schmalen
+`QFrame::VLine`-Separator. Nach außen bildet `count()`/`widget(int)`/
+`tabText(int)`/`currentIndex()`/`setCurrentIndex(int)` weiterhin einen
+einzigen, durchgehenden Index ab (0 = Übersicht, 1..n = Jahre in
+Aufbau-Reihenfolge) — diese Methoden ersetzen die bisherige `tabWidget()`-
+Methode, da kein internes `QTabWidget` mehr existiert, auf das sie zeigen
+könnte. `m_tabYears` und die Klick-Navigation
+(`onUebersichtRowActivated()`/`onJahresRowActivated()`) sind unverändert.
+Bewusst vereinfacht: Ist der Übersicht-Tab aktiv, zeigt `m_yearsBar`
+weiterhin seinen zuletzt gewählten Jahres-Tab optisch als "selektiert" an
+(native `QTabBar` kennt keinen "keiner ausgewählt"-Zustand) — der Separator
+macht die beiden Gruppen aber klar erkennbar; bei Bedarf nach visuellem
+Review noch verfeinerbar. `OverviewTabWidget` hat seit 14.07.2026 ein eigenes
+Test-Target, `tst_overviewtabwidget` (siehe TESTING.md).
+
+@note **Bugfixes nach erstem Build (14.07.2026, Nessies Feedback):**
+- **Übersicht-Tab nicht mehr anwählbar:** `m_pinnedBar` hat nur genau einen
+  Tab (Index 0) — dessen `currentIndex` ändert sich also nie, wodurch
+  `QTabBar::currentChanged` bei einem Klick auf einen bereits (intern) als
+  "aktuell" geltenden Tab nicht feuert. Nach einem Sprung in einen Jahres-Tab
+  (z.B. per Klick auf eine Übersicht-Zeile) ließ sich der Übersicht-Tab
+  dadurch nicht mehr zurück anwählen, derselbe Effekt drohte spiegelbildlich
+  in `m_yearsBar`. Fix: beide `QTabBar`s auf `QTabBar::tabBarClicked(int)`
+  statt `currentChanged(int)` umgestellt — feuert bei jedem tatsächlichen
+  Klick, unabhängig vom internen Indexstand der jeweiligen Bar. Die Klick-
+  Handler (`onPinnedBarClicked()`/`onYearsBarClicked()`) rufen direkt
+  `setCurrentIndex()` auf, die Stack und beide Bars synchron hält;
+  `setCurrentIndex()` selbst konnte dadurch vereinfacht werden (der
+  ursprüngliche `m_suppressTabSignal`-Tanz um die Bar-`setCurrentIndex()`-
+  Aufrufe war nur zur Rekursionsvermeidung bei `currentChanged` nötig,
+  `tabBarClicked` feuert nicht bei programmatischen Änderungen).
+- **Spaltenköpfe erst bei Selektion fett:** `buildFrozenTable()` setzte
+  Fettschrift bisher nur auf die Footer-Zeile — die als "erst bei Selektion
+  fett" wahrgenommene Kopfzeile kam von Qt's Style-Standardverhalten
+  (`QHeaderView::highlightSections`, hebt die zur Selektion gehörige
+  Kopfspalte hervor). Fix: `data->horizontalHeader()->setFont(...)` (fett)
+  direkt beim Tabellenaufbau gesetzt sowie `setHighlightSections(false)`,
+  sodass die Spaltenköpfe unabhängig von jeder Selektion immer fett
+  erscheinen.
+
+@note **Reset auf Jahresübersicht bei äußerem Tab-Wechsel (14.07.2026,
+Nessies Vorgabe):** Verließ man z.B. den Gewinne/Verluste-Tab mit einem
+gewählten Jahres-Tab und kehrte später zurück, blieb bislang der zuletzt
+gewählte Jahres-Tab sichtbar statt der Übersicht. Der Reset gehört bewusst
+**nicht** in `OverviewTabWidget` selbst (das kennt seinen Einbettungskontext
+nicht), sondern in `ViewShareDetails`: `ViewShareDetails::onMainTabChanged()`
+ist mit dem `currentChanged`-Signal des äußeren `m_tabs` (Aktien-Chart/
+Depotwert/Gewinne-Verluste/Dividenden/Kosten) verbunden und ruft bei jedem
+Wechsel `setCurrentIndex(0)` auf allen drei vorhandenen Instanzen
+(`m_gewinneVerlusteTab`/`m_dividendenTab`/`m_kostenTab`) auf — bewusst immer
+alle drei statt nur der neu aktiven, das ist einfacher als Index-Tracking pro
+Tab und funktional gleichwertig (der Reset passiert je nachdem beim Verlassen
+oder beim Betreten, in jedem Fall aber bevor der Tab wieder sichtbar wird).
+
+---
+
 ## Offene Punkte / TODO
 
-### ShareDetailsForm: Gewinne/Dividenden/Kosten (offen, aktualisiert 12.07.2026)
+### OverviewTabWidget / onMainTabChanged(): Test-Lücken geschlossen (erledigt, 14.07.2026)
+
+`OverviewTabWidget` hat seit 14.07.2026 ein eigenes Test-Target,
+`tst_overviewtabwidget` (siehe TESTING.md) — deckt die Zwei-`QTabBar`-
+Struktur (`count()`/`widget()`/`tabText()`/`currentIndex()`/
+`setCurrentIndex()`), den fixierten Übersicht-Tab und beide Bugfixes
+(Klick-Navigation über `tabBarClicked`, dauerhaft fette Spaltenköpfe) ab.
+`ViewShareDetails::onMainTabChanged()` (Reset auf Jahresübersicht bei
+äußerem Tab-Wechsel, siehe "OverviewTabWidget-Details" oben) ist durch
+`test_mainTabChanged_resetsOverviewTabsToUebersicht` in `tst_mainwindow.cpp`
+abgedeckt (direkt neben `test_shareDetailsDialog_validShare_
+constructsAndShowsCloseButtonText`, siehe TESTING.md). `DocumentPreviewPanel`
+und `ViewShareDetails` als Ganzes bleiben weiterhin durch kein eigenes
+Test-Target abgesichert (siehe TESTING.md, Abschnitt `tst_sharedetailsform`)
+— das ist eine bewusste, unveränderte Lücke aus früheren Sessions, keine neue.
+
+### ShareDetailsForm: Gewinne/Dividenden/Kosten (erledigt, ursprünglich 12.07.2026, umgesetzt 13.07.2026)
 
 Nach Abgleich mit der C#-Referenz (`FrmShareDetails`) wurden die "Komplette
 Depotbewertung"- und "Komplette Marktbewertung"-Boxen sowie der Chart-Tab
 neu gebaut (siehe "ShareDetailsForm-Details" und "ChartForm-Details" oben).
-Ein Teil bleibt bewusst offen:
-
-1. **Gewinne/Verluste-, Dividenden-, Kosten-Tabs** — im C# je ein
-   verschachteltes TabControl (Übersicht + Jahres-Tabs), nur im Depotwert-
-   Modus sichtbar. Sollen laut Vorgabe die bereits vorhandenen Übersicht-
-   Widgets aus `ViewSaleEdit`/`ViewDividendEdit`/`ViewBrokerageEdit`
-   wiederverwenden statt eigene Tabellen zu duplizieren — konkrete Einbindung
-   (Widget-Extraktion vs. Embedding vs. neue schlanke Read-Only-Variante)
-   noch nicht entschieden.
+Der zunächst offene Teil — Gewinne/Verluste-, Dividenden- und Kosten-Tabs,
+im C# je ein verschachteltes TabControl (Übersicht + Jahres-Tabs), nur im
+Depotwert-Modus sichtbar — ist seit 13.07.2026 umgesetzt: eine neue,
+schlanke Read-Only-Variante (`OverviewTabWidget`, siehe
+"OverviewTabWidget-Details" oben) statt Wiederverwendung der
+Editier-Dialog-Widgets, da eine Wiederverwendung eine Entkopplung vom
+jeweiligen Editier-Formular vorausgesetzt hätte, die die bestehenden
+Widgets nicht mitbrachten.
 
 ("Letzte Website-Aktualisierung" → `lastPriceUpdate()` wurde von Nessie am
 10.07.2026 bestätigt, siehe "Marktwert- vs. Depotwert-Modus" oben — kein

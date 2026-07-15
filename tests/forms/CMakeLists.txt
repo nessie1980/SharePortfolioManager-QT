@@ -431,3 +431,33 @@ target_link_libraries(tst_chartform
 )
 
 add_test(NAME tst_chartform COMMAND tst_chartform)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_overviewtabwidget — OverviewTabWidget direkt (echtes QWidget, siehe
+# ARCHITECTURE.md "OverviewTabWidget-Details"). Bewusste Ausnahme vom
+# Fake-View/Fake-Model-Muster der übrigen Form-Tests: OverviewTabWidget hat
+# keinen eigenen Presenter, ist ein wiederverwendbares, in sich geschlossenes
+# Anzeige-Widget (Spaltendefinitionen + Populate-Callbacks als reine
+# std::function-Argumente) — analog zu tst_backupsettingsform, das ebenfalls
+# einen echten QDialog direkt testet statt über eine Fake-Schicht. Keine
+# Datenbank nötig.
+# ─────────────────────────────────────────────────────────────────────────────
+
+qt_add_executable(tst_overviewtabwidget tst_overviewtabwidget.cpp
+    ../../app/widgets/OverviewTabWidget.h
+    ../../app/widgets/OverviewTabWidget.cpp
+)
+
+target_include_directories(tst_overviewtabwidget
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_overviewtabwidget PROPERTIES
+    AUTOMOC ON
+)
+
+target_link_libraries(tst_overviewtabwidget
+    PRIVATE Qt6::Test Qt6::Core Qt6::Gui Qt6::Widgets
+)
+
+add_test(NAME tst_overviewtabwidget COMMAND tst_overviewtabwidget)

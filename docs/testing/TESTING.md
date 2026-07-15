@@ -630,13 +630,22 @@ selbst ist seit 12.07.2026 implementiert — seine Tests liegen in einer
 eigenen Executable, `tst_chartform` (siehe eigener Abschnitt unten), analog
 zur Trennung von `tst_sharedetailsform`/`tst_shareeditform`. Die
 Gewinne/Verluste-, Dividenden- und Kosten-Tabs sind seit 13.07.2026
-implementiert (siehe ARCHITECTURE.md, "Gewinne/Verluste-, Dividenden-,
-Kosten-Tabs") — auf Presenter-Ebene (reines Durchreichen der drei neuen
+implementiert (siehe ARCHITECTURE.md, "OverviewTabWidget-Details") — auf
+Presenter-Ebene (reines Durchreichen der drei neuen
 `IModelShareDetails::load*()`-Methoden an `IViewShareDetails::populate*()`)
-durch zwei Tests unten abgedeckt. **Nicht** abgedeckt: `OverviewTabWidget`
-und `DocumentPreviewPanel` selbst (kein eigenes Test-Target, siehe
-ARCHITECTURE.md, "Offene Punkte / TODO") — insbesondere die Existenzprüfung in
+durch zwei Tests unten abgedeckt. **Nicht** abgedeckt: `DocumentPreviewPanel`
+selbst (kein eigenes Test-Target, siehe ARCHITECTURE.md,
+"Offene Punkte / TODO") — insbesondere die Existenzprüfung in
 `DocumentPreviewPanel::showDocument()` ist bislang durch nichts abgesichert.
+`OverviewTabWidget` hat seit 14.07.2026 einen fixierten Übersicht-Tab (zwei
+`QTabBar`s + `QStackedWidget` statt einem `QTabWidget`, siehe
+ARCHITECTURE.md, "OverviewTabWidget-Details") sowie zwei nachgezogene
+Bugfixes (Klick-Erkennung über `tabBarClicked` statt `currentChanged`,
+dauerhaft fette Spaltenköpfe) — alles abgedeckt durch das eigene
+Test-Target `tst_overviewtabwidget` (siehe eigener Abschnitt unten).
+`ViewShareDetails::onMainTabChanged()` (Reset auf Jahresübersicht bei
+äußerem Tab-Wechsel) ist durch `test_mainTabChanged_resetsOverviewTabsToUebersicht`
+in `tst_mainwindow.cpp` abgedeckt (siehe "tests/forms/ — MainWindow" unten).
 
 @note Wie schon beim vorherigen Anlauf: **weder** Datenbank **noch**
 `QWidget` **noch** `ShareCalculator` werden instanziiert.
@@ -705,6 +714,7 @@ direkt in `tst_mainwindow.cpp` (Suchbegriff `onPortfolioRowDoubleClicked`/
 | `test_onPortfolioRowDoubleClicked_nullItem_doesNotCrash` | Doppelklick-Slot mit `item == nullptr` | Kein Absturz |
 | `test_onPortfolioRowDoubleClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole) | Kein Absturz, kein modaler Dialog |
 | `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText` | `ViewShareDetails` direkt konstruiert (kein `exec()`, analog `test_shareAddDialog_canBeConstructed`) | `hasValidShare()` = true, Fenstertitel = Aktienname, Close-Button-Text = "Schließen" (Regressionstest für den qtbase-Übersetzungs-Bugfix vom 09.07.2026) |
+| `test_mainTabChanged_resetsOverviewTabsToUebersicht` (ergänzt 14.07.2026) | Zwei `insertTestBuy()`-Aufrufe in verschiedenen Jahren (erzeugen je einen Brokerage-Eintrag, siehe `insertTestBuy()`) befüllen den Kosten-Tab mit zwei Jahres-Tabs; ein Jahres-Tab wird ausgewählt, dann das äußere `m_tabs` gewechselt | Das per `findChildren<OverviewTabWidget*>()` (über `count() > 1` identifizierte) Kosten-`OverviewTabWidget` springt bei jedem Wechsel des äußeren Tabs zurück auf `currentIndex() == 0` (Übersicht) — Regressionstest für `ViewShareDetails::onMainTabChanged()`, siehe ARCHITECTURE.md, "OverviewTabWidget-Details" |
 
 @note **Mausrad-Steuerung der "Anzahl" (ergänzt 12.07.2026):** Da
 `ViewChart` (anders als `PresenterChart`) echte `QWidget`s und Qt-Charts
@@ -721,6 +731,51 @@ Bewusst weiterhin **nicht** getestet: der "gültige GUID → `dlg.exec()`"-Pfad
 in `onPortfolioRowDoubleClicked()` selbst — ein echter modaler `QDialog::exec()`
 würde den (headless) Testlauf blockieren, exakt dieselbe Konvention wie bei
 `onEditShare()`/`onDeleteShare()` in derselben Datei.
+
+---
+
+#### tst_overviewtabwidget — OverviewTabWidget (implementiert 14.07.2026)
+
+Executable: `tst_overviewtabwidget`
+Klasse unter Test: `OverviewTabWidget` (echtes `QWidget`, kein Presenter)
+
+@note Bewusste Ausnahme vom Fake-View/Fake-Model-Muster der übrigen
+Form-Tests (siehe `tst_sharedetailsform`/`tst_chartform`): `OverviewTabWidget`
+hat keinen eigenen Presenter, es ist ein wiederverwendbares, in sich
+geschlossenes Anzeige-Widget (Spaltendefinitionen + Populate-Callbacks als
+reine `std::function`-Argumente, siehe ARCHITECTURE.md,
+"OverviewTabWidget-Details"). Getestet wird daher die echte `QWidget`-
+Instanz direkt, analog zu `tst_backupsettingsform` (dort ebenfalls ein
+echter `QDialog` statt einer Fake-Schicht). Klick-Signale (`QTabBar::
+tabBarClicked`, `QTableWidget::cellClicked`) werden direkt als
+Funktionsaufruf ausgelöst (z.B. `yearsBar->tabBarClicked(1)`) statt über
+echte Maus-Events — beide sind öffentliche Qt-Signale, ein direkter Aufruf
+verhält sich identisch zu einem realen Klick, ohne Tab-Rect-Berechnungen im
+Test. Keine Datenbank nötig.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_populateOverview_countWidgetTabText` | 2 Jahre (2025, 2024) | `count()` = 3, `widget(0..2)` nicht null, `widget(3)` null, `tabText(0)` = "Übersicht", `tabText(1/2)` = "2025"/"2024" |
+| `test_populateOverview_emptyYears_leavesNoTabs` | Leere Jahres-Liste | `count()` = 0 |
+| `test_setCurrentIndex_switchesStackAndBothBars` | `setCurrentIndex(2)` dann `setCurrentIndex(0)` | `currentIndex()`, `yearsBar->currentIndex()` und `pinnedBar->currentIndex()` (immer 0) synchron |
+| `test_setCurrentIndex_outOfRange_isIgnored` | `setCurrentIndex(99)` bzw. `(-1)` | Aktueller Index bleibt unverändert |
+| `test_pinnedTabClick_afterYearTabClick_returnsToOverview` | Regressionstest Bugfix 1: Klick auf Jahres-Tab, dann Klick auf Übersicht-Tab | `currentIndex()` wechselt zurück auf 0 — vor dem Fix (`currentChanged` statt `tabBarClicked`) blieb der Übersicht-Tab unanwählbar, da `m_pinnedBar` nur einen, nie wechselnden Index hat |
+| `test_yearsBarClick_sameYearAsBefore_stillSwitchesBack` | Jahres-Tab anwählen, zurück zur Übersicht, denselben Jahres-Tab erneut anklicken | Wechsel funktioniert trotz unverändertem `yearsBar`-eigenem Index |
+| `test_headerColumns_alwaysBold_regardlessOfSelection` | Regressionstest Bugfix 2 | Spaltenköpfe fett **vor und nach** `selectRow()`, `highlightSections() == false` |
+| `test_uebersichtRowClick_jumpsToMatchingYearTab` | Klick auf Übersicht-Zeile mit Jahr 2024 | `currentIndex()` wechselt zum passenden Jahres-Tab (Index 2) |
+| `test_uebersichtRowClick_unknownYear_doesNothing` | Klick auf eine künstliche Zeile mit einem nicht vorhandenen Jahr | `currentIndex()` bleibt unverändert |
+| `test_clear_removesAllTabsAndResetsCount` | `clear()` nach `populateOverview()` | `count()` = 0, beide `QTabBar`s leer |
+| `test_populateOverview_calledTwice_replacesOldTabs` | Zweiter `populateOverview()`-Aufruf mit nur einem Jahr | `count()` = 2 (nicht 3+2) — alte Tabs werden vollständig ersetzt, nicht angehängt |
+
+Bewusst **nicht** abgedeckt: `documentActivated()` (Doppelklick auf die
+Dokument-Spalte) — unverändert gegenüber der bisherigen, bereits vor dem
+fixierten Übersicht-Tab funktionierenden `buildFrozenTable()`-Logik, keine
+neue Regressionsgefahr durch diese Feature-Reihe. `ViewShareDetails::
+onMainTabChanged()` ist kein `OverviewTabWidget`-Verhalten mehr, sondern lebt
+in `ViewShareDetails` und braucht eine echte Dialog-Instanz mit Mehrjahres-
+Testdaten — dafür `test_mainTabChanged_resetsOverviewTabsToUebersicht` in
+`tst_mainwindow.cpp` statt dieses schlanken Test-Targets (siehe
+"tests/forms/ — MainWindow" oben).
 
 ---
 

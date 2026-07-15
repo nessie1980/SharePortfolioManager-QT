@@ -3,6 +3,7 @@
 #include "OverviewTabWidget.h"
 
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QFrame>
 #include <QFont>
@@ -15,26 +16,121 @@ OverviewTabWidget::OverviewTabWidget(QWidget* parent)
 {
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
 
-    m_tabs = new QTabWidget(this);
-    layout->addWidget(m_tabs);
+    auto* barRow = new QHBoxLayout();
+    barRow->setContentsMargins(0, 0, 0, 0);
+    barRow->setSpacing(0);
 
-    connect(m_tabs, &QTabWidget::currentChanged, this, [this](int index) {
-        if (m_suppressTabSignal)
-            return;
-        // Selektion im verlassenen/neuen Tab leeren — Konsistenz mit dem
-        // bisherigen Verhalten in ViewBuyEdit/ViewSaleEdit/ViewDividendEdit.
-        for (int i = 0; i < m_tabs->count(); ++i) {
-            auto* container = m_tabs->widget(i);
-            if (!container)
-                continue;
-            auto* tbl = qobject_cast<QTableWidget*>(
-                container->property("dataTable").value<QObject*>());
-            if (tbl)
-                tbl->clearSelection();
-        }
-        Q_UNUSED(index);
-    });
+    // "Übersicht" bleibt immer sichtbar, egal wie viele Jahres-Tabs folgen —
+    // eigene, nie scrollende QTabBar mit genau einem Eintrag (14.07.2026, auf
+    // Nessies Vorgabe: siehe Klassenkommentar in OverviewTabWidget.h).
+    m_pinnedBar = new QTabBar(this);
+    m_pinnedBar->setObjectName(QStringLiteral("pinnedBar"));
+    m_pinnedBar->setExpanding(false);
+
+    auto* barSeparator = new QFrame(this);
+    barSeparator->setObjectName(QStringLiteral("barSeparator"));
+    barSeparator->setFrameShape(QFrame::VLine);
+    barSeparator->setFrameShadow(QFrame::Sunken);
+
+    m_yearsBar = new QTabBar(this);
+    m_yearsBar->setObjectName(QStringLiteral("yearsBar"));
+    m_yearsBar->setExpanding(false);
+    m_yearsBar->setUsesScrollButtons(true);
+
+    barRow->addWidget(m_pinnedBar);
+    barRow->addWidget(barSeparator);
+    barRow->addWidget(m_yearsBar, 1);
+
+    m_stack = new QStackedWidget(this);
+    m_stack->setObjectName(QStringLiteral("stack"));
+
+    layout->addLayout(barRow);
+    layout->addWidget(m_stack, 1);
+
+    // tabBarClicked statt currentChanged: feuert bei JEDEM Klick, auch wenn
+    // sich der interne Index der jeweiligen Bar nicht ändert (m_pinnedBar hat
+    // z.B. immer nur genau einen Tab an Index 0). Bugfix 14.07.2026, siehe
+    // Klassenkommentar in OverviewTabWidget.h.
+    connect(m_pinnedBar, &QTabBar::tabBarClicked,
+            this, &OverviewTabWidget::onPinnedBarClicked);
+    connect(m_yearsBar, &QTabBar::tabBarClicked,
+            this, &OverviewTabWidget::onYearsBarClicked);
+}
+
+// ── onPinnedBarClicked / onYearsBarClicked ────────────────────────────────────
+
+void OverviewTabWidget::onPinnedBarClicked(int index)
+{
+    Q_UNUSED(index);
+    if (m_suppressTabSignal)
+        return;
+    setCurrentIndex(0);
+}
+
+void OverviewTabWidget::onYearsBarClicked(int index)
+{
+    if (m_suppressTabSignal || index < 0)
+        return;
+    // +1, da Index 0 im Stack dem Übersicht-Tab gehört.
+    setCurrentIndex(index + 1);
+}
+
+// ── clearAllTableSelections ───────────────────────────────────────────────────
+
+void OverviewTabWidget::clearAllTableSelections()
+{
+    // Selektion in allen Tabellen leeren — Konsistenz mit dem bisherigen
+    // Verhalten (identisch zu ViewBuyEdit/ViewSaleEdit/ViewDividendEdit).
+    for (int i = 0; i < m_stack->count(); ++i) {
+        auto* container = m_stack->widget(i);
+        if (!container)
+            continue;
+        auto* tbl = qobject_cast<QTableWidget*>(
+            container->property("dataTable").value<QObject*>());
+        if (tbl)
+            tbl->clearSelection();
+    }
+}
+
+// ── count / widget / tabText / currentIndex / setCurrentIndex ────────────────
+
+int OverviewTabWidget::count() const
+{
+    return m_stack->count();
+}
+
+QWidget* OverviewTabWidget::widget(int index) const
+{
+    return m_stack->widget(index);
+}
+
+QString OverviewTabWidget::tabText(int index) const
+{
+    if (index == 0)
+        return m_pinnedBar->count() > 0 ? m_pinnedBar->tabText(0) : QString();
+    return m_yearsBar->tabText(index - 1);
+}
+
+int OverviewTabWidget::currentIndex() const
+{
+    return m_stack->currentIndex();
+}
+
+void OverviewTabWidget::setCurrentIndex(int index)
+{
+    if (index < 0 || index >= m_stack->count())
+        return;
+
+    m_stack->setCurrentIndex(index);
+    if (index == 0)
+        m_pinnedBar->setCurrentIndex(0);
+    else
+        m_yearsBar->setCurrentIndex(index - 1);
+
+    if (!m_suppressTabSignal)
+        clearAllTableSelections();
 }
 
 // ── clear ─────────────────────────────────────────────────────────────────────
@@ -42,16 +138,28 @@ OverviewTabWidget::OverviewTabWidget(QWidget* parent)
 void OverviewTabWidget::clear()
 {
     m_suppressTabSignal = true;
-    while (m_tabs->count() > 0)
-        m_tabs->removeTab(0);
+
+    while (m_yearsBar->count() > 0)
+        m_yearsBar->removeTab(0);
+    while (m_pinnedBar->count() > 0)
+        m_pinnedBar->removeTab(0);
+    while (m_stack->count() > 0) {
+        auto* w = m_stack->widget(0);
+        m_stack->removeWidget(w);
+        if (w)
+            w->deleteLater();
+    }
     m_tabYears.clear();
+
     m_suppressTabSignal = false;
 }
 
 // ── buildFrozenTable ──────────────────────────────────────────────────────────
 //
-// Identisch zum bisherigen buildFrozenTable()-Muster (siehe ViewBuyEdit.cpp /
-// ViewSaleEdit.cpp / ViewDividendEdit.cpp) — hier einmalig statt dreifach.
+// Gegenüber der bisherigen Implementierung (siehe ViewBuyEdit.cpp /
+// ViewSaleEdit.cpp / ViewDividendEdit.cpp) nur um die feste Fettschrift der
+// Spaltenköpfe ergänzt (Bugfix 14.07.2026, s.u.) — Tab-Container-Aufbau sonst
+// unverändert.
 
 QWidget* OverviewTabWidget::buildFrozenTable(
     int colCount,
@@ -64,11 +172,6 @@ QWidget* OverviewTabWidget::buildFrozenTable(
     // ── Data table ──────────────────────────────────────────────────────────
     auto* data = new QTableWidget(0, colCount);
     data->setHorizontalHeaderLabels(headers);
-    // Fett gedruckte Spaltenköpfe, identisch zu ViewSaleEdit/ViewDividendEdit/
-    // ViewBrokerageEdit (13.07.2026 nachgezogen — fehlte bei der Extraktion).
-    QFont headerFont = data->horizontalHeader()->font();
-    headerFont.setBold(true);
-    data->horizontalHeader()->setFont(headerFont);
     data->setEditTriggers(QAbstractItemView::NoEditTriggers);
     data->setSelectionBehavior(QAbstractItemView::SelectRows);
     data->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -77,8 +180,17 @@ QWidget* OverviewTabWidget::buildFrozenTable(
     data->setFrameShape(QFrame::NoFrame);
     data->horizontalHeader()->setStretchLastSection(false);
 
+    // Spaltenköpfe immer fett, unabhängig von der Zeilen-Selektion — vorher
+    // erschienen sie erst fett, sobald Qt's Style (highlightSections) die zur
+    // Selektion gehörige Kopfspalte hervorhob (Bugfix 14.07.2026, Nessies
+    // Feedback nach dem ersten Build).
+    const QFont headerBoldFont = [] { QFont f; f.setBold(true); return f; }();
+    data->horizontalHeader()->setFont(headerBoldFont);
+    data->horizontalHeader()->setHighlightSections(false);
+
     populateData(data);
 
+    // Apply fixed initial widths; -1 means stretch that column
     for (int c = 0; c < colCount && c < colWidths.size(); ++c) {
         if (colWidths.at(c) < 0)
             data->horizontalHeader()->setSectionResizeMode(c, QHeaderView::Stretch);
@@ -86,7 +198,7 @@ QWidget* OverviewTabWidget::buildFrozenTable(
             data->setColumnWidth(c, colWidths.at(c));
     }
 
-    // ── Footer table (1 Zeile, kein Header, keine Scrollbars) ─────────────────
+    // ── Footer table (1 row, no header, no scrollbars) ────────────────────
     auto* footer = new QTableWidget(1, colCount);
     footer->setEditTriggers(QAbstractItemView::NoEditTriggers);
     footer->setSelectionMode(QAbstractItemView::NoSelection);
@@ -97,6 +209,7 @@ QWidget* OverviewTabWidget::buildFrozenTable(
     footer->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     footer->horizontalHeader()->setStretchLastSection(false);
 
+    // Match the row height of the data table
     const int rowH = data->rowHeight(0) > 0 ? data->rowHeight(0) : 22;
     footer->setFixedHeight(rowH + 2);
 
@@ -180,7 +293,7 @@ void OverviewTabWidget::onUebersichtRowActivated(QTableWidgetItem* item)
     const int year = item->data(Qt::UserRole).toInt();
     const int idx = m_tabYears.indexOf(year);
     if (idx >= 0)
-        m_tabs->setCurrentIndex(idx);
+        setCurrentIndex(idx);
 }
 
 void OverviewTabWidget::onJahresRowActivated(QTableWidgetItem* item)
@@ -208,8 +321,16 @@ void OverviewTabWidget::populateOverview(
 {
     m_suppressTabSignal = true;
 
-    while (m_tabs->count() > 0)
-        m_tabs->removeTab(0);
+    while (m_yearsBar->count() > 0)
+        m_yearsBar->removeTab(0);
+    while (m_pinnedBar->count() > 0)
+        m_pinnedBar->removeTab(0);
+    while (m_stack->count() > 0) {
+        auto* w = m_stack->widget(0);
+        m_stack->removeWidget(w);
+        if (w)
+            w->deleteLater();
+    }
     m_tabYears.clear();
 
     if (years.isEmpty()) {
@@ -217,7 +338,7 @@ void OverviewTabWidget::populateOverview(
         return;
     }
 
-    // ── Übersicht-Tab (Index 0) ───────────────────────────────────────────
+    // ── Übersicht-Tab (Index 0, fixiert in m_pinnedBar) ─────────────────────
     {
         auto* container = buildFrozenTable(
             uebersichtHeaders.size(), uebersichtHeaders, uebersichtColWidths,
@@ -233,11 +354,12 @@ void OverviewTabWidget::populateOverview(
                     });
         }
 
-        m_tabs->addTab(container, uebersichtTitle);
+        m_stack->addWidget(container);
+        m_pinnedBar->addTab(uebersichtTitle);
         m_tabYears.append(-1); // kein Jahr für den Übersicht-Tab
     }
 
-    // ── Jahres-Tabs (Index 1..n, Reihenfolge wie in years) ────────────────
+    // ── Jahres-Tabs (Index 1..n, Reihenfolge wie in years, in m_yearsBar) ──
     for (int year : years) {
         auto* container = buildFrozenTable(
             jahresHeaders.size(), jahresHeaders, jahresColWidths,
@@ -245,10 +367,11 @@ void OverviewTabWidget::populateOverview(
             [&populateJahresFooter, year](QTableWidget* footer) { populateJahresFooter(year, footer); },
             jahresDocColumn);
 
-        m_tabs->addTab(container, jahresTitleForYear(year));
+        m_stack->addWidget(container);
+        m_yearsBar->addTab(jahresTitleForYear(year));
         m_tabYears.append(year);
     }
 
-    m_tabs->setCurrentIndex(0);
+    setCurrentIndex(0);
     m_suppressTabSignal = false;
 }

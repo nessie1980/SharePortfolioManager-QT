@@ -3,7 +3,8 @@
 #pragma once
 
 #include <QWidget>
-#include <QTabWidget>
+#include <QTabBar>
+#include <QStackedWidget>
 #include <QTableWidget>
 #include <QStringList>
 #include <QVariant>
@@ -16,30 +17,77 @@
  *
  * Extrahiert 13.07.2026 aus der bis dahin dreifach identisch existierenden
  * `buildFrozenTable()`-Lambda in `ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit`
- * (im Code selbst als "identical to ViewBuyEdit/ViewSaleEdit" dokumentiert) —
- * siehe ARCHITECTURE.md, Abschnitt "OverviewTabWidget". `ViewBrokerageEdit`
- * hatte eine vierte, leicht abweichende Variante; alle vier werden auf dieses
- * gemeinsame Widget umgestellt.
+ * (im Code selbst als "identical to ViewBuyEdit/ViewSaleEdit" dokumentiert).
+ * `ViewBrokerageEdit` hatte eine vierte, leicht abweichende Variante; alle
+ * vier sollen künftig auf dieses gemeinsame Widget umgestellt werden — Stand
+ * 14.07.2026 nutzt aber tatsächlich nur `ViewShareDetails` diese Klasse; die
+ * Editier-Dialoge haben weiterhin je eine eigene, lokale Kopie des Musters
+ * (eigenes `m_overviewTabs`/`buildFrozenTable`).
  *
  * Rein passiv (kein Presenter-Wissen, keine Berechnungslogik): der Aufrufer
  * liefert Spaltendefinitionen und Populate-Callbacks, das Widget kümmert sich
  * ausschließlich um Tab-Aufbau, Frozen-Footer-Layout, Spaltenbreiten-Sync
  * zwischen Daten- und Footer-Tabelle sowie die Übersicht→Jahr-Klick-Navigation.
  *
+ * @note **Fixierter Übersicht-Tab (14.07.2026, auf Nessies Vorgabe):** Intern
+ * kein einzelnes `QTabWidget` mehr, sondern zwei nebeneinanderliegende
+ * `QTabBar`s über einem gemeinsamen `QStackedWidget` (`m_stack`):
+ * - `m_pinnedBar` — genau ein Eintrag ("Übersicht"), nie scrollbar.
+ * - `m_yearsBar`  — die Jahres-Tabs, scrollt bei Bedarf (QTabBar-Standard).
+ *
+ * Grund: Bei vielen Jahren an Historie zeigt ein einzelnes `QTabWidget`
+ * Scroll-Pfeile an, sobald die Tab-Leiste zu breit wird — dabei kann der
+ * Übersicht-Tab (bisher Index 0) mit aus dem Sichtbereich scrollen.
+ * `QTabWidget`/`QTabBar` unterstützen "angepinnte" Tabs nicht nativ, daher
+ * die Aufteilung in zwei Bars. Ein schmaler `QFrame::VLine`-Separator trennt
+ * beide optisch. `count()`/`widget()`/`tabText()`/`currentIndex()`/
+ * `setCurrentIndex()` ersetzen die bisherige `tabWidget()`-Methode und bilden
+ * weiterhin einen einzigen, durchgehenden Index ab (0 = Übersicht,
+ * 1..n = Jahre in Aufbau-Reihenfolge), damit `m_tabYears` und die
+ * Klick-Navigation (`onUebersichtRowActivated()`) unverändert bleiben.
+ *
+ * @note **Bugfixes nach erstem Build (14.07.2026, Nessies Feedback):**
+ * - **Übersicht-Tab nicht mehr anwählbar:** `m_pinnedBar` hat nur genau
+ *   einen Tab (Index 0) — dessen `currentIndex` ändert sich also nie,
+ *   wodurch `QTabBar::currentChanged` bei einem Klick auf einen bereits
+ *   (intern) als "aktuell" geltenden Tab nicht feuert. Nach einem Sprung in
+ *   einen Jahres-Tab (z.B. per Klick auf eine Übersicht-Zeile) ließ sich der
+ *   Übersicht-Tab dadurch nicht mehr zurück anwählen, derselbe Effekt drohte
+ *   spiegelbildlich in `m_yearsBar`. Fix: beide `QTabBar`s auf
+ *   `QTabBar::tabBarClicked(int)` statt `currentChanged(int)` umgestellt —
+ *   feuert bei jedem tatsächlichen Klick, unabhängig vom internen Indexstand
+ *   der jeweiligen Bar. Die Klick-Handler (`onPinnedBarClicked()`/
+ *   `onYearsBarClicked()`) rufen direkt `setCurrentIndex()` auf, die Stack
+ *   und beide Bars synchron hält; `setCurrentIndex()` selbst konnte dadurch
+ *   vereinfacht werden (der ursprüngliche `m_suppressTabSignal`-Tanz um die
+ *   Bar-`setCurrentIndex()`-Aufrufe war nur zur Rekursionsvermeidung bei
+ *   `currentChanged` nötig, `tabBarClicked` feuert nicht bei programmatischen
+ *   Änderungen).
+ * - **Spaltenköpfe erst bei Selektion fett:** `buildFrozenTable()` setzte
+ *   Fettschrift bisher nur auf die Footer-Zeile — die als "erst bei
+ *   Selektion fett" wahrgenommene Kopfzeile kam von Qt's Style-
+ *   Standardverhalten (`QHeaderView::highlightSections`, hebt die zur
+ *   Selektion gehörige Kopfspalte hervor). Fix: `data->horizontalHeader()->
+ *   setFont(...)` (fett) direkt beim Tabellenaufbau gesetzt sowie
+ *   `setHighlightSections(false)`, sodass die Spaltenköpfe unabhängig von
+ *   jeder Selektion immer fett erscheinen.
+ *
+ * Bewusst (weiterhin) vereinfacht: Wenn der Übersicht-Tab aktiv ist, zeigt
+ * `m_yearsBar` weiterhin seinen zuletzt gewählten Jahres-Tab optisch als
+ * "selektiert" an (native `QTabBar`/`QStackedWidget` kennen keinen "keiner
+ * ausgewählt"-Zustand) — der `VLine`-Separator macht die beiden Gruppen aber
+ * klar erkennbar. Bei Bedarf (weiteres visuelles Feedback) kann das per
+ * Stylesheet/Property noch verfeinert werden.
+ *
  * Verwendet von:
- * - `ViewBuyEdit`, `ViewSaleEdit`, `ViewDividendEdit`, `ViewBrokerageEdit`
- *   (Editier-Dialoge — dort zusätzlich mit `rowActivated()` verbunden, um bei
- *   Klick auf eine Jahres-Tab-Zeile den entsprechenden Datensatz im linken
- *   Formular zu laden).
- * - `ViewShareDetails` (reine Anzeige — `rowActivated()` bleibt unverbunden,
- *   da es dort kein Editier-Formular gibt).
+ * - `ViewShareDetails` (Gewinne/Verluste-, Dividenden-, Kosten-Tab; reine
+ *   Anzeige — `rowActivated()` bleibt dort unverbunden, da es kein
+ *   Editier-Formular gibt).
  *
  * Jede Tabelle besteht aus zwei `QTableWidget`s: einer scrollbaren `dataTable`
  * und einer einzeiligen, nicht scrollbaren `footerTable` mit der fett
  * hervorgehobenen Gesamt-Zeile. Beide sind über `container->property("dataTable")`
- * bzw. `"footerTable")` auffindbar — identisch zum bisherigen Test-Zugriffsmuster
- * (siehe z.B. `tst_buysform.cpp`, `dataTableFromContainer()`), damit bestehende
- * und neue Tests unverändert funktionieren.
+ * bzw. `"footerTable")` auffindbar.
  */
 class OverviewTabWidget : public QWidget
 {
@@ -99,8 +147,26 @@ public:
     /** Entfernt alle Tabs (z.B. für eine leere Datenliste). */
     void clear();
 
-    /** Für Tests und Spezialfälle direkter Zugriff auf das interne QTabWidget. */
-    QTabWidget* tabWidget() const { return m_tabs; }
+    // ── Durchgehender Tab-Index (0 = Übersicht, 1..n = Jahre) ───────────────
+    // Ersetzt die bisherige tabWidget()-Methode: intern existiert kein
+    // einzelnes QTabWidget mehr (siehe Klassenkommentar), daher bildet
+    // OverviewTabWidget selbst die für Aufrufer/Tests relevante Teilmenge der
+    // bisherigen QTabWidget-Schnittstelle nach.
+
+    /** Gesamtzahl der Tabs (Übersicht + Jahre). */
+    int count() const;
+
+    /** Container-Widget am gegebenen Index, oder nullptr außerhalb des Bereichs. */
+    QWidget* widget(int index) const;
+
+    /** Tab-Titel am gegebenen Index. */
+    QString tabText(int index) const;
+
+    /** Aktuell angezeigter Index. */
+    int currentIndex() const;
+
+    /** Wechselt zum Tab am gegebenen Index (0 = Übersicht, 1..n = Jahre). */
+    void setCurrentIndex(int index);
 
 signals:
     /**
@@ -141,7 +207,21 @@ private:
     /** Klick auf eine Jahres-Tab-Zeile → emittiert rowActivated() (GUID aus Qt::UserRole Sp.0). */
     void onJahresRowActivated(QTableWidgetItem* item);
 
-    QTabWidget* m_tabs = nullptr;
+    /** tabBarClicked-Handler von m_pinnedBar — feuert bei jedem Klick, auch
+     *  wenn m_pinnedBar (nur 1 Tab, Index immer 0) intern "unverändert" bleibt. */
+    void onPinnedBarClicked(int index);
+
+    /** tabBarClicked-Handler von m_yearsBar — s.o., auch wenn der angeklickte
+     *  Jahres-Tab schon als "aktuell" in m_yearsBar gemerkt war. */
+    void onYearsBarClicked(int index);
+
+    /** Leert die Selektion in allen Tabellen — Konsistenz beim Tab-Wechsel. */
+    void clearAllTableSelections();
+
+    QTabBar*        m_pinnedBar = nullptr; ///< Fixiert: einziger "Übersicht"-Tab, nie scrollbar.
+    QTabBar*        m_yearsBar  = nullptr; ///< Jahres-Tabs, scrollt bei Bedarf (QTabBar-Standard).
+    QStackedWidget* m_stack     = nullptr; ///< Seiten: Index 0 = Übersicht, 1..n = Jahre.
+
     /** Jahr je Tab-Index (Index 0 = Übersicht, ungültig/-1); für die Klick-Navigation. */
     QList<int>  m_tabYears;
     bool        m_suppressTabSignal = false;

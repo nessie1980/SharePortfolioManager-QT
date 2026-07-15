@@ -3951,6 +3951,57 @@ private slots:
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // ViewShareDetails::onMainTabChanged() — Reset auf Jahresübersicht bei
+    // äußerem Tab-Wechsel (14.07.2026, Nessies Vorgabe, siehe ARCHITECTURE.md
+    // "OverviewTabWidget-Details"). insertTestBuy() legt für jeden Kauf
+    // automatisch einen Brokerage-Eintrag mit demselben Datum an (siehe
+    // insertTestBuy() oben) — zwei Käufe in verschiedenen Jahren genügen
+    // daher, um den Kosten-Tab mit zwei Jahres-Tabs zu befüllen, ohne
+    // Sale-/Dividend-Testdaten konstruieren zu müssen.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_mainTabChanged_resetsOverviewTabsToUebersicht()
+    {
+        const QString shareGuid = insertTestShare();
+        insertTestBuy(shareGuid, QStringLiteral("depot1"),
+                       QStringLiteral("2023-03-10T10:00:00"), 5.0, 100.0);
+        insertTestBuy(shareGuid, QStringLiteral("depot1"),
+                       QStringLiteral("2024-03-10T10:00:00"), 5.0, 100.0);
+
+        ViewShareDetails dlg(shareGuid); // Depotwert-Modus (Default) — legt die drei Tabs an
+
+        auto* mainTabs = dlg.findChild<QTabWidget*>(QStringLiteral("tabs"));
+        if (!mainTabs) QFAIL("Äußeres m_tabs nicht gefunden");
+
+        // Die drei OverviewTabWidget-Instanzen (Gewinne/Verluste, Dividenden,
+        // Kosten) haben keinen objectName — über count() > 1 identifizieren
+        // wir robust diejenige mit tatsächlichen Jahres-Tabs (hier: Kosten,
+        // dank der beiden Brokerage-Einträge oben), unabhängig von der
+        // Erzeugungsreihenfolge in setupUi().
+        OverviewTabWidget* kostenTab = nullptr;
+        for (auto* w : dlg.findChildren<OverviewTabWidget*>()) {
+            if (w->count() > 1) { kostenTab = w; break; }
+        }
+        if (!kostenTab) QFAIL("OverviewTabWidget mit Jahres-Tabs nicht gefunden");
+
+        // Einen Jahres-Tab auswählen (Index 1, nicht die Übersicht).
+        kostenTab->setCurrentIndex(1);
+        QCOMPARE(kostenTab->currentIndex(), 1);
+
+        // Wechsel des äußeren Tabs (weg von "Kosten", z.B. zurück zu
+        // "Aktien-Chart") — ohne den fixierten Übersicht-Tab explizit
+        // wiederherzustellen, würde kostenTab weiterhin den Jahres-Tab zeigen.
+        mainTabs->setCurrentIndex(1);
+        QCOMPARE(kostenTab->currentIndex(), 0);
+
+        // Erneuter Wechsel — Reset muss bei jedem Tab-Wechsel greifen, nicht
+        // nur einmalig.
+        kostenTab->setCurrentIndex(1);
+        mainTabs->setCurrentIndex(0);
+        QCOMPARE(kostenTab->currentIndex(), 0);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // ViewChart — Mausrad-Steuerung der "Anzahl" (ergänzt 12.07.2026, siehe
     // ARCHITECTURE.md "ChartForm-Details"). ViewChart ist als Tab 1 in
     // ViewShareDetails eingebettet, countSpin/chartView werden per

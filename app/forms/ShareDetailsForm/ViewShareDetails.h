@@ -101,6 +101,18 @@ private slots:
      */
     void onChartTitleInfoChanged(const QString& infoText);
 
+    /**
+     * @brief Setzt beim Wechsel des äußeren Tabs (Aktien-Chart/Depotwert/
+     * Gewinne-Verluste/Dividenden/Kosten) alle vorhandenen Gewinne/Verluste-,
+     * Dividenden- und Kosten-Tabs auf ihren Übersicht-Tab (Index 0) zurück —
+     * verhindert, dass beim erneuten Betreten eines dieser Tabs weiterhin ein
+     * zuvor gewählter Jahres-Tab angezeigt wird (14.07.2026, Nessies Vorgabe).
+     * @param index  Ungenutzt — es werden immer alle drei Instanzen
+     *               zurückgesetzt, unabhängig davon, welcher Tab neu aktiv
+     *               wurde (einfacher und robuster als Index-Tracking pro Tab).
+     */
+    void onMainTabChanged(int index);
+
 private:
     // ── Setup ──────────────────────────────────────────────────────────────
     void setupUi();
