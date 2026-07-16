@@ -3,6 +3,8 @@
 #pragma once
 
 #include "IViewBrokerageEdit.h"
+#include "../../widgets/OverviewTabWidget.h"
+#include "../../widgets/DocumentPreviewPanel.h"
 
 #include <QDialog>
 #include <QDateEdit>
@@ -11,16 +13,9 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QGroupBox>
-#include <QTabWidget>
 #include <QTableWidget>
 #include <QGridLayout>
-#include <QScrollArea>
 #include <QMap>
-
-#ifdef SPM_HAVE_QTPDF
-#  include <QPdfDocument>
-#  include <QPdfView>
-#endif
 
 class PresenterBrokerageEdit;
 
@@ -29,7 +24,7 @@ class PresenterBrokerageEdit;
  *
  * Layout:
  * ┌── Kosten hinzufügen ──────────────────┬── Dokumenten-Vorschau ──────┐
- * │  Datum / Uhrzeit    [date]  [time]    │  QPdfView / pdftoppm        │
+ * │  Datum / Uhrzeit    [date]  [time]    │  DocumentPreviewPanel       │
  * │  Provision          [edit]  €         │                             │
  * │  Courtage           [edit]  €         │                             │
  * │  Handelsplatzgeb.   [edit]  €         │                             │
@@ -44,6 +39,13 @@ class PresenterBrokerageEdit;
  * ┌── Kosten-Übersicht ────────────────────────────────────────────────┐
  * │  [Tab: Übersicht (X.XX €)] [Tab: 2024 (X.XX €)] ...              │
  * └────────────────────────────────────────────────────────────────────┘
+ *
+ * Seit der Umstellung auf OverviewTabWidget/DocumentPreviewPanel (16.07.2026,
+ * 1:1 nach demselben Muster wie ViewBuyEdit/ViewSaleEdit/ViewDividendEdit)
+ * delegiert die Kosten-Übersicht an OverviewTabWidget::populateOverview()
+ * statt einer lokalen QTabWidget-/buildFrozenTable()-Kopie, und die
+ * PDF-Vorschau an DocumentPreviewPanel statt eigenem QPdfView/pdftoppm-Code.
+ * Siehe ARCHITECTURE.md für Details.
  */
 class ViewBrokerageEdit : public QDialog, public IViewBrokerageEdit
 {
@@ -90,8 +92,6 @@ public:
 
 private slots:
     void onBrowseDocument();
-    void onOverviewRowActivated(int row, int column);
-    void onUebersichtRowActivated(int row, int column);
 
 private:
     void       setupUi();
@@ -135,19 +135,10 @@ private:
     QPushButton* m_btnClose  = nullptr;
 
     // ── Overview ──────────────────────────────────────────────────────────
-    QTabWidget* m_tabs = nullptr;
+    OverviewTabWidget* m_overviewTabs = nullptr;
 
-    // ── PDF preview ───────────────────────────────────────────────────────
-#ifdef SPM_HAVE_QTPDF
-    QPdfDocument* m_pdfDocument   = nullptr;
-    QPdfView*     m_pdfView       = nullptr;
-    QLabel*       m_zoomLabel     = nullptr;
-#else
-    QLabel*       m_pdfLabel      = nullptr;
-    QScrollArea*  m_pdfScroll     = nullptr;
-    QProcess*     m_pdfRenderProc = nullptr;
-    QString       m_pdfImagePath;
-#endif
+    // ── PDF-Vorschau ──────────────────────────────────────────────────────
+    DocumentPreviewPanel* m_previewPanel = nullptr;
 
     // ── Field validity tracking ───────────────────────────────────────────
     QMap<QString, FieldState> m_fieldStates;

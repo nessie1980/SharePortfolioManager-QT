@@ -1317,6 +1317,21 @@ ViewBrokerageEdit:
 ---
 
 ViewBrokerageEdit — populateOverview:
+
+@note Migration auf OverviewTabWidget (16.07.2026, siehe ARCHITECTURE.md):
+alle Tests in diesem Abschnitt (inkl. "Linked-Record / readOnly-Besonderheit"
+unten) wurden von `findChild<QTabWidget*>()` auf
+`findChild<OverviewTabWidget*>()` umgestellt — reiner Typ-Austausch, da
+`count()/widget()/tabText()/currentIndex()/setCurrentIndex()` bewusst
+identisch zur bisherigen `QTabWidget`-API benannt sind. Die beiden
+vorherigen Klick-Slots `onOverviewRowActivated()`/`onUebersichtRowActivated()`
+entfielen ersatzlos; das beobachtbare Verhalten (Klick auf Jahres-Zeile lädt
+Kosteneintrag, Klick auf Übersicht-Zeile springt zum Jahres-Tab) bleibt
+unverändert, da es jetzt `OverviewTabWidget` intern übernimmt. Die
+Dokument-Spalte (Index 5) ist — anders als bei `ViewDividendEdit` — von
+Anfang an fest auf `120`px gesetzt statt Stretch, analog zum Bugfix in
+`ViewSaleEdit`.
+
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_viewBrokerageEdit_populateOverview_emptyList_noTabs` | Leere Liste → kein Tab | `tabs->count()` = 0 |

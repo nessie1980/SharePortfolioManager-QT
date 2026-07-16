@@ -3332,8 +3332,8 @@ private slots:
         openMemoryDb();
         ViewBrokerageEdit dlg(QStringLiteral("share-guid"));
         dlg.populateOverview({});
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         QCOMPARE(tabs->count(), 0);
     }
 
@@ -3346,8 +3346,8 @@ private slots:
                            QStringLiteral("2024-03-10T10:00:00"), 9.90);
         dlg.populateOverview({ br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         QCOMPARE(tabs->count(), 2);
         QVERIFY(tabs->tabText(0).contains(tr("Übersicht")));
         QVERIFY(tabs->tabText(1).contains(QStringLiteral("2024")));
@@ -3365,8 +3365,8 @@ private slots:
                           QStringLiteral("2024-03-10T10:00:00"), 5.0);
         dlg.populateOverview({ b1, b2 });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         QCOMPARE(tabs->count(), 3);
     }
 
@@ -3382,8 +3382,8 @@ private slots:
                           QStringLiteral("2024-03-10T10:00:00"), 5.0);
         dlg.populateOverview({ b1, b2 });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         QVERIFY(tabs->tabText(1).contains(QStringLiteral("2024")));
         QVERIFY(tabs->tabText(2).contains(QStringLiteral("2022")));
     }
@@ -3397,8 +3397,8 @@ private slots:
                            QStringLiteral("2024-03-10T10:00:00"), 9.90);
         dlg.populateOverview({ br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* tbl = dataTableFromContainer(tabs->widget(0));
         if (!tbl) QFAIL("dataTable not found");
         QCOMPARE(tbl->columnCount(), 2);
@@ -3413,8 +3413,8 @@ private slots:
                            QStringLiteral("2024-03-10T10:00:00"), 9.90);
         dlg.populateOverview({ br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* tbl = dataTableFromContainer(tabs->widget(1));
         if (!tbl) QFAIL("dataTable not found");
         QCOMPARE(tbl->columnCount(), 6);
@@ -3429,8 +3429,8 @@ private slots:
                            QStringLiteral("2024-03-10T10:00:00"), 9.90);
         dlg.populateOverview({ br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* tbl = dataTableFromContainer(tabs->widget(1));
         if (!tbl) QFAIL("dataTable not found");
         QCOMPARE(tbl->item(0, 0)->data(Qt::UserRole).toString(),
@@ -3446,8 +3446,8 @@ private slots:
                            QStringLiteral("2024-03-10T10:00:00"), 9.90);
         dlg.populateOverview({ br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* tbl = dataTableFromContainer(tabs->widget(1));
         if (!tbl) QFAIL("dataTable not found");
         QCOMPARE(tbl->item(0, 1)->text(), tr("Sonstig"));
@@ -3462,8 +3462,8 @@ private slots:
                            QStringLiteral("2024-03-10T10:00:00"), 9.90);
         dlg.populateOverview({ br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* tbl = dataTableFromContainer(tabs->widget(1));
         if (!tbl) QFAIL("dataTable not found");
         QCOMPARE(tbl->item(0, 1)->text(), tr("Kauf"));
@@ -3478,8 +3478,8 @@ private slots:
                            QStringLiteral("2024-03-10T10:00:00"), 9.90);
         dlg.populateOverview({ br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* tbl = dataTableFromContainer(tabs->widget(1));
         if (!tbl) QFAIL("dataTable not found");
         QCOMPARE(tbl->item(0, 1)->text(), tr("Verkauf"));
@@ -3495,8 +3495,8 @@ private slots:
                            0.0, 0.0, 0.0, QStringLiteral("/docs/receipt.pdf"));
         dlg.populateOverview({ br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* tbl = dataTableFromContainer(tabs->widget(1));
         if (!tbl) QFAIL("dataTable not found");
         QVERIFY(tbl->cellWidget(0, 5) != nullptr);
@@ -3511,8 +3511,8 @@ private slots:
                            QStringLiteral("2024-03-10T10:00:00"), 9.90);
         dlg.populateOverview({ br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* tbl = dataTableFromContainer(tabs->widget(1));
         if (!tbl) QFAIL("dataTable not found");
         QCOMPARE(tbl->item(0, 5)->text(), QStringLiteral("-"));
@@ -3528,8 +3528,8 @@ private slots:
                            QStringLiteral("2024-03-10T10:00:00"), 9.90);
         dlg.populateOverview({ br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         QVERIFY(tabs->tabText(0).contains(QStringLiteral("€")));
     }
 
@@ -3542,8 +3542,8 @@ private slots:
                           QStringLiteral("2023-03-10T10:00:00"), 9.90);
         dlg.populateOverview({ b1 });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         QCOMPARE(tabs->count(), 2);
 
         BrokerageObject b2(QStringLiteral("brok-2"), QStringLiteral("share-guid"),
@@ -3564,8 +3564,8 @@ private slots:
                            QStringLiteral("2024-03-10T10:00:00"), 9.90);
         dlg.populateOverview({ br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* uebersichtTbl = dataTableFromContainer(tabs->widget(0));
         if (!uebersichtTbl) QFAIL("Uebersicht dataTable not found");
         emit uebersichtTbl->cellClicked(0, 0);
@@ -3581,8 +3581,8 @@ private slots:
                            QStringLiteral("2024-03-10T10:00:00"), 9.90);
         dlg.populateOverview({ br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         tabs->setCurrentIndex(1);
         auto* tbl = dataTableFromContainer(tabs->widget(1));
         if (!tbl) QFAIL("dataTable not found");

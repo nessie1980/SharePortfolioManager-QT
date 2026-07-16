@@ -1036,7 +1036,7 @@ Modus zeigt Chart + Depotbewertung + die drei Jahres-Tab-Bereiche.
 | Komplette Depotbewertung | ✅ implementiert (09.07.2026) |
 | Komplette Marktbewertung | ✅ implementiert (10.07.2026), gegen echten Screenshot der C#-Referenz abgeglichen |
 | Formel-Validierung gegen echte DB | 🟨 begonnen (10.07.2026) mit einer Ein-Aktien-Datenbank (Allianz SE, 5 Käufe/1 Verkauf/10 Dividenden/reale Historie 2016–2026) — dabei den Rabatt-Bugfix (siehe unten) sowie eine irreführende Label-Benennung gefunden und korrigiert. Berechnungslogik selbst (`completePurchase`/`completePurchaseMarket`) gegen `ShareObjectFinalValue.cs` bestätigt. Validierung der tatsächlichen App-Anzeige (Screenshot-Vergleich) steht noch aus. |
-| Gewinne/Verluste, Dividenden, Kosten | ⬜ zurückgestellt — Nessies Vorgabe: diese sollen die bereits vorhandenen Übersicht-Widgets aus `ViewSaleEdit`/`ViewDividendEdit`/`ViewBrokerageEdit` wiederverwenden statt eigene Tabellen zu duplizieren. Konkrete Einbindung noch offen. |
+| Gewinne/Verluste, Dividenden, Kosten | ✅ implementiert (13.07.2026, fixierter Übersicht-Tab 14.07.2026, Gewinne/Verluste auf Marktwert-Modus erweitert 14.07.2026) — je ein `OverviewTabWidget` + `DocumentPreviewPanel`, siehe "OverviewTabWidget-Details" unten |
 
 #### "Komplette Depotbewertung" — drei Bestandsberechnungs-Boxen
 
@@ -2512,6 +2512,30 @@ bislang `iDoc->setData(Qt::UserRole, d.document())` auf dem Dokument-Item —
 ohne das liest `OverviewTabWidget::documentActivated()` einen leeren Pfad.
 Beim Umbau ergänzt, analog zu `ViewSaleEdit`.
 
+@note **BrokeragesForm auf OverviewTabWidget/DocumentPreviewPanel umgestellt
+(16.07.2026):** `ViewBrokerageEdit` 1:1 nach demselben Muster wie
+`ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit` umgebaut, inkl. des Bugfixes
+(`createPreviewPanel()` vor `createOverviewGroup()`) von Anfang an.
+`populateOverview()` delegiert jetzt an `OverviewTabWidget::populateOverview()`
+statt einer lokalen `QTabWidget`-/`buildFrozenTable()`-Kopie; Spalten-/Icon-
+Logik der Jahres-Tabs (Datum/Typ/Ges. Gebühren/Rabatt/Netto-Kosten/Dokument,
+inkl. der Typ-Spalte Kauf/Verkauf/Sonstig) unverändert übernommen. Die beiden
+alten Klick-Slots `onOverviewRowActivated()`/`onUebersichtRowActivated()`
+entfallen ersatzlos — übernimmt `OverviewTabWidget` intern.
+
+Abweichend von `ViewDividendEdit` (dort Stretch als bewusster Zwischenstand)
+ist die Dokument-Spalte hier von Anfang an fest auf `kDocColWidth = 120`
+gesetzt — analog zum Bugfix in `ViewSaleEdit`, auf Nessies direkte Vorgabe.
+Grund: die Kosten-Übersicht hat nur 4 Stretch-Spalten (Typ/Ges. Gebühren/
+Rabatt/Netto-Kosten), bei Stretch-Behandlung der Dokument-Spalte würde sie
+also automatisch breiter ausfallen als in Buy/Sale. `kColDoc` (Index 5) wird
+weiterhin als `jahresDocColumn` übergeben, damit der Doppelklick
+`documentActivated()` auslöst.
+
+`onShowDetails()`/eigenständige Sub-Dialoge existieren in `ViewBrokerageEdit`
+nicht — die Migration ist damit vollständig, keine Restausnahme wie bei
+`ViewSaleEdit`.
+
 ---
 
 ## Offene Punkte / TODO
@@ -2529,8 +2553,9 @@ Icon-Spalte. Betrifft mindestens:
 - `ViewDividendEdit` (seit 16.07.2026 auf `OverviewTabWidget` migriert,
   Dokument-Spalte bewusst als Zwischenstand auf Stretch/`-1` gesetzt —
   siehe Migrationsnotiz oben)
-- `ViewBrokerageEdit` (aktuell fix `36` in der noch nicht auf
-  `OverviewTabWidget` migrierten lokalen Kopie — gegenchecken)
+- `ViewBrokerageEdit` (seit 16.07.2026 auf `OverviewTabWidget` migriert,
+  Dokument-Spalte fest auf `kDocColWidth = 120` gesetzt — siehe
+  Migrationsnotiz oben)
 - `ViewShareEdit` (Übersichts-/Summenanzeige der Pencil-Button-Dialoge —
   gegenchecken, ob dort ebenfalls eine Dokument-Spalte existiert)
 - `OverviewTabWidget`-Details-Tabs in `ViewShareDetails` (Gewinne/Verluste,
@@ -2540,10 +2565,11 @@ Icon-Spalte. Betrifft mindestens:
 
 **Reihenfolge (Nessies Vorgabe, 16.07.2026):** Nicht jetzt schon global
 vereinheitlichen. Erst `DividendForm` und `BrokeragesForm` vollständig auf
-`OverviewTabWidget`/`DocumentPreviewPanel` umbauen (`BrokeragesForm` steht
-als nächstes an). **Danach** in einem eigenen Schritt für **alle** Formulare
-(`ViewBuyEdit`, `ViewSaleEdit`, `ViewDividendEdit`, `ViewBrokerageEdit`,
-`ViewShareEdit`) einheitlich umsetzen:
+`OverviewTabWidget`/`DocumentPreviewPanel` umbauen — beide seit 16.07.2026
+abgeschlossen (siehe Migrationsnotizen oben). **Danach** in einem eigenen
+Schritt für **alle** Formulare (`ViewBuyEdit`, `ViewSaleEdit`,
+`ViewDividendEdit`, `ViewBrokerageEdit`, `ViewShareEdit`) einheitlich
+umsetzen:
 
 1. Dokument-Spalte fest auf `36`px (kein Stretch) — reine Icon-Spalte ohne
    Textinhalt.
