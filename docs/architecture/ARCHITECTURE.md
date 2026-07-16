@@ -2487,6 +2487,31 @@ Wert ist eine Annäherung ohne Live-Rendering geprüft; bei Bedarf einfach
 `DocumentPreviewPanel`, kein Übersicht-Tab dort) folgen in den nächsten
 Schritten mit demselben Muster.
 
+@note **DividendForm auf OverviewTabWidget/DocumentPreviewPanel umgestellt
+(16.07.2026):** `ViewDividendEdit` 1:1 nach demselben Muster wie
+`ViewBuyEdit`/`ViewSaleEdit` umgebaut, inkl. des Bugfixes
+(`createPreviewPanel()` vor `createOverviewGroup()`) von Anfang an.
+`populateOverview()` delegiert jetzt an `OverviewTabWidget::populateOverview()`
+statt einer lokalen `buildFrozenTable()`-Kopie; Spalten/Icon-Logik der
+Jahres-Tabs (Datum/Dividendensatz/Anteile/Dividende/Dokument) unverändert
+übernommen. Die beiden alten Klick-Slots `onOverviewRowActivated()`/
+`onUebersichtRowActivated()` entfallen ersatzlos — übernimmt
+`OverviewTabWidget` intern.
+
+Einzige inhaltliche Änderung: die Dokument-Spalte der Jahres-Tabs war zuvor
+fest auf `36`px (reine Icon-Spalte) — auf Nessies Entscheidung jetzt auf
+Stretch (`-1`) umgestellt, konsistent zu `ViewBuyEdit`. Das ist ein bewusster
+Zwischenstand, kein Zielzustand — siehe "Dokument-Spalten: Breite
+verkleinern + Header" unten, dort auch die von Nessie vorgegebene
+Reihenfolge (erst DividendForm und BrokeragesForm fertig umbauen, dann
+global vereinheitlichen).
+
+Da bisher kein Doppelklick auf die Dokument-Spalte existierte (keine
+eingebettete Vorschau, nur das rechte Hauptpanel bei Zeilenauswahl), fehlte
+bislang `iDoc->setData(Qt::UserRole, d.document())` auf dem Dokument-Item —
+ohne das liest `OverviewTabWidget::documentActivated()` einen leeren Pfad.
+Beim Umbau ergänzt, analog zu `ViewSaleEdit`.
+
 ---
 
 ## Offene Punkte / TODO
@@ -2501,26 +2526,29 @@ Icon-Spalte. Betrifft mindestens:
 
 - `ViewBuyEdit` (Kauf-Übersicht, aktuell Stretch/`-1`)
 - `ViewSaleEdit` (Verkaufs-Übersicht, aktuell fix `kDocColWidth = 120`)
-- `ViewDividendEdit` (aktuell fix `36`, ggf. bereits passend — gegenchecken)
+- `ViewDividendEdit` (seit 16.07.2026 auf `OverviewTabWidget` migriert,
+  Dokument-Spalte bewusst als Zwischenstand auf Stretch/`-1` gesetzt —
+  siehe Migrationsnotiz oben)
 - `ViewBrokerageEdit` (aktuell fix `36` in der noch nicht auf
   `OverviewTabWidget` migrierten lokalen Kopie — gegenchecken)
+- `ViewShareEdit` (Übersichts-/Summenanzeige der Pencil-Button-Dialoge —
+  gegenchecken, ob dort ebenfalls eine Dokument-Spalte existiert)
 - `OverviewTabWidget`-Details-Tabs in `ViewShareDetails` (Gewinne/Verluste,
   Dividenden, Kosten)
 - Die "Verwendete Käufe"-Tabelle im SalesForm-Details-Dialog
   (`onShowDetails()`, `kColDoc` dort separat, aktuell fix `36`)
 
-Zwei Teilaufgaben, vermutlich am besten gemeinsam mit der noch offenen
-DividendForm/BrokeragesForm/ViewShareAdd-Migration (siehe oben) angegangen,
-damit nicht mehrfach an denselben Stellen gearbeitet wird:
+**Reihenfolge (Nessies Vorgabe, 16.07.2026):** Nicht jetzt schon global
+vereinheitlichen. Erst `DividendForm` und `BrokeragesForm` vollständig auf
+`OverviewTabWidget`/`DocumentPreviewPanel` umbauen (`BrokeragesForm` steht
+als nächstes an). **Danach** in einem eigenen Schritt für **alle** Formulare
+(`ViewBuyEdit`, `ViewSaleEdit`, `ViewDividendEdit`, `ViewBrokerageEdit`,
+`ViewShareEdit`) einheitlich umsetzen:
 
-1. **Alle** Dokument-Spalten auf eine einheitliche, kleinere feste Breite
-   bringen (Zielwert noch offen — vermutlich näher an den bereits
-   etablierten `36`px aus DividendForm/BrokeragesForm/FIFO-Detailtabelle als
-   an `ViewSaleEdit`s aktuellem `120`px-Zwischenstand, aber mit Nessie vorher
-   abstimmen statt zu raten).
-2. Spaltenüberschrift überall von "Dokument" auf "Dok." kürzen (Header-Label
-   in `populateOverview()`-Aufrufen bzw. den jeweiligen `jahresHeaders`/
-   `uebersichtHeaders`-Arrays).
+1. Dokument-Spalte fest auf `36`px (kein Stretch) — reine Icon-Spalte ohne
+   Textinhalt.
+2. Keine Spaltenüberschrift für die Dokument-Spalte (leerer String statt
+   "Dokument"/"Dok." im jeweiligen `jahresHeaders`/`uebersichtHeaders`-Array).
 
 ### Brokerage-Vorwärts-Link: ModelBuyEdit/ModelBrokerageEdit ungeprüft (offen, 15.07.2026)
 

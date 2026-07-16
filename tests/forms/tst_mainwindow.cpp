@@ -6682,8 +6682,8 @@ private slots:
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
         dlg.populateOverview({});
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         QCOMPARE(tabs->count(), 0);
     }
 
@@ -6692,8 +6692,8 @@ private slots:
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
         dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         QCOMPARE(tabs->count(), 2);
         QVERIFY(tabs->tabText(0).contains(QStringLiteral("Übersicht")));
         QVERIFY(tabs->tabText(1).contains(QStringLiteral("2024")));
@@ -6707,8 +6707,8 @@ private slots:
             makeDividend(QStringLiteral("div-1"), QStringLiteral("2022-01-01T00:00:00")),
             makeDividend(QStringLiteral("div-2"), QStringLiteral("2024-06-15T00:00:00")),
         });
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         QCOMPARE(tabs->count(), 3);
         QVERIFY(tabs->tabText(1).contains(QStringLiteral("2024")));
         QVERIFY(tabs->tabText(2).contains(QStringLiteral("2022")));
@@ -6965,8 +6965,8 @@ private slots:
             makeDividend(QStringLiteral("div-1"), QStringLiteral("2023-01-01T00:00:00")),
             makeDividend(QStringLiteral("div-2"), QStringLiteral("2024-06-15T00:00:00")),
         });
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         QCOMPARE(tabs->count(), 3);
     }
 
@@ -6975,8 +6975,8 @@ private slots:
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
         dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(1);
         if (!container) QFAIL("Jahres-Tab container not found");
         auto* tbl = qobject_cast<QTableWidget*>(
@@ -6994,8 +6994,8 @@ private slots:
             makeDividend(QStringLiteral("div-2"), QStringLiteral("2024-06-15T00:00:00")),
             makeDividend(QStringLiteral("div-3"), QStringLiteral("2024-12-01T00:00:00")),
         });
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(1);
         if (!container) QFAIL("Jahres-Tab container not found");
         auto* tbl = qobject_cast<QTableWidget*>(
@@ -7009,8 +7009,8 @@ private slots:
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
         dlg.populateOverview({ makeDividend(QStringLiteral("div-guid-99")) });
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(1);
         if (!container) QFAIL("Jahres-Tab container not found");
         auto* tbl = qobject_cast<QTableWidget*>(
@@ -7026,8 +7026,8 @@ private slots:
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
         dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(1);
         if (!container) QFAIL("container not found");
         auto* tbl = qobject_cast<QTableWidget*>(
@@ -7045,8 +7045,8 @@ private slots:
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
         dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         QVERIFY(tabs->tabText(0).contains(QStringLiteral("€")));
     }
 
@@ -7059,8 +7059,8 @@ private slots:
             makeDividend(QStringLiteral("div-2"), QStringLiteral("2023-01-01T00:00:00")),
             makeDividend(QStringLiteral("div-3"), QStringLiteral("2022-06-01T00:00:00")),
         });
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         // Old 2024-tab must be gone; now 2023 and 2022
         QCOMPARE(tabs->count(), 3);
         QVERIFY(!tabs->tabText(1).contains(QStringLiteral("2024")));
@@ -7072,8 +7072,8 @@ private slots:
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
         dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(0);
         if (!container) QFAIL("Übersicht container not found");
         auto* tbl = qobject_cast<QTableWidget*>(
@@ -7088,8 +7088,8 @@ private slots:
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
         dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(0);
         if (!container) QFAIL("container not found");
         auto* tbl = qobject_cast<QTableWidget*>(
@@ -7111,8 +7111,8 @@ private slots:
             makeDividend(QStringLiteral("div-1"), QStringLiteral("2024-01-01T00:00:00")),
             makeDividend(QStringLiteral("div-2"), QStringLiteral("2024-06-15T00:00:00")),
         });
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         tabs->setCurrentIndex(1);  // switch to year tab
         auto* container = tabs->widget(1);
         if (!container) QFAIL("container not found");

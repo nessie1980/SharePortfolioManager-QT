@@ -14,17 +14,13 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QGroupBox>
-#include <QTabWidget>
 #include <QTableWidget>
 #include <QGridLayout>
-#include <QScrollArea>
 #include <QProgressBar>
 #include <QMap>
 
-#ifdef SPM_HAVE_QTPDF
-#  include <QPdfView>
-#  include <QPdfDocument>
-#endif
+#include "../../widgets/OverviewTabWidget.h"
+#include "../../widgets/DocumentPreviewPanel.h"
 
 class PresenterDividendEdit;
 
@@ -33,7 +29,7 @@ class PresenterDividendEdit;
  *
  * Layout:
  * ┌── Dividende hinzufügen ────────────────┬── Dokumenten-Vorschau ──────────┐
- * │  Datum / Uhrzeit                        │  QPdfView / pdftoppm            │
+ * │  Datum / Uhrzeit                        │  DocumentPreviewPanel            │
  * │  [✓] Fremdwährungseingabe aktivieren    │                                 │
  * │  Devisenkurs          [combo: en-US/$]  │                                 │
  * │  Dividendensatz           [rate]  $/€   │                                 │
@@ -118,8 +114,6 @@ public:
 
 private slots:
     void onBrowseDocument();
-    void onOverviewRowActivated(int row, int column);
-    void onUebersichtRowActivated(int row, int column);
 
 private:
     void       setupUi();
@@ -182,21 +176,12 @@ private:
     // ── Left panel (for setUiBusy) ────────────────────────────────────────
     QWidget*     m_leftPanel = nullptr;
 
-    // ── PDF preview ───────────────────────────────────────────────────────
-#ifdef SPM_HAVE_QTPDF
-    QPdfDocument* m_pdfDocument   = nullptr;
-    QPdfView*     m_pdfView       = nullptr;
-    QLabel*       m_zoomLabel     = nullptr;
-#else
-    QLabel*       m_pdfLabel      = nullptr;
-    QScrollArea*  m_pdfScroll     = nullptr;
-    QProcess*     m_pdfRenderProc = nullptr;
-    QString       m_pdfImagePath;
-#endif
+    // ── PDF-Vorschau ──────────────────────────────────────────────────────
+    DocumentPreviewPanel* m_previewPanel = nullptr;
 
     // ── Dividenden-Übersicht ──────────────────────────────────────────────
-    QTabWidget* m_overviewTabs      = nullptr;
-    bool        m_suppressTabSignal = false;
+    OverviewTabWidget* m_overviewTabs      = nullptr;
+    bool               m_suppressTabSignal = false;
 
     PresenterDividendEdit* m_presenter = nullptr;
     DocumentsConfig*       m_config    = nullptr;
