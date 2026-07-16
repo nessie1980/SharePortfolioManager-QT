@@ -1006,6 +1006,17 @@ ViewSaleEdit:
 ---
 
 ViewSaleEdit — populateOverview:
+
+@note Migration auf OverviewTabWidget (16.07.2026, siehe ARCHITECTURE.md):
+alle Tests in diesem Abschnitt und in "ViewSaleEdit — Tab-Klick-Logik" wurden
+von `findChild<QTabWidget*>()` auf `findChild<OverviewTabWidget*>()`
+umgestellt — reiner Typ-Austausch, da `count()/widget()/tabText()/
+currentIndex()/setCurrentIndex()` bewusst identisch zur bisherigen
+`QTabWidget`-API benannt sind. Die beiden vorherigen Klick-Slots
+`onOverviewRowActivated()`/`onUebersichtRowActivated()` entfielen ersatzlos;
+das beobachtbare Verhalten (siehe "ViewSaleEdit — Tab-Klick-Logik" unten)
+bleibt unveraendert, da es jetzt `OverviewTabWidget` intern uebernimmt.
+
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_viewSaleEdit_populateOverview_emptyList_noTabs` | Leere Liste → kein Tab | `tabs->count()` = 0 |

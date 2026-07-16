@@ -5281,7 +5281,7 @@ private slots:
     {
         openMemoryDb();
         ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         dlg.populateOverview({});
@@ -5292,7 +5292,7 @@ private slots:
     {
         openMemoryDb();
         ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
 
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2024)
@@ -5307,7 +5307,7 @@ private slots:
     {
         openMemoryDb();
         ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
 
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2023),
@@ -5322,7 +5322,7 @@ private slots:
         // Newest year must be Tab 1, older year Tab 2.
         openMemoryDb();
         ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
 
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2022),
@@ -5342,7 +5342,7 @@ private slots:
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2024)
         });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs->count() >= 2);
         auto* container = tabs->widget(1);
         QVERIFY(container != nullptr);
@@ -5362,7 +5362,7 @@ private slots:
                      QStringLiteral("share-guid"), 2024)
         });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         auto* container = tabs->widget(1);
         auto* tbl = qobject_cast<QTableWidget*>(
             container->property("dataTable").value<QObject*>());
@@ -5376,7 +5376,7 @@ private slots:
     {
         openMemoryDb();
         ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
 
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2023)
@@ -5411,7 +5411,7 @@ private slots:
             QStringLiteral("/path/to/doc.pdf"));
         dlg.populateOverview({ sWithDoc });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         auto* container = tabs->widget(1);
         auto* tbl = qobject_cast<QTableWidget*>(
             container->property("dataTable").value<QObject*>());
@@ -5429,7 +5429,7 @@ private slots:
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2024)
         });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         auto* container = tabs->widget(1);
         auto* tbl = qobject_cast<QTableWidget*>(
             container->property("dataTable").value<QObject*>());
@@ -5448,7 +5448,7 @@ private slots:
         // The Übersicht tab must contain a QTableWidget with year-aggregated rows.
         openMemoryDb();
         ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         dlg.populateOverview({
@@ -5470,7 +5470,7 @@ private slots:
         // (Gesamt is in the separate frozen footer, not a data row).
         openMemoryDb();
         ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         dlg.populateOverview({
@@ -5492,8 +5492,8 @@ private slots:
         // Both Übersicht and Jahres-tabs must include the total Auszahlung and "€".
         openMemoryDb();
         ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
 
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2024,
@@ -5509,10 +5509,10 @@ private slots:
     // ViewSaleEdit — Tab-Klick-Logik
     // ─────────────────────────────────────────────────────────────────────
 
-    /** Helper: populate dlg with two sales in different years and return the QTabWidget. */
-    static QTabWidget* setupTwoYearSaleOverview(ViewSaleEdit& dlg)
+    /** Helper: populate dlg with two sales in different years and return the OverviewTabWidget. */
+    static OverviewTabWidget* setupTwoYearSaleOverview(ViewSaleEdit& dlg)
     {
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2023),
             makeSale(QStringLiteral("s2"), QStringLiteral("share-guid"), 2024)

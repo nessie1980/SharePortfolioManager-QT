@@ -4,6 +4,8 @@
 
 #include "IViewSaleEdit.h"
 #include "../../config/DocumentsConfig.h"
+#include "../../widgets/OverviewTabWidget.h"
+#include "../../widgets/DocumentPreviewPanel.h"
 
 #include <QDialog>
 #include <QDateEdit>
@@ -13,13 +15,15 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QGroupBox>
-#include <QTabWidget>
 #include <QTableWidget>
 #include <QGridLayout>
 #include <QScrollArea>
 #include <QProgressBar>
 #include <QMap>
 
+// weiterhin benoetigt fuer onShowDetails() (lokaler FIFO-Details-Dialog mit
+// eigener, unabhaengiger PDF-Vorschau - nicht Teil der OverviewTabWidget/
+// DocumentPreviewPanel-Migration, siehe ARCHITECTURE.md).
 #ifdef SPM_HAVE_QTPDF
 #  include <QPdfView>
 #  include <QPdfDocument>
@@ -124,16 +128,14 @@ public:
 private slots:
     void onBrowseDocument();
     void onShowDetails();
-    void onOverviewRowActivated(int row, int column);
-    void onUebersichtRowActivated(int row, int column);
 
 private:
     void       setupUi();
     QGroupBox* createVerkaufsdatenGroup();
     QGroupBox* createDocumentGroup();
-    QWidget*   createPreviewPanel();
+    QWidget*   createPreviewPanel();   // instanziiert jetzt DocumentPreviewPanel
     QWidget*   createButtonBar();
-    QGroupBox* createOverviewGroup();
+    QGroupBox* createOverviewGroup();  // nutzt jetzt OverviewTabWidget
 
     QLabel* addRow(QGridLayout* grid, int& row,
                    const QString& labelText,
@@ -192,21 +194,12 @@ private:
     // ── Left panel (for setUiBusy) ────────────────────────────────────────
     QWidget*     m_leftPanel = nullptr;
 
-    // ── PDF preview ───────────────────────────────────────────────────────
-#ifdef SPM_HAVE_QTPDF
-    QPdfDocument* m_pdfDocument   = nullptr;
-    QPdfView*     m_pdfView       = nullptr;
-    QLabel*       m_zoomLabel     = nullptr;
-#else
-    QLabel*       m_pdfLabel      = nullptr;
-    QScrollArea*  m_pdfScroll     = nullptr;
-    QProcess*     m_pdfRenderProc = nullptr;
-    QString       m_pdfImagePath;
-#endif
+    // ── Dokumenten-Vorschau (rechtes Panel) ───────────────────────────────
+    DocumentPreviewPanel* m_previewPanel = nullptr;
 
     // ── Verkaufs-Übersicht ────────────────────────────────────────────────
-    QTabWidget* m_overviewTabs      = nullptr;
-    bool        m_suppressTabSignal = false;
+    OverviewTabWidget* m_overviewTabs      = nullptr;
+    bool                m_suppressTabSignal = false;
 
     PresenterSaleEdit* m_presenter = nullptr;
     DocumentsConfig*   m_config    = nullptr;

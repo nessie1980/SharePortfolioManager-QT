@@ -2450,13 +2450,77 @@ noch `nullptr` (`connect(..., Unknown): invalid nullptr parameter`). Fix:
 ins Layout eingefügt, damit die sichtbare Reihenfolge Formular/Vorschau
 unverändert bleibt).
 
-`SalesForm`/`DividendForm`/`BrokeragesForm` sowie `ViewShareAdd` (nur
+@note **SalesForm auf OverviewTabWidget/DocumentPreviewPanel umgestellt
+(16.07.2026):** `ViewSaleEdit` 1:1 nach demselben Muster wie `ViewBuyEdit`
+umgebaut — inkl. des Bugfixes (`createPreviewPanel()` vor
+`createOverviewGroup()`) gleich mit übernommen, da sonst derselbe
+Nullptr-Connect-Fehler aufgetreten wäre. `populateOverview()` delegiert jetzt
+an `OverviewTabWidget::populateOverview()` statt einer lokalen
+`buildFrozenTable()`-Kopie; Spalten/Icon-Logik der Jahres-Tabs
+(Datum/Anteile/Auszahlung/Gewinn-Verlust/Dokument) unverändert übernommen.
+Die beiden alten Klick-Slots `onOverviewRowActivated()`/
+`onUebersichtRowActivated()` entfallen ersatzlos — das Verhalten (Klick auf
+Jahres-Zeile lädt Verkauf, Klick auf Übersicht-Zeile springt zum Jahres-Tab)
+übernimmt `OverviewTabWidget` intern.
+
+`onShowDetails()` (FIFO-Kaufzuteilungs-Dialog, siehe "SalesForm-Details" oben)
+ist bewusst **nicht** Teil dieser Migration — die dort eingebettete,
+eigenständige PDF-Vorschau ist lokal auf den Details-Dialog beschränkt und
+unabhängig vom rechten Hauptvorschau-Panel. `ViewSaleEdit.h`/`.cpp` behalten
+daher weiterhin das `#ifdef SPM_HAVE_QTPDF`-Include für `QPdfView`/
+`QPdfDocument`.
+
+@note **Bugfix Dokument-Spaltenbreite (16.07.2026, Nessies Feedback nach
+erstem Build):** Die Verkaufs-Übersicht hat nur 4 Stretch-Spalten (Anteile/
+Auszahlung/Gewinn-Verlust/Dokument) gegenüber 5 in der Kauf-Übersicht
+(Anteile/Kurswert/Gebühren/Einzahlung/Dokument) — bei gleicher Stretch-
+Behandlung der Dokument-Spalte (`-1`) verteilt sich dieselbe Restbreite auf
+weniger Spalten, wodurch die Dokument-Spalte in `ViewSaleEdit` optisch
+breiter ausfiel als in `ViewBuyEdit`. Fix: Dokument-Spalte in
+`ViewSaleEdit::populateOverview()` fest auf `kDocColWidth = 120` (statt
+`-1`/Stretch) gesetzt — angenähert an die Kauf-Übersicht-Breite bei
+gleicher Dialoggröße (1300×820, 3:2-Aufteilung Formular/Vorschau). Der
+Wert ist eine Annäherung ohne Live-Rendering geprüft; bei Bedarf einfach
+`kDocColWidth` anpassen.
+
+`DividendForm`/`BrokeragesForm` sowie `ViewShareAdd` (nur
 `DocumentPreviewPanel`, kein Übersicht-Tab dort) folgen in den nächsten
 Schritten mit demselben Muster.
 
 ---
 
 ## Offene Punkte / TODO
+
+### Dokument-Spalten: Breite verkleinern + Header "Dokument" → "Dok." (offen, 16.07.2026)
+
+Nach dem Breiten-Fix in `ViewSaleEdit` (siehe "SalesForm auf
+OverviewTabWidget/DocumentPreviewPanel umgestellt" oben, `kDocColWidth = 120`)
+kam Nessies Feedback: die Dokument-Spalte verbraucht — trotz des Fixes — über
+alle betroffenen Formulare hinweg weiterhin zu viel Platz für eine reine
+Icon-Spalte. Betrifft mindestens:
+
+- `ViewBuyEdit` (Kauf-Übersicht, aktuell Stretch/`-1`)
+- `ViewSaleEdit` (Verkaufs-Übersicht, aktuell fix `kDocColWidth = 120`)
+- `ViewDividendEdit` (aktuell fix `36`, ggf. bereits passend — gegenchecken)
+- `ViewBrokerageEdit` (aktuell fix `36` in der noch nicht auf
+  `OverviewTabWidget` migrierten lokalen Kopie — gegenchecken)
+- `OverviewTabWidget`-Details-Tabs in `ViewShareDetails` (Gewinne/Verluste,
+  Dividenden, Kosten)
+- Die "Verwendete Käufe"-Tabelle im SalesForm-Details-Dialog
+  (`onShowDetails()`, `kColDoc` dort separat, aktuell fix `36`)
+
+Zwei Teilaufgaben, vermutlich am besten gemeinsam mit der noch offenen
+DividendForm/BrokeragesForm/ViewShareAdd-Migration (siehe oben) angegangen,
+damit nicht mehrfach an denselben Stellen gearbeitet wird:
+
+1. **Alle** Dokument-Spalten auf eine einheitliche, kleinere feste Breite
+   bringen (Zielwert noch offen — vermutlich näher an den bereits
+   etablierten `36`px aus DividendForm/BrokeragesForm/FIFO-Detailtabelle als
+   an `ViewSaleEdit`s aktuellem `120`px-Zwischenstand, aber mit Nessie vorher
+   abstimmen statt zu raten).
+2. Spaltenüberschrift überall von "Dokument" auf "Dok." kürzen (Header-Label
+   in `populateOverview()`-Aufrufen bzw. den jeweiligen `jahresHeaders`/
+   `uebersichtHeaders`-Arrays).
 
 ### Brokerage-Vorwärts-Link: ModelBuyEdit/ModelBrokerageEdit ungeprüft (offen, 15.07.2026)
 
