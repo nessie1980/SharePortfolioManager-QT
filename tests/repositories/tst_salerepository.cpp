@@ -42,7 +42,16 @@ private slots:
 
     void init()
     {
+        // Reihenfolge nach Abhängigkeit: sale_buy_details (Kind von sales/buys)
+        // und brokerage (Kind von sales via brokerage.sale_guid, siehe
+        // test_updateBrokerageGuid) zuerst, sonst schlägt "DELETE FROM sales"
+        // mit "FOREIGN KEY constraint failed" fehl und die betroffene Zeile
+        // bleibt stehen — kontaminiert dann nachfolgende Tests (Bugfix
+        // 16.07.2026, siehe ARCHITECTURE.md: test_totalVolume lieferte durch
+        // eine so liegen gebliebene Sale-Zeile aus test_updateBrokerageGuid
+        // 13.0 statt 8.0).
         Database::instance().execute("DELETE FROM sale_buy_details");
+        Database::instance().execute("DELETE FROM brokerage");
         Database::instance().execute("DELETE FROM sales");
         Database::instance().execute("DELETE FROM buys");
     }

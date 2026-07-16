@@ -186,6 +186,18 @@ signals:
      */
     void documentActivated(const QString& path);
 
+    /**
+     * @brief Gefeuert, wenn der sichtbare Tab wechselt (Klick auf den
+     * Übersicht- oder einen Jahres-Tab-Reiter selbst, oder programmatischer
+     * Sprung z.B. durch einen Klick auf eine Übersicht-Zeile) — nicht bei
+     * einem Zeilenklick innerhalb eines Jahres-Tabs (dafür: rowActivated()).
+     * @p index folgt der durchgehenden Zählung (0 = Übersicht, 1..n = Jahre).
+     * Wird während populateOverview()/clear() unterdrückt. In
+     * ViewShareDetails bleibt dieses Signal unverbunden (rein anzeigender
+     * Kontext).
+     */
+    void currentTabChanged(int index);
+
 private:
     /**
      * @brief Generische Frozen-Footer-Tabellen-Fabrik — identisch zum bisherigen

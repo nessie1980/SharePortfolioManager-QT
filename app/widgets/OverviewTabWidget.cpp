@@ -129,8 +129,10 @@ void OverviewTabWidget::setCurrentIndex(int index)
     else
         m_yearsBar->setCurrentIndex(index - 1);
 
-    if (!m_suppressTabSignal)
+    if (!m_suppressTabSignal) {
         clearAllTableSelections();
+        emit currentTabChanged(index);
+    }
 }
 
 // ── clear ─────────────────────────────────────────────────────────────────────

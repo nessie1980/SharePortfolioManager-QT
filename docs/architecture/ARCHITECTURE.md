@@ -469,6 +469,19 @@ zuvor einzigen Test für diesen Pfad) war der Bug unsichtbar. Fix: neue
 `existing.isValid()`-Zweig, zur Absicherung gegen einen vom Aufrufer
 übergebenen veralteten/leeren `sale.brokerageGuid()`-Wert) aufgerufen.
 
+@note **Bugfix: Fremdschlüssel-Verletzung in `tst_salerepository::init()`
+(16.07.2026).** Der obige Regressionstest `test_updateBrokerageGuid` legt
+einen `brokerage`-Datensatz an, der über den Rückwärts-Link
+(`brokerage.sale_guid → sales.guid`) auf die `sales`-Zeile dieses Tests
+zurückverweist. `init()` räumte bisher `sale_buy_details`, `sales` und `buys`
+vor jedem Test auf, aber **nicht** `brokerage` — dadurch schlug `DELETE FROM
+sales` in jedem nachfolgenden `init()`-Aufruf mit `FOREIGN KEY constraint
+failed` fehl, und die betroffene Sale-Zeile (Volumen 5,0) blieb dauerhaft
+stehen. `test_totalVolume` summierte dadurch über eine fremde, liegen
+gebliebene Zeile mit und lieferte 13,0 statt der erwarteten 8,0. Fix: `init()`
+löscht jetzt zusätzlich `brokerage` — vor `sales`, wegen der genannten
+FK-Abhängigkeit.
+
 `PresenterSaleEdit` — Vollständige Verkauf-Logik inkl. Letzter-Verkauf-Erkennung,
 Live-Validierung, Parse-Pipeline und Dokument-Duplikat-Check.
 Depot-gefiltertes FIFO für Kaufzuteilung.
@@ -2404,6 +2417,42 @@ Wechsel `setCurrentIndex(0)` auf allen drei vorhandenen Instanzen
 alle drei statt nur der neu aktiven, das ist einfacher als Index-Tracking pro
 Tab und funktional gleichwertig (der Reset passiert je nachdem beim Verlassen
 oder beim Betreten, in jedem Fall aber bevor der Tab wieder sichtbar wird).
+
+@note **BuysForm auf OverviewTabWidget/DocumentPreviewPanel umgestellt
+(16.07.2026):** `ViewBuyEdit` nutzt für die Kauf-Übersicht `OverviewTabWidget`
+statt einer lokalen Kopie des `buildFrozenTable()`-Musters, und für die
+PDF-Vorschau `DocumentPreviewPanel` statt eigenem QPdfView/pdftoppm-Code.
+`createPreviewPanel()` instanziiert nur noch `DocumentPreviewPanel`,
+`openPdfPreview()`/`clearPdfPreview()` sind reine Weiterleitungen an
+`showDocument()`/`clearDocument()`. `createOverviewGroup()` verdrahtet drei
+Signale: `rowActivated()` (Zeilenklick im Jahres-Tab → Kauf laden),
+`currentTabChanged()` (Tab-Wechsel → Übersicht: Formular zurücksetzen,
+Jahres-Tab: erste Zeile automatisch laden — ersetzt das bisherige
+`QTabWidget::currentChanged`) und `documentActivated()` (Doppelklick
+Dokument-Spalte → Vorschau aktualisieren, neu). Die Dokument-Spalte bleibt
+bewusst Stretch statt fester Breite (ShareEdit-Dialoge haben ein schmaleres
+Grid als ShareDetailsForm, ein fixer 110px-Wert passt hier nicht) — nur der
+Spaltenindex wird als `jahresDocColumn` übergeben, damit der Doppelklick
+funktioniert.
+
+Dafür wurde `OverviewTabWidget` um das Signal `currentTabChanged(int index)`
+erweitert, gefeuert am Ende von `setCurrentIndex()` (außer während
+`populateOverview()`/`clear()`). Grund: anzeigende Kontexte
+(`ViewShareDetails`) brauchen kein Feedback bei Tab-Wechsel, Editier-Dialoge
+aber schon (Formular-Reset bzw. Auto-Laden der ersten Zeile). Das Signal
+bleibt in `ViewShareDetails` unverbunden.
+
+@note **Bugfix nach erstem Build (16.07.2026):** `ViewBuyEdit::setupUi()` rief
+bisher `createOverviewGroup()` vor `createPreviewPanel()` auf — `m_previewPanel`
+war zum Zeitpunkt des `documentActivated`-Connects in `createOverviewGroup()`
+noch `nullptr` (`connect(..., Unknown): invalid nullptr parameter`). Fix:
+`createPreviewPanel()` wird jetzt zuerst aufgerufen (Widget aber erst am Ende
+ins Layout eingefügt, damit die sichtbare Reihenfolge Formular/Vorschau
+unverändert bleibt).
+
+`SalesForm`/`DividendForm`/`BrokeragesForm` sowie `ViewShareAdd` (nur
+`DocumentPreviewPanel`, kein Übersicht-Tab dort) folgen in den nächsten
+Schritten mit demselben Muster.
 
 ---
 

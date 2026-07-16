@@ -97,6 +97,12 @@ void ViewBuyEdit::setupUi()
     main->setContentsMargins(6, 6, 6, 6);
     main->setSpacing(8);
 
+    // Dokumenten-Vorschau zuerst erzeugen (aber erst unten ins Layout
+    // einfügen) — createOverviewGroup() verbindet OverviewTabWidget::
+    // documentActivated mit m_previewPanel und braucht dafür ein bereits
+    // existierendes Objekt (Bugfix 16.07.2026, s. ARCHITECTURE.md).
+    auto* previewPanel = createPreviewPanel();
+
     // ── Left column ───────────────────────────────────────────────────────
     m_leftPanel  = new QWidget;
     auto* leftLayout = new QVBoxLayout(m_leftPanel);
@@ -108,8 +114,8 @@ void ViewBuyEdit::setupUi()
     leftLayout->addWidget(createOverviewGroup(),   1);
     m_leftPanel->setMinimumWidth(480);
 
-    main->addWidget(m_leftPanel,          3);
-    main->addWidget(createPreviewPanel(), 2);
+    main->addWidget(m_leftPanel,  3);
+    main->addWidget(previewPanel, 2);
 }
 
 // ── createKaufdatenGroup ──────────────────────────────────────────────────────
@@ -340,78 +346,8 @@ QGroupBox* ViewBuyEdit::createDocumentGroup()
 
 QWidget* ViewBuyEdit::createPreviewPanel()
 {
-    auto* gb     = new QGroupBox(tr("  Dokumenten-Vorschau"));
-    auto* layout = new QVBoxLayout(gb);
-    layout->setContentsMargins(6, 6, 6, 6);
-    layout->setSpacing(4);
-
-#ifdef SPM_HAVE_QTPDF
-    m_pdfDocument = new QPdfDocument(this);
-    m_pdfView     = new QPdfView(this);
-    m_pdfView->setDocument(m_pdfDocument);
-    m_pdfView->setPageMode(QPdfView::PageMode::MultiPage);
-    m_pdfView->setZoomMode(QPdfView::ZoomMode::FitInView);
-    m_pdfView->setFrameShape(QFrame::StyledPanel);
-    m_pdfView->setStyleSheet(
-        QStringLiteral("QPdfView { background-color: #ffffff; }"
-                        "QPdfView > QWidget { background-color: #ffffff; }"));
-
-    // Zoom bar
-    auto* zoomBar    = new QWidget;
-    auto* zoomLayout = new QHBoxLayout(zoomBar);
-    zoomLayout->setContentsMargins(0, 0, 0, 2);
-    zoomLayout->setSpacing(4);
-
-    auto* btnZoomOut = new QPushButton(QStringLiteral("−"));
-    auto* btnZoomIn  = new QPushButton(QStringLiteral("+"));
-    auto* btnFit     = new QPushButton(tr("Anpassen"));
-    btnZoomOut->setFixedWidth(28);
-    btnZoomIn->setFixedWidth(28);
-    btnFit->setFixedWidth(80);
-
-    m_zoomLabel = new QLabel(QStringLiteral("100%"));
-    m_zoomLabel->setFixedWidth(48);
-    m_zoomLabel->setAlignment(Qt::AlignCenter);
-
-    zoomLayout->addWidget(btnZoomOut);
-    zoomLayout->addWidget(btnZoomIn);
-    zoomLayout->addWidget(btnFit);
-    zoomLayout->addWidget(m_zoomLabel);
-    zoomLayout->addStretch(1);
-
-    connect(btnZoomIn, &QPushButton::clicked, this, [this] {
-        const qreal z = qMin(m_pdfView->zoomFactor() * 1.25, 4.0);
-        m_pdfView->setZoomMode(QPdfView::ZoomMode::Custom);
-        m_pdfView->setZoomFactor(z);
-        m_zoomLabel->setText(QString::number(qRound(z * 100)) + QStringLiteral("%"));
-    });
-    connect(btnZoomOut, &QPushButton::clicked, this, [this] {
-        const qreal z = qMax(m_pdfView->zoomFactor() * 0.8, 0.25);
-        m_pdfView->setZoomMode(QPdfView::ZoomMode::Custom);
-        m_pdfView->setZoomFactor(z);
-        m_zoomLabel->setText(QString::number(qRound(z * 100)) + QStringLiteral("%"));
-    });
-    connect(btnFit, &QPushButton::clicked, this, [this] {
-        m_pdfView->setZoomMode(QPdfView::ZoomMode::FitInView);
-        m_zoomLabel->setText(tr("Anp."));
-    });
-
-    layout->addWidget(zoomBar);
-    layout->addWidget(m_pdfView, 1);
-#else
-    m_pdfLabel = new QLabel;
-    m_pdfLabel->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
-    m_pdfLabel->setText(tr("Wählen Sie ein PDF-Dokument aus.\n"
-                            "Die erste Seite wird hier angezeigt."));
-    m_pdfLabel->setWordWrap(true);
-    m_pdfScroll = new QScrollArea;
-    m_pdfScroll->setWidget(m_pdfLabel);
-    m_pdfScroll->setWidgetResizable(true);
-    m_pdfScroll->setFrameShape(QFrame::StyledPanel);
-    layout->addWidget(m_pdfScroll, 1);
-#endif
-
-    return gb;
+    m_previewPanel = new DocumentPreviewPanel(this);
+    return m_previewPanel;
 }
 
 // ── createButtonBar ───────────────────────────────────────────────────────────
@@ -452,42 +388,52 @@ QGroupBox* ViewBuyEdit::createOverviewGroup()
     auto* layout = new QVBoxLayout(gb);
     layout->setContentsMargins(6, 6, 6, 6);
 
-    m_overviewTabs = new QTabWidget;
+    m_overviewTabs = new OverviewTabWidget();
     m_overviewTabs->setMinimumHeight(140);
     layout->addWidget(m_overviewTabs);
 
-    // Clear row selection when leaving a tab, select first row in new tab
-    connect(m_overviewTabs, &QTabWidget::currentChanged,
-            this, [this](int newIndex) {
-        if (m_suppressTabSignal) return;
+    // Zeilenklick in einem Jahres-Tab → Kauf laden. GUID kommt direkt aus
+    // OverviewTabWidget::rowActivated(), kein eigener Slot mehr nötig.
+    connect(m_overviewTabs, &OverviewTabWidget::rowActivated,
+            this, [this](const QVariant& userData) {
+                const QString guid = userData.toString();
+                if (!guid.isEmpty() && m_presenter)
+                    m_presenter->onRowSelected(guid);
+            });
 
-        // Deselect all tables in all tabs
-        for (int i = 0; i < m_overviewTabs->count(); ++i) {
-            auto* container = m_overviewTabs->widget(i);
-            if (!container) continue;
-            const auto tables = container->findChildren<QTableWidget*>();
-            for (auto* tbl : tables)
-                tbl->clearSelection();
-        }
-        // Switching back to Übersicht: no buy selected → reset form
-        if (newIndex == 0) {
-            if (m_presenter) m_presenter->onReset();
-            return;
-        }
-        // Switching to a Jahres-tab: auto-select first row and load that buy
-        auto* container = m_overviewTabs->widget(newIndex);
-        if (!container) return;
-        auto* tbl = qobject_cast<QTableWidget*>(
-            container->property("dataTable").value<QObject*>());
-        if (!tbl || tbl->rowCount() == 0) return;
-        tbl->selectRow(0);
-        // Inform the presenter so the form is populated
-        auto* item = tbl->item(0, 0);
-        if (!item) return;
-        const QString guid = item->data(Qt::UserRole).toString();
-        if (!guid.isEmpty() && m_presenter)
-            m_presenter->onRowSelected(guid);
-    });
+    // Tab-Wechsel (Übersicht ↔ Jahr — egal ob per Reiter-Klick oder per
+    // Zeilenklick in der Übersicht ausgelöst, beides läuft intern über
+    // OverviewTabWidget::setCurrentIndex()): identisches Verhalten zum
+    // bisherigen QTabWidget::currentChanged — Übersicht → Formular
+    // zurücksetzen, Jahres-Tab → erste Zeile automatisch laden.
+    // Selektion in allen Tabellen wird von OverviewTabWidget selbst geleert.
+    connect(m_overviewTabs, &OverviewTabWidget::currentTabChanged,
+            this, [this](int newIndex) {
+                if (m_suppressTabSignal)
+                    return;
+
+                if (newIndex == 0) {
+                    if (m_presenter) m_presenter->onReset();
+                    return;
+                }
+
+                auto* container = m_overviewTabs->widget(newIndex);
+                if (!container) return;
+                auto* tbl = qobject_cast<QTableWidget*>(
+                    container->property("dataTable").value<QObject*>());
+                if (!tbl || tbl->rowCount() == 0) return;
+                tbl->selectRow(0);
+                auto* item = tbl->item(0, 0);
+                if (!item) return;
+                const QString guid = item->data(Qt::UserRole).toString();
+                if (!guid.isEmpty() && m_presenter)
+                    m_presenter->onRowSelected(guid);
+            });
+
+    // Doppelklick auf die Dokument-Spalte einer Jahres-Tab-Zeile →
+    // eingebettete Vorschau aktualisieren (neu, analog ShareDetailsForm).
+    connect(m_overviewTabs, &OverviewTabWidget::documentActivated,
+            m_previewPanel, &DocumentPreviewPanel::showDocument);
 
     return gb;
 }
@@ -776,14 +722,10 @@ void ViewBuyEdit::onParseFinished()
 void ViewBuyEdit::populateOverview(const QList<BuyObject>&       buys,
                                    const QList<BrokerageObject>& brokerages)
 {
-    // Remove old tabs — suppress currentChanged so onReset() isn't triggered.
-    m_suppressTabSignal = true;
-    while (m_overviewTabs->count() > 0)
-        m_overviewTabs->removeTab(0);
-    // Keep suppressed until all new tabs are added (addTab also fires currentChanged).
-
-    if (buys.isEmpty())
+    if (buys.isEmpty()) {
+        m_overviewTabs->clear();
         return;
+    }
 
     // Collect distinct years, sorted descending (newest year first).
     QList<int> years;
@@ -794,198 +736,55 @@ void ViewBuyEdit::populateOverview(const QList<BuyObject>&       buys,
     }
     std::sort(years.begin(), years.end(), std::greater<int>());
 
-    // ── Shared helpers ────────────────────────────────────────────────────
-    const QFont boldFont = [&]{ QFont f; f.setBold(true); return f; }();
+    // ── Übersicht-Aggregation (Jahr | Anteile | Einzahlung) ────────────────
+    QMap<int, double> yearVol;
+    QMap<int, double> yearVal;
+    double totalVol = 0.0, totalVal = 0.0, totalEinzahlung = 0.0;
+    for (int i = 0; i < buys.size(); ++i) {
+        const BuyObject&       b  = buys.at(i);
+        const BrokerageObject& br = brokerages.at(i);
+        const double einzahlung = br.isValid()
+                                      ? b.buyValue() + br.brokerageReduction()
+                                      : b.buyValue();
+        yearVol[b.year()] += b.volume();
+        yearVal[b.year()] += einzahlung;
+        totalEinzahlung   += einzahlung;
+    }
+    for (int y : std::as_const(years)) {
+        totalVol += yearVol.value(y);
+        totalVal += yearVal.value(y);
+    }
 
-    // Builds a frozen-footer widget:
-    //   ┌─────────────────────────────────┐
-    //   │  dataTable  (scrollable, flex)  │
-    //   ├─────────────────────────────────┤  QFrame::HLine separator
-    //   │  footerTable (1 row, fixed h.)  │
-    //   └─────────────────────────────────┘
-    // Column widths of footerTable are kept in sync with dataTable via
-    // QHeaderView::sectionResized so all values line up perfectly.
-    //
-    // colCount   : number of columns (same for both tables)
-    // headers    : column header labels for dataTable
-    // populateData : lambda that fills dataTable rows and returns totals
-    // populateFooter: lambda that fills the single footer row
-
-    // ── buildFrozenTable: generic factory used by both tab types ──────────
-    auto buildFrozenTable = [&](
-        int colCount,
-        const QStringList& headers,
-        const QList<int>& colWidths,          // initial width per column; -1 = stretch
-        std::function<void(QTableWidget*)> populateData,
-        std::function<void(QTableWidget*)> populateFooter
-    ) -> QWidget*
-    {
-        // ── Data table ────────────────────────────────────────────────────
-        auto* data = new QTableWidget(0, colCount);
-        data->setHorizontalHeaderLabels(headers);
-        data->setEditTriggers(QAbstractItemView::NoEditTriggers);
-        data->setSelectionBehavior(QAbstractItemView::SelectRows);
-        data->setSelectionMode(QAbstractItemView::SingleSelection);
-        data->setAlternatingRowColors(true);
-        data->verticalHeader()->setVisible(false);
-        data->setFrameShape(QFrame::NoFrame);
-        data->horizontalHeader()->setStretchLastSection(false);
-
-        populateData(data);
-
-        // Apply fixed initial widths; -1 means stretch that column
-        for (int c = 0; c < colCount && c < colWidths.size(); ++c) {
-            if (colWidths.at(c) < 0)
-                data->horizontalHeader()->setSectionResizeMode(c, QHeaderView::Stretch);
-            else
-                data->setColumnWidth(c, colWidths.at(c));
-        }
-
-        // ── Footer table (1 row, no header, no scrollbars) ────────────────
-        auto* footer = new QTableWidget(1, colCount);
-        footer->setEditTriggers(QAbstractItemView::NoEditTriggers);
-        footer->setSelectionMode(QAbstractItemView::NoSelection);
-        footer->horizontalHeader()->setVisible(false);
-        footer->verticalHeader()->setVisible(false);
-        footer->setFrameShape(QFrame::NoFrame);
-        footer->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        footer->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        footer->horizontalHeader()->setStretchLastSection(false);
-
-        // Match the row height of the data table
-        const int rowH = data->rowHeight(0) > 0 ? data->rowHeight(0) : 22;
-        footer->setFixedHeight(rowH + 2);
-
-        populateFooter(footer);
-
-        // Apply same widths to footer
-        for (int c = 0; c < colCount && c < colWidths.size(); ++c) {
-            if (colWidths.at(c) < 0)
-                footer->horizontalHeader()->setSectionResizeMode(c, QHeaderView::Stretch);
-            else
-                footer->setColumnWidth(c, colWidths.at(c));
-        }
-
-        // Style footer row: bold, base colour (no alternating)
-        for (int c = 0; c < colCount; ++c) {
-            if (auto* it = footer->item(0, c)) {
-                it->setFont(boldFont);
-                it->setBackground(footer->palette().base());
-            }
-        }
-
-        // Keep in sync when the user resizes a column interactively
-        QObject::connect(
-            data->horizontalHeader(), &QHeaderView::sectionResized,
-            footer, [footer](int logicalIndex, int /*old*/, int newSize) {
-                footer->setColumnWidth(logicalIndex, newSize);
-            });
-        // Einmalige initiale Übertragung nach dem ersten Paint
-        QTimer::singleShot(0, data, [data, footer, colCount]() {
-            for (int c = 0; c < colCount; ++c)
-                footer->setColumnWidth(c, data->columnWidth(c));
-        });
-
-        // ── Separator line ────────────────────────────────────────────────
-        auto* sep = new QFrame;
-        sep->setFrameShape(QFrame::HLine);
-        sep->setFrameShadow(QFrame::Sunken);
-
-        // ── Compose ───────────────────────────────────────────────────────
-        auto* container = new QWidget;
-        auto* vbox      = new QVBoxLayout(container);
-        vbox->setContentsMargins(0, 0, 0, 0);
-        vbox->setSpacing(0);
-        vbox->addWidget(data,   1);
-        vbox->addWidget(sep,    0);
-        vbox->addWidget(footer, 0);
-
-        // Store pointer to data table so currentChanged can retrieve it reliably.
-        container->setProperty("dataTable", QVariant::fromValue<QObject*>(data));
-
-        return container;
-    };
-
-    // ── Übersicht-Tab (Jahr | Anteile | Einzahlung) ───────────────────────
-    {
-        // Aggregate per year
-        QMap<int, double> yearVol;
-        QMap<int, double> yearVal;
-        QList<int>        yearOrder;
-
-        for (int i = 0; i < buys.size(); ++i) {
-            const BuyObject&       b  = buys.at(i);
-            const BrokerageObject& br = brokerages.at(i);
-            const int y = b.year();
-            const double einzahlung = br.isValid()
-                ? b.buyValue() + br.brokerageReduction()
-                : b.buyValue();
-            if (!yearOrder.contains(y)) yearOrder.append(y);
-            yearVol[y] += b.volume();
-            yearVal[y] += einzahlung;
-        }
-        std::sort(yearOrder.begin(), yearOrder.end(), std::greater<int>());
-
-        double totalVol = 0.0, totalVal = 0.0;
-        for (int y : std::as_const(yearOrder)) {
-            totalVol += yearVol[y];
-            totalVal += yearVal[y];
-        }
-
-        auto populateData = [&](QTableWidget* tbl) {
-            tbl->setRowCount(yearOrder.size());
-            for (int i = 0; i < yearOrder.size(); ++i) {
-                const int y = yearOrder.at(i);
-                auto* iYear = new QTableWidgetItem(QString::number(y));
-                auto* iVol  = new QTableWidgetItem(
-                    formatVolume(yearVol[y]) + QStringLiteral(" stk."));
-                auto* iVal  = new QTableWidgetItem(
-                    formatMoney(yearVal[y]) + QStringLiteral(" €"));
-                iYear->setTextAlignment(Qt::AlignCenter);
-                iVol->setTextAlignment(Qt::AlignCenter);
-                iVal->setTextAlignment(Qt::AlignCenter);
-                // Store year value for tab-jump on click
-                iYear->setData(Qt::UserRole, y);
-                tbl->setItem(i, 0, iYear);
-                tbl->setItem(i, 1, iVol);
-                tbl->setItem(i, 2, iVal);
-            }
-
-            connect(tbl, &QTableWidget::cellClicked,
-                    this, &ViewBuyEdit::onUebersichtRowActivated);
-        };
-
-        auto populateFooter = [&](QTableWidget* f) {
-            auto* iLabel = new QTableWidgetItem(tr("Gesamt:"));
-            auto* iVol   = new QTableWidgetItem(
-                formatVolume(totalVol) + QStringLiteral(" stk."));
-            auto* iVal   = new QTableWidgetItem(
-                formatMoney(totalVal) + QStringLiteral(" €"));
-            iLabel->setTextAlignment(Qt::AlignCenter);
+    auto populateUebersichtData = [this, years, yearVol, yearVal](QTableWidget* tbl) {
+        tbl->setRowCount(years.size());
+        for (int i = 0; i < years.size(); ++i) {
+            const int y = years.at(i);
+            auto* iYear = new QTableWidgetItem(QString::number(y));
+            auto* iVol  = new QTableWidgetItem(formatVolume(yearVol.value(y)) + QStringLiteral(" stk."));
+            auto* iVal  = new QTableWidgetItem(formatMoney(yearVal.value(y)) + QStringLiteral(" €"));
+            iYear->setTextAlignment(Qt::AlignCenter);
             iVol->setTextAlignment(Qt::AlignCenter);
             iVal->setTextAlignment(Qt::AlignCenter);
-            f->setItem(0, 0, iLabel);
-            f->setItem(0, 1, iVol);
-            f->setItem(0, 2, iVal);
-        };
-
-        double totalEinzahlung = 0.0;
-        for (int i = 0; i < buys.size(); ++i) {
-            const BrokerageObject& br = brokerages.at(i);
-            totalEinzahlung += br.isValid()
-                ? buys.at(i).buyValue() + br.brokerageReduction()
-                : buys.at(i).buyValue();
+            iYear->setData(Qt::UserRole, y);
+            tbl->setItem(i, 0, iYear);
+            tbl->setItem(i, 1, iVol);
+            tbl->setItem(i, 2, iVal);
         }
-        const QString tabTitle =
-            tr("Übersicht (%1 €)").arg(formatMoney(totalEinzahlung));
+    };
 
-        m_overviewTabs->addTab(
-            buildFrozenTable(3,
-                { tr("Jahr"), tr("Anteile"), tr("Einzahlung") },
-                { 100, -1, -1 },   // Jahr fest | Anteile (stretch) | Einzahlung (stretch)
-                populateData, populateFooter),
-            tabTitle);
-    }
+    auto populateUebersichtFooter = [totalVol, totalVal](QTableWidget* f) {
+        auto* iLabel = new QTableWidgetItem(tr("Gesamt:"));
+        auto* iVol   = new QTableWidgetItem(formatVolume(totalVol) + QStringLiteral(" stk."));
+        auto* iVal   = new QTableWidgetItem(formatMoney(totalVal) + QStringLiteral(" €"));
+        iLabel->setTextAlignment(Qt::AlignCenter);
+        iVol->setTextAlignment(Qt::AlignCenter);
+        iVal->setTextAlignment(Qt::AlignCenter);
+        f->setItem(0, 0, iLabel);
+        f->setItem(0, 1, iVol);
+        f->setItem(0, 2, iVal);
+    };
+
+    const QString uebersichtTitle = tr("Übersicht (%1 €)").arg(formatMoney(totalEinzahlung));
 
     // ── Jahres-Tabs (Datum | Anteile | Kurswert | Gebühren | Einzahlung | Dok.) ──
     constexpr int kColDate       = 0;
@@ -994,160 +793,142 @@ void ViewBuyEdit::populateOverview(const QList<BuyObject>&       buys,
     constexpr int kColGebuehren  = 3;
     constexpr int kColEinzahlung = 4;
     constexpr int kColDoc        = 5;
-    constexpr int kColCount      = 6;
 
     const QStringList jahresHeaders = {
         tr("Datum"), tr("Anteile"), tr("Kurswert"),
         tr("Gebühren"), tr("Einzahlung"), tr("Dokument")
     };
 
-    for (int year : std::as_const(years)) {
+    auto populateJahresData = [this, buys, brokerages](int year, QTableWidget* tbl) {
         QList<BuyObject>       yearBuys;
         QList<BrokerageObject> yearBrokerages;
-        double yearTotal = 0.0;
-
         for (int i = 0; i < buys.size(); ++i) {
             if (buys.at(i).year() == year) {
                 yearBuys.append(buys.at(i));
                 yearBrokerages.append(brokerages.at(i));
-                const BrokerageObject& br = brokerages.at(i);
-                yearTotal += br.isValid()
-                    ? buys.at(i).buyValue() + br.brokerageReduction()
-                    : buys.at(i).buyValue();
             }
         }
 
-        // Capture totals for this year's footer lambda
-        double totVol = 0.0, totGebuehr = 0.0, totEinzahlung = 0.0;
-
+        tbl->setRowCount(yearBuys.size());
         for (int i = 0; i < yearBuys.size(); ++i) {
             const BuyObject&       b  = yearBuys.at(i);
             const BrokerageObject& br = yearBrokerages.at(i);
+
+            const double kurswert   = b.price();
+            const double gebuehren  = br.isValid() ? br.brokerageReduction() : 0.0;
+            const double einzahlung = b.buyValue() + gebuehren;
+
+            // ⚠️ Datumsformat bitte gegen Original prüfen.
+            auto* iDate = new QTableWidgetItem(
+                QDateTime::fromString(b.dateTime(), Qt::ISODate).date().toString(QStringLiteral("dd.MM.yyyy")));
+            iDate->setTextAlignment(Qt::AlignCenter);
+            iDate->setData(Qt::UserRole, b.guid());
+
+            auto* iVol = new QTableWidgetItem(formatVolume(b.volume()) + QStringLiteral(" stk."));
+            iVol->setTextAlignment(Qt::AlignCenter);
+
+            auto* iKurswert = new QTableWidgetItem(formatMoney(kurswert) + QStringLiteral(" €"));
+            iKurswert->setTextAlignment(Qt::AlignCenter);
+
+            auto* iGebuehr = new QTableWidgetItem(formatMoney(gebuehren) + QStringLiteral(" €"));
+            iGebuehr->setTextAlignment(Qt::AlignCenter);
+
+            auto* iEinzahlung = new QTableWidgetItem(formatMoney(einzahlung) + QStringLiteral(" €"));
+            iEinzahlung->setTextAlignment(Qt::AlignCenter);
+
+            auto* iDoc = new QTableWidgetItem;
+            iDoc->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            if (!b.document().isEmpty()) {
+                const QString ext = QFileInfo(b.document()).suffix().toLower();
+                IconProvider::IconName iconName;
+                if (ext == QStringLiteral("pdf"))
+                    iconName = IconProvider::DocPdfImage16;
+                else if (ext == QStringLiteral("doc") || ext == QStringLiteral("docx"))
+                    iconName = IconProvider::DocWordImage16;
+                else if (ext == QStringLiteral("xls") || ext == QStringLiteral("xlsx"))
+                    iconName = IconProvider::DocExcelImage16;
+                else
+                    iconName = IconProvider::SearchFailed2;
+
+                auto* iconLabel = new QLabel;
+                iconLabel->setPixmap(IconProvider::icon(iconName).pixmap(16, 16));
+                iconLabel->setAlignment(Qt::AlignCenter);
+                iconLabel->setToolTip(b.document());
+                iDoc->setData(Qt::UserRole, b.document());  // für documentActivated()
+                tbl->setItem(i, kColDoc, iDoc);
+                tbl->setCellWidget(i, kColDoc, iconLabel);
+            } else {
+                iDoc->setText(QStringLiteral("-"));
+                iDoc->setTextAlignment(Qt::AlignCenter);
+                tbl->setItem(i, kColDoc, iDoc);
+            }
+
+            tbl->setItem(i, kColDate,       iDate);
+            tbl->setItem(i, kColVolume,     iVol);
+            tbl->setItem(i, kColKurswert,   iKurswert);
+            tbl->setItem(i, kColGebuehren,  iGebuehr);
+            tbl->setItem(i, kColEinzahlung, iEinzahlung);
+        }
+    };
+
+    auto populateJahresFooter = [this, buys, brokerages](int year, QTableWidget* f) {
+        double totVol = 0.0, totGebuehr = 0.0, totEinzahlung = 0.0;
+        for (int i = 0; i < buys.size(); ++i) {
+            if (buys.at(i).year() != year)
+                continue;
+            const BuyObject&       b  = buys.at(i);
+            const BrokerageObject& br = brokerages.at(i);
             totVol        += b.volume();
             totGebuehr    += br.isValid() ? br.brokerageReduction() : 0.0;
             totEinzahlung += b.buyValue() + (br.isValid() ? br.brokerageReduction() : 0.0);
         }
 
-        // Capture by value for lambdas
-        QList<BuyObject>       captBuys       = yearBuys;
-        QList<BrokerageObject> captBrokerages = yearBrokerages;
-        double cTotVol = totVol, cTotGebuehr = totGebuehr, cTotEinzahlung = totEinzahlung;
+        auto* iLabel      = new QTableWidgetItem(tr("Gesamt:"));
+        auto* iVol        = new QTableWidgetItem(formatVolume(totVol) + QStringLiteral(" stk."));
+        auto* iKurswert   = new QTableWidgetItem(QStringLiteral("-"));
+        auto* iGebuehr    = new QTableWidgetItem(formatMoney(totGebuehr) + QStringLiteral(" €"));
+        auto* iEinzahlung = new QTableWidgetItem(formatMoney(totEinzahlung) + QStringLiteral(" €"));
+        auto* iDoc        = new QTableWidgetItem(QStringLiteral("-"));
+        for (auto* it : { iLabel, iVol, iKurswert, iGebuehr, iEinzahlung, iDoc })
+            it->setTextAlignment(Qt::AlignCenter);
 
-        auto populateData = [&, captBuys, captBrokerages](QTableWidget* tbl) {
-            tbl->setRowCount(captBuys.size());
+        f->setItem(0, kColDate,       iLabel);
+        f->setItem(0, kColVolume,     iVol);
+        f->setItem(0, kColKurswert,   iKurswert);
+        f->setItem(0, kColGebuehren,  iGebuehr);
+        f->setItem(0, kColEinzahlung, iEinzahlung);
+        f->setItem(0, kColDoc,        iDoc);
+    };
 
-            for (int i = 0; i < captBuys.size(); ++i) {
-                const BuyObject&       b  = captBuys.at(i);
-                const BrokerageObject& br = captBrokerages.at(i);
+    auto jahresTitleForYear = [this, buys, brokerages](int year) {
+        double yearTotal = 0.0;
+        for (int i = 0; i < buys.size(); ++i) {
+            if (buys.at(i).year() != year)
+                continue;
+            const BrokerageObject& br = brokerages.at(i);
+            yearTotal += br.isValid()
+                             ? buys.at(i).buyValue() + br.brokerageReduction()
+                             : buys.at(i).buyValue();
+        }
+        return tr("%1 (%2 €)").arg(year).arg(formatMoney(yearTotal));
+    };
 
-                const double kurswert   = b.price();
-                const double gebuehren  = br.isValid() ? br.brokerageReduction() : 0.0;
-                const double einzahlung = b.buyValue() + gebuehren;
-
-                auto* iDate = new QTableWidgetItem(b.dateAsStr());
-                iDate->setData(Qt::UserRole, b.guid()); // for onRowSelected
-                iDate->setTextAlignment(Qt::AlignCenter);
-
-                auto* iVol = new QTableWidgetItem(
-                    formatVolume(b.volume()) + QStringLiteral(" stk."));
-                iVol->setTextAlignment(Qt::AlignCenter);
-
-                auto* iKurswert = new QTableWidgetItem(
-                    formatMoney(kurswert) + QStringLiteral(" €"));
-                iKurswert->setTextAlignment(Qt::AlignCenter);
-
-                auto* iGebuehr = new QTableWidgetItem(
-                    formatMoney(gebuehren) + QStringLiteral(" €"));
-                iGebuehr->setTextAlignment(Qt::AlignCenter);
-
-                auto* iEinzahlung = new QTableWidgetItem(
-                    formatMoney(einzahlung) + QStringLiteral(" €"));
-                iEinzahlung->setTextAlignment(Qt::AlignCenter);
-
-                auto* iDoc = new QTableWidgetItem;
-                iDoc->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-                if (!b.document().isEmpty()) {
-                    // Choose icon by file extension
-                    const QString ext = QFileInfo(b.document()).suffix().toLower();
-                    IconProvider::IconName iconName;
-                    if (ext == QStringLiteral("pdf"))
-                        iconName = IconProvider::DocPdfImage16;
-                    else if (ext == QStringLiteral("doc") || ext == QStringLiteral("docx"))
-                        iconName = IconProvider::DocWordImage16;
-                    else if (ext == QStringLiteral("xls") || ext == QStringLiteral("xlsx"))
-                        iconName = IconProvider::DocExcelImage16;
-                    else
-                        iconName = IconProvider::SearchFailed2;  // unknown file type
-
-                    auto* iconLabel = new QLabel;
-                    iconLabel->setPixmap(IconProvider::icon(iconName).pixmap(16, 16));
-                    iconLabel->setAlignment(Qt::AlignCenter);
-                    iconLabel->setToolTip(b.document());
-                    tbl->setItem(i, kColDoc, iDoc);
-                    tbl->setCellWidget(i, kColDoc, iconLabel);
-                } else {
-                    iDoc->setText(QStringLiteral("-"));
-                    iDoc->setTextAlignment(Qt::AlignCenter);
-                    tbl->setItem(i, kColDoc, iDoc);
-                }
-
-                tbl->setItem(i, kColDate,       iDate);
-                tbl->setItem(i, kColVolume,      iVol);
-                tbl->setItem(i, kColKurswert,    iKurswert);
-                tbl->setItem(i, kColGebuehren,   iGebuehr);
-                tbl->setItem(i, kColEinzahlung,  iEinzahlung);
-            }
-
-            connect(tbl, &QTableWidget::cellClicked,
-                    this, &ViewBuyEdit::onOverviewRowActivated);
-        };
-
-        // Pre-format totals before capturing into the lambda
-        // (formatVolume/formatMoney are private static — can't call from a
-        //  non-capturing lambda; capture pre-built strings instead)
-        const QString sFooterVol  = formatVolume(cTotVol)      + QStringLiteral(" stk.");
-        const QString sFooterKurs = QStringLiteral("-");
-        const QString sFooterGeb  = formatMoney(cTotGebuehr)   + QStringLiteral(" €");
-        const QString sFooterEin  = formatMoney(cTotEinzahlung)+ QStringLiteral(" €");
-
-        auto populateFooter = [sFooterVol, sFooterKurs,
-                                sFooterGeb, sFooterEin](QTableWidget* f) {
-            auto* iLabel      = new QTableWidgetItem(tr("Gesamt:"));
-            iLabel->setTextAlignment(Qt::AlignCenter);
-            auto* iVol        = new QTableWidgetItem(sFooterVol);
-            auto* iKurswert   = new QTableWidgetItem(sFooterKurs);
-            auto* iGebuehr    = new QTableWidgetItem(sFooterGeb);
-            auto* iEinzahlung = new QTableWidgetItem(sFooterEin);
-            auto* iDoc        = new QTableWidgetItem(QStringLiteral("-"));
-
-            iVol->setTextAlignment(Qt::AlignCenter);
-            iKurswert->setTextAlignment(Qt::AlignCenter);
-            iGebuehr->setTextAlignment(Qt::AlignCenter);
-            iEinzahlung->setTextAlignment(Qt::AlignCenter);
-            iDoc->setTextAlignment(Qt::AlignCenter);
-
-            f->setItem(0, kColDate,       iLabel);
-            f->setItem(0, kColVolume,     iVol);
-            f->setItem(0, kColKurswert,   iKurswert);
-            f->setItem(0, kColGebuehren,  iGebuehr);
-            f->setItem(0, kColEinzahlung, iEinzahlung);
-            f->setItem(0, kColDoc,        iDoc);
-        };
-
-        const QString tabTitle =
-            tr("%1 (%2 €)").arg(year).arg(formatMoney(yearTotal));
-
-        auto* tabWidget = buildFrozenTable(kColCount, jahresHeaders,
-            { 100, -1, -1, -1, -1, -1 },
-            // Datum(100px) | alle anderen Spalten gleichmaessig stretch
-            populateData, populateFooter);
-
-        m_overviewTabs->addTab(tabWidget, tabTitle);
-    }
-
-    // Switch to Übersicht tab while still suppressed, then release.
-    m_overviewTabs->setCurrentIndex(0);
-    m_suppressTabSignal = false;
+    // Dokument-Spalte bleibt Stretch (kein fixer 110px-Wert, siehe Absprache) —
+    // kColDoc wird nur als jahresDocColumn übergeben, damit Doppelklick
+    // documentActivated() auslöst.
+    m_overviewTabs->populateOverview(
+        years,
+        uebersichtTitle,
+        { tr("Jahr"), tr("Anteile"), tr("Einzahlung") },
+        { 100, -1, -1 },
+        populateUebersichtData,
+        populateUebersichtFooter,
+        jahresHeaders,
+        { 100, -1, -1, -1, -1, -1 },
+        jahresTitleForYear,
+        populateJahresData,
+        populateJahresFooter,
+        kColDoc);
 }
 
 // ── showOverviewTab ───────────────────────────────────────────────────────────
@@ -1168,58 +949,14 @@ void ViewBuyEdit::showOverviewTab()
 
 void ViewBuyEdit::clearPdfPreview()
 {
-#ifdef SPM_HAVE_QTPDF
-    m_pdfDocument->close();
-#else
-    if (m_pdfRenderProc) {
-        m_pdfRenderProc->kill();
-        m_pdfRenderProc->deleteLater();
-        m_pdfRenderProc = nullptr;
-    }
-    m_pdfLabel->clear();
-    m_pdfLabel->setText(tr("Kein Dokument ausgewählt."));
-#endif
+    m_previewPanel->clearDocument();
 }
 
 // ── openPdfPreview ────────────────────────────────────────────────────────────
 
 void ViewBuyEdit::openPdfPreview(const QString& pdfPath)
 {
-#ifdef SPM_HAVE_QTPDF
-    m_pdfDocument->close();
-    m_pdfDocument->load(pdfPath);
-    m_pdfView->setZoomMode(QPdfView::ZoomMode::FitInView);
-    QTimer::singleShot(100, this, [this]() {
-        m_pdfView->setZoomMode(QPdfView::ZoomMode::FitInView);
-    });
-#else
-    m_pdfImagePath = QDir::tempPath() + QStringLiteral("/spm_buy_preview");
-    if (m_pdfRenderProc) { m_pdfRenderProc->kill(); m_pdfRenderProc->deleteLater(); }
-    m_pdfRenderProc = new QProcess(this);
-    connect(m_pdfRenderProc,
-            QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, [this](int exitCode, QProcess::ExitStatus) {
-        if (m_pdfRenderProc) { m_pdfRenderProc->deleteLater(); m_pdfRenderProc = nullptr; }
-        if (exitCode != 0) {
-            m_pdfLabel->setText(tr("PDF-Vorschau konnte nicht gerendert werden."));
-            return;
-        }
-        const QString imgPath = m_pdfImagePath + QStringLiteral("-1.png");
-        QPixmap px(imgPath);
-        if (px.isNull()) { m_pdfLabel->setText(tr("Vorschaubild nicht gefunden.")); return; }
-        const int availW = m_pdfScroll->viewport()->width() - 4;
-        if (availW > 0 && px.width() > availW)
-            px = px.scaledToWidth(availW, Qt::SmoothTransformation);
-        m_pdfLabel->setPixmap(px);
-        m_pdfLabel->resize(px.size());
-    });
-    m_pdfRenderProc->start(QStringLiteral("pdftoppm"),
-                           { QStringLiteral("-r"),   QStringLiteral("150"),
-                             QStringLiteral("-png"),
-                             QStringLiteral("-f"),   QStringLiteral("1"),
-                             QStringLiteral("-l"),   QStringLiteral("1"),
-                             pdfPath, m_pdfImagePath });
-#endif
+    m_previewPanel->showDocument(pdfPath);
 }
 
 // ── setButtonStates ───────────────────────────────────────────────────────────
@@ -1295,50 +1032,6 @@ void ViewBuyEdit::onBrowseDocument()
         m_documentPath->setText(path);
         m_presenter->onDocumentPathEdited();   // validate duplicate before parsing
         m_presenter->onDocumentSelected(path);
-    }
-}
-
-void ViewBuyEdit::onOverviewRowActivated(int row, int /*column*/)
-{
-    // The signal comes from the QTableWidget itself, so use sender().
-    auto* tbl = qobject_cast<QTableWidget*>(sender());
-    if (!tbl)
-        return;
-
-    // Übersicht-tab has no individual buy rows — skip it.
-    // Jahres-tabs store the buy GUID in column 0 (Datum column), UserRole.
-    auto* item = tbl->item(row, 0);
-    if (!item)
-        return;
-
-    const QString guid = item->data(Qt::UserRole).toString();
-    if (!guid.isEmpty())
-        m_presenter->onRowSelected(guid);
-}
-
-void ViewBuyEdit::onUebersichtRowActivated(int row, int /*column*/)
-{
-    // Read the year stored in column 0, UserRole, and jump to that year's tab.
-    auto* tbl = qobject_cast<QTableWidget*>(sender());
-    if (!tbl)
-        return;
-
-    auto* item = tbl->item(row, 0);
-    if (!item)
-        return;
-
-    const int year = item->data(Qt::UserRole).toInt();
-    if (year == 0)
-        return;
-
-    // Tab 0 = Übersicht, Tab 1..N = years in insertion order.
-    // Find the tab whose title starts with the year string.
-    const QString yearStr = QString::number(year);
-    for (int i = 1; i < m_overviewTabs->count(); ++i) {
-        if (m_overviewTabs->tabText(i).startsWith(yearStr)) {
-            m_overviewTabs->setCurrentIndex(i);
-            return;
-        }
     }
 }
 

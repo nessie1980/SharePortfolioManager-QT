@@ -160,6 +160,10 @@ qt_add_executable(tst_buysform tst_buysform.cpp
     ../../app/forms/BuysForm/PresenterBuyEdit.cpp
     ../../app/forms/BuysForm/ViewBuyEdit.h
     ../../app/forms/BuysForm/ViewBuyEdit.cpp
+    ../../app/widgets/OverviewTabWidget.h
+    ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/widgets/DocumentPreviewPanel.h
+    ../../app/widgets/DocumentPreviewPanel.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
     ../../app/config/AppSettings.cpp
@@ -256,6 +260,10 @@ qt_add_executable(tst_shareeditform tst_shareeditform.cpp
     ../../app/forms/BrokeragesForm/PresenterBrokerageEdit.cpp
     ../../app/forms/BrokeragesForm/ViewBrokerageEdit.h
     ../../app/forms/BrokeragesForm/ViewBrokerageEdit.cpp
+    ../../app/widgets/OverviewTabWidget.h
+    ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/widgets/DocumentPreviewPanel.h
+    ../../app/widgets/DocumentPreviewPanel.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
     ../../app/config/AppSettings.cpp

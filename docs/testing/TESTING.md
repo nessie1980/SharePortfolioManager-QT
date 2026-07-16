@@ -142,6 +142,14 @@ Die Repository-Tests decken `BuyRepository`, `SaleRepository`, `DividendReposito
 `ShareRepository`, `BrokerageRepository` und `DailyValuesRepository` ab — CRUD-Operationen,
 Filterung, Sortierung und Transaktionsverhalten je Repository.
 
+@note **Bugfix: `brokerage` fehlte in `tst_salerepository::init()` (16.07.2026,
+siehe ARCHITECTURE.md "SalesForm-Details"):** `test_updateBrokerageGuid` legt
+einen `brokerage`-Datensatz an, der per Rückwärts-Link auf die `sales`-Zeile
+des Tests verweist. Da `init()` `brokerage` nicht mit aufräumte, scheiterte
+`DELETE FROM sales` in jedem folgenden Testlauf an der FK-Constraint, und die
+Zeile blieb liegen — `test_totalVolume` summierte in der Folge 13,0 statt
+8,0. Fix: `init()` löscht jetzt auch `brokerage`, vor `sales`.
+
 Regressionstest `test_totalPayoutWithTaxes_matchesDoubleRoundedDividendObjectSum`
 (tst_dividendrepository.cpp): Verifiziert, dass `DividendRepository::totalPayoutWithTaxes()`
 bei Fremdwährungs-Dividenden dieselbe zweistufige Rundung anwendet wie
@@ -465,6 +473,14 @@ ViewBuyEdit:
 ---
 
 ViewBuyEdit — populateOverview:
+
+@note Migration auf OverviewTabWidget (16.07.2026, siehe ARCHITECTURE.md):
+alle Tests in diesem Abschnitt und in "ViewBuyEdit — Tab-Klick-Logik" wurden
+von `findChild<QTabWidget*>()` auf `findChild<OverviewTabWidget*>()`
+umgestellt — reiner Typ-Austausch, da `count()/widget()/tabText()/
+currentIndex()/setCurrentIndex()` bewusst identisch zur bisherigen
+`QTabWidget`-API benannt sind.
+
 Die Kauf-Uebersicht verwendet ein Frozen-Footer-Layout: pro Tab ein Container mit
 scrollbarem `dataTable` und fixiertem `footerTable` (Gesamt-Zeile). Die Spaltenbreiten
 beider Tables werden ueber `QHeaderView::sectionResized` synchron gehalten.

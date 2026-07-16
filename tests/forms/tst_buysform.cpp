@@ -36,6 +36,7 @@
 #include "../../app/forms/BuysForm/IModelBuyEdit.h"
 #include "../../app/forms/BuysForm/ViewBuyEdit.h"
 #include "../../app/forms/BuysForm/ModelBuyEdit.h"
+#include "../../app/widgets/OverviewTabWidget.h"
 #include "../../app/forms/BuysForm/PresenterBuyEdit.h"
 
 #include "../../app/forms/UiConstants.h"
@@ -220,9 +221,9 @@ private:
     }
 
     // Helper: populate dlg with buys in two years and return the tab widget
-    static QTabWidget* setupTwoYearOverview(ViewBuyEdit& dlg)
+    static OverviewTabWidget* setupTwoYearOverview(ViewBuyEdit& dlg)
     {
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         const QList<BuyObject> buys = {
             makeBuy(QStringLiteral("b1"), QStringLiteral("share-guid"), 2023),
             makeBuy(QStringLiteral("b2"), QStringLiteral("share-guid"), 2024)
@@ -1147,7 +1148,7 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         dlg.populateOverview({}, {});
@@ -1160,7 +1161,7 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         const QList<BuyObject> buys = {
@@ -1183,7 +1184,7 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         const QList<BuyObject> buys = {
@@ -1209,7 +1210,7 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         const QList<BuyObject> buys = {
@@ -1238,7 +1239,7 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         const QList<BuyObject> buys = {
@@ -1264,7 +1265,7 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         const QList<BuyObject> buys = {
@@ -1293,7 +1294,7 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         const QList<BuyObject> buys = {
@@ -1320,7 +1321,7 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         const QList<BuyObject> buys = {
@@ -1351,7 +1352,7 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         const QList<BuyObject> buys = {
@@ -1377,7 +1378,7 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         // volume=10, price=25.50 → buyValue=255, but Kurswert should show 25.50
@@ -1406,7 +1407,7 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         const QList<BuyObject> buys = {
@@ -1433,8 +1434,8 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
 
         // volume=10, price=100 → buyValue=1000; provision=9.90 → einzahlung=1009.90
         const QList<BuyObject> buys = {
@@ -1458,7 +1459,7 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
         const QList<BuyObject> buys1 = {
@@ -1816,8 +1817,8 @@ private slots:
         openMemoryDb();
         ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
 
         const QList<BuyObject> buys = {
             makeBuy(QStringLiteral("b1"), QStringLiteral("share-guid"), 2022, 5.0, 80.0),
@@ -2081,8 +2082,8 @@ private slots:
                                                   QStringLiteral("share-guid"), 9.90);
         dlg.populateOverview({ b }, { br });
 
-        auto* tabs = dlg.findChild<QTabWidget*>();
-        if (!tabs) QFAIL("QTabWidget not found");
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(1); // first Jahres-tab
         auto* tbl = dataTableFromContainer(container);
         if (!tbl) QFAIL("dataTable not found");
