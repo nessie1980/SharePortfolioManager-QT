@@ -2540,41 +2540,46 @@ nicht — die Migration ist damit vollständig, keine Restausnahme wie bei
 
 ## Offene Punkte / TODO
 
-### Dokument-Spalten: Breite verkleinern + Header "Dokument" → "Dok." (offen, 16.07.2026)
+### Dokument-Spalten: Breite auf 36px vereinheitlicht, keine Spaltenüberschrift (erledigt, ursprünglich 16.07.2026, umgesetzt 17.07.2026)
 
 Nach dem Breiten-Fix in `ViewSaleEdit` (siehe "SalesForm auf
 OverviewTabWidget/DocumentPreviewPanel umgestellt" oben, `kDocColWidth = 120`)
 kam Nessies Feedback: die Dokument-Spalte verbraucht — trotz des Fixes — über
 alle betroffenen Formulare hinweg weiterhin zu viel Platz für eine reine
-Icon-Spalte. Betrifft mindestens:
+Icon-Spalte. Betroffen waren:
 
-- `ViewBuyEdit` (Kauf-Übersicht, aktuell Stretch/`-1`)
-- `ViewSaleEdit` (Verkaufs-Übersicht, aktuell fix `kDocColWidth = 120`)
-- `ViewDividendEdit` (seit 16.07.2026 auf `OverviewTabWidget` migriert,
-  Dokument-Spalte bewusst als Zwischenstand auf Stretch/`-1` gesetzt —
-  siehe Migrationsnotiz oben)
-- `ViewBrokerageEdit` (seit 16.07.2026 auf `OverviewTabWidget` migriert,
-  Dokument-Spalte fest auf `kDocColWidth = 120` gesetzt — siehe
-  Migrationsnotiz oben)
-- `ViewShareEdit` (Übersichts-/Summenanzeige der Pencil-Button-Dialoge —
-  gegenchecken, ob dort ebenfalls eine Dokument-Spalte existiert)
+- `ViewBuyEdit` (Kauf-Übersicht, vorher Stretch/`-1`)
+- `ViewSaleEdit` (Verkaufs-Übersicht, vorher fix `kDocColWidth = 120`)
+- `ViewDividendEdit` (vorher bewusster Zwischenstand auf Stretch/`-1`)
+- `ViewBrokerageEdit` (vorher fix `kDocColWidth = 120`)
 - `OverviewTabWidget`-Details-Tabs in `ViewShareDetails` (Gewinne/Verluste,
-  Dividenden, Kosten)
+  Dividenden, Kosten; vorher fix `110`px)
 - Die "Verwendete Käufe"-Tabelle im SalesForm-Details-Dialog
-  (`onShowDetails()`, `kColDoc` dort separat, aktuell fix `36`)
+  (`onShowDetails()`, `kColDoc` dort separat; Breite war bereits `36`px,
+  nur der Spaltenkopf-Text "Dok." fehlte noch)
 
-**Reihenfolge (Nessies Vorgabe, 16.07.2026):** Nicht jetzt schon global
-vereinheitlichen. Erst `DividendForm` und `BrokeragesForm` vollständig auf
-`OverviewTabWidget`/`DocumentPreviewPanel` umbauen — beide seit 16.07.2026
-abgeschlossen (siehe Migrationsnotizen oben). **Danach** in einem eigenen
-Schritt für **alle** Formulare (`ViewBuyEdit`, `ViewSaleEdit`,
-`ViewDividendEdit`, `ViewBrokerageEdit`, `ViewShareEdit`) einheitlich
-umsetzen:
+`ViewShareEdit` (Übersichts-/Summenanzeige der Pencil-Button-Dialoge) wurde
+gegengecheckt: dort existiert **keine** eigene Dokument-Spalte (nur
+schreibgeschützte Summenfelder), kein Änderungsbedarf.
 
-1. Dokument-Spalte fest auf `36`px (kein Stretch) — reine Icon-Spalte ohne
-   Textinhalt.
-2. Keine Spaltenüberschrift für die Dokument-Spalte (leerer String statt
-   "Dokument"/"Dok." im jeweiligen `jahresHeaders`/`uebersichtHeaders`-Array).
+**Reihenfolge (Nessies Vorgabe, 16.07.2026):** Erst `DividendForm` und
+`BrokeragesForm` vollständig auf `OverviewTabWidget`/`DocumentPreviewPanel`
+umbauen (seit 16.07.2026 abgeschlossen, siehe Migrationsnotizen oben), dann
+in einem eigenen Schritt global vereinheitlichen. Am 17.07.2026 umgesetzt,
+für alle sieben Stellen in einem gemeinsamen Commit:
+
+1. Dokument-Spalte überall fest auf `36`px (kein Stretch, keine 110/120px
+   mehr) — reine Icon-Spalte ohne Textinhalt.
+2. Keine Spaltenüberschrift für die Dokument-Spalte mehr (leerer `QString()`
+   statt `tr("Dokument")`/`tr("Dok.")` im jeweiligen
+   `jahresHeaders`/`uebersichtHeaders`-Array).
+
+`kColDoc`/`jahresDocColumn` blieb überall unverändert stehen, der
+Doppelklick auf die Icon-Spalte löst weiterhin `documentActivated()` aus —
+das ist von der Breiten-/Header-Änderung unabhängig. Von Nessie gebaut und
+getestet (alle Testfälle bestehen), Layouts der betroffenen Dialoge geprüft
+und für gut befunden. Damit ist das Arbeitspaket "Tabs und Grids" vorerst
+vollständig abgeschlossen.
 
 ### Brokerage-Vorwärts-Link: ModelBuyEdit/ModelBrokerageEdit ungeprüft (offen, 15.07.2026)
 
@@ -2640,22 +2645,27 @@ fehlt noch in den Editier-Dialogen `ViewBuyEdit`, `ViewSaleEdit`,
 Zuge der Umstellung dieser Dialoge auf `DocumentPreviewPanel`/
 `OverviewTabWidget`.
 
-### Spalten-Breiten-Schema für Dokument-Spalten auch in ShareEdit-Grids nachziehen (offen, 14.07.2026)
+### Spalten-Breiten-Schema für Dokument-Spalten auch in ShareEdit-Grids nachziehen (hinfällig, 14.07.2026, aufgelöst 17.07.2026)
 
 Für die Jahres-Tabs von `OverviewTabWidget` (Gewinne/Verluste-, Dividenden-,
-Kosten-Tab in `ShareDetailsForm`) hat sich nach mehreren Anläufen folgendes
+Kosten-Tab in `ShareDetailsForm`) hatte sich nach mehreren Anläufen folgendes
 Spaltenbreiten-Schema bewährt: erste Spalte (Datum) fest, letzte Spalte
-(Dokument) ebenfalls fest und ausreichend breit (110px — reicht für
+(Dokument) ebenfalls fest und ausreichend breit (110px — reichte für
 Spaltenkopf-Text "Dokument" plus Icon, ohne abgeschnitten zu werden), alle
-Spalten dazwischen als Stretch (`-1`), sodass sie sich den verbleibenden
-Platz automatisch teilen. Vorherige Versuche mit einer zu schmalen festen
-Dokument-Spalte (36px, aus den Editier-Dialogen übernommen) oder mit
-durchgehend gestreckten Spalten führten je nach verfügbarer Breite zu
-abgeschnittenem oder überlappendem Spaltenkopf-Text.
+Spalten dazwischen als Stretch (`-1`). Vorherige Versuche mit einer zu
+schmalen festen Dokument-Spalte (36px, aus den Editier-Dialogen übernommen)
+oder mit durchgehend gestreckten Spalten führten je nach verfügbarer Breite
+zu abgeschnittenem oder überlappendem Spaltenkopf-Text.
 
-Dasselbe Schema sollte auf die entsprechenden Grids in `ViewShareEdit` (und
-ggf. weiteren Dialogen mit vergleichbaren Dokument-Spalten) übertragen
-werden — dort ist bislang nicht geprüft, ob dieselbe Problematik besteht.
+Dieser Punkt ist mit der globalen Vereinheitlichung vom 17.07.2026 (siehe
+"Dokument-Spalten: Breite auf 36px vereinheitlicht, keine Spaltenüberschrift"
+oben) hinfällig geworden: das ursprüngliche Problem war ausschließlich der
+abgeschnittene Spaltenkopf-Text "Dokument" bei 36px — mit dem vollständigen
+Wegfall jeglichen Header-Texts für die Dokument-Spalte tritt dieses Problem
+nicht mehr auf, ein fixer 36px-Wert funktioniert jetzt überall unabhängig
+von der Dialogbreite. `ViewShareEdit` wurde dabei gegengecheckt und hat
+ohnehin keine eigene Dokument-Spalte (siehe oben) — auch die ursprünglich
+offene Übertragungsfrage entfällt damit.
 
 ### Totes Mapping: `PriceAtPayday` in `xmlNameToViewField()` (entfernt 08.07.2026)
 

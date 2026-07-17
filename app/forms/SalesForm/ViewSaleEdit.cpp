@@ -879,7 +879,7 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>& sales)
     constexpr int kColDoc        = 4;
 
     const QStringList jahresHeaders = {
-        tr("Datum"), tr("Anteile"), tr("Auszahlung"), tr("Gewinn / Verlust"), tr("Dokument")
+        tr("Datum"), tr("Anteile"), tr("Auszahlung"), tr("Gewinn / Verlust"), QString()
     };
 
     auto populateJahresData = [this, sales](int year, QTableWidget* tbl) {
@@ -967,17 +967,13 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>& sales)
         return tr("%1 (%2 €)").arg(year).arg(formatMoney(payout));
     };
 
-    // Dokument-Spalte fest statt Stretch: Verkaufs-Übersicht hat nur 4
-    // Stretch-Spalten (Anteile/Auszahlung/G-V/Dokument) gegenüber 5 in der
-    // Kauf-Übersicht (Anteile/Kurswert/Gebühren/Einzahlung/Dokument) — bei
-    // gleicher Stretch-Behandlung würde die Dokument-Spalte hier automatisch
-    // breiter ausfallen als in ViewBuyEdit, da sich dieselbe Restbreite auf
-    // weniger Spalten verteilt (16.07.2026, Nessies Feedback nach erstem
-    // Build). Fixe Breite ~= Restbreite/5 (Kauf-Übersicht-Anteil), damit
-    // beide Formulare optisch gleich aussehen; kColDoc wird weiterhin als
-    // jahresDocColumn übergeben, damit der Doppelklick documentActivated()
-    // auslöst — das ist von Stretch/Fixed unabhängig.
-    constexpr int kDocColWidth = 120;
+    // Dokument-Spalte fest auf 36px, reine Icon-Spalte ohne Textinhalt und
+    // ohne Spaltenüberschrift (16.07.2026, Nessies Vorgabe zur globalen
+    // Vereinheitlichung aller Dokument-Spalten — siehe ARCHITECTURE.md,
+    // "Dokument-Spalten: Breite verkleinern + Header"; löst den vorherigen
+    // 120px-Zwischenstand ab). kColDoc wird weiterhin als jahresDocColumn
+    // übergeben, damit der Doppelklick documentActivated() auslöst.
+    constexpr int kDocColWidth = 36;
     m_overviewTabs->populateOverview(
         years,
         uebersichtTitle,
@@ -1227,7 +1223,7 @@ void ViewSaleEdit::onShowDetails()
         tr("Kaufsumme"), QString(),
         tr("Kosten"), QString(),
         tr("Rabatt"), QString(),
-        tr("Gesamt"), tr("Dok.")
+        tr("Gesamt"), QString()
     };
 
     // Hilfsfunktion: zentriertes Item

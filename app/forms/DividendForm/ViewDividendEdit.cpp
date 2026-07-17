@@ -861,7 +861,7 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>& dividends)
 
     const QStringList jahresHeaders = {
         tr("Datum"), tr("Dividendensatz"), tr("Anteile"),
-        tr("Dividende"), tr("Dokument")
+        tr("Dividende"), QString()
     };
 
     auto jahresTitleForYear = [this, dividends](int year) {
@@ -959,8 +959,12 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>& dividends)
         f->setItem(0, kColDoc,      iDoc);
     };
 
-    // Dokument-Spalte als Stretch (konsistent zu ViewBuyEdit) — TODO: künftig
-    // auf feste 36px ohne Spaltenüberschrift umstellen, siehe ARCHITECTURE.md.
+    // Dokument-Spalte fest auf 36px, reine Icon-Spalte ohne Textinhalt und
+    // ohne Spaltenüberschrift (16.07.2026, Nessies Vorgabe zur globalen
+    // Vereinheitlichung aller Dokument-Spalten — siehe ARCHITECTURE.md,
+    // "Dokument-Spalten: Breite verkleinern + Header"; löst den vorherigen
+    // Stretch-Zwischenstand ab).
+    constexpr int kDocColWidth = 36;
     m_overviewTabs->populateOverview(
         years,
         uebersichtTitle,
@@ -969,7 +973,7 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>& dividends)
         populateUebersichtData,
         populateUebersichtFooter,
         jahresHeaders,
-        { 100, -1, -1, -1, -1 },
+        { 100, -1, -1, -1, kDocColWidth },
         jahresTitleForYear,
         populateJahresData,
         populateJahresFooter,

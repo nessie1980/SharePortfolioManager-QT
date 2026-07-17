@@ -476,7 +476,7 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
     };
 
     const QStringList jahresHeaders = {
-        tr("Datum"), tr("Typ"), tr("Ges. Gebühren"), tr("Rabatt"), tr("Netto-Kosten"), tr("Dok.")
+        tr("Datum"), tr("Typ"), tr("Ges. Gebühren"), tr("Rabatt"), tr("Netto-Kosten"), QString()
     };
     constexpr int kColDate  = 0;
     constexpr int kColTyp   = 1;
@@ -561,15 +561,13 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
         setFooter(kColDoc,   QStringLiteral(""));
     };
 
-    // Dokument-Spalte fest statt Stretch: analog ViewSaleEdit (16.07.2026,
-    // Nessies Vorgabe) — die Kosten-Übersicht hat nur 4 Stretch-Spalten
-    // (Typ/Ges. Gebühren/Rabatt/Netto-Kosten), damit die Dokument-Spalte
-    // optisch konsistent zu Buy/Sale bleibt statt automatisch breiter
-    // auszufallen, da sich dieselbe Restbreite auf weniger Spalten verteilt.
-    // kColDoc wird weiterhin als jahresDocColumn übergeben, damit der
-    // Doppelklick documentActivated() auslöst — das ist von Stretch/Fixed
-    // unabhängig.
-    constexpr int kDocColWidth = 120;
+    // Dokument-Spalte fest auf 36px, reine Icon-Spalte ohne Textinhalt und
+    // ohne Spaltenüberschrift (16.07.2026, Nessies Vorgabe zur globalen
+    // Vereinheitlichung aller Dokument-Spalten — siehe ARCHITECTURE.md,
+    // "Dokument-Spalten: Breite verkleinern + Header"; löst den vorherigen
+    // 120px-Zwischenstand ab). kColDoc wird weiterhin als jahresDocColumn
+    // übergeben, damit der Doppelklick documentActivated() auslöst.
+    constexpr int kDocColWidth = 36;
     m_overviewTabs->populateOverview(
         years,
         uebersichtTitle,

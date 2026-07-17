@@ -382,8 +382,8 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
             footer->setItem(0, 2, centeredItem(fmtMoney(totalPayout)));
             footer->setItem(0, 3, centeredItem(fmtMoney(totGV)));
         },
-        { tr("Datum"), tr("Anteile"), tr("Auszahlung"), tr("Gewinn / Verlust"), tr("Dokument") },
-        { 100, -1, -1, -1, 110 },
+        { tr("Datum"), tr("Anteile"), tr("Auszahlung"), tr("Gewinn / Verlust"), QString() },
+        { 100, -1, -1, -1, 36 },
         [&](int year) {
             double yearPayout = 0.0;
             for (const SaleObject& s : sales) if (s.year() == year) yearPayout += salePayout(s);
@@ -475,8 +475,8 @@ void ViewShareDetails::populateDividenden(const QList<DividendObject>& dividends
             footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
             footer->setItem(0, 1, centeredItem(fmtMoney(totalVal)));
         },
-        { tr("Datum"), tr("Dividendensatz"), tr("Anteile"), tr("Dividende"), tr("Dokument") },
-        { 100, -1, -1, -1, 110 },
+        { tr("Datum"), tr("Dividendensatz"), tr("Anteile"), tr("Dividende"), QString() },
+        { 100, -1, -1, -1, 36 },
         [&](int year) {
             double yearTotal = 0.0;
             for (const DividendObject& d : dividends) if (d.year() == year) yearTotal += d.dividendPayoutWithTaxes();
@@ -565,8 +565,8 @@ void ViewShareDetails::populateKosten(const QList<BrokerageObject>& brokerages)
             footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
             footer->setItem(0, 1, centeredItem(fmtMoney(totalNetto)));
         },
-        { tr("Datum"), tr("Typ"), tr("Ges. Gebühren"), tr("Rabatt"), tr("Netto-Kosten"), tr("Dokument") },
-        { 100, -1, -1, -1, -1, 110 },
+        { tr("Datum"), tr("Typ"), tr("Ges. Gebühren"), tr("Rabatt"), tr("Netto-Kosten"), QString() },
+        { 100, -1, -1, -1, -1, 36 },
         [&](int year) {
             double yearNetto = 0.0;
             for (const BrokerageObject& b : brokerages) if (b.year() == year) yearNetto += b.brokerageReduction();

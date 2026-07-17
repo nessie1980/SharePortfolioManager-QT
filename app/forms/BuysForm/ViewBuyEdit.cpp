@@ -796,7 +796,7 @@ void ViewBuyEdit::populateOverview(const QList<BuyObject>&       buys,
 
     const QStringList jahresHeaders = {
         tr("Datum"), tr("Anteile"), tr("Kurswert"),
-        tr("Gebühren"), tr("Einzahlung"), tr("Dokument")
+        tr("Gebühren"), tr("Einzahlung"), QString()
     };
 
     auto populateJahresData = [this, buys, brokerages](int year, QTableWidget* tbl) {
@@ -913,9 +913,13 @@ void ViewBuyEdit::populateOverview(const QList<BuyObject>&       buys,
         return tr("%1 (%2 €)").arg(year).arg(formatMoney(yearTotal));
     };
 
-    // Dokument-Spalte bleibt Stretch (kein fixer 110px-Wert, siehe Absprache) —
-    // kColDoc wird nur als jahresDocColumn übergeben, damit Doppelklick
-    // documentActivated() auslöst.
+    // Dokument-Spalte fest auf 36px, reine Icon-Spalte ohne Textinhalt und
+    // ohne Spaltenüberschrift (16.07.2026, Nessies Vorgabe zur globalen
+    // Vereinheitlichung aller Dokument-Spalten — siehe ARCHITECTURE.md,
+    // "Dokument-Spalten: Breite verkleinern + Header"). kColDoc wird weiterhin
+    // als jahresDocColumn übergeben, damit Doppelklick documentActivated()
+    // auslöst.
+    constexpr int kDocColWidth = 36;
     m_overviewTabs->populateOverview(
         years,
         uebersichtTitle,
@@ -924,7 +928,7 @@ void ViewBuyEdit::populateOverview(const QList<BuyObject>&       buys,
         populateUebersichtData,
         populateUebersichtFooter,
         jahresHeaders,
-        { 100, -1, -1, -1, -1, -1 },
+        { 100, -1, -1, -1, -1, kDocColWidth },
         jahresTitleForYear,
         populateJahresData,
         populateJahresFooter,

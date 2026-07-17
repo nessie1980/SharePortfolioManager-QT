@@ -1061,7 +1061,7 @@ Nicht unit-testbar (bewusste Entscheidung):
 der Dialog selbst ist daher nicht direkt unit-testbar. Dies betrifft:
 
 - Die 13-spaltige "Verwendete Käufe"-Tabelle
-  (Datum | Anteile | x | Kaufkurs | = | Kaufsumme | + | Kosten | - | Rabatt | = | Gesamt | Dok.)
+  (Datum | Anteile | x | Kaufkurs | = | Kaufsumme | + | Kosten | - | Rabatt | = | Gesamt | Dokument-Icon, seit 17.07.2026 ohne Spaltenkopf-Text)
 - Den Doppelklick-Dokument-Vorschau-Dialog
 - Die 5-gliedrige G/V-Zusammenfassung
   (Ges. Anteile . Ges. Verkauf - Ges. Kauf inkl. Kosten - Verkaufsgebuehren/Steuern = G/V)
@@ -1213,7 +1213,7 @@ ViewDividendEdit:
 | `test_viewDividendEdit_populateOverview_singleYear_twoTabs` | 1 Dividende in 2024 → 2 Tabs | Tab 0 = "Übersicht", Tab 1 enthält "2024" |
 | `test_viewDividendEdit_populateOverview_twoYears_threeTabs` | Dividenden in 2023 + 2024 → 3 Tabs | `count()` = 3 |
 | `test_viewDividendEdit_populateOverview_jahresTabsDescendingByYear` | Neuestes Jahr zuerst | Tab 1 = 2024, Tab 2 = 2022 |
-| `test_viewDividendEdit_populateOverview_jahresTabHasFiveColumns` | Jahres-Tab hat 5 Spalten | `columnCount()` = 5 (Datum, Rate, Anteile, Dividende, Dok.) |
+| `test_viewDividendEdit_populateOverview_jahresTabHasFiveColumns` | Jahres-Tab hat 5 Spalten | `columnCount()` = 5 (Datum, Rate, Anteile, Dividende, Dokument-Icon ohne Spaltenkopf-Text seit 17.07.2026) |
 | `test_viewDividendEdit_populateOverview_jahresTabRowCount` | Zeilenanzahl = Anzahl Dividenden | 3 Dividenden → `rowCount()` = 3 |
 | `test_viewDividendEdit_populateOverview_guidStoredInDateColumn` | GUID in Spalte 0, `Qt::UserRole` | `item(0,0)->data(UserRole)` = dividend.guid() |
 | `test_viewDividendEdit_populateOverview_docDashWhenNoPath` | Kein Dokument → "-" in Spalte 4 | `item(0,4)->text()` = "-", kein CellWidget |
@@ -1328,9 +1328,10 @@ vorherigen Klick-Slots `onOverviewRowActivated()`/`onUebersichtRowActivated()`
 entfielen ersatzlos; das beobachtbare Verhalten (Klick auf Jahres-Zeile lädt
 Kosteneintrag, Klick auf Übersicht-Zeile springt zum Jahres-Tab) bleibt
 unverändert, da es jetzt `OverviewTabWidget` intern übernimmt. Die
-Dokument-Spalte (Index 5) ist — anders als bei `ViewDividendEdit` — von
-Anfang an fest auf `120`px gesetzt statt Stretch, analog zum Bugfix in
-`ViewSaleEdit`.
+Dokument-Spalte (Index 5) war zunächst fest auf `120`px gesetzt statt
+Stretch, analog zum Bugfix in `ViewSaleEdit`; seit der globalen
+Vereinheitlichung am 17.07.2026 (siehe ARCHITECTURE.md, "Dokument-Spalten:
+Breite auf 36px vereinheitlicht") fix `36`px, ohne Spaltenkopf-Text.
 
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
@@ -1339,7 +1340,7 @@ Anfang an fest auf `120`px gesetzt statt Stretch, analog zum Bugfix in
 | `test_viewBrokerageEdit_populateOverview_twoYears_threeTabs` | Einträge in 2023 + 2024 → 3 Tabs | `count()` = 3 |
 | `test_viewBrokerageEdit_populateOverview_jahresTabsDescendingByYear` | Neuestes Jahr zuerst | Tab 1 = 2024, Tab 2 = 2022 |
 | `test_viewBrokerageEdit_populateOverview_uebersichtTabHasTable` | Übersicht-Tab enthält QTableWidget | `dataTable` nicht null, 2 Spalten |
-| `test_viewBrokerageEdit_populateOverview_jahresTabHasSixColumns` | Jahres-Tab hat 6 Spalten | Datum, Typ, Ges. Gebühren, Rabatt, Netto-Kosten, Dok. |
+| `test_viewBrokerageEdit_populateOverview_jahresTabHasSixColumns` | Jahres-Tab hat 6 Spalten | Datum, Typ, Ges. Gebühren, Rabatt, Netto-Kosten, Dokument-Icon ohne Spaltenkopf-Text seit 17.07.2026 |
 | `test_viewBrokerageEdit_populateOverview_guidStoredInDateColumn` | GUID in Spalte 0, `Qt::UserRole` | `item(0,0)->data(UserRole)` = brokerage.guid() |
 | `test_viewBrokerageEdit_populateOverview_typColumnStandaloneIsSonstig` | Standalone-Eintrag → "Sonstig" | `item(0,1)->text()` = "Sonstig" |
 | `test_viewBrokerageEdit_populateOverview_typColumnLinkedBuyIsKauf` | `buyGuid` gesetzt → "Kauf" | `item(0,1)->text()` = "Kauf" |
