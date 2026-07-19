@@ -51,9 +51,18 @@ public:
      *
      * Uses the portfolio path from AppSettings. If no path is configured yet,
      * a default path (`portfolio.db` next to the executable) is set and saved.
-     * Shows a critical error dialog if opening fails.
-     * @param parent  Parent widget for error dialogs (nullptr is allowed).
+     * Shows a critical error dialog if opening fails (unless suppressed).
+     * @param parent          Parent widget for error dialogs (nullptr is allowed).
+     * @param showErrorDialog If false, no dialog is shown on failure — only
+     *                        the qCritical() log entry. Used by unit tests to
+     *                        exercise the failure path without blocking the
+     *                        (headless) test run on a modal dialog; see
+     *                        tests/app/tst_appstartup.cpp,
+     *                        test_openDatabase_invalidPath_returnsFalse()
+     *                        (added 19.07.2026 — the real QMessageBox::critical()
+     *                        call previously blocked that test indefinitely
+     *                        whenever a real display was attached).
      * @return true on success, false if the database could not be opened.
      */
-    static bool openDatabase(QWidget* parent = nullptr);
+    static bool openDatabase(QWidget* parent = nullptr, bool showErrorDialog = true);
 };

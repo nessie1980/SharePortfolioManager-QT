@@ -132,7 +132,11 @@ private slots:
         QVERIFY(QDir().mkpath(dirPath));
         AppSettings::instance().setPortfolioPath(dirPath);
 
-        QVERIFY(!AppStartup::openDatabase());
+        // showErrorDialog=false: without this, openDatabase() would show a
+        // real, blocking QMessageBox::critical() on failure — fine for the
+        // real application, but it would hang this (headless) test run
+        // waiting for a manual click. See AppStartup.h for details.
+        QVERIFY(!AppStartup::openDatabase(nullptr, /*showErrorDialog=*/false));
         QVERIFY(!Database::instance().isOpen());
     }
 

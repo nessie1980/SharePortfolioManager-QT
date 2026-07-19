@@ -38,7 +38,7 @@ bool AppStartup::installTranslator(QApplication& app, QTranslator& translator,
 
 // ── openDatabase ──────────────────────────────────────────────────────────────
 
-bool AppStartup::openDatabase(QWidget* parent)
+bool AppStartup::openDatabase(QWidget* parent, bool showErrorDialog)
 {
     const QString portfolioPath = AppSettings::instance().portfolioPath();
 
@@ -57,14 +57,16 @@ bool AppStartup::openDatabase(QWidget* parent)
     }
 
     if (!Database::instance().open(portfolioPath)) {
-        const QString errorText = QObject::tr(
-            "The portfolio database could not be opened:\n\n%1\n\n"
-            "Please check the path in the settings.")
-            .arg(portfolioPath);
+        if (showErrorDialog) {
+            const QString errorText = QObject::tr(
+                "The portfolio database could not be opened:\n\n%1\n\n"
+                "Please check the path in the settings.")
+                .arg(portfolioPath);
 
-        QMessageBox::critical(parent,
-                              QObject::tr("Database Error"),
-                              errorText);
+            QMessageBox::critical(parent,
+                                  QObject::tr("Database Error"),
+                                  errorText);
+        }
         qCritical() << "[AppStartup] Failed to open database:" << portfolioPath;
         return false;
     }
