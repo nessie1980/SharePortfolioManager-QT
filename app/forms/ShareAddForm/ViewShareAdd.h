@@ -4,6 +4,7 @@
 
 #include "IViewShareAdd.h"
 #include "../../config/DocumentsConfig.h"
+#include "../../widgets/DocumentPreviewPanel.h"
 
 #include <QDialog>
 #include <QDateEdit>
@@ -16,13 +17,6 @@
 #include <QPushButton>
 #include <QProgressBar>
 #include <QGroupBox>
-#include <QProcess>
-
-// Native PDF viewer — only compiled in when Qt PDF module is present
-#ifdef SPM_HAVE_QTPDF
-#  include <QPdfView>
-#  include <QPdfDocument>
-#endif
 
 class PresenterShareAdd;
 
@@ -31,9 +25,15 @@ class PresenterShareAdd;
  *
  * Left panel  (700 px fixed): two-column label/field form, all fields
  *             visible without scrolling.
- * Right panel (stretching):   PDF preview — QPdfView when Qt PDF is
- *             available, otherwise a pdftoppm-rendered pixmap in a
- *             QScrollArea.
+ * Right panel (stretching):   PDF preview via `DocumentPreviewPanel`
+ *             (nativer `QPdfView`, wenn Qt PDF verfügbar ist, sonst ein
+ *             pdftoppm-gerendertes Bild — siehe ARCHITECTURE.md,
+ *             "DocumentPreviewPanel"). Auf `DocumentPreviewPanel` umgestellt
+ *             (19.07.2026), analog zu ViewBuyEdit/ViewSaleEdit/
+ *             ViewDividendEdit/ViewBrokerageEdit — vorher eigenständige,
+ *             nicht-delegierte QPdfView-/pdftoppm-Implementierung ohne
+ *             Existenzprüfung der Datei (siehe ARCHITECTURE.md, "Offene
+ *             Punkte / TODO").
  *
  * Status icons next to parsed fields use IconProvider::SearchOk /
  * IconProvider::SearchFailed (search_ok_24.png / search_failed_24.png).
@@ -109,14 +109,7 @@ private:
                    QWidget* field,
                    const QString& unitText = QString());
 
-    void openPdfPreview(const QString& pdfPath);
-
-#ifndef SPM_HAVE_QTPDF
-    QString         m_pdfImagePath;
-    QProcess*       m_pdfRenderProc = nullptr;
-    QLabel*         m_pdfLabel      = nullptr;
-    QScrollArea*    m_pdfScroll     = nullptr;
-#endif
+    DocumentPreviewPanel* m_previewPanel = nullptr;
 
     // ── Form widgets ──────────────────────────────────────────────────────
     QLineEdit*      m_wkn            = nullptr;
@@ -161,12 +154,6 @@ private:
     QProgressBar*   m_parseProgress  = nullptr;
     QLabel*         m_parseStatusIcon = nullptr;  ///< Icon left of status text
     QLabel*         m_parseStatus    = nullptr;
-
-#ifdef SPM_HAVE_QTPDF
-    QPdfView*       m_pdfView        = nullptr;
-    QPdfDocument*   m_pdfDocument    = nullptr;
-    QLabel*         m_zoomLabel      = nullptr;
-#endif
 
     // ── Parse status tracking ─────────────────────────────────────────────
     /// State of a single parsed field — drives the status icon and save validation.

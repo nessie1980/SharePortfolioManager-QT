@@ -29,6 +29,7 @@
 #include "../../app/forms/MainForm/MainWindow.h"
 #include "../../app/forms/MainForm/TwoLineDelegate.h"  // TwoLineRole::Top/Bottom
 #include "../../app/forms/ShareAddForm/ViewShareAdd.h"
+#include "../../app/widgets/DocumentPreviewPanel.h"
 #include "../../app/forms/ShareDetailsForm/ViewShareDetails.h"
 #include "../../app/forms/ShareAddForm/ModelShareAdd.h"
 #include "../../app/forms/ShareAddForm/IViewShareAdd.h"
@@ -2600,6 +2601,25 @@ private slots:
 
         QStringList missing;
         QVERIFY(dlg.hasMissingRequiredFields(missing));
+    }
+
+    void test_viewShareAdd_documentPreviewPanel_nonExistentFile_doesNotCrash()
+    {
+        // ViewShareAdd was migrated from its own QPdfView-/pdftoppm-copy to
+        // the shared DocumentPreviewPanel (19.07.2026, see ARCHITECTURE.md,
+        // "Offene Punkte / TODO") — same non-blocking "not found" handling
+        // as ViewBuyEdit/ViewSaleEdit/ViewDividendEdit/ViewBrokerageEdit
+        // now applies here too. openPdfPreview() no longer exists on
+        // ViewShareAdd itself (not part of IViewShareAdd, unlike the other
+        // four dialogs), so the panel is reached via findChild() instead.
+        openMemoryDb();
+        ViewShareAdd dlg(&m_docsConfig);
+
+        auto* panel = dlg.findChild<DocumentPreviewPanel*>();
+        QVERIFY(panel != nullptr);
+
+        panel->showDocument(QStringLiteral("/no/such/file.pdf"));
+        QVERIFY(true);
     }
 
     // ─────────────────────────────────────────────────────────────────────

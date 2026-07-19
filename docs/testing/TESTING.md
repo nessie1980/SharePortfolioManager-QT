@@ -337,6 +337,19 @@ ViewShareAdd:
 | `test_viewShareAdd_hasMissingRequiredFields_falseAfterAllOk` | Nach Setzen aller Pflichtfelder | `hasMissingRequiredFields()` = false |
 | `test_viewShareAdd_onParseFinished_setsInfoOnUntouched` | Parse-Ergebnis befüllt unberührte Felder | Felder enthalten geparste Werte |
 | `test_viewShareAdd_markMissingFieldsAsFailed_doesNotCrash` | `markMissingFieldsAsFailed()` auf leerem Form | Kein Absturz |
+| `test_viewShareAdd_documentPreviewPanel_nonExistentFile_doesNotCrash` | `DocumentPreviewPanel::showDocument()` mit ungültigem Pfad, via `findChild()` | Kein Absturz |
+
+@note Anders als bei `ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit`/
+`ViewBrokerageEdit` ist `openPdfPreview()` bei `ViewShareAdd` kein Teil von
+`IViewShareAdd` (nie vom Presenter aufgerufen, siehe ARCHITECTURE.md,
+"ViewShareAdd auf DocumentPreviewPanel umgestellt") und existiert seit der
+Migration auf `DocumentPreviewPanel` (19.07.2026) gar nicht mehr auf
+`ViewShareAdd` selbst. Der Test greift daher über
+`dlg.findChild<DocumentPreviewPanel*>()` auf das eingebettete Panel zu und
+ruft dessen öffentliches `showDocument()` direkt auf — testet denselben Pfad
+wie `test_viewBrokerageEdit_openPdfPreview_nonExistentFile_doesNotCrash`,
+ohne den privaten `onBrowseDocument()`-Slot (echter `QFileDialog`) anfassen
+zu müssen.
 
 ModelShareEdit (Datenbanktests):
 

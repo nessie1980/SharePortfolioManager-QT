@@ -14,14 +14,7 @@
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
 #include <QSizePolicy>
 #include <QLocale>
-#include <QDir>
 #include <QApplication>
-#include <QTimer>
-
-#ifndef SPM_HAVE_QTPDF
-#  include <QPixmap>
-#  include <QProcess>
-#endif
 
 // ─────────────────────────────────────────────────────────────────────────────
 ViewShareAdd::ViewShareAdd(DocumentsConfig* config, QWidget* parent)
@@ -384,82 +377,14 @@ QGroupBox* ViewShareAdd::createDocumentGroup()
 // ─────────────────────────────────────────────────────────────────────────────
 QWidget* ViewShareAdd::createPreviewPanel()
 {
-    // GroupBox so the preview has the same visual weight as the left-side groups
-    auto* gb     = new QGroupBox(tr("  Dokumenten-Vorschau"));
-    auto* layout = new QVBoxLayout(gb);
-    layout->setContentsMargins(6, 6, 6, 6);
-    layout->setSpacing(4);
-
-#ifdef SPM_HAVE_QTPDF
-    // Native Qt PDF viewer — supports scroll, zoom, text selection
-    m_pdfDocument = new QPdfDocument(this);
-    m_pdfView     = new QPdfView(this);
-    m_pdfView->setDocument(m_pdfDocument);
-    // MultiPage: alle Seiten untereinander, einfach scrollen wie ein normaler PDF-Viewer
-    m_pdfView->setPageMode(QPdfView::PageMode::MultiPage);
-    m_pdfView->setZoomMode(QPdfView::ZoomMode::FitInView);
-    m_pdfView->setFrameShape(QFrame::StyledPanel);
-    m_pdfView->setStyleSheet(QStringLiteral(
-        "QPdfView { background-color: #ffffff; }"
-        "QPdfView > QWidget { background-color: #ffffff; }"
-    ));
-
-    // Zoom-Steuerung über der Vorschau
-    auto* zoomBar = new QWidget;
-    auto* zoomLayout = new QHBoxLayout(zoomBar);
-    zoomLayout->setContentsMargins(0, 0, 0, 2);
-    zoomLayout->setSpacing(4);
-
-    auto* btnZoomOut = new QPushButton(QStringLiteral("−"));
-    auto* btnZoomIn  = new QPushButton(QStringLiteral("+"));
-    auto* btnFit     = new QPushButton(tr("Anpassen"));
-    btnZoomOut->setFixedWidth(28);
-    btnZoomIn->setFixedWidth(28);
-    btnFit->setFixedWidth(80);
-
-    m_zoomLabel = new QLabel(QStringLiteral("100%"));
-    m_zoomLabel->setFixedWidth(48);
-    m_zoomLabel->setAlignment(Qt::AlignCenter);
-
-    zoomLayout->addWidget(btnZoomOut);
-    zoomLayout->addWidget(btnZoomIn);
-    zoomLayout->addWidget(btnFit);
-    zoomLayout->addWidget(m_zoomLabel);
-    zoomLayout->addStretch(1);
-
-    connect(btnZoomIn, &QPushButton::clicked, this, [this] {
-        const qreal z = qMin(m_pdfView->zoomFactor() * 1.25, 4.0);
-        m_pdfView->setZoomMode(QPdfView::ZoomMode::Custom);
-        m_pdfView->setZoomFactor(z);
-        m_zoomLabel->setText(QString::number(qRound(z * 100)) + QStringLiteral("%"));
-    });
-    connect(btnZoomOut, &QPushButton::clicked, this, [this] {
-        const qreal z = qMax(m_pdfView->zoomFactor() * 0.8, 0.25);
-        m_pdfView->setZoomMode(QPdfView::ZoomMode::Custom);
-        m_pdfView->setZoomFactor(z);
-        m_zoomLabel->setText(QString::number(qRound(z * 100)) + QStringLiteral("%"));
-    });
-    connect(btnFit, &QPushButton::clicked, this, [this] {
-        m_pdfView->setZoomMode(QPdfView::ZoomMode::FitInView);
-        m_zoomLabel->setText(tr("Anp."));
-    });
-
-    layout->addWidget(zoomBar);
-    layout->addWidget(m_pdfView, 1);
-#else
-    // Fallback: render page 1 via pdftoppm, display as pixmap
-    m_pdfLabel = new QLabel;
-    m_pdfLabel->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
-    m_pdfLabel->setText(tr("Wählen Sie ein PDF-Dokument aus.\nDie erste Seite wird hier angezeigt."));
-    m_pdfLabel->setWordWrap(true);
-    m_pdfScroll = new QScrollArea;
-    m_pdfScroll->setWidget(m_pdfLabel);
-    m_pdfScroll->setWidgetResizable(true);
-    m_pdfScroll->setFrameShape(QFrame::StyledPanel);
-    layout->addWidget(m_pdfScroll, 1);
-#endif
-
-    return gb;
+    // Auf DocumentPreviewPanel umgestellt (19.07.2026) — vorher eine
+    // eigenständige Kopie desselben QPdfView-/pdftoppm-Codes ohne
+    // Existenzprüfung der Datei (siehe ARCHITECTURE.md, "Offene Punkte /
+    // TODO"). DocumentPreviewPanel bringt bereits ein eigenes GroupBox
+    // ("Dokumenten-Vorschau") mit, kein zusätzlicher Wrapper nötig — analog
+    // zu ViewBuyEdit/ViewSaleEdit/ViewDividendEdit/ViewBrokerageEdit.
+    m_previewPanel = new DocumentPreviewPanel(this);
+    return m_previewPanel;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -516,48 +441,6 @@ QLabel* ViewShareAdd::addRow(QGridLayout* grid, int& row,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-void ViewShareAdd::openPdfPreview(const QString& pdfPath)
-{
-#ifdef SPM_HAVE_QTPDF
-    m_pdfDocument->close();
-    m_pdfDocument->load(pdfPath);
-    // Force FitInView refresh after load — needed when widget size is already known
-    m_pdfView->setZoomMode(QPdfView::ZoomMode::FitInView);
-    // Also schedule a second refresh after event loop processes layout
-    QTimer::singleShot(100, this, [this]() {
-        m_pdfView->setZoomMode(QPdfView::ZoomMode::FitInView);
-    });
-#else
-    // pdftoppm fallback: render page 1 at 150 dpi as PNG
-    m_pdfImagePath = QDir::tempPath() + QStringLiteral("/spm_preview");
-    if (m_pdfRenderProc) { m_pdfRenderProc->kill(); m_pdfRenderProc->deleteLater(); }
-    m_pdfRenderProc = new QProcess(this);
-    connect(m_pdfRenderProc,
-            QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, [this](int exitCode, QProcess::ExitStatus) {
-        if (m_pdfRenderProc) { m_pdfRenderProc->deleteLater(); m_pdfRenderProc = nullptr; }
-        if (exitCode != 0) { m_pdfLabel->setText(tr("PDF-Vorschau konnte nicht gerendert werden.")); return; }
-
-        const QString imgPath = m_pdfImagePath + QStringLiteral("-1.png");
-        QPixmap px(imgPath);
-        if (px.isNull()) { m_pdfLabel->setText(tr("Vorschaubild nicht gefunden.")); return; }
-
-        const int availW = m_pdfScroll->viewport()->width() - 4;
-        if (availW > 0 && px.width() > availW)
-            px = px.scaledToWidth(availW, Qt::SmoothTransformation);
-        m_pdfLabel->setPixmap(px);
-        m_pdfLabel->resize(px.size());
-    });
-    m_pdfRenderProc->start(QStringLiteral("pdftoppm"),
-                           { QStringLiteral("-r"),   QStringLiteral("150"),
-                             QStringLiteral("-png"),
-                             QStringLiteral("-f"),   QStringLiteral("1"),
-                             QStringLiteral("-l"),   QStringLiteral("1"),
-                             pdfPath, m_pdfImagePath });
-#endif
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // ── Slots ─────────────────────────────────────────────────────────────────────
 
 void ViewShareAdd::onBrowseDocument()
@@ -580,7 +463,7 @@ void ViewShareAdd::onBrowseDocument()
     }
 
     m_documentPath->setText(path);
-    openPdfPreview(path);
+    m_previewPanel->showDocument(path);
     m_presenter->onDocumentSelected(path);
 }
 
@@ -788,7 +671,7 @@ void ViewShareAdd::setUiBusy(bool busy)
 void ViewShareAdd::setDocumentPreview(const QString& /*text*/)
 {
     // Plain text is only used internally by the parser.
-    // Visual preview is handled by openPdfPreview() via onBrowseDocument().
+    // Visual preview is handled by m_previewPanel->showDocument() via onBrowseDocument().
 }
 
 void ViewShareAdd::showError(const QString& message)

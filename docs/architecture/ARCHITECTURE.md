@@ -2536,6 +2536,29 @@ weiterhin als `jahresDocColumn` übergeben, damit der Doppelklick
 nicht — die Migration ist damit vollständig, keine Restausnahme wie bei
 `ViewSaleEdit`.
 
+@note **ViewShareAdd auf DocumentPreviewPanel umgestellt (19.07.2026):**
+`ViewShareAdd` nutzt jetzt `DocumentPreviewPanel` statt einer eigenen Kopie
+des QPdfView-/pdftoppm-Codes — der letzte der fünf Editier-Dialoge, der noch
+nicht umgestellt war (siehe "Offene Punkte / TODO",
+"DocumentPreviewPanel: blockierender Dialog durch Inline-Anzeige ersetzt").
+Anders als bei BuysForm/SalesForm/DividendForm/BrokeragesForm gibt es hier
+kein `OverviewTabWidget` — `ViewShareAdd` ist ein reiner Anlage-Dialog ohne
+Übersichts-Tabelle, die Migration betrifft daher ausschließlich die
+PDF-Vorschau.
+
+`createPreviewPanel()` instanziiert nur noch `DocumentPreviewPanel`
+(vorher ~80 Zeilen eigener QPdfView-/Zoom-/pdftoppm-Aufbau). Die eigene
+`openPdfPreview()`-Methode entfällt ersatzlos — `onBrowseDocument()` ruft
+direkt `m_previewPanel->showDocument(path)`. Da `openPdfPreview()` bei
+`ViewShareAdd` (anders als bei den anderen vier Dialogen) nie Teil von
+`IViewShareAdd` war, sondern reines View-internes Detail, ist der Presenter
+von der Änderung nicht betroffen — bestätigt durch Durchsicht von
+`PresenterShareAdd.cpp`, das `openPdfPreview()` nirgends aufruft.
+
+Damit bringt `ViewShareAdd` jetzt automatisch dieselbe
+Existenzprüfung/Inline-"nicht gefunden"-Anzeige mit wie die anderen vier
+Dialoge, ohne eigene Parallel-Implementierung.
+
 ---
 
 ## Offene Punkte / TODO
@@ -2651,7 +2674,7 @@ Widgets nicht mitbrachten.
 10.07.2026 bestätigt, siehe "Marktwert- vs. Depotwert-Modus" oben — kein
 offener Punkt mehr.)
 
-### DocumentPreviewPanel: blockierender Dialog durch Inline-Anzeige ersetzt (19.07.2026)
+### DocumentPreviewPanel: blockierender Dialog durch Inline-Anzeige ersetzt (erledigt, 19.07.2026)
 
 `DocumentPreviewPanel::showDocument()` prüfte seit 13.07.2026 per
 `QFileInfo::exists()`, ob die Datei noch existiert, zeigte bei einer
@@ -2670,13 +2693,16 @@ pdftoppm-Fallback-Zweig ("PDF-Vorschau konnte nicht gerendert werden.",
 ausgeblendet. Kein Dialog mehr, kein Blockieren der Ereignisschleife.
 
 Für Dialoge, die bereits an `DocumentPreviewPanel::showDocument()`
-delegieren (bestätigt für `ViewBuyEdit`, `ViewBrokerageEdit` — jeweils
-`openPdfPreview()` ruft `m_previewPanel->showDocument()`), gilt der Fix
-automatisch mit. Der Migrationsstand von `ViewSaleEdit`, `ViewDividendEdit`
-und `ViewShareAdd` (letzterer hatte zuletzt noch eine eigene,
+delegieren — `ViewBuyEdit`, `ViewSaleEdit`, `ViewDividendEdit`,
+`ViewBrokerageEdit` (jeweils `openPdfPreview()` ruft
+`m_previewPanel->showDocument()`) —, gilt der Fix automatisch mit. Bei
+Nachprüfung (19.07.2026) bestätigt: `ViewSaleEdit` und `ViewDividendEdit`
+delegierten bereits vollständig, nur `ViewShareAdd` hatte noch eine eigene,
 nicht-delegierte `openPdfPreview()`-Implementierung ohne jede
-Existenzprüfung) wurde im Zuge dieser Änderung nicht erneut geprüft —
-sollte bei Gelegenheit nachgezogen werden.
+Existenzprüfung. Seit der Migration auf `DocumentPreviewPanel` (siehe
+"ViewShareAdd auf DocumentPreviewPanel umgestellt" oben) delegieren jetzt
+alle fünf Editier-Dialoge — dieser Punkt ist damit vollständig
+abgeschlossen.
 
 ### Spalten-Breiten-Schema für Dokument-Spalten auch in ShareEdit-Grids nachziehen (hinfällig, 14.07.2026, aufgelöst 17.07.2026)
 
