@@ -81,6 +81,11 @@ void AppSettings::load(const QString& path)
     m_backupNamePrefix = settings.value(QStringLiteral("Backup/NamePrefix"), m_backupNamePrefix).toString();
     m_backupDateFormat = settings.value(QStringLiteral("Backup/DateFormat"), m_backupDateFormat).toString();
     m_backupDirectory  = settings.value(QStringLiteral("Backup/Directory"),  m_backupDirectory).toString();
+
+    // ── Documents ────────────────────────────────────────────────────────
+    // Leer bleibt leer, solange kein Root konfiguriert wurde — MainWindow
+    // erkennt daran den Erstlauf und zeigt DocumentsSettingsForm zwingend an.
+    m_documentsRootPath = settings.value(QStringLiteral("Documents/RootPath"), m_documentsRootPath).toString();
 }
 
 void AppSettings::save()
@@ -130,6 +135,9 @@ void AppSettings::save()
     settings.setValue(QStringLiteral("Backup/NamePrefix"), m_backupNamePrefix);
     settings.setValue(QStringLiteral("Backup/DateFormat"), m_backupDateFormat);
     settings.setValue(QStringLiteral("Backup/Directory"),  m_backupDirectory);
+
+    // ── Documents ────────────────────────────────────────────────────────
+    settings.setValue(QStringLiteral("Documents/RootPath"), m_documentsRootPath);
 }
 
 // ── Setters ───────────────────────────────────────────────────────────────────
@@ -154,28 +162,6 @@ void AppSettings::setWindowGeometry(const QPoint& pos, const QSize& size, const 
     m_windowSize  = size;
     m_windowState = state;
     save();
-}
-
-void AppSettings::setApiKeyYahoo(const QString& key)
-{
-    m_apiKeyYahoo = key;
-    save();
-}
-
-void AppSettings::setApiKeyOnVista(const QString& key)
-{
-    m_apiKeyOnVista = key;
-    save();
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-QColor AppSettings::logColorAt(int stateIndex) const
-{
-    // Return black as safe fallback for any out-of-range index.
-    if (stateIndex < 0 || stateIndex >= m_logColors.size())
-        return Qt::black;
-    return m_logColors.at(stateIndex);
 }
 
 void AppSettings::setLogGuiEntries(int value)
@@ -244,6 +230,18 @@ void AppSettings::setSoundErrorFile(const QString& filename)
     save();
 }
 
+void AppSettings::setApiKeyYahoo(const QString& key)
+{
+    m_apiKeyYahoo = key;
+    save();
+}
+
+void AppSettings::setApiKeyOnVista(const QString& key)
+{
+    m_apiKeyOnVista = key;
+    save();
+}
+
 void AppSettings::setBackupEnabled(bool value)
 {
     m_backupEnabled = value;
@@ -272,4 +270,20 @@ void AppSettings::setBackupDirectory(const QString& value)
 {
     m_backupDirectory = value;
     save();
+}
+
+void AppSettings::setDocumentsRootPath(const QString& value)
+{
+    m_documentsRootPath = value;
+    save();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+QColor AppSettings::logColorAt(int stateIndex) const
+{
+    // Return black as safe fallback for any out-of-range index.
+    if (stateIndex < 0 || stateIndex >= m_logColors.size())
+        return Qt::black;
+    return m_logColors.at(stateIndex);
 }

@@ -12,6 +12,8 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/forms/SoundSettingsForm/SoundSettingsForm.cpp
     ../../app/forms/BackupSettingsForm/BackupSettingsForm.h
     ../../app/forms/BackupSettingsForm/BackupSettingsForm.cpp
+    ../../app/forms/DocumentsSettingsForm/DocumentsSettingsForm.h
+    ../../app/forms/DocumentsSettingsForm/DocumentsSettingsForm.cpp
     ../../app/forms/AboutForm/AboutForm.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
@@ -101,6 +103,8 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/repositories/DividendRepository.cpp
     ../../app/repositories/BrokerageRepository.cpp
     ../../app/repositories/DailyValuesRepository.cpp
+    ../../app/core/DocumentRootMigrator.h
+    ../../app/core/DocumentRootMigrator.cpp
     ../../app/utils/ShareCalculator.cpp
     ${FORM_TEST_RESOURCES}
 )
@@ -469,3 +473,51 @@ target_link_libraries(tst_overviewtabwidget
 )
 
 add_test(NAME tst_overviewtabwidget COMMAND tst_overviewtabwidget)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_documentssettingsform — DocumentsSettingsForm + DocumentRootMigrator
+# (Root-Verzeichnis für Dokumente, 19.07.2026). Eigene Executable statt
+# Erweiterung von tst_mainwindow.cpp, analog tst_backupsettingsform — anders
+# als dort braucht DocumentRootMigrator aber eine echte Datenbank
+# (Repositories), daher zusätzlich Database/Repositories/Models als
+# Abhängigkeiten und Qt6::Sql beim Linken.
+# ─────────────────────────────────────────────────────────────────────────────
+
+qt_add_executable(tst_documentssettingsform tst_documentssettingsform.cpp
+    ../../app/forms/DocumentsSettingsForm/DocumentsSettingsForm.h
+    ../../app/forms/DocumentsSettingsForm/DocumentsSettingsForm.cpp
+    ../../app/core/DocumentRootMigrator.h
+    ../../app/core/DocumentRootMigrator.cpp
+    ../../app/config/AppSettings.cpp
+    ../../app/IconProvider.cpp
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
+    ../../app/models/ShareObject.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/BrokerageObject.cpp
+    ../../app/models/DividendObject.cpp
+    ../../app/repositories/ShareRepository.cpp
+    ../../app/repositories/BuyRepository.cpp
+    ../../app/repositories/SaleRepository.cpp
+    ../../app/repositories/BrokerageRepository.cpp
+    ../../app/repositories/DividendRepository.cpp
+)
+
+target_include_directories(tst_documentssettingsform
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/DocumentsSettingsForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/core
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/OwnMessageBoxForm
+)
+
+set_target_properties(tst_documentssettingsform PROPERTIES
+    AUTOMOC ON
+    AUTORCC ON
+)
+
+target_link_libraries(tst_documentssettingsform
+    PRIVATE Qt6::Test Qt6::Sql Qt6::Widgets Database Logger
+)
+
+add_test(NAME tst_documentssettingsform COMMAND tst_documentssettingsform)

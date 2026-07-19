@@ -8,6 +8,7 @@
 #include "../LoggerSettingsForm/LoggerSettingsForm.h"
 #include "../SoundSettingsForm/SoundSettingsForm.h"
 #include "../BackupSettingsForm/BackupSettingsForm.h"
+#include "../DocumentsSettingsForm/DocumentsSettingsForm.h"
 #include "../ShareDetailsForm/ViewShareDetails.h"
 #include "../AboutForm/AboutForm.h"
 #include "../ApiSettingsForm/ApiSettingsForm.h"
@@ -120,6 +121,12 @@ void MainWindow::initialize()
         updateStatusBarPortfolio(portfolioPath);
         populatePortfolioTables();
     }
+
+    // Kein Root-Verzeichnis für Dokumente konfiguriert: Dialog wird angeboten
+    // (nicht zwingend), egal welcher der drei Zweige oben gelaufen ist.
+    // Muss nach dem Öffnen der Portfolio-DB laufen, damit DocumentRootMigrator
+    // vorhandene Dokumentpfade auswerten kann (siehe ARCHITECTURE.md).
+    ensureDocumentsRootConfigured();
 }
 
 // ── setupActions ──────────────────────────────────────────────────────────────
@@ -209,6 +216,12 @@ void MainWindow::setupActions()
         BackupSettingsForm dialog(this);
         dialog.exec();
     });
+    m_actionDocuments = new QAction(IconProvider::icon(IconProvider::MenuFolderOpen),
+                                    tr("&Dokumente..."), this);
+    connect(m_actionDocuments, &QAction::triggered, this, [this]() {
+        DocumentsSettingsForm dialog(this);
+        dialog.exec();
+    });
 
     // ── API Settings ──────────────────────────────────────────────────────
     m_actionApiKeyYahoo = new QAction(IconProvider::icon(IconProvider::MenuKey),
@@ -248,6 +261,7 @@ void MainWindow::setupMenuBar()
     settingsMenu->addAction(m_actionLogger);
     settingsMenu->addAction(m_actionSound);
     settingsMenu->addAction(m_actionBackup);
+    settingsMenu->addAction(m_actionDocuments);
 
     QMenu* apiMenu = menuBar()->addMenu(tr("&API-Einstellung"));
     apiMenu->addAction(m_actionApiKeyYahoo);
@@ -656,6 +670,19 @@ bool MainWindow::checkAndLoadConfigurations()
     return allOk;
 }
 
+// ── ensureDocumentsRootConfigured ───────────────────────────────────────────────
+
+void MainWindow::ensureDocumentsRootConfigured()
+{
+    if (!AppSettings::instance().documentsRootPath().isEmpty())
+        return;
+
+    // Nicht mehr zwingend — bricht der Benutzer ab, bleibt der Root-Pfad
+    // leer und der Dialog wird beim nächsten Start erneut angeboten.
+    DocumentsSettingsForm dialog(this);
+    dialog.exec();
+}
+
 void MainWindow::disableAllControls()
 {
     // Disable all toolbar actions
@@ -673,6 +700,7 @@ void MainWindow::disableAllControls()
     m_actionLogger->setEnabled(false);
     m_actionSound->setEnabled(false);
     m_actionBackup->setEnabled(false);
+    m_actionDocuments->setEnabled(false);
     m_actionApiKeyYahoo->setEnabled(false);
 
     // Disable portfolio tabs

@@ -491,6 +491,13 @@ private:
     {
         const QString sandboxIni = m_tempDir.path() + QStringLiteral("/test_settings.ini");
         AppSettings::instance().load(sandboxIni);
+
+        // Verhindert, dass MainWindow::ensureDocumentsRootConfigured() beim
+        // Konstruieren einen blockierenden Dialog öffnet (der Dialog
+        // erscheint nur, wenn documentsRootPath() leer ist). Muss nicht
+        // tatsächlich existieren — der Startup-Check prüft nur auf "leer".
+        AppSettings::instance().setDocumentsRootPath(
+            m_tempDir.path() + QStringLiteral("/documents"));
     }
 
     void openMemoryDb()
@@ -7580,6 +7587,15 @@ private slots:
     void initTestCase()
     {
         QVERIFY(m_tempDir.isValid());
+
+        // Verhindert, dass MainWindow::ensureDocumentsRootConfigured() beim
+        // Konstruieren einen blockierenden Dialog öffnet (der Dialog
+        // erscheint nur, wenn documentsRootPath() leer ist). Diese Klasse
+        // sandboxt AppSettings sonst nicht — der Wert bleibt für die
+        // gesamte Testklasse gesetzt, da hier weder init() noch cleanup()
+        // AppSettings neu laden.
+        AppSettings::instance().setDocumentsRootPath(
+            m_tempDir.path() + QStringLiteral("/documents"));
     }
 
     // ── BackupWorker — successful copy ────────────────────────────────────────

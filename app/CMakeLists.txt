@@ -32,6 +32,8 @@ set(APP_SOURCES
     repositories/BrokerageRepository.cpp
     repositories/DailyValuesRepository.h
     repositories/DailyValuesRepository.cpp
+    core/DocumentRootMigrator.h
+    core/DocumentRootMigrator.cpp
 
     # ── Configuration ──────────────────────────────────────────────────────
     config/AppSettings.h
@@ -142,6 +144,8 @@ set(APP_SOURCES
     forms/SoundSettingsForm/SoundSettingsForm.cpp
     forms/BackupSettingsForm/BackupSettingsForm.h
     forms/BackupSettingsForm/BackupSettingsForm.cpp
+    forms/DocumentsSettingsForm/DocumentsSettingsForm.h
+    forms/DocumentsSettingsForm/DocumentsSettingsForm.cpp
     forms/ApiSettingsForm/ApiSettingsForm.h
     forms/ApiSettingsForm/ApiSettingsForm.cpp
 

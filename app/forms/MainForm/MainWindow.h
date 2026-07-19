@@ -415,6 +415,19 @@ private:
     bool checkAndLoadConfigurations();
 
     /**
+     * @brief Offers the documents root directory dialog if none is configured.
+     *
+     * If AppSettings::documentsRootPath() is empty, opens
+     * DocumentsSettingsForm once. Not mandatory — if the user cancels,
+     * nothing changes and the dialog is simply offered again on the next
+     * start. No-op if a root is already configured. Must be called after
+     * the portfolio database (if any) has been opened, so
+     * DocumentRootMigrator::detectCommonRoot() can inspect existing
+     * document paths for its suggestion.
+     */
+    void ensureDocumentsRootConfigured();
+
+    /**
      * @brief Disable all UI controls except Quit.
      *
      * Called when a critical configuration error occurs at startup.
@@ -505,6 +518,7 @@ private:
     QAction* m_actionLogger               = nullptr;
     QAction* m_actionSound                = nullptr;
     QAction* m_actionBackup               = nullptr;
+    QAction* m_actionDocuments            = nullptr;
 
     // ── Actions — API Settings ────────────────────────────────────────────
     QAction* m_actionApiKeyYahoo          = nullptr;
