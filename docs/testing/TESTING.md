@@ -40,6 +40,7 @@ ctest --output-on-failure
 ./bin/tst_shareeditform
 ./bin/tst_buysform
 ./bin/tst_backupsettingsform
+./bin/tst_documentssettingsform
 ./bin/tst_xmlportfolioparser
 ./bin/tst_portfoliovalidator
 ./bin/tst_portfolioimporter
@@ -195,6 +196,16 @@ Tabellen-Existenz, Indizes, Foreign Keys, Default-Werte, WAL-Modus und Transakti
 
 Startverhalten der Applikation (fehlende DB, leerer Pfad, erstes Öffnen) und Icon-Verfügbarkeit
 aller definierten `IconProvider::IconName`-Werte — `tst_appstartup` und `tst_iconprovider`.
+
+@note `AppStartup::openDatabase()` hat seit 19.07.2026 einen zweiten Parameter
+`showErrorDialog = true` — bei `false` wird bei einem Öffnungsfehler nur
+`qCritical()` geloggt statt eines blockierenden `QMessageBox::critical()`.
+`test_openDatabase_invalidPath_returnsFalse` ruft explizit mit `false` auf,
+da dieser Test bewusst den Fehlerfall (Pfad zeigt auf ein Verzeichnis statt
+eine Datei) auslöst und sonst am Dialog hängen bliebe. Alle anderen
+`openDatabase()`-Tests lösen keinen Fehler aus und sind vom Parameter nicht
+betroffen. Produktivaufruf in `main.cpp` bleibt unverändert (`showErrorDialog`
+defaultet auf `true`).
 
 ---
 
@@ -2038,3 +2049,67 @@ ohne den Umweg über einen vollständigen Import-Lauf geprüft werden kann.
 | `test_validate_orderNumberAlreadyExistsInDb_isReported` | Neuer Buy mit `OrderNumber`, die bereits unter einer **anderen** GUID in der DB existiert | Problem mit `category == "Buy"`, erwähnt "Datenbank" |
 | `test_validate_brokerageResolvesAgainstExistingDbBuy_noIssue` | Brokerage referenziert einen Buy, der bereits aus einem früheren Import in der DB steht (nicht in der aktuellen Datei) | **Kein** Problem — `GuidBuySale`-Auflösung berücksichtigt auch bereits importierte Daten |
 | `test_validate_sameGuidReimportedWithSameOrderNumber_noIssue` | Derselbe Buy (gleiche GUID, gleiche `OrderNumber`) wird erneut importiert | **Kein** Problem — Idempotenz-Regressionstest (Bug gefunden 05.07.2026 durch `test_importBuy_isIdempotentOnRerun`: DB-Abgleich unterschied ursprünglich nicht zwischen "andere GUID, gleiche OrderNumber" und "dieselbe GUID nochmal") |
+
+---
+
+### tests/forms/ — DocumentsSettingsForm & DocumentRootMigrator
+
+@note `AppSettings` ist ein Singleton — jeder Test, der `documentsRootPath`
+ändert, stellt am Ende den ursprünglichen Wert wieder her. `DocumentRootMigrator`-
+Tests brauchen eine echte (temporäre) SQLite-DB mit ein paar Shares/
+Buys/Sales, da die Repositories direkt gegen `Database::instance()` arbeiten.
+
+AppSettings — Documents-Sektion (reiner Speichern/Laden-Roundtrip):
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_documentsSettings_saveRootPath` | `documentsRootPath` gespeichert und gelesen | Wert korrekt geladen |
+| `test_documentsSettings_defaultIsEmpty` | Frisch geladene INI ohne Eintrag | `documentsRootPath()` = "" |
+
+DocumentsSettingsForm — Konstruktion & Vorbefüllung:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_dialog_constructsWithoutCrash` | Dialog öffnet ohne Absturz | Kein Absturz |
+| `test_dialog_alwaysHasCancelButton` | Abbrechen-Button immer vorhanden (kein Zwangsmodus mehr) | `findChild<QPushButton*>` mit Text "Abbrechen" ≠ nullptr |
+| `test_dialog_cancel_doesNotChangeSettings` | Abbrechen-Klick | `AppSettings::documentsRootPath()` unverändert, kein DB-Write |
+| `test_dialog_loadSettings_prefillsOldRootFromConfigured` | Root bereits gesetzt | "Alter Root-Pfad"-Feld = `AppSettings::documentsRootPath()` |
+| `test_dialog_loadSettings_prefillsOldRootFromDetection` | Kein Root gesetzt, Dokumente mit gemeinsamem Ordner in DB | "Alter Root-Pfad"-Feld = erkannter Ordner |
+| `test_dialog_loadSettings_ambiguousShowsHintNoAutofill` | Dokumente mit unterschiedlichen Ordnern | Hinweistext sichtbar, Feld bleibt leer |
+| `test_dialog_onOk_emptyOldRoot_savesWithoutRewrite` | Altes Feld leer, neues gesetzt (existierendes Verzeichnis) | `AppSettings::documentsRootPath()` = neuer Pfad, `accept()`, keine `changeRoot()`-Aufrufe/DB-Änderungen |
+| `test_dialog_onOk_sameOldAndNewRoot_savesWithoutConfirmation` | Altes und neues Feld identisch | `accept()` ohne Bestätigungsdialog, `documentsRootPath()` = Pfad |
+
+@note Bewusst NICHT implementiert: `onOk()`s Fehler-/Bestätigungs-Zweige
+(leerer oder nicht existierender neuer Pfad → `OwnMessageBox::critical()`;
+abweichender alter Pfad → `OwnMessageBox::question()`) — beide rufen intern
+`exec()` auf und würden den headless Testlauf blockieren, exakt dieselbe
+Konvention wie bei `onPortfolioRowDoubleClicked()` in `tst_mainwindow.cpp`.
+Die zugrundeliegende Validierungslogik (leerer/nicht-existierender Pfad,
+Präfix-Vergleich) ist über die `DocumentRootMigrator`-Tests unten trotzdem
+abgedeckt — nur der UI-Dialog-Aufruf selbst bleibt ungetestet.
+
+DocumentRootMigrator — `changeRoot()`:
+
+@note Alle Migrator-Tests verwenden ausschließlich `BuyObject`/`BuyRepository`,
+nicht zusätzlich Sale/Brokerage/Dividend — `DocumentRootMigrator` behandelt
+alle vier Tabellen strukturell identisch (derselbe Switch über
+`DocumentEntry::Table` in `rewrite()`/`collectAllDocuments()`).
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_migrator_changeRoot_rewritesMatchingPaths` | Buy-Dokument unter altem Root | Neuer Pfad in DB, `Result::rewritten` = 1 |
+| `test_migrator_changeRoot_leavesOutsidePathsUntouched` | Dokument außerhalb des alten Root | `Result::outsideRoot` = 1, Pfad unverändert in DB |
+| `test_migrator_changeRoot_alreadyCorrectPath_notCounted` | Pfad bereits identisch zum Zielpfad | `Result::alreadyInRoot` erhöht, kein DB-Write |
+| `test_migrator_changeRoot_oldRootNeedNotExistOnDisk` | Alter Root ist ein Windows-Pfad, der auf dem Testrechner nicht existiert | Umschreibung funktioniert trotzdem (reiner String-Vergleich) |
+| `test_migrator_changeRoot_windowsBackslashPaths_matchedCorrectly` | Gespeicherte Pfade mit `\` (z. B. `B:\Depot\...`) | Werden korrekt erkannt und umgeschrieben, unabhängig vom Test-Betriebssystem |
+| `test_migrator_changeRoot_noDocuments_returnsZeroResult` | Leere Datenbank | Alle Zähler = 0 |
+
+DocumentRootMigrator — `detectCommonRoot()`:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_migrator_detect_commonParentDetected` | Alle Dokumente unter einem gemeinsamen Ordner | `suggestedRoot` korrekt, `ambiguous` = false |
+| `test_migrator_detect_windowsPathsOnLinuxHost_stillDetected` | Nur `B:\...`-Pfade, Test läuft auf Linux | `absoluteCount` = Anzahl Dokumente, `suggestedRoot` korrekt ermittelt (Regressionstest für den 18.07.2026 gemeldeten Bug) |
+| `test_migrator_detect_noCommonParent_setsAmbiguous` | Dokumente in unabhängigen Ordnern | `ambiguous` = true, `suggestedRoot` leer |
+| `test_migrator_detect_relativePaths_excludedFromDetection` | Gemischt: absolute und rein relative Pfade (bloße Dateinamen) | `relativeCount` korrekt, diese fließen nicht in `suggestedRoot` ein |
+| `test_migrator_detect_emptyDatabase_returnsZeroResult` | Keine Aktien/Dokumente vorhanden | Alle Zähler = 0 |

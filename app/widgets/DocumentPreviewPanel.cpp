@@ -12,8 +12,7 @@
 #include <QTimer>
 #include <QDir>
 #include <QFileInfo>
-
-#include "../forms/OwnMessageBoxForm/OwnMessageBox.h"
+#include <QDebug>
 
 #ifdef SPM_HAVE_QTPDF
 #  include <QPdfView>
@@ -35,7 +34,6 @@ DocumentPreviewPanel::DocumentPreviewPanel(QWidget* parent)
 //
 // Identisch zu ViewDividendEdit::createPreviewPanel() (auch in ViewBuyEdit/
 // ViewSaleEdit/ViewBrokerageEdit/ViewShareAdd so vorhanden).
-
 void DocumentPreviewPanel::buildUi()
 {
     auto* outer = new QVBoxLayout(this);
@@ -45,6 +43,15 @@ void DocumentPreviewPanel::buildUi()
     auto* layout = new QVBoxLayout(gb);
     layout->setContentsMargins(6, 6, 6, 6);
     layout->setSpacing(4);
+
+    // Inline-Fehleranzeige "Datei nicht gefunden" — unabhängig vom
+    // Render-Pfad, standardmäßig ausgeblendet und nimmt dann keinen Platz
+    // im Layout ein.
+    m_notFoundLabel = new QLabel;
+    m_notFoundLabel->setWordWrap(true);
+    m_notFoundLabel->setStyleSheet(QStringLiteral("color: #ff4444;"));
+    m_notFoundLabel->setVisible(false);
+    layout->addWidget(m_notFoundLabel);
 
 #ifdef SPM_HAVE_QTPDF
     m_pdfDocument = new QPdfDocument(this);
@@ -117,6 +124,8 @@ void DocumentPreviewPanel::buildUi()
 
 void DocumentPreviewPanel::clearDocument()
 {
+    m_notFoundLabel->setVisible(false);
+
 #ifdef SPM_HAVE_QTPDF
     m_pdfDocument->close();
 #else
@@ -143,21 +152,24 @@ void DocumentPreviewPanel::showDocument(const QString& path)
     // rendern — der Benutzer bekommt eine klare Fehlermeldung, wenn das
     // Dokument (z.B. nach Verschieben/Löschen der Datei) nicht mehr existiert.
     //
-    // TODO (13.07.2026): Dieselbe Prüfung fehlt noch in den Editier-Dialogen
-    // (ViewBuyEdit::openPdfPreview(), ViewSaleEdit::openPdfPreview(),
-    // ViewDividendEdit::openPdfPreview(), ViewBrokerageEdit::openPdfPreview(),
-    // ViewShareAdd::openPdfPreview()) — dort wird bislang direkt geladen/
-    // gerendert, ohne vorher zu prüfen, ob die Datei überhaupt noch existiert.
-    // Sollte nachgezogen werden, idealerweise durch Umstellung dieser fünf
-    // Dialoge auf DocumentPreviewPanel (siehe ARCHITECTURE.md, Abschnitt
-    // "OverviewTabWidget" — dort ist dieselbe Konsolidierung für die
-    // Übersicht-Tabellen bereits als offener Punkt vermerkt).
+    // Ursprünglich (13.07.2026) über OwnMessageBox::critical() als
+    // blockierenden Dialog gelöst — auf ein reines Anzeige-Widget bezogen
+    // ist ein modaler Dialog aber unpassend (unterbricht z.B. automatisierte
+    // Tests, die diesen Pfad auslösen, siehe test_viewBrokerageEdit_
+    // openPdfPreview_nonExistentFile_doesNotCrash in tst_mainwindow.cpp) —
+    // daher seit 19.07.2026 stattdessen eine inline Anzeige im Panel selbst
+    // (m_notFoundLabel), analog zu den bereits vorhandenen Inline-Fehlern
+    // im pdftoppm-Fallback-Zweig ("PDF-Vorschau konnte nicht gerendert
+    // werden.", "Vorschaubild nicht gefunden.").
     if (!QFileInfo::exists(path)) {
-        OwnMessageBox::critical(this, tr("Fehler"),
-            tr("Das Dokument wurde nicht gefunden:\n%1").arg(path));
+        qWarning() << "[DocumentPreviewPanel] Document not found:" << path;
         clearDocument();
+        m_notFoundLabel->setText(tr("Das Dokument wurde nicht gefunden:\n%1").arg(path));
+        m_notFoundLabel->setVisible(true);
         return;
     }
+
+    m_notFoundLabel->setVisible(false);
 
 #ifdef SPM_HAVE_QTPDF
     m_pdfDocument->close();

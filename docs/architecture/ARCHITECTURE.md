@@ -2633,17 +2633,32 @@ Widgets nicht mitbrachten.
 10.07.2026 bestätigt, siehe "Marktwert- vs. Depotwert-Modus" oben — kein
 offener Punkt mehr.)
 
-### DocumentPreviewPanel: Existenzprüfung fehlt noch in den Editier-Dialogen (offen, 13.07.2026)
+### DocumentPreviewPanel: blockierender Dialog durch Inline-Anzeige ersetzt (19.07.2026)
 
-`DocumentPreviewPanel::showDocument()` (neues, wiederverwendbares Vorschau-
-Panel, u. a. verwendet in `ShareDetailsForm`) prüft jetzt per
-`QFileInfo::exists()`, ob die Datei noch existiert, und zeigt andernfalls
-eine Fehlermeldung statt stillschweigend fehlzuschlagen. Dieselbe Prüfung
-fehlt noch in den Editier-Dialogen `ViewBuyEdit`, `ViewSaleEdit`,
-`ViewDividendEdit`, `ViewBrokerageEdit` und `ViewShareAdd` (jeweils
-`openPdfPreview()`) und sollte dort nachgezogen werden — idealerweise im
-Zuge der Umstellung dieser Dialoge auf `DocumentPreviewPanel`/
-`OverviewTabWidget`.
+`DocumentPreviewPanel::showDocument()` prüfte seit 13.07.2026 per
+`QFileInfo::exists()`, ob die Datei noch existiert, zeigte bei einer
+fehlenden Datei aber `OwnMessageBox::critical()` — ein blockierender
+modaler Dialog. Für ein reines, passives Anzeige-Widget ist das unpassend:
+es unterbricht insbesondere automatisierte Tests, die genau diesen Pfad
+gezielt auslösen (`test_viewBrokerageEdit_openPdfPreview_nonExistentFile_
+doesNotCrash` in `tst_mainwindow.cpp`, gemeldet 19.07.2026 — der Test lief
+zwar durch, blieb aber an dem Dialog hängen, bis er manuell bestätigt wurde).
+
+Ersetzt durch ein neues Inline-Label (`m_notFoundLabel`) direkt im Panel,
+analog zu den bereits vorhandenen Inline-Fehlermeldungen im
+pdftoppm-Fallback-Zweig ("PDF-Vorschau konnte nicht gerendert werden.",
+"Vorschaubild nicht gefunden."). Unabhängig vom Render-Pfad
+(`SPM_HAVE_QTPDF` oder pdftoppm-Fallback) vorhanden, standardmäßig
+ausgeblendet. Kein Dialog mehr, kein Blockieren der Ereignisschleife.
+
+Für Dialoge, die bereits an `DocumentPreviewPanel::showDocument()`
+delegieren (bestätigt für `ViewBuyEdit`, `ViewBrokerageEdit` — jeweils
+`openPdfPreview()` ruft `m_previewPanel->showDocument()`), gilt der Fix
+automatisch mit. Der Migrationsstand von `ViewSaleEdit`, `ViewDividendEdit`
+und `ViewShareAdd` (letzterer hatte zuletzt noch eine eigene,
+nicht-delegierte `openPdfPreview()`-Implementierung ohne jede
+Existenzprüfung) wurde im Zuge dieser Änderung nicht erneut geprüft —
+sollte bei Gelegenheit nachgezogen werden.
 
 ### Spalten-Breiten-Schema für Dokument-Spalten auch in ShareEdit-Grids nachziehen (hinfällig, 14.07.2026, aufgelöst 17.07.2026)
 
@@ -3235,3 +3250,68 @@ Häufigkeit dieser Datenfehler in der Quelle.
 Beide folgen dem etablierten Muster: Models/Repositories werden als Quelldateien
 direkt mitkompiliert (kein separates Backend-Interface nötig), `initTestCase()`
 öffnet `:memory:`, `init()` räumt die relevanten Tabellen vor jedem Test auf.
+
+---
+
+### DocumentsSettingsForm & DocumentRootMigrator (Root-Verzeichnis für Dokumente)
+
+Dialog zum Umstellen aller Dokumentpfade (Kauf, Verkauf, Kosten, Dividende)
+von einem alten auf einen neuen Root-Pfad in einem Rutsch — z. B. beim
+Wechsel von Windows auf Linux, oder beim Umsortieren des Beleg-Ordners.
+Aufrufbar über `Einstellungen → Dokumente...`, analog zu
+`BackupSettingsForm`/`LoggerSettingsForm` als einzelner `QDialog` ohne eigenes
+IView/IModel/Presenter-Triple.
+
+**Entstehung (18.07.2026):** Ursprünglich als deutlich komplexerer
+Erstlauf-Zwangsdialog mit Auto-Erkennung, Existenzprüfung und mehreren
+Sonderfall-Zweigen umgesetzt — auf Nutzer-Feedback ("dieser Schritt ist
+einfach zu komplex") bewusst zurückgebaut auf ein einfaches Zwei-Felder-Muster.
+
+**Zwei Felder, keine Zwangslogik:**
+- **Alter Root-Pfad** (`m_editOldRoot`, frei editierbar, kein Browse-Button):
+  vorbefüllt mit `AppSettings::documentsRootPath()`, falls bereits ein Root
+  bekannt ist; sonst mit einer automatischen Vorschlag aus
+  `DocumentRootMigrator::detectCommonRoot()`. Muss auf diesem Rechner NICHT
+  existieren — er dient nur als literaler String-Präfix zum Abgleich gegen
+  die gespeicherten Dokumentpfade (genau das ist der Kernanwendungsfall: ein
+  alter Windows-Pfad wie `B:\Depot\...` existiert unter Linux naturgemäß
+  nicht, soll aber trotzdem als Such-Präfix funktionieren).
+- **Neuer Root-Pfad** (`m_editNewRoot`, nur per "Durchsuchen..."): muss ein
+  echtes, existierendes oder anlegbares Verzeichnis auf diesem Rechner sein.
+
+**OK** ruft `DocumentRootMigrator::changeRoot(alt, neu)` auf (reine
+Präfix-Ersetzung über alle `document`-Spalten in `buys`/`sales`/`brokerage`/
+`dividends`, via `updateDocument(guid, path)` der jeweiligen Repositories —
+keine Datei-Operationen, die Dateien müssen bereits am neuen Ort liegen) und
+speichert den neuen Pfad in `AppSettings`. **Abbrechen** macht nichts — kein
+DB-Write, keine Settings-Änderung.
+
+**Kein Zwang mehr:** `MainWindow::ensureDocumentsRootConfigured()` öffnet den
+Dialog beim Start, wenn `AppSettings::documentsRootPath()` leer ist — aber
+nicht mehr blockierend. Bricht der Benutzer ab, bleibt der Root-Pfad leer und
+der Dialog wird beim nächsten Start erneut angeboten. Muss nach dem Öffnen
+der Portfolio-DB laufen, damit `detectCommonRoot()` etwas zum Auswerten hat.
+
+**Cross-Plattform-Pfaderkennung:** `DocumentRootMigrator` normalisiert
+Backslashes zu Forward-Slashes und erkennt einen Windows-Laufwerksbuchstaben
+(`B:`) als absoluten Pfad-Anfang, unabhängig davon, für welches Betriebssystem
+Qt selbst gebaut wurde (`QDir::isAbsolutePath()` würde einen Windows-Pfad
+unter Linux fälschlich als relativ einstufen — mit
+`QFileInfo(...).absolutePath()` als früherer, verworfener Zwischenstand
+wurde ein solcher Pfad sogar stillschweigend gegen das aktuelle
+Arbeitsverzeichnis des Prozesses aufgelöst und lieferte einen komplett
+falschen "gemeinsamen Ordner", z. B. den `bin/`-Ordner neben `settings.ini`
+bei einem aus Qt Creator gestarteten Debug-Build — gemeldet und behoben
+18.07.2026). `changeRoot()` selbst prüft nicht, ob der alte Root auf diesem
+Rechner existiert — reiner String-Vergleich.
+
+`detectCommonRoot()` liefert ein `DetectionResult` (`suggestedRoot`,
+`ambiguous`, `absoluteCount`, `relativeCount`) für die Vorbefüllung des
+"Alter Root-Pfad"-Felds; `changeRoot()` liefert ein `Result`
+(`rewritten`/`alreadyInRoot`/`outsideRoot`/`updateFailed` plus
+`outsidePaths`) für die Zusammenfassung nach dem Umstellen.
+
+**Bewusst nicht Teil dieser Änderung:** Die Durchsetzung "nur noch Dokumente
+aus dem Root auswählbar" in den `getOpenFileName()`-Dialogen von
+BuysForm/SalesForm/BrokeragesForm/DividendForm ist ein separater, noch
+offener Commit.

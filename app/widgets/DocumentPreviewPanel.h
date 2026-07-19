@@ -30,6 +30,13 @@ class QPdfView;
  * Zeilenauswahl in einem Formular, oder — wie in ShareDetailsForm — bei
  * `OverviewTabWidget::documentActivated()`).
  *
+ * Existiert die Datei unter `showDocument(path)` nicht (mehr), wird das
+ * **inline** im Panel angezeigt (`m_notFoundLabel`) statt über einen
+ * blockierenden `OwnMessageBox::critical()`-Dialog — ein reines
+ * Anzeige-Widget soll den aufrufenden Dialog/die Testausführung nicht durch
+ * einen modalen Dialog unterbrechen (geändert 19.07.2026, siehe
+ * ARCHITECTURE.md).
+ *
  * Verwendet von:
  * - `ViewBuyEdit`, `ViewSaleEdit`, `ViewDividendEdit`, `ViewBrokerageEdit`,
  *   `ViewShareAdd` (Editier-Dialoge, rechtes Panel neben dem Formular).
@@ -45,7 +52,8 @@ public:
 
     /**
      * @brief Lädt und zeigt das PDF-Dokument unter @p path an.
-     * Ein leerer Pfad wirkt wie clearDocument().
+     * Ein leerer Pfad wirkt wie clearDocument(). Existiert die Datei nicht,
+     * wird das inline im Panel angezeigt (kein blockierender Dialog).
      */
     void showDocument(const QString& path);
 
@@ -54,6 +62,11 @@ public:
 
 private:
     void buildUi();
+
+    /// Inline-Fehlerlabel für "Datei nicht gefunden" — unabhängig vom
+    /// Render-Pfad (SPM_HAVE_QTPDF oder pdftoppm-Fallback) vorhanden,
+    /// standardmäßig ausgeblendet.
+    QLabel* m_notFoundLabel = nullptr;
 
 #ifdef SPM_HAVE_QTPDF
     QPdfDocument* m_pdfDocument = nullptr;
