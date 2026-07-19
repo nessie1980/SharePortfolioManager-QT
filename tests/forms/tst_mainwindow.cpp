@@ -685,7 +685,19 @@ private slots:
     {
         if (Database::instance().isOpen())
             Database::instance().close();
-        AppSettings::instance().load(QString());
+        // WICHTIG: Hier bewusst KEIN AppSettings::instance().load(...) mehr
+        // (weder mit leerem Pfad noch mit dem echten settings.ini-Pfad) —
+        // das hat den Singleton fälschlich auf die ECHTE settings.ini
+        // umgeleitet ("um sie zu schützen"), was aber das Gegenteil bewirkt
+        // hat: tst_mainwindow führt mehrere QObject-Testklassen im selben
+        // Prozess aus (siehe main() am Dateiende); jeder setXxx()-Aufruf in
+        // einer SPÄTER laufenden Klasse (z. B. TestBackupForm) hat dadurch
+        // direkt in die echte settings.ini geschrieben, statt in die
+        // sandboxte Testdatei — Nessies reale Konfiguration (Portfolio-Pfad,
+        // Dokument-Root) wurde dadurch bei jedem Testlauf überschrieben
+        // (gemeldet und behoben 19.07.2026). Der AppSettings-Singleton stirbt
+        // ohnehin mit dem Prozess — ein "Zurücksetzen fürs nächste Mal" ist
+        // hier schlicht nicht nötig.
     }
 
     void init()
@@ -4334,7 +4346,11 @@ private slots:
     {
         if (Database::instance().isOpen())
             Database::instance().close();
-        AppSettings::instance().load(QString());
+        // Siehe TestMainWindow::cleanupTestCase() weiter oben — hier bewusst
+        // KEIN AppSettings::instance().load(...) mehr (Reset auf echte
+        // settings.ini war die eigentliche Ursache dafür, dass später
+        // laufende Testklassen im selben Prozess, z. B. TestBackupForm, in
+        // die echte Konfigurationsdatei geschrieben haben).
     }
 
     void init()
@@ -7570,6 +7586,28 @@ class TestBackupForm : public QObject
 private:
     QTemporaryDir m_tempDir;
 
+    // Eigene Sandbox — unabhängig davon, welche AppSettings-Werte eine
+    // vorher im selben Prozess gelaufene Testklasse hinterlassen hat (siehe
+    // main() am Dateiende: mehrere QObject-Klassen laufen sequenziell im
+    // selben Prozess). Vorher verließ sich diese Klasse stillschweigend auf
+    // den Zustand von TestMainWindow/TestSalesForm — als deren
+    // cleanupTestCase() fälschlich auf die echte settings.ini umleitete
+    // (behoben 19.07.2026), schrieben die setPortfolioPath()/
+    // setDocumentsRootPath()-Aufrufe unten direkt in Nessies reale
+    // Konfiguration. Jetzt lädt diese Klasse immer zuerst ihre eigene,
+    // separate Sandbox-INI, komplett unabhängig von anderen Testklassen.
+    void loadSandboxedSettings()
+    {
+        const QString sandboxIni = m_tempDir.path() + QStringLiteral("/test_settings.ini");
+        AppSettings::instance().load(sandboxIni);
+
+        // Verhindert, dass MainWindow::ensureDocumentsRootConfigured() beim
+        // Konstruieren einen blockierenden Dialog öffnet (der Dialog
+        // erscheint nur, wenn documentsRootPath() leer ist).
+        AppSettings::instance().setDocumentsRootPath(
+            m_tempDir.path() + QStringLiteral("/documents"));
+    }
+
     // Helper: create a small test file with given size in bytes
     QString makeTestFile(const QString& name, int sizeBytes = 1024)
     {
@@ -7587,15 +7625,24 @@ private slots:
     void initTestCase()
     {
         QVERIFY(m_tempDir.isValid());
+        loadSandboxedSettings();
+    }
 
-        // Verhindert, dass MainWindow::ensureDocumentsRootConfigured() beim
-        // Konstruieren einen blockierenden Dialog öffnet (der Dialog
-        // erscheint nur, wenn documentsRootPath() leer ist). Diese Klasse
-        // sandboxt AppSettings sonst nicht — der Wert bleibt für die
-        // gesamte Testklasse gesetzt, da hier weder init() noch cleanup()
-        // AppSettings neu laden.
-        AppSettings::instance().setDocumentsRootPath(
-            m_tempDir.path() + QStringLiteral("/documents"));
+    void init()
+    {
+        // Vor jedem einzelnen Test erneut sandboxen — dieselbe Absicherung
+        // wie init()/loadSandboxedSettings() in TestMainWindow/TestSalesForm.
+        loadSandboxedSettings();
+        if (Database::instance().isOpen())
+            Database::instance().close();
+    }
+
+    void cleanupTestCase()
+    {
+        if (Database::instance().isOpen())
+            Database::instance().close();
+        // Bewusst KEIN AppSettings::instance().load(...) mit echtem Pfad —
+        // siehe Begründung bei TestMainWindow::cleanupTestCase() oben.
     }
 
     // ── BackupWorker — successful copy ────────────────────────────────────────

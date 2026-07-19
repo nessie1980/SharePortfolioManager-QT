@@ -40,10 +40,17 @@ private slots:
     {
         if (Database::instance().isOpen())
             Database::instance().close();
-
-        // Reset AppSettings to the real settings.ini path so subsequent
-        // application runs are not affected by test-written values.
-        AppSettings::instance().load(AppStartup::settingsPath());
+        // Bewusst KEIN AppSettings::instance().load(AppStartup::settingsPath())
+        // mehr — der AppSettings-Singleton ist prozesslokal und stirbt mit
+        // diesem Testprozess; ein "Zurücksetzen auf die echte settings.ini"
+        // schützt nichts, sondern hätte in einem Testbinary mit mehreren
+        // QObject-Testklassen im selben Prozess (wie tst_mainwindow.cpp)
+        // genau das Gegenteil bewirkt: spätere Testklassen schrieben dann
+        // versehentlich in die echte Konfigurationsdatei statt in ihre
+        // eigene Sandbox (gemeldet und an der eigentlichen Stelle behoben
+        // 19.07.2026, siehe tst_mainwindow.cpp). Hier zwar unschädlich (nur
+        // eine einzelne Testklasse in diesem Binary), aber als falsches
+        // Vorbild trotzdem entfernt.
     }
 
     void init()
