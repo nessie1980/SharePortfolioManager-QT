@@ -763,6 +763,9 @@ direkt in `tst_mainwindow.cpp` (Suchbegriff `onPortfolioRowDoubleClicked`/
 | `test_onPortfolioRowDoubleClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole) | Kein Absturz, kein modaler Dialog |
 | `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText` | `ViewShareDetails` direkt konstruiert (kein `exec()`, analog `test_shareAddDialog_canBeConstructed`) | `hasValidShare()` = true, Fenstertitel = Aktienname, Close-Button-Text = "Schließen" (Regressionstest für den qtbase-Übersetzungs-Bugfix vom 09.07.2026) |
 | `test_mainTabChanged_resetsOverviewTabsToUebersicht` (ergänzt 14.07.2026) | Zwei `insertTestBuy()`-Aufrufe in verschiedenen Jahren (erzeugen je einen Brokerage-Eintrag, siehe `insertTestBuy()`) befüllen den Kosten-Tab mit zwei Jahres-Tabs; ein Jahres-Tab wird ausgewählt, dann das äußere `m_tabs` gewechselt | Das per `findChildren<OverviewTabWidget*>()` (über `count() > 1` identifizierte) Kosten-`OverviewTabWidget` springt bei jedem Wechsel des äußeren Tabs zurück auf `currentIndex() == 0` (Übersicht) — Regressionstest für `ViewShareDetails::onMainTabChanged()`, siehe ARCHITECTURE.md, "OverviewTabWidget-Details" |
+| `test_shareDetailsGewinneVerluste_tabChange_selectsFirstRowInJahresTab` (ergänzt 19.07.2026) | Verkauf mit einem Jahr (2024) angelegt, Gewinne/Verluste-`OverviewTabWidget` per `overviewTabByGroupTitle()` gefunden, `setCurrentIndex(1)` (2024-Jahres-Tab) | `ViewShareDetails::wireOverviewTab()` selektiert automatisch Zeile 0 — `tbl->selectedItems()` nicht leer, `tbl->currentRow()` = 0 |
+| `test_shareDetailsGewinneVerluste_rowClick_emitsRowActivatedWithDocumentPath` (ergänzt 19.07.2026) | Verkauf mit Dokumentpfad angelegt, Klick auf eine Spalte (nicht die Dokument-Spalte) der Jahres-Tab-Zeile | `OverviewTabWidget::rowActivatedWithDocument` feuert 1× mit dem korrekten Dokumentpfad — Regressionstest für den ersetzten Doppelklick-Mechanismus |
+| `test_shareDetailsGewinneVerluste_tabChange_backToUebersicht_clearsSelection` (ergänzt 19.07.2026) | Kosten-`OverviewTabWidget`: Jahres-Tab ausgewählt (Zeile automatisch selektiert), dann zurück zur Übersicht (`setCurrentIndex(0)`) | Jahres-Tab-Selektion ist danach leer (`tbl->selectedItems().isEmpty()`) |
 | `test_marketMode_hasOnlyGewinneVerlusteOverviewTab` (ergänzt 14.07.2026) | `ViewShareDetails` im Marktwert-Modus konstruiert | Äußerer Tab-Titel "Gewinne/Verluste" vorhanden, "Dividenden"/"Kosten" nicht; genau eine `OverviewTabWidget`-Instanz statt drei |
 | `test_depotwertMode_hasAllThreeOverviewTabs` (ergänzt 14.07.2026, Regression) | `ViewShareDetails` im Depotwert-Modus (Default) konstruiert | Alle drei äußeren Tab-Titel vorhanden, genau drei `OverviewTabWidget`-Instanzen |
 | `test_marketMode_gewinneVerlusteTab_usesBrokerageFreeValues` (ergänzt 14.07.2026, deckte am 15.07.2026 einen unabhängigen `ModelSaleEdit::addSale()`-Bug auf, s.u.) | Ein Verkauf (5 Stk. à 100,00 €) mit eigener Provision (10,00 €), über `ModelSaleEdit::addSale()` real in die DB eingefügt; Gewinne/Verluste-`OverviewTabWidget` per `overviewTabByGroupTitle()`-Helfer (QGroupBox-Titel statt Index) gefunden | Depotwert-Modus zeigt "Auszahlung" = 490,00 € (500,00 € − 10,00 € Provision, über `payoutBrokerageReduction()`); Marktwert-Modus zeigt 500,00 € (brokeragefrei, über `payout()`) — für **dieselben** DB-Daten, direkter Beleg für die `market ? ... : ...`-Umschaltung in `ViewShareDetails::populateGewinneVerluste()` |
@@ -828,11 +831,22 @@ Test. Keine Datenbank nötig.
 | `test_clear_removesAllTabsAndResetsCount` | `clear()` nach `populateOverview()` | `count()` = 0, beide `QTabBar`s leer |
 | `test_populateOverview_calledTwice_replacesOldTabs` | Zweiter `populateOverview()`-Aufruf mit nur einem Jahr | `count()` = 2 (nicht 3+2) — alte Tabs werden vollständig ersetzt, nicht angehängt |
 
-Bewusst **nicht** abgedeckt: `documentActivated()` (Doppelklick auf die
-Dokument-Spalte) — unverändert gegenüber der bisherigen, bereits vor dem
-fixierten Übersicht-Tab funktionierenden `buildFrozenTable()`-Logik, keine
-neue Regressionsgefahr durch diese Feature-Reihe. `ViewShareDetails::
-onMainTabChanged()` ist kein `OverviewTabWidget`-Verhalten mehr, sondern lebt
+`rowActivatedWithDocument()` / `documentActivated()` (ergänzt 19.07.2026,
+siehe ARCHITECTURE.md, "ShareDetailsForm: Dokument-Vorschau per Zeilenauswahl
+statt Doppelklick"): eigene `populateSampleWithDoc()`-Variante mit einer
+dritten Spalte als konfigurierter Dokument-Spalte (`jahresDocColumn = 2`).
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_jahresRowClick_withDocColumn_emitsRowActivatedWithDocumentAndPath` | Klick auf Spalte 1 (nicht die Dokument-Spalte) einer Zeile mit Dokument | `rowActivatedWithDocument` feuert 1×, `userData` = GUID der Zeile, Pfad = Dokumentpfad aus Spalte 2 |
+| `test_jahresRowClick_rowWithoutDocument_emitsEmptyPath` | Klick auf eine Zeile ohne Dokument (leerer Pfad in der Dokument-Spalte) | Signal feuert trotzdem, Pfad ist leer |
+| `test_jahresRowClick_noDocColumnConfigured_emitsEmptyPath` | Klick in einem Tab ohne konfigurierte Dokument-Spalte (`populateSample()`, `jahresDocColumn` = Default -1) | Signal feuert, Pfad ist leer |
+| `test_jahresRowClick_stillEmitsPlainRowActivated` | Derselbe Klick löst weiterhin auch `rowActivated()` aus | Beide Signale sind unabhängig voneinander aktiv |
+| `test_documentColumnDoubleClick_stillEmitsDocumentActivated` | Regression: Doppelklick auf die Dokument-Spalte | `documentActivated(path)` feuert weiterhin 1× mit korrektem Pfad — dieser Mechanismus wurde beim Nachziehen von `rowActivatedWithDocument()` versehentlich kurz entfernt (brach den Build von `ViewBuyEdit` & Co.), seither bewusst als Ergänzung statt als Ersatz umgesetzt |
+| `test_documentColumnDoubleClick_emptyPath_doesNotEmitDocumentActivated` | Doppelklick auf die Dokument-Spalte einer Zeile ohne Dokument | Signal feuert nicht |
+| `test_documentColumnDoubleClick_wrongColumn_doesNotEmitDocumentActivated` | Doppelklick außerhalb der Dokument-Spalte | Signal feuert nicht |
+
+`ViewShareDetails::onMainTabChanged()` ist kein `OverviewTabWidget`-Verhalten mehr, sondern lebt
 in `ViewShareDetails` und braucht eine echte Dialog-Instanz mit Mehrjahres-
 Testdaten — dafür `test_mainTabChanged_resetsOverviewTabsToUebersicht` in
 `tst_mainwindow.cpp` statt dieses schlanken Test-Targets (siehe
@@ -2153,3 +2167,30 @@ sind NICHT unit-getestet — der Fehlerfall (Datei außerhalb des Root) ruft
 blockieren (bekannte Konvention, siehe `TestDocumentsSettingsForm`-Klassendoku
 oben). Die zugrundeliegende Logik ist über `isPathWithinRoot()` vollständig
 abgedeckt — nur der UI-Dialog-Aufruf selbst bleibt ungetestet.
+
+### ShareDetailsForm: Dokument-Vorschau per Zeilenauswahl (19.07.2026) — Testabdeckung nachgezogen
+
+`rowActivatedWithDocument(userData, documentPath)` (`OverviewTabWidget`,
+additiv neben dem unverändert bestehenden `documentActivated()`, siehe
+ARCHITECTURE.md, "ShareDetailsForm: Dokument-Vorschau per Zeilenauswahl statt
+Doppelklick") und `ViewShareDetails::wireOverviewTab()` (Erst-Zeilen-Auswahl
++ Dokument-Laden bei Tab-Wechsel, Vorschau-Leeren bei Rückkehr zur Übersicht)
+sind jetzt abgedeckt:
+
+- `tst_overviewtabwidget.cpp`: sieben neue Tests für
+  `rowActivatedWithDocument()`/`documentActivated()` (Doppelklick-Regression),
+  siehe eigener Tabellenabschnitt oben im `tst_overviewtabwidget`-Kapitel.
+- `tst_mainwindow.cpp`: drei neue Tests direkt an
+  `test_mainTabChanged_resetsOverviewTabsToUebersicht` angehängt (siehe
+  unten, "tests/forms/ — MainWindow"):
+  `test_shareDetailsGewinneVerluste_tabChange_selectsFirstRowInJahresTab`,
+  `test_shareDetailsGewinneVerluste_rowClick_emitsRowActivatedWithDocumentPath`,
+  `test_shareDetailsGewinneVerluste_tabChange_backToUebersicht_clearsSelection`.
+
+Bewusst weiterhin **nicht** abgedeckt: `DocumentPreviewPanel` selbst zeigt
+tatsächlich das richtige Dokument an (`showDocument()`/`clearDocument()`
+haben kein öffentliches, testbares Zustands-API, siehe ARCHITECTURE.md,
+"DocumentPreviewPanel") — die drei `tst_mainwindow.cpp`-Tests prüfen daher
+die Zeilenauswahl-/Signal-Ebene (Tabellen-Selektion, `rowActivatedWithDocument`-
+Payload), nicht die tatsächliche Panel-Anzeige. Bekannte, bewusste Lücke,
+identisch zur bereits bestehenden Einschränkung bei den Editier-Dialogen.

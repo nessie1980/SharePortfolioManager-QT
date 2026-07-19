@@ -14,6 +14,31 @@
 #include <QFileInfo>
 #include <algorithm>
 
+namespace {
+
+// kDocPreviewPanelWidth = 480 ist kein Schätzwert, sondern 1:1 aus den
+// Editier-Dialogen übernommen: dort ist der Dialog fest 1200px breit
+// (`setFixedSize(1200, 760)`) und im Verhältnis 3:2 zwischen Formular und
+// Vorschau-Panel aufgeteilt (`main->addWidget(m_leftPanel, 3); main->
+// addWidget(createPreviewPanel(), 2);`) — 1200 × 2/5 = 480.
+constexpr int kDocPreviewPanelWidth = 480;
+
+/**
+ * @brief Baut eine QGroupBox um ein OverviewTabWidget, identisch zu
+ * ViewDividendEdit::createOverviewGroup() (Titel mit zwei führenden
+ * Leerzeichen — Projektkonvention, siehe z.B. "  Dokumenten-Vorschau").
+ */
+QGroupBox* wrapInOverviewGroup(const QString& title, OverviewTabWidget* tabs)
+{
+    auto* gb = new QGroupBox(title);
+    auto* layout = new QVBoxLayout(gb);
+    layout->setContentsMargins(6, 6, 6, 6);
+    layout->addWidget(tabs);
+    return gb;
+}
+
+} // namespace
+
 // ── Constructor ───────────────────────────────────────────────────────────────
 
 ViewShareDetails::ViewShareDetails(const QString& shareGuid, bool marketValueMode, QWidget* parent)
@@ -157,35 +182,10 @@ void ViewShareDetails::setupDepotwertTab()
 //
 // Layout je Tab: OverviewTabWidget links (nimmt den verbleibenden Platz ein)
 // + DocumentPreviewPanel rechts, fest in der Breite (kDocPreviewPanelWidth).
-// Kein Popup mehr (13.07.2026, auf Wunsch durch eingebettetes Panel ersetzt) —
-// stattdessen aktualisiert ein Doppelklick auf die Dokument-Spalte
-// (OverviewTabWidget::documentActivated()) das Panel direkt, genau wie das
-// Formular in ViewSaleEdit/ViewDividendEdit/ViewBrokerageEdit sein Panel bei
-// Zeilenauswahl aktualisiert.
-//
-// kDocPreviewPanelWidth = 480 ist kein Schätzwert, sondern 1:1 aus den
-// Editier-Dialogen übernommen: dort ist der Dialog fest 1200px breit
-// (`setFixedSize(1200, 760)`) und im Verhältnis 3:2 zwischen Formular und
-// Vorschau-Panel aufgeteilt (`main->addWidget(m_leftPanel, 3); main->
-// addWidget(createPreviewPanel(), 2);`) — 1200 × 2/5 = 480.
-
-namespace {
-constexpr int kDocPreviewPanelWidth = 480;
-
-/**
- * @brief Baut eine QGroupBox um ein OverviewTabWidget, identisch zu
- * ViewDividendEdit::createOverviewGroup() (Titel mit zwei führenden
- * Leerzeichen — Projektkonvention, siehe z.B. "  Dokumenten-Vorschau").
- */
-QGroupBox* wrapInOverviewGroup(const QString& title, OverviewTabWidget* tabs)
-{
-    auto* gb = new QGroupBox(title);
-    auto* layout = new QVBoxLayout(gb);
-    layout->setContentsMargins(6, 6, 6, 6);
-    layout->addWidget(tabs);
-    return gb;
-}
-} // namespace
+// Kein Popup (13.07.2026, auf Wunsch durch eingebettetes Panel ersetzt).
+// Seit 19.07.2026 aktualisiert wireOverviewTab() das Panel direkt bei
+// Zeilenklick UND bei automatischer Erst-Zeilen-Auswahl beim Tab-Wechsel
+// (kein Doppelklick mehr nötig, siehe wireOverviewTab()).
 
 void ViewShareDetails::setupGewinneVerlusteTab()
 {
@@ -196,8 +196,8 @@ void ViewShareDetails::setupGewinneVerlusteTab()
     m_gewinneVerlusteTab = new OverviewTabWidget();
     m_gewinneVerlustePreview = new DocumentPreviewPanel(wrapper);
     m_gewinneVerlustePreview->setFixedWidth(kDocPreviewPanelWidth);
-    connect(m_gewinneVerlusteTab, &OverviewTabWidget::documentActivated,
-            m_gewinneVerlustePreview, &DocumentPreviewPanel::showDocument);
+    // jahresDocColumn = 4, siehe populateGewinneVerluste().
+    wireOverviewTab(m_gewinneVerlusteTab, m_gewinneVerlustePreview, /*docColumn=*/4);
 
     wrapperLayout->addWidget(
         wrapInOverviewGroup(tr("  Gewinne / Verluste-Übersicht"), m_gewinneVerlusteTab), 1);
@@ -215,8 +215,8 @@ void ViewShareDetails::setupDividendenTab()
     m_dividendenTab = new OverviewTabWidget();
     m_dividendenPreview = new DocumentPreviewPanel(wrapper);
     m_dividendenPreview->setFixedWidth(kDocPreviewPanelWidth);
-    connect(m_dividendenTab, &OverviewTabWidget::documentActivated,
-            m_dividendenPreview, &DocumentPreviewPanel::showDocument);
+    // jahresDocColumn = 4, siehe populateDividenden().
+    wireOverviewTab(m_dividendenTab, m_dividendenPreview, /*docColumn=*/4);
 
     wrapperLayout->addWidget(
         wrapInOverviewGroup(tr("  Dividenden-Übersicht"), m_dividendenTab), 1);
@@ -234,14 +234,62 @@ void ViewShareDetails::setupKostenTab()
     m_kostenTab = new OverviewTabWidget();
     m_kostenPreview = new DocumentPreviewPanel(wrapper);
     m_kostenPreview->setFixedWidth(kDocPreviewPanelWidth);
-    connect(m_kostenTab, &OverviewTabWidget::documentActivated,
-            m_kostenPreview, &DocumentPreviewPanel::showDocument);
+    // jahresDocColumn = 5, siehe populateKosten().
+    wireOverviewTab(m_kostenTab, m_kostenPreview, /*docColumn=*/5);
 
     wrapperLayout->addWidget(
         wrapInOverviewGroup(tr("  Kosten-Übersicht"), m_kostenTab), 1);
     wrapperLayout->addWidget(m_kostenPreview);
 
     m_tabs->addTab(wrapper, tr("Kosten"));
+}
+
+// ── wireOverviewTab ───────────────────────────────────────────────────────────
+//
+// Ersetzt seit 19.07.2026 (Nessies Vorgabe) den vorherigen Doppelklick auf
+// die Dokument-Spalte (OverviewTabWidget::documentActivated(), entfallen) —
+// siehe ARCHITECTURE.md, "ShareDetailsForm: Dokument-Vorschau per
+// Zeilenauswahl statt Doppelklick".
+
+void ViewShareDetails::wireOverviewTab(OverviewTabWidget* tabs, DocumentPreviewPanel* preview,
+                                        int docColumn)
+{
+    // 1) Klick auf eine beliebige Stelle einer Jahres-Tab-Zeile lädt sofort
+    //    deren Dokument (oder leert die Vorschau, falls die Zeile keins hat).
+    connect(tabs, &OverviewTabWidget::rowActivatedWithDocument,
+            this, [preview](const QVariant& /*userData*/, const QString& path) {
+                preview->showDocument(path);
+            });
+
+    // 2) Tab-Wechsel: Übersicht → Jahres-Tab selektiert automatisch die
+    //    erste Zeile und lädt deren Dokument — identisches Verhalten zum
+    //    automatischen Erst-Zeilen-Laden beim Tab-Wechsel in ViewBuyEdit/
+    //    ViewSaleEdit/ViewDividendEdit/ViewBrokerageEdit (dort über den
+    //    Presenter, hier als reine Anzeige direkt über die Tabelle, da es
+    //    keinen Presenter-Vorgang "Zeile laden" gibt). Wechsel zurück zur
+    //    Übersicht (Index 0) leert die Vorschau.
+    connect(tabs, &OverviewTabWidget::currentTabChanged,
+            this, [tabs, preview, docColumn](int index) {
+                if (index == 0) {
+                    preview->clearDocument();
+                    return;
+                }
+                auto* container = tabs->widget(index);
+                if (!container)
+                    return;
+                auto* tbl = qobject_cast<QTableWidget*>(
+                    container->property("dataTable").value<QObject*>());
+                if (!tbl || tbl->rowCount() == 0)
+                    return;
+                tbl->selectRow(0);
+
+                QString path;
+                if (docColumn >= 0) {
+                    if (const auto* docItem = tbl->item(0, docColumn))
+                        path = docItem->data(Qt::UserRole).toString();
+                }
+                preview->showDocument(path);
+            });
 }
 
 // ── onMainTabChanged ──────────────────────────────────────────────────────────
@@ -715,6 +763,6 @@ QWidget* ViewShareDetails::documentIconWidget(const QString& documentPath)
     auto* label = new QLabel;
     label->setAlignment(Qt::AlignCenter);
     label->setPixmap(IconProvider::icon(iconName).pixmap(16, 16));
-    label->setToolTip(tr("Doppelklick: Dokument anzeigen\n%1").arg(documentPath));
+    label->setToolTip(documentPath);
     return label;
 }

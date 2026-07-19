@@ -44,6 +44,17 @@
  *   Depotwert-only, da beides laut C#-Referenz reine Depotwert-Konzepte sind
  *   (siehe ARCHITECTURE.md, "Marktwert- vs. Depotwert-Modus").
  *
+ * @note **Dokument-Vorschau per Zeilenauswahl (19.07.2026, Nessies Vorgabe):**
+ * Der frühere Doppelklick auf die Dokument-Spalte einer Jahres-Tab-Zeile ist
+ * entfallen. wireOverviewTab() verdrahtet für jede der drei
+ * OverviewTabWidget-Instanzen sowohl OverviewTabWidget::rowActivatedWithDocument()
+ * (Klick auf eine beliebige Stelle einer Jahres-Tab-Zeile lädt sofort deren
+ * Dokument) als auch OverviewTabWidget::currentTabChanged() (Wechsel
+ * Übersicht → Jahres-Tab selektiert automatisch die erste Zeile und lädt
+ * deren Dokument; Wechsel zurück zur Übersicht leert die Vorschau) — siehe
+ * ARCHITECTURE.md, "ShareDetailsForm: Dokument-Vorschau per Zeilenauswahl
+ * statt Doppelklick".
+ *
  * Pure MVP View: contains no repository access and no formatting/business
  * logic beyond die reine Tabellen-Darstellung in den neuen Tabs (Jahres-
  * Gruppierung/-Summierung liegt dort bewusst in der View, identisch zum
@@ -128,6 +139,23 @@ private:
     void setupDividendenTab();
     void setupKostenTab();
 
+    /**
+     * @brief Verdrahtet Zeilenklick (Dokument sofort laden) und Tab-Wechsel
+     * (automatische Auswahl der ersten Zeile eines Jahres-Tabs + Laden von
+     * deren Dokument, bzw. Leeren der Vorschau beim Zurückwechseln zur
+     * Übersicht) für eine der drei OverviewTabWidget-Instanzen — siehe
+     * ARCHITECTURE.md, "ShareDetailsForm: Dokument-Vorschau per
+     * Zeilenauswahl statt Doppelklick" (19.07.2026).
+     * @param tabs        Die OverviewTabWidget-Instanz (Gewinne/Verluste,
+     *                    Dividenden oder Kosten).
+     * @param preview     Das zugehörige eingebettete Vorschau-Panel.
+     * @param docColumn   Spaltenindex der Dokument-Spalte in den Jahres-Tabs
+     *                    (siehe jahresDocColumn in den jeweiligen
+     *                    populate*()-Methoden: 4 für Gewinne/Verluste und
+     *                    Dividenden, 5 für Kosten).
+     */
+    void wireOverviewTab(OverviewTabWidget* tabs, DocumentPreviewPanel* preview, int docColumn);
+
     /** Creates one "Gesamt-/Vortag-/Aktuelle Bestandsberechnung" QGroupBox with an empty grid. */
     QGroupBox* createCalculationBox(const QString& title, QGridLayout*& outGrid);
 
@@ -164,8 +192,9 @@ private:
     OverviewTabWidget* m_kostenTab          = nullptr; ///< Nur im Depotwert-Modus angelegt.
 
     // Je ein eingebettetes Vorschau-Panel rechts neben der jeweiligen
-    // OverviewTabWidget-Instanz, aktualisiert über deren documentActivated()-
-    // Signal (Doppelklick auf die Dokument-Spalte einer Jahres-Tab-Zeile).
+    // OverviewTabWidget-Instanz, aktualisiert über wireOverviewTab() bei
+    // Zeilenklick (rowActivatedWithDocument()) und Tab-Wechsel
+    // (currentTabChanged()) — siehe Klassenkommentar oben.
     DocumentPreviewPanel* m_gewinneVerlustePreview = nullptr;
     DocumentPreviewPanel* m_dividendenPreview      = nullptr;
     DocumentPreviewPanel* m_kostenPreview          = nullptr;

@@ -3369,3 +3369,60 @@ die Root-Prüfung selbst ist davon unabhängig und greift dort genauso.
 Methoden selbst (der Fehlerfall ruft `OwnMessageBox::critical()` auf, s.
 bekannte Testkonvention) — nur die zugrundeliegende `isPathWithinRoot()`-
 Logik ist in `tst_documentssettingsform.cpp` unit-getestet.
+
+### ShareDetailsForm: Dokument-Vorschau per Zeilenauswahl statt Doppelklick (19.07.2026, Nessies Vorgabe)
+
+Der bisherige Doppelklick auf die Dokument-Spalte in den Jahres-Tabs von
+"Gewinne/Verluste", "Dividenden" und "Kosten" (`ViewShareDetails`) ist
+entfallen. Ein Klick auf eine beliebige Stelle einer Jahres-Tab-Zeile lädt
+jetzt sofort das zugehörige Dokument in die eingebettete
+`DocumentPreviewPanel`-Instanz — analog zum bereits etablierten
+Zeilenauswahl-Verhalten in `ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit`/
+`ViewBrokerageEdit` (dort lädt ein Zeilenklick über den Presenter den
+kompletten Datensatz inkl. Dokument).
+
+**`OverviewTabWidget`:** Neues Signal `rowActivatedWithDocument(userData,
+documentPath)` — gefeuert bei jedem Klick auf eine Jahres-Tab-Zeile (im
+selben `cellClicked`-Handler wie das bestehende `rowActivated()`),
+zusätzlich mit dem Dokumentpfad aus der (falls über `jahresDocColumn`
+konfigurierten) Dokument-Spalte derselben Zeile — leerer Pfad, wenn keine
+Dokument-Spalte existiert oder die Zeile kein Dokument hat. Rein additiv:
+das bestehende `documentActivated(path)` (Doppelklick auf die Dokument-
+Spalte) bleibt unverändert bestehen, da `ViewBuyEdit`/`ViewSaleEdit`/
+`ViewDividendEdit`/`ViewBrokerageEdit` es weiterhin verbinden — das war
+beim ersten Anlauf dieser Änderung übersehen worden und hatte kurzzeitig
+den Build gebrochen (`documentActivated` versehentlich entfernt), daher
+jetzt bewusst als Ergänzung statt als Ersatz umgesetzt.
+
+**`ViewShareDetails`:** Neue private Hilfsmethode `wireOverviewTab(tabs,
+preview, docColumn)`, aufgerufen aus `setupGewinneVerlusteTab()`/
+`setupDividendenTab()`/`setupKostenTab()` (docColumn: 4/4/5, siehe die
+jeweiligen `populate*()`-Methoden), ersetzt die bisherige einzeilige
+`connect(..., documentActivated, ..., showDocument)`-Verdrahtung und
+verdrahtet zwei Dinge:
+1. `rowActivatedWithDocument` → `preview->showDocument(path)` bei jedem
+   Zeilenklick.
+2. `currentTabChanged` → beim Wechsel Übersicht → Jahres-Tab wird die erste
+   Zeile automatisch selektiert (`tbl->selectRow(0)`) und deren Dokument
+   geladen (identisches Verhalten zum automatischen Erst-Zeilen-Laden beim
+   Tab-Wechsel in den Editier-Dialogen, dort über den Presenter); beim
+   Wechsel zurück zur Übersicht (Index 0) wird die Vorschau geleert
+   (`preview->clearDocument()`). Das bereits bestehende
+   `onMainTabChanged()` (Reset aller drei Instanzen auf Übersicht bei
+   Wechsel des äußeren `m_tabs`) ruft dafür weiterhin nur
+   `setCurrentIndex(0)` auf den drei `OverviewTabWidget`-Instanzen auf — der
+   neue `currentTabChanged`-Handler in `wireOverviewTab()` übernimmt davon
+   ausgehend automatisch das Leeren der Vorschau, ohne dass `onMainTabChanged()`
+   selbst etwas von den drei `DocumentPreviewPanel`-Instanzen wissen muss.
+
+**Testabdeckung nachgezogen (19.07.2026):** `tst_overviewtabwidget.cpp` deckt
+`rowActivatedWithDocument()` sowie eine Regression für das weiterhin
+bestehende `documentActivated()` mit sieben neuen Tests ab;
+`tst_mainwindow.cpp` deckt `wireOverviewTab()` (Erst-Zeilen-Auswahl bei
+Tab-Wechsel, Dokumentpfad-Signal bei Zeilenklick, Selektion-Leeren bei
+Rückkehr zur Übersicht) mit drei neuen, direkt an
+`test_mainTabChanged_resetsOverviewTabsToUebersicht` angehängten Tests ab —
+Details siehe TESTING.md, "ShareDetailsForm: Dokument-Vorschau per
+Zeilenauswahl (19.07.2026) — Testabdeckung nachgezogen". Bewusst weiterhin
+nicht abgedeckt: ob `DocumentPreviewPanel` das Dokument tatsächlich korrekt
+anzeigt (kein öffentliches Zustands-API, bekannte Lücke).

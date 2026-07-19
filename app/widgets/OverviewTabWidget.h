@@ -79,10 +79,34 @@
  * klar erkennbar. Bei Bedarf (weiteres visuelles Feedback) kann das per
  * Stylesheet/Property noch verfeinert werden.
  *
+ * @note **Neues Signal rowActivatedWithDocument() für ShareDetailsForm
+ * (19.07.2026, Nessies Vorgabe):** In `ViewShareDetails` sollte ein Klick auf
+ * eine Jahres-Tab-Zeile (statt bisher Doppelklick auf die Dokument-Spalte)
+ * sofort das zugehörige Dokument laden. Da `ViewShareDetails` als reiner
+ * Anzeige-Kontext keinen Presenter-Vorgang "Zeile laden" hat (anders als
+ * ViewBuyEdit/ViewSaleEdit/ViewDividendEdit/ViewBrokerageEdit, die über
+ * `rowActivated()` → Presenter → `onRowSelected()` den kompletten Datensatz
+ * inkl. Dokument laden), emittiert ein Klick auf eine beliebige Stelle einer
+ * Jahres-Tab-Zeile jetzt zusätzlich zu `rowActivated()` auch
+ * `rowActivatedWithDocument(userData, documentPath)` — mit dem Dokumentpfad
+ * aus der (falls konfigurierten) Dokument-Spalte derselben Zeile (leerer
+ * Pfad, wenn keine Dokument-Spalte existiert oder die Zeile kein Dokument
+ * hat).
+ *
+ * **Wichtig:** `documentActivated()` (Doppelklick auf die Dokument-Spalte)
+ * bleibt unverändert bestehen — `ViewBuyEdit`/`ViewSaleEdit`/
+ * `ViewDividendEdit`/`ViewBrokerageEdit` verbinden es weiterhin und dürfen
+ * dafür nicht angepasst werden. `rowActivatedWithDocument()` ist rein
+ * additiv und wird bislang nur von `ViewShareDetails` verbunden.
+ *
  * Verwendet von:
+ * - `ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit`/`ViewBrokerageEdit`
+ *   (Editier-Dialoge; `rowActivated()` + `currentTabChanged()` + weiterhin
+ *   `documentActivated()`).
  * - `ViewShareDetails` (Gewinne/Verluste-, Dividenden-, Kosten-Tab; reine
- *   Anzeige — `rowActivated()` bleibt dort unverbunden, da es kein
- *   Editier-Formular gibt).
+ *   Anzeige — `rowActivated()` bleibt dort unverbunden, `rowActivatedWithDocument()`
+ *   und `currentTabChanged()` sind über `wireOverviewTab()` verbunden, siehe
+ *   ViewShareDetails.cpp).
  *
  * Jede Tabelle besteht aus zwei `QTableWidget`s: einer scrollbaren `dataTable`
  * und einer einzeiligen, nicht scrollbaren `footerTable` mit der fett
@@ -124,11 +148,13 @@ public:
      *                                  (Jahr als Parameter).
      * @param jahresDocColumn           Spaltenindex der Dokument-Spalte in den
      *                                  Jahres-Tabs (-1 = keine Dokument-Spalte,
-     *                                  Standard). Bei >= 0 emittiert ein
-     *                                  Doppelklick auf diese Spalte
-     *                                  documentActivated(path) — der
-     *                                  Dokumentpfad muss dazu im Qt::UserRole
-     *                                  des jeweiligen Zell-Items stehen.
+     *                                  Standard). Bei >= 0 wird bei jedem
+     *                                  Zeilenklick der Dokumentpfad dieser
+     *                                  Spalte zusätzlich über
+     *                                  rowActivatedWithDocument() emittiert —
+     *                                  der Dokumentpfad muss dazu im
+     *                                  Qt::UserRole des jeweiligen
+     *                                  Zell-Items stehen.
      */
     void populateOverview(
         const QList<int>& years,
@@ -182,9 +208,23 @@ signals:
      * Tab-Zeile (siehe jahresDocColumn in populateOverview()); @p path ist
      * der Dokumentpfad aus Qt::UserRole. Der Aufrufer entscheidet, was damit
      * passiert (z.B. eine eingebettete Vorschau aktualisieren) — OverviewTabWidget
-     * öffnet selbst keinen Dialog und kennt keine PDF-Anzeige-Logik.
+     * öffnet selbst keinen Dialog und kennt keine PDF-Anzeige-Logik. Wird
+     * von ViewBuyEdit/ViewSaleEdit/ViewDividendEdit/ViewBrokerageEdit
+     * verbunden; in ViewShareDetails unverbunden (dort stattdessen
+     * rowActivatedWithDocument(), siehe unten).
      */
     void documentActivated(const QString& path);
+
+    /**
+     * @brief Wie rowActivated(), zusätzlich mit dem Dokumentpfad derselben
+     * Zeile (leer, falls keine Dokument-Spalte konfiguriert ist oder die
+     * Zeile kein Dokument hat). Gefeuert bei jedem Klick auf eine
+     * Jahres-Tab-Zeile, unabhängig von der geklickten Spalte. Neu seit
+     * 19.07.2026 für Kontexte ohne Presenter-Aktion (z.B. ViewShareDetails),
+     * die bei Zeilenauswahl direkt eine eingebettete Dokumenten-Vorschau
+     * aktualisieren wollen, ohne auf einen Doppelklick warten zu müssen.
+     */
+    void rowActivatedWithDocument(const QVariant& userData, const QString& documentPath);
 
     /**
      * @brief Gefeuert, wenn der sichtbare Tab wechselt (Klick auf den
@@ -192,9 +232,7 @@ signals:
      * Sprung z.B. durch einen Klick auf eine Übersicht-Zeile) — nicht bei
      * einem Zeilenklick innerhalb eines Jahres-Tabs (dafür: rowActivated()).
      * @p index folgt der durchgehenden Zählung (0 = Übersicht, 1..n = Jahre).
-     * Wird während populateOverview()/clear() unterdrückt. In
-     * ViewShareDetails bleibt dieses Signal unverbunden (rein anzeigender
-     * Kontext).
+     * Wird während populateOverview()/clear() unterdrückt.
      */
     void currentTabChanged(int index);
 

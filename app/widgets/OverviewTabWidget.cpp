@@ -261,13 +261,31 @@ QWidget* OverviewTabWidget::buildFrozenTable(
             footer->setColumnWidth(c, data->columnWidth(c));
     });
 
-    connect(data, &QTableWidget::cellClicked, this, [this, data](int row, int) {
-        onJahresRowActivated(data->item(row, 0));
+    // Klick auf eine beliebige Stelle einer Zeile → rowActivated() (immer,
+    // unverändert) sowie zusätzlich rowActivatedWithDocument() mit dem
+    // Dokumentpfad aus der (falls konfigurierten) Dokument-Spalte derselben
+    // Zeile — neu seit 19.07.2026 für Kontexte ohne Presenter-Aktion (z.B.
+    // ViewShareDetails), siehe OverviewTabWidget.h. Der Aufrufer entscheidet,
+    // was mit dem Dokumentpfad passiert — kein Popup, keine PDF-Logik hier.
+    connect(data, &QTableWidget::cellClicked, this, [this, data, docColumn](int row, int) {
+        auto* item0 = data->item(row, 0);
+        onJahresRowActivated(item0);
+        if (!item0)
+            return;
+
+        QString documentPath;
+        if (docColumn >= 0) {
+            if (const auto* docItem = data->item(row, docColumn))
+                documentPath = docItem->data(Qt::UserRole).toString();
+        }
+        emit rowActivatedWithDocument(item0->data(Qt::UserRole), documentPath);
     });
 
-    // Doppelklick auf die Dokument-Spalte → documentActivated(path). Der
-    // Aufrufer entscheidet, was damit passiert (z.B. eingebettete
-    // Vorschau aktualisieren) — kein Popup, keine PDF-Logik hier.
+    // Doppelklick auf die Dokument-Spalte → documentActivated(path).
+    // Unverändert seit 13.07.2026 — wird weiterhin von ViewBuyEdit/
+    // ViewSaleEdit/ViewDividendEdit/ViewBrokerageEdit verbunden. Der
+    // Aufrufer entscheidet, was damit passiert (z.B. eingebettete Vorschau
+    // aktualisieren) — kein Popup, keine PDF-Logik hier.
     if (docColumn >= 0) {
         connect(data, &QTableWidget::cellDoubleClicked, this,
                 [this, data, docColumn](int row, int col) {

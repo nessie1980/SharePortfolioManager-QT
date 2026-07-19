@@ -37,6 +37,10 @@ private:
      *   als Qt::UserRole (siehe OverviewTabWidget::onUebersichtRowActivated()).
      * - Jahres-Tabs: je eine Zeile, Spalte 0 trägt eine synthetische GUID als
      *   Qt::UserRole (siehe OverviewTabWidget::onJahresRowActivated()).
+     *
+     * Keine Dokument-Spalte konfiguriert (jahresDocColumn bleibt beim
+     * Default -1) — für Tests, die eine Dokument-Spalte brauchen, siehe
+     * populateSampleWithDoc() weiter unten.
      */
     static void populateSample(OverviewTabWidget& w)
     {
@@ -64,7 +68,7 @@ private:
             [](int year) { return QString::number(year); },
             [](int year, QTableWidget* data) {
                 data->setRowCount(1);
-                auto* item = new QTableWidgetItem(QStringLiteral("01.01."));
+                auto* item = new QTableWidgetItem(QStringLiteral("01.01.%1").arg(year));
                 item->setData(Qt::UserRole, QStringLiteral("guid-%1").arg(year));
                 data->setItem(0, 0, item);
                 data->setItem(0, 1, new QTableWidgetItem(QStringLiteral("50,00")));
@@ -73,6 +77,52 @@ private:
                 footer->setItem(0, 0, new QTableWidgetItem(QStringLiteral("Gesamt")));
                 footer->setItem(0, 1, new QTableWidgetItem(QStringLiteral("50,00")));
             });
+    }
+
+    /**
+     * @brief Wie populateSample(), aber mit genau einem Jahr (2025), einer
+     * dritten Spalte als konfigurierter Dokument-Spalte (jahresDocColumn = 2)
+     * und @p docPath als Dokumentpfad (Qt::UserRole) auf der einzigen
+     * Jahres-Tab-Zeile — für die rowActivatedWithDocument()-/
+     * documentActivated()-Tests unten. Ein leerer @p docPath simuliert eine
+     * Zeile ohne Dokument.
+     */
+    static void populateSampleWithDoc(OverviewTabWidget& w, const QString& docPath)
+    {
+        w.populateOverview(
+            {2025},
+            QStringLiteral("Übersicht"),
+            {QStringLiteral("Jahr"), QStringLiteral("Summe")},
+            {-1, 100},
+            [](QTableWidget* data) {
+                data->setRowCount(1);
+                auto* item = new QTableWidgetItem(QStringLiteral("2025"));
+                item->setData(Qt::UserRole, 2025);
+                data->setItem(0, 0, item);
+                data->setItem(0, 1, new QTableWidgetItem(QStringLiteral("100,00")));
+            },
+            [](QTableWidget* footer) {
+                footer->setItem(0, 0, new QTableWidgetItem(QStringLiteral("Gesamt")));
+                footer->setItem(0, 1, new QTableWidgetItem(QStringLiteral("100,00")));
+            },
+            {QStringLiteral("Datum"), QStringLiteral("Wert"), QString()},
+            {-1, 100, 36},
+            [](int year) { return QString::number(year); },
+            [docPath](int /*year*/, QTableWidget* data) {
+                data->setRowCount(1);
+                auto* item = new QTableWidgetItem(QStringLiteral("01.01.2025"));
+                item->setData(Qt::UserRole, QStringLiteral("guid-2025"));
+                data->setItem(0, 0, item);
+                data->setItem(0, 1, new QTableWidgetItem(QStringLiteral("50,00")));
+                auto* docItem = new QTableWidgetItem;
+                docItem->setData(Qt::UserRole, docPath);
+                data->setItem(0, 2, docItem);
+            },
+            [](int /*year*/, QTableWidget* footer) {
+                footer->setItem(0, 0, new QTableWidgetItem(QStringLiteral("Gesamt")));
+                footer->setItem(0, 1, new QTableWidgetItem(QStringLiteral("50,00")));
+            },
+            /*jahresDocColumn=*/2);
     }
 
     /** Holt die dataTable-Property eines Tab-Containers (siehe buildFrozenTable()). */
@@ -217,6 +267,136 @@ private slots:
 
         dataTable->selectRow(0);
         QVERIFY(dataTable->horizontalHeader()->font().bold());
+    }
+
+    // ── rowActivatedWithDocument() (neu, 19.07.2026, siehe ARCHITECTURE.md,
+    // "ShareDetailsForm: Dokument-Vorschau per Zeilenauswahl statt
+    // Doppelklick") / documentActivated() (Doppelklick, unverändert seit
+    // 13.07.2026 — wird weiterhin von ViewBuyEdit/ViewSaleEdit/
+    // ViewDividendEdit/ViewBrokerageEdit verbunden) ─────────────────────────
+
+    /** Klick auf eine beliebige Spalte einer Jahres-Tab-Zeile (nicht die
+     *  Dokument-Spalte) muss trotzdem rowActivatedWithDocument() mit dem
+     *  Dokumentpfad AUS der Dokument-Spalte derselben Zeile feuern. */
+    void test_jahresRowClick_withDocColumn_emitsRowActivatedWithDocumentAndPath()
+    {
+        OverviewTabWidget w;
+        populateSampleWithDoc(w, QStringLiteral("/tmp/beleg.pdf"));
+
+        auto* dataTable = dataTableOf(w.widget(1)); // Jahres-Tab 2025
+        if (!dataTable) QFAIL("dataTable nicht gefunden");
+
+        QSignalSpy spy(&w, &OverviewTabWidget::rowActivatedWithDocument);
+        dataTable->cellClicked(0, 1); // Spalte 1 ("Wert"), nicht die Dokument-Spalte (2)
+
+        QCOMPARE(spy.count(), 1);
+        const QList<QVariant> args = spy.takeFirst();
+        QCOMPARE(args.at(0).toString(), QStringLiteral("guid-2025"));
+        QCOMPARE(args.at(1).toString(), QStringLiteral("/tmp/beleg.pdf"));
+    }
+
+    /** Zeile ohne Dokument (leerer Pfad in der Dokument-Spalte) → leerer
+     *  Pfad im Signal, aber das Signal feuert trotzdem. */
+    void test_jahresRowClick_rowWithoutDocument_emitsEmptyPath()
+    {
+        OverviewTabWidget w;
+        populateSampleWithDoc(w, QString());
+
+        auto* dataTable = dataTableOf(w.widget(1));
+        if (!dataTable) QFAIL("dataTable nicht gefunden");
+
+        QSignalSpy spy(&w, &OverviewTabWidget::rowActivatedWithDocument);
+        dataTable->cellClicked(0, 0);
+
+        QCOMPARE(spy.count(), 1);
+        QVERIFY(spy.takeFirst().at(1).toString().isEmpty());
+    }
+
+    /** populateSample() (ohne jahresDocColumn-Argument) lässt die Dokument-
+     *  Spalte auf ihrem Default (-1, keine Dokument-Spalte konfiguriert) —
+     *  rowActivatedWithDocument() muss trotzdem feuern, nur mit leerem Pfad. */
+    void test_jahresRowClick_noDocColumnConfigured_emitsEmptyPath()
+    {
+        OverviewTabWidget w;
+        populateSample(w);
+
+        auto* dataTable = dataTableOf(w.widget(1));
+        if (!dataTable) QFAIL("dataTable nicht gefunden");
+
+        QSignalSpy spy(&w, &OverviewTabWidget::rowActivatedWithDocument);
+        dataTable->cellClicked(0, 0);
+
+        QCOMPARE(spy.count(), 1);
+        QVERIFY(spy.takeFirst().at(1).toString().isEmpty());
+    }
+
+    /** Klick auf eine Zeile muss weiterhin ganz normal auch rowActivated()
+     *  auslösen (unverändert) — rowActivatedWithDocument() ist rein additiv. */
+    void test_jahresRowClick_stillEmitsPlainRowActivated()
+    {
+        OverviewTabWidget w;
+        populateSampleWithDoc(w, QStringLiteral("/tmp/beleg.pdf"));
+
+        auto* dataTable = dataTableOf(w.widget(1));
+        if (!dataTable) QFAIL("dataTable nicht gefunden");
+
+        QSignalSpy spy(&w, &OverviewTabWidget::rowActivated);
+        dataTable->cellClicked(0, 0);
+
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.takeFirst().at(0).toString(), QStringLiteral("guid-2025"));
+    }
+
+    /** Regression: documentActivated() (Doppelklick auf die Dokument-Spalte)
+     *  muss unverändert weiter funktionieren — beim Nachziehen von
+     *  rowActivatedWithDocument() wurde dieser Mechanismus versehentlich kurz
+     *  entfernt (brach den Build von ViewBuyEdit & Co.), seither bewusst als
+     *  Ergänzung statt als Ersatz umgesetzt, siehe OverviewTabWidget.h. */
+    void test_documentColumnDoubleClick_stillEmitsDocumentActivated()
+    {
+        OverviewTabWidget w;
+        populateSampleWithDoc(w, QStringLiteral("/tmp/beleg.pdf"));
+
+        auto* dataTable = dataTableOf(w.widget(1));
+        if (!dataTable) QFAIL("dataTable nicht gefunden");
+
+        QSignalSpy spy(&w, &OverviewTabWidget::documentActivated);
+        dataTable->cellDoubleClicked(0, 2); // Dokument-Spalte (jahresDocColumn = 2)
+
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.takeFirst().at(0).toString(), QStringLiteral("/tmp/beleg.pdf"));
+    }
+
+    /** Doppelklick auf die Dokument-Spalte einer Zeile ohne Dokument darf
+     *  nicht feuern (unverändert seit 13.07.2026). */
+    void test_documentColumnDoubleClick_emptyPath_doesNotEmitDocumentActivated()
+    {
+        OverviewTabWidget w;
+        populateSampleWithDoc(w, QString());
+
+        auto* dataTable = dataTableOf(w.widget(1));
+        if (!dataTable) QFAIL("dataTable nicht gefunden");
+
+        QSignalSpy spy(&w, &OverviewTabWidget::documentActivated);
+        dataTable->cellDoubleClicked(0, 2);
+
+        QCOMPARE(spy.count(), 0);
+    }
+
+    /** Doppelklick außerhalb der Dokument-Spalte darf documentActivated()
+     *  nicht auslösen (unverändert seit 13.07.2026). */
+    void test_documentColumnDoubleClick_wrongColumn_doesNotEmitDocumentActivated()
+    {
+        OverviewTabWidget w;
+        populateSampleWithDoc(w, QStringLiteral("/tmp/beleg.pdf"));
+
+        auto* dataTable = dataTableOf(w.widget(1));
+        if (!dataTable) QFAIL("dataTable nicht gefunden");
+
+        QSignalSpy spy(&w, &OverviewTabWidget::documentActivated);
+        dataTable->cellDoubleClicked(0, 0); // Datum-Spalte, nicht die Dokument-Spalte
+
+        QCOMPARE(spy.count(), 0);
     }
 
     // ── Klick-Navigation Übersicht → Jahr ────────────────────────────────────
