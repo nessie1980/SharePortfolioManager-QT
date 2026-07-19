@@ -1780,6 +1780,25 @@ Beispiele:
 
 ### Häufige Fehlerquellen
 
+`AppSettings::instance().load(...)` mit leerem Pfad oder dem echten
+`AppStartup::settingsPath()` in `cleanupTestCase()`, "um die echte
+settings.ini für den nächsten Lauf wiederherzustellen" — **falsche
+Absicherung, tut das Gegenteil** (gemeldet und behoben 19.07.2026, siehe
+`tst_mainwindow.cpp`/`tst_appstartup.cpp`). `AppSettings` ist ein
+prozesslokaler Singleton; er stirbt mit dem Testprozess, ein "Zurücksetzen"
+ist dafür nicht nötig. Enthält ein Testbinary aber — wie `tst_mainwindow` —
+mehrere `QObject`-Testklassen, die im selben Prozess sequenziell laufen
+(eigene `main()` mit mehreren `QTest::qExec()`-Aufrufen statt `QTEST_MAIN`),
+leitet ein solcher Reset den Singleton auf die **echte** `settings.ini` um —
+jeder `setXxx()`-Aufruf einer später laufenden Testklasse landet dann direkt
+in der echten Konfigurationsdatei des Benutzers (Portfolio-Pfad,
+Dokument-Root, ...) statt in einer Sandbox. Regel: `cleanupTestCase()`
+schließt höchstens die Datenbank — AppSettings nie mit einem "echten" Pfad
+neu laden. Jede Testklasse, die `AppSettings`-Werte setzt, muss außerdem
+ihr **eigenes** `loadSandboxedSettings()` (eigene `QTemporaryDir`-INI) in
+`initTestCase()`/`init()` aufrufen, statt sich auf den Zustand einer
+vorher gelaufenen Klasse im selben Prozess zu verlassen.
+
 `QSqlDatabase::database()` ohne Argument — gibt die Default-Verbindung zurück, die im
 Projekt nicht existiert. Immer `QSqlDatabase::database(Database::connectionName())` verwenden.
 
@@ -2113,3 +2132,24 @@ DocumentRootMigrator — `detectCommonRoot()`:
 | `test_migrator_detect_noCommonParent_setsAmbiguous` | Dokumente in unabhängigen Ordnern | `ambiguous` = true, `suggestedRoot` leer |
 | `test_migrator_detect_relativePaths_excludedFromDetection` | Gemischt: absolute und rein relative Pfade (bloße Dateinamen) | `relativeCount` korrekt, diese fließen nicht in `suggestedRoot` ein |
 | `test_migrator_detect_emptyDatabase_returnsZeroResult` | Keine Aktien/Dokumente vorhanden | Alle Zähler = 0 |
+
+DocumentRootMigrator — `isPathWithinRoot()` (19.07.2026, Durchsetzung "nur
+Root auswählbar" in ViewBuyEdit/ViewSaleEdit/ViewDividendEdit/
+ViewBrokerageEdit/ViewShareAdd):
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_isPathWithinRoot_emptyRoot_alwaysTrue` | Kein Root konfiguriert | `true`, unabhängig vom Pfad |
+| `test_isPathWithinRoot_exactRootPath_true` | Pfad == Root | `true` |
+| `test_isPathWithinRoot_directChild_true` | Datei direkt im Root | `true` |
+| `test_isPathWithinRoot_nestedSubdirectory_true` | Datei mehrere Ebenen unter Root | `true` |
+| `test_isPathWithinRoot_outsideRoot_false` | Datei in unabhängigem Ordner | `false` |
+| `test_isPathWithinRoot_similarPrefixNotSubdirectory_false` | Ordner mit ähnlichem Namen ohne Trennzeichen (z. B. "Belege2" vs. "Belege") | `false` — kein reiner `startsWith()`-Bug |
+| `test_isPathWithinRoot_windowsBackslashPath_crossPlatform_true` | Windows-Pfad mit `\`, Root mit `/` | `true`, unabhängig vom Test-Betriebssystem |
+
+@note Die `onBrowseDocument()`-Methoden der fünf Editier-Dialoge selbst
+sind NICHT unit-getestet — der Fehlerfall (Datei außerhalb des Root) ruft
+`OwnMessageBox::critical()` auf und würde einen headless Testlauf
+blockieren (bekannte Konvention, siehe `TestDocumentsSettingsForm`-Klassendoku
+oben). Die zugrundeliegende Logik ist über `isPathWithinRoot()` vollständig
+abgedeckt — nur der UI-Dialog-Aufruf selbst bleibt ungetestet.

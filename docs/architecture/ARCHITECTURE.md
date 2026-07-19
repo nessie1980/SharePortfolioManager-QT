@@ -2540,6 +2540,24 @@ nicht — die Migration ist damit vollständig, keine Restausnahme wie bei
 
 ## Offene Punkte / TODO
 
+### ViewBrokerageEdit: Word-/Excel-Unterstützung wieder einbauen, sobald möglich (offen, 19.07.2026)
+
+`ViewBrokerageEdit::onBrowseDocument()` erlaubte bislang zusätzlich zu PDF
+auch Word- (`.doc`/`.docx`) und Excel-Dateien (sowie "Alle Dateien") — als
+einziger der fünf Dokument-Auswahl-Dialoge. Im Zuge der Root-Verzeichnis-
+Durchsetzung (siehe "Durchsetzung 'nur Dokumente aus dem Root auswählbar'"
+oben) auf Nutzer-Entscheidung hin vorerst auf denselben PDF-only-Filter wie
+die anderen vier Dialoge reduziert, um Root-Prüfung und Dateifilter über
+alle fünf Dialoge konsistent zu halten.
+
+Soll nachgezogen werden, sobald möglich — vermutlich sinnvollerweise
+zusammen mit einer Vorschau-Möglichkeit für diese Dateitypen, da
+`DocumentPreviewPanel` aktuell ausschließlich PDF rendern kann (nativer
+`QPdfView` bzw. `pdftoppm`-Fallback, siehe Abschnitt "DocumentPreviewPanel"
+oben). Ohne Vorschau könnten Word-/Excel-Dokumente zwar ausgewählt, aber
+nicht mehr im Panel angezeigt werden — ähnliches Problem wie bei
+`ViewShareAdd`s eigenständiger PDF-Vorschau.
+
 ### Dokument-Spalten: Breite auf 36px vereinheitlicht, keine Spaltenüberschrift (erledigt, ursprünglich 16.07.2026, umgesetzt 17.07.2026)
 
 Nach dem Breiten-Fix in `ViewSaleEdit` (siehe "SalesForm auf
@@ -3311,7 +3329,43 @@ Rechner existiert — reiner String-Vergleich.
 (`rewritten`/`alreadyInRoot`/`outsideRoot`/`updateFailed` plus
 `outsidePaths`) für die Zusammenfassung nach dem Umstellen.
 
-**Bewusst nicht Teil dieser Änderung:** Die Durchsetzung "nur noch Dokumente
-aus dem Root auswählbar" in den `getOpenFileName()`-Dialogen von
-BuysForm/SalesForm/BrokeragesForm/DividendForm ist ein separater, noch
-offener Commit.
+### Durchsetzung "nur Dokumente aus dem Root auswählbar" (19.07.2026)
+
+Sobald ein Root-Verzeichnis konfiguriert ist (`AppSettings::documentsRootPath()`
+nicht leer), lassen die fünf Dokument-Auswahl-Dialoge — `ViewBuyEdit`,
+`ViewSaleEdit`, `ViewDividendEdit`, `ViewBrokerageEdit`, `ViewShareAdd`
+(jeweils `onBrowseDocument()`) — nur noch Dateien innerhalb dieses
+Verzeichnisses (oder eines Unterordners) zu. Grund: Ohne diese Durchsetzung
+könnten Dokumente über die Zeit wieder außerhalb des Root landen, wodurch
+ein späterer Root-Wechsel (`DocumentRootMigrator::changeRoot()`) sie nicht
+mehr finden und korrekt umschreiben könnte.
+
+Neuer öffentlicher Helfer **`DocumentRootMigrator::isPathWithinRoot(path,
+root)`** — rein lesend, reiner String-Vergleich, dieselbe
+Backslash-Normalisierung wie der Rest der Klasse (siehe oben,
+"Cross-Plattform-Pfaderkennung"). Liefert `true`, solange `root` leer ist
+(noch keine Einschränkung konfiguriert).
+
+In jedem der fünf `onBrowseDocument()`:
+1. `QFileDialog::getOpenFileName()` startet im Root-Verzeichnis, falls
+   gesetzt (vorher: aktueller Dokumentpfad bzw. Home-Verzeichnis).
+2. Nach der Auswahl wird `isPathWithinRoot()` geprüft — liegt die Datei
+   außerhalb, erscheint `OwnMessageBox::critical()` mit Hinweis auf das
+   Root-Verzeichnis, und die Auswahl wird verworfen (Feld bleibt
+   unverändert, kein `onDocumentSelected()`-Aufruf an den Presenter).
+
+`ViewBrokerageEdit` erlaubte bislang zusätzlich zu PDF auch Word-/
+Excel-Dateien und "Alle Dateien" — auf Nutzer-Entscheidung (19.07.2026)
+vorerst auf denselben PDF-only-Filter wie die anderen vier Dialoge reduziert
+(TODO: Word-/Excel-Unterstützung nachziehen, sobald möglich, siehe "Offene
+Punkte / TODO" unten). Die Root-Einschränkung selbst gilt unabhängig vom
+Dateityp, nur der Ordner zählt.
+
+`ViewShareAdd` hat weiterhin eine eigene, nicht an `DocumentPreviewPanel`
+delegierte PDF-Vorschau (siehe oben, Abschnitt zu `DocumentPreviewPanel`) —
+die Root-Prüfung selbst ist davon unabhängig und greift dort genauso.
+
+**Nicht Teil dieser Änderung:** Unit-Tests für die `onBrowseDocument()`-
+Methoden selbst (der Fehlerfall ruft `OwnMessageBox::critical()` auf, s.
+bekannte Testkonvention) — nur die zugrundeliegende `isPathWithinRoot()`-
+Logik ist in `tst_documentssettingsform.cpp` unit-getestet.

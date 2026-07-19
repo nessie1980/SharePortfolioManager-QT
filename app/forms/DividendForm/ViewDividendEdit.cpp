@@ -4,6 +4,8 @@
 #include "PresenterDividendEdit.h"
 #include "ModelDividendEdit.h"
 #include "../../IconProvider.h"
+#include "../../config/AppSettings.h"
+#include "../../core/DocumentRootMigrator.h"
 #include "../UiConstants.h"
 
 #include <QVBoxLayout>
@@ -1058,17 +1060,28 @@ void ViewDividendEdit::acceptAndClose()
 
 void ViewDividendEdit::onBrowseDocument()
 {
+    const QString root = AppSettings::instance().documentsRootPath();
+    const QString startDir = !root.isEmpty() ? root : m_documentPath->text();
+
     const QString path = QFileDialog::getOpenFileName(
         this,
         tr("PDF-Dokument auswählen"),
-        m_documentPath->text(),
+        startDir,
         tr("PDF-Dokumente (*.pdf);;Alle Dateien (*)"));
 
-    if (!path.isEmpty()) {
-        m_documentPath->setText(path);
-        m_presenter->onDocumentPathEdited();
-        m_presenter->onDocumentSelected(path);
+    if (path.isEmpty())
+        return;
+
+    if (!DocumentRootMigrator::isPathWithinRoot(path, root)) {
+        OwnMessageBox::critical(this, tr("Fehler"),
+            tr("Die gewählte Datei muss innerhalb des Dokument-Root-Verzeichnisses "
+               "liegen:\n%1").arg(root));
+        return;
     }
+
+    m_documentPath->setText(path);
+    m_presenter->onDocumentPathEdited();
+    m_presenter->onDocumentSelected(path);
 }
 
 // ── Static helpers ────────────────────────────────────────────────────────────

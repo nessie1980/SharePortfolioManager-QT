@@ -172,12 +172,18 @@ qt_add_executable(tst_buysform tst_buysform.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
     ../../app/config/AppSettings.cpp
     ../../app/config/DocumentsConfig.cpp
+    ../../app/core/DocumentRootMigrator.h
+    ../../app/core/DocumentRootMigrator.cpp
     ../../app/IconProvider.cpp
     ../../app/models/ShareObject.cpp
     ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/DividendObject.cpp
     ../../app/models/BrokerageObject.cpp
     ../../app/repositories/ShareRepository.cpp
     ../../app/repositories/BuyRepository.cpp
+    ../../app/repositories/SaleRepository.cpp
+    ../../app/repositories/DividendRepository.cpp
     ../../app/repositories/BrokerageRepository.cpp
     ${FORM_TEST_RESOURCES}
 )
@@ -273,6 +279,8 @@ qt_add_executable(tst_shareeditform tst_shareeditform.cpp
     ../../app/config/AppSettings.cpp
     ../../app/config/WebSitesConfig.cpp
     ../../app/config/DocumentsConfig.cpp
+    ../../app/core/DocumentRootMigrator.h
+    ../../app/core/DocumentRootMigrator.cpp
     ../../app/IconProvider.cpp
     ../../app/models/ShareObject.cpp
     ../../app/models/BuyObject.cpp

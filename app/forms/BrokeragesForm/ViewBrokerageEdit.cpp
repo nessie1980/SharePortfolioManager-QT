@@ -4,6 +4,8 @@
 #include "PresenterBrokerageEdit.h"
 #include "ModelBrokerageEdit.h"
 #include "../../IconProvider.h"
+#include "../../config/AppSettings.h"
+#include "../../core/DocumentRootMigrator.h"
 #include "../UiConstants.h"
 
 #include <QVBoxLayout>
@@ -651,13 +653,33 @@ bool ViewBrokerageEdit::hasMissingRequiredFields(QStringList& missingFields) con
 
 void ViewBrokerageEdit::onBrowseDocument()
 {
+    const QString root = AppSettings::instance().documentsRootPath();
+    const QString startDir = !root.isEmpty() ? root : QDir::homePath();
+
+    // TODO (19.07.2026): Nur noch PDF zulassen — auf Nutzer-Entscheidung hin
+    // vorerst auf denselben Filter wie ViewBuyEdit/ViewSaleEdit/
+    // ViewDividendEdit/ViewShareAdd reduziert (vorher zusätzlich Word/Excel/
+    // alle Dateien zugelassen). Word-/Excel-Unterstützung soll nachgezogen
+    // werden, sobald möglich — vermutlich zusammen mit einer Vorschau-
+    // Möglichkeit für diese Dateitypen (DocumentPreviewPanel kann aktuell
+    // nur PDF anzeigen, siehe ARCHITECTURE.md "DocumentPreviewPanel").
     const QString path = QFileDialog::getOpenFileName(
         this,
-        tr("Dokument auswählen"),
-        QDir::homePath(),
-        tr("Alle Dateien (*);;PDF-Dateien (*.pdf);;Word-Dokumente (*.doc *.docx)"));
-    if (!path.isEmpty())
-        m_presenter->onDocumentSelected(path);
+        tr("PDF-Dokument auswählen"),
+        startDir,
+        tr("PDF-Dokumente (*.pdf);;Alle Dateien (*)"));
+
+    if (path.isEmpty())
+        return;
+
+    if (!DocumentRootMigrator::isPathWithinRoot(path, root)) {
+        OwnMessageBox::critical(this, tr("Fehler"),
+            tr("Die gewählte Datei muss innerhalb des Dokument-Root-Verzeichnisses "
+               "liegen:\n%1").arg(root));
+        return;
+    }
+
+    m_presenter->onDocumentSelected(path);
 }
 
 // ── Static helpers ────────────────────────────────────────────────────────────

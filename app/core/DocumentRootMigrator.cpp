@@ -221,3 +221,19 @@ DocumentRootMigrator::DetectionResult DocumentRootMigrator::detectCommonRoot()
     result.suggestedRoot = common;
     return result;
 }
+
+// ── isPathWithinRoot ─────────────────────────────────────────────────────────
+
+bool DocumentRootMigrator::isPathWithinRoot(const QString& path, const QString& root)
+{
+    if (root.isEmpty())
+        return true; // Kein Root konfiguriert — keine Einschränkung.
+
+    const QString cleanRoot = QDir::cleanPath(normalizePathSeparators(root));
+    const QString cleanPath = QDir::cleanPath(normalizePathSeparators(path));
+
+    // "Innerhalb" heißt: identisch zum Root oder mit "<Root>/" als Präfix —
+    // ein reiner startsWith() ohne Trennzeichen-Prüfung würde z. B.
+    // "/data/Belege2" fälschlich als Teil von "/data/Belege" behandeln.
+    return cleanPath == cleanRoot || cleanPath.startsWith(cleanRoot + QLatin1Char('/'));
+}

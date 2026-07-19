@@ -100,6 +100,25 @@ public:
      */
     static DetectionResult detectCommonRoot();
 
+    /**
+     * @brief Checks whether a file path lies within (or equals) a root
+     *        directory — OS-independent, same backslash-normalization as
+     *        the rest of this class (see class docs).
+     *
+     * Used by the document-selection dialogs (ViewBuyEdit, ViewSaleEdit,
+     * ViewDividendEdit, ViewBrokerageEdit, ViewShareAdd) to reject files
+     * chosen from outside the configured documents root, once one is set —
+     * added 19.07.2026 so that a later root change (see changeRoot()) can
+     * reliably find and rewrite every document path, instead of some
+     * documents having drifted outside the root over time.
+     * @param path  File path to check.
+     * @param root  Root directory to check against. If empty, this always
+     *              returns true (no root configured yet — no restriction).
+     * @return true if root is empty, or path is root itself / lies inside
+     *         root (directly or in a subdirectory).
+     */
+    static bool isPathWithinRoot(const QString& path, const QString& root);
+
 private:
     /// One document path together with its origin table/row for the update call.
     struct DocumentEntry {

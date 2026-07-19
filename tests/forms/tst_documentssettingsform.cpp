@@ -54,6 +54,18 @@ class TestDocumentsSettingsForm : public QObject
 private:
     QTemporaryDir m_tempDir;
 
+    // Eigene Sandbox-INI, unabhängig von der echten settings.ini — dieselbe
+    // Absicherung wie in tst_mainwindow.cpp/tst_appstartup.cpp. Ohne diesen
+    // Aufruf bliebe AppSettings::instance() bei einem leeren m_settingsPath
+    // (Default eines frisch gestarteten Testprozesses), und jeder
+    // setDocumentsRootPath()-Aufruf in den Tests unten würde mit leerem
+    // Pfad "gespeichert" — unklares Verhalten statt einer sauberen Sandbox.
+    void loadSandboxedSettings()
+    {
+        const QString sandboxIni = m_tempDir.path() + QStringLiteral("/test_settings.ini");
+        AppSettings::instance().load(sandboxIni);
+    }
+
     void openMemoryDb()
     {
         if (!Database::instance().isOpen())
@@ -94,11 +106,16 @@ private slots:
     void initTestCase()
     {
         QVERIFY(m_tempDir.isValid());
+        loadSandboxedSettings();
     }
 
     void init()
     {
-        // Jeder Test startet mit einer frischen, leeren In-Memory-DB.
+        // Jeder Test startet mit einer frischen, leeren In-Memory-DB und
+        // erneut sandboxten AppSettings (dasselbe Muster wie in
+        // tst_mainwindow.cpp — verhindert, dass irgendein Test hier
+        // versehentlich die echte settings.ini berührt).
+        loadSandboxedSettings();
         if (Database::instance().isOpen())
             Database::instance().close();
         openMemoryDb();
@@ -408,6 +425,60 @@ private slots:
         QCOMPARE(detection.total(), 0);
         QVERIFY(detection.suggestedRoot.isEmpty());
         QVERIFY(!detection.ambiguous);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // DocumentRootMigrator — isPathWithinRoot() (19.07.2026, Durchsetzung
+    // "nur noch Dokumente aus dem Root auswählbar" in den fünf
+    // Editier-Dialogen — reine Logik, kein Dialog beteiligt.)
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_isPathWithinRoot_emptyRoot_alwaysTrue()
+    {
+        QVERIFY(DocumentRootMigrator::isPathWithinRoot(
+            QStringLiteral("/anywhere/a.pdf"), QString()));
+    }
+
+    void test_isPathWithinRoot_exactRootPath_true()
+    {
+        // Kein realistischer Fall (Root wäre selbst eine Datei), aber die
+        // Grenzfall-Logik ("== Root" zählt als innerhalb) soll stimmen.
+        QVERIFY(DocumentRootMigrator::isPathWithinRoot(
+            QStringLiteral("/data/Belege"), QStringLiteral("/data/Belege")));
+    }
+
+    void test_isPathWithinRoot_directChild_true()
+    {
+        QVERIFY(DocumentRootMigrator::isPathWithinRoot(
+            QStringLiteral("/data/Belege/a.pdf"), QStringLiteral("/data/Belege")));
+    }
+
+    void test_isPathWithinRoot_nestedSubdirectory_true()
+    {
+        QVERIFY(DocumentRootMigrator::isPathWithinRoot(
+            QStringLiteral("/data/Belege/2024/Depot1/a.pdf"),
+            QStringLiteral("/data/Belege")));
+    }
+
+    void test_isPathWithinRoot_outsideRoot_false()
+    {
+        QVERIFY(!DocumentRootMigrator::isPathWithinRoot(
+            QStringLiteral("/other/Ordner/a.pdf"), QStringLiteral("/data/Belege")));
+    }
+
+    void test_isPathWithinRoot_similarPrefixNotSubdirectory_false()
+    {
+        // "/data/Belege2" ist KEIN Unterordner von "/data/Belege" — ein
+        // reiner startsWith() ohne Trennzeichen-Prüfung würde das fälschlich
+        // als "innerhalb" werten.
+        QVERIFY(!DocumentRootMigrator::isPathWithinRoot(
+            QStringLiteral("/data/Belege2/a.pdf"), QStringLiteral("/data/Belege")));
+    }
+
+    void test_isPathWithinRoot_windowsBackslashPath_crossPlatform_true()
+    {
+        QVERIFY(DocumentRootMigrator::isPathWithinRoot(
+            QStringLiteral("B:\\Depot\\Belege\\a.pdf"), QStringLiteral("B:/Depot/Belege")));
     }
 };
 
