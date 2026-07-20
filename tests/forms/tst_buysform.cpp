@@ -355,6 +355,15 @@ private slots:
         QVERIFY(model.updateBuy(b, 9.90, 0.0, 0.0, 0.0));
         const BrokerageObject br = model.loadBrokerage(QStringLiteral("buy-nobr"));
         QVERIFY(br.isValid());
+
+        // Regression (Bugfix 20.07.2026, siehe ARCHITECTURE.md,
+        // "BuysForm-Details", ModelBuyEdit): der Rückwärts-Link (s.o.) allein
+        // deckte den Bug nicht auf — buys.brokerage_guid (Vorwärts-Link) muss
+        // ebenfalls gesetzt sein, sonst liefert
+        // BuyRepository::totalBuyValueBrokerageReduction() weiterhin 0 für
+        // die Provision dieses Kaufs, obwohl der Brokerage-Datensatz (s.o.)
+        // korrekt existiert. buyValue = 5*100 = 500, + Provision 9.90 = 509.90.
+        QCOMPARE(buyRepo.totalBuyValueBrokerageReduction(QStringLiteral("share-b4")), 509.90);
     }
 
     void test_modelBuyEdit_removeBuy_deletesBrokerageFirst()

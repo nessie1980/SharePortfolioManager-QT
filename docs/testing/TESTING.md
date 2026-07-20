@@ -412,13 +412,22 @@ ModelBuyEdit:
 | `test_modelBuyEdit_addBuy_success` | Buy + Brokerage in Transaktion gespeichert | `loadBuys()` gibt 1 Eintrag zurück, `loadBrokerage()` gültig |
 | `test_modelBuyEdit_addBuy_rollsBackOnError` | Fehler bei Brokerage-Insert → Rollback | Kein Buy in DB |
 | `test_modelBuyEdit_updateBuy_success` | Buy + Brokerage aktualisiert | Aktualisierte Werte in DB |
-| `test_modelBuyEdit_updateBuy_createsBrokerageIfMissing` | Kein Brokerage vorhanden → wird erstellt | `loadBrokerage()` danach gültig |
+| `test_modelBuyEdit_updateBuy_createsBrokerageIfMissing` (erweitert 20.07.2026) | Kein Brokerage vorhanden → wird erstellt | `loadBrokerage()` danach gültig; zusätzlich `BuyRepository::totalBuyValueBrokerageReduction()` enthält die Provision — Regression für den Brokerage-Vorwärts-Link-Bugfix (s.u.) |
 | `test_modelBuyEdit_removeBuy_deletesBrokerageFirst` | Delete in richtiger Reihenfolge (FK) | Buy + Brokerage entfernt |
 | `test_modelBuyEdit_removeBuy_rollsBackOnError` | `removeBuy` auf nicht-existenter GUID → kein Absturz (SQLite DELETE gibt bei 0 Treffern kein Fehler zurück) | Kein Absturz |
 | `test_modelBuyEdit_orderNumberExists_true` | Vorhandene Ordernummer erkannt | `orderNumberExists()` = true |
 | `test_modelBuyEdit_orderNumberExists_excludeGuid` | Eigene Ordernummer wird ausgeschlossen | `orderNumberExists()` = false beim Edit |
 | `test_modelBuyEdit_loadBuys_orderedByDate` | Käufe nach Datum aufsteigend | Datums-Reihenfolge korrekt |
 | `test_modelBuyEdit_loadBrokerage_notFound_returnsInvalid` | Kein Brokerage → ungültiges Objekt | `isValid()` = false |
+
+`BuyRepository::updateBrokerageGuid()` selbst hat zusätzlich einen isolierten
+Repository-Unit-Test, `test_updateBrokerageGuid` in
+`tests/repositories/tst_buyrepository.cpp` (ergänzt 20.07.2026, analog zu
+`SaleRepository::test_updateBrokerageGuid`): Brokerage wird absichtlich
+zunächst nur über den Rückwärts-Link (`buy_guid`) angelegt —
+`totalBuyValueBrokerageReduction()` liefert davor nur den reinen Kaufwert
+(1000,0, ohne Provision), nach `updateBrokerageGuid()` korrekt 1007,5
+(inkl. 7,5 Provision).
 
 ---
 

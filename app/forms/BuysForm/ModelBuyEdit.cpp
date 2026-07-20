@@ -140,6 +140,20 @@ bool ModelBuyEdit::updateBuy(const BuyObject& buy,
             db.rollback();
             return false;
         }
+
+        // Vorwärts-Link absichern (Bugfix 20.07.2026, analog zu
+        // ModelSaleEdit::updateSale(), siehe ARCHITECTURE.md):
+        // m_buyRepo.update(buy) oben hat buys.brokerage_guid ggf. bereits
+        // mit buy.brokerageGuid() überschrieben — falls der Aufrufer dort
+        // einen leeren/veralteten Wert übergeben hat, bliebe der Link trotz
+        // gültigem Brokerage-Datensatz verwaist. existing.guid() bleibt beim
+        // Update unverändert, ist also immer der korrekte Ziel-Wert.
+        if (!m_buyRepo.updateBrokerageGuid(buy.guid(), existing.guid())) {
+            m_lastError = QStringLiteral("Kauf konnte nicht mit Brokerage verknüpft werden: ")
+                          + m_buyRepo.lastError().text();
+            db.rollback();
+            return false;
+        }
     } else {
         // No linked brokerage yet — create one.
         const QString brokerageGuid = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -158,6 +172,20 @@ bool ModelBuyEdit::updateBuy(const BuyObject& buy,
         if (!m_brokerageRepo.insert(newBrokerage)) {
             m_lastError = QStringLiteral("Brokerage konnte nicht erstellt werden: ")
                           + m_brokerageRepo.lastError().text();
+            db.rollback();
+            return false;
+        }
+
+        // Kauf zurückverlinken — Bugfix 20.07.2026, analog zu
+        // ModelSaleEdit::updateSale() (15.07.2026, siehe dortiger
+        // Kommentar): ohne diesen Vorwärts-Link (buys.brokerage_guid)
+        // liefert BuyRepository::totalBuyValueBrokerageReduction() beim
+        // nächsten Laden weiterhin 0 für Provision/Gebühren/Rabatt dieses
+        // Kaufs, obwohl der Brokerage-Datensatz selbst (s.o.) korrekt
+        // existiert.
+        if (!m_buyRepo.updateBrokerageGuid(buy.guid(), brokerageGuid)) {
+            m_lastError = QStringLiteral("Kauf konnte nicht mit Brokerage verknüpft werden: ")
+                          + m_buyRepo.lastError().text();
             db.rollback();
             return false;
         }

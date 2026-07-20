@@ -222,6 +222,41 @@ Vollstaendig nach MVP-Pattern implementiert, geoeffnet via Pencil-Button Kaeufe 
 `addBuy` und `updateBuy` in SQLite-Transaktion.
 `documentExists()` prüft aktienübergreifend per direkter SQL-Abfrage.
 
+@note **Bugfix: fehlender Brokerage-Vorwärts-Link (20.07.2026).** Nachprüfung
+des am 15.07.2026 in `ModelSaleEdit` gefundenen Bugs (siehe "SalesForm-
+Details" oben, "Offene Punkte / TODO", "Brokerage-Vorwärts-Link:
+ModelBuyEdit/ModelBrokerageEdit ungeprüft") ergab: `ModelBuyEdit::addBuy()`
+war nicht betroffen — die `brokerageGuid` wird dort bereits vor dem Insert
+erzeugt und direkt ins `BuyObject` eingebaut, der Vorwärts-Link
+(`buys.brokerage_guid`) steht also von Anfang an korrekt.
+
+`ModelBuyEdit::updateBuy()` hatte jedoch denselben Bug wie
+`ModelSaleEdit::updateSale()`: im Zweig "kein Brokerage vorhanden — neu
+anlegen" bekam die neue Brokerage-Zeile korrekt den Rückwärts-Link
+(`brokerage.buy_guid = buy.guid()`), aber `buys.brokerage_guid` wurde nie
+auf die neue `brokerageGuid` aktualisiert — es blieb beim Wert, den
+`m_buyRepo.update(buy)` bereits zu Beginn der Methode geschrieben hatte.
+Betroffen ist `BuyRepository::totalBuyValueBrokerageReduction()`
+(`LEFT JOIN brokerage br ON br.guid = b.brokerage_guid`), die für
+Depotwert-Berechnungen genutzt wird: ohne den Vorwärts-Link lieferte der
+JOIN für Provision/Courtage/Handelsplatzgebühr/Rabatt dieses Kaufs
+weiterhin `NULL`/0, obwohl der Brokerage-Datensatz selbst korrekt in der DB
+stand. Der bereits vorhandene Test
+`test_modelBuyEdit_updateBuy_createsBrokerageIfMissing` deckte das nicht
+auf, da er nur den Rückwärts-Link prüfte (`loadBrokerage()` →
+`BrokerageRepository::findByBuyGuid()`), nicht den Vorwärts-Link.
+
+Fix: neue `BuyRepository::updateBrokerageGuid(guid, brokerageGuid)`-Methode
+(analog zu `SaleRepository::updateBrokerageGuid()`), aufgerufen von
+`updateBuy()` in **beiden** Zweigen — auch im "Brokerage existiert
+bereits"-Zweig, zur Absicherung gegen einen vom Aufrufer übergebenen
+veralteten/leeren `buy.brokerageGuid()`-Wert (derselbe defensive Ansatz wie
+bei `ModelSaleEdit::updateSale()`).
+
+`ModelBrokerageEdit` war von vornherein nicht betroffen — es verwaltet
+ausschließlich standalone Brokerage-Einträge ohne `buy_guid`/`sale_guid` und
+hat mit `buys.brokerage_guid`/`sales.brokerage_guid` nichts zu tun.
+
 `PresenterBuyEdit` — Vollständige Kauf-Logik inkl. Letzter-Kauf-Erkennung,
 Live-Validierung, Parse-Pipeline und Dokument-Duplikat-Check.
 
@@ -2622,23 +2657,18 @@ getestet (alle Testfälle bestehen), Layouts der betroffenen Dialoge geprüft
 und für gut befunden. Damit ist das Arbeitspaket "Tabs und Grids" vorerst
 vollständig abgeschlossen.
 
-### Brokerage-Vorwärts-Link: ModelBuyEdit/ModelBrokerageEdit ungeprüft (offen, 15.07.2026)
+### Brokerage-Vorwärts-Link: ModelBuyEdit/ModelBrokerageEdit geprüft und gefixt (erledigt, 15.07.2026, geprüft und gefixt 20.07.2026)
 
 Der am 15.07.2026 in `ModelSaleEdit::addSale()`/`updateSale()` gefundene und
 behobene Bug (fehlender Vorwärts-Link `sales.brokerage_guid` beim Anlegen
-eines neuen Brokerage-Eintrags — siehe "SalesForm-Details"/`ModelSaleEdit`
-oben) wurde **nur für den Verkaufs-Pfad** untersucht und gefixt, da genau
-dort ein Test ihn aufgedeckt hat. Ob derselbe Fehler auch in `ModelBuyEdit`
-(Käufe, analoge `buys.brokerage_guid`-Verknüpfung) oder einem eventuellen
-`ModelBrokerageEdit` (direkte Kosten-Bearbeitung) steckt, ist **nicht**
-gegengeprüft — beim Kauf-Pfad deutet der bisher gesehene Code darauf hin,
-dass die Brokerage-GUID dort schon vor dem Insert feststeht und direkt
-mitgegeben wird (kein nachträgliches Verlinken nötig), das ist aber eine
-Vermutung aus früheren Testschnipseln, kein echter Check. Vor dem nächsten
-gezielten Blick auf Käufe/Kosten: `BuyRepository`/`ModelBuyEdit` (und ggf.
-`ModelBrokerageEdit`, falls vorhanden) auf dasselbe Vorwärts-/Rückwärts-Link-
-Muster prüfen, analog zu `SaleRepository::updateBrokerageGuid()` und den
-zugehörigen Tests (`tst_salerepository.cpp`, `tst_mainwindow.cpp`).
+eines neuen Brokerage-Eintrags) wurde zunächst nur für den Verkaufs-Pfad
+untersucht. Nachprüfung am 20.07.2026 ergab: **derselbe Bug steckte auch in
+`ModelBuyEdit::updateBuy()`**, im Zweig "kein Brokerage vorhanden — neu
+anlegen" — siehe "BuysForm-Details"/`ModelBuyEdit` oben für die volle
+Analyse und den Fix (`BuyRepository::updateBrokerageGuid()`).
+`ModelBuyEdit::addBuy()` und `ModelBrokerageEdit` waren beide nicht
+betroffen. Damit ist dieser Punkt für alle drei genannten Stellen
+vollständig abgeschlossen.
 
 ### OverviewTabWidget / onMainTabChanged(): Test-Lücken geschlossen (erledigt, 14.07.2026)
 

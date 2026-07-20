@@ -86,6 +86,23 @@ public:
      */
     bool updateDocument(const QString& guid, const QString& document);
 
+    /**
+     * @brief Update only the brokerage_guid link of a buy — the forward FK
+     * that totalBuyValueBrokerageReduction() JOINt ("LEFT JOIN brokerage br
+     * ON br.guid = b.brokerage_guid"). Bugfix 20.07.2026, analog zu
+     * SaleRepository::updateBrokerageGuid() (15.07.2026): ModelBuyEdit::
+     * updateBuy() legte im "kein Brokerage vorhanden"-Zweig bisher einen
+     * neuen Brokerage-Eintrag nur mit dem Rückwärts-Link (brokerage.buy_guid)
+     * an, ohne buys.brokerage_guid zu setzen — der JOIN in
+     * totalBuyValueBrokerageReduction() lieferte dadurch weiterhin 0 für
+     * Provision/Gebühren/Rabatt dieses Kaufs, obwohl der Brokerage-Datensatz
+     * selbst korrekt existierte (siehe ARCHITECTURE.md).
+     * @param guid           GUID des Kaufs.
+     * @param brokerageGuid  GUID des verknüpften Brokerage-Eintrags.
+     * @return true on success.
+     */
+    bool updateBrokerageGuid(const QString& guid, const QString& brokerageGuid);
+
     // ── Delete ────────────────────────────────────────────────────────────
     /**
      * @brief Delete a buy by its GUID.

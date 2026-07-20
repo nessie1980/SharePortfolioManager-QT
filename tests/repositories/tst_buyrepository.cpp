@@ -212,6 +212,45 @@ private slots:
 
         QCOMPARE(buyRepo.totalBuyValueBrokerageReduction(k_shareGuid), 1555.0);
     }
+
+    void test_updateBrokerageGuid()
+    {
+        // Regressionstest für den Bugfix vom 20.07.2026 (siehe ARCHITECTURE.md,
+        // "BuysForm-Details", ModelBuyEdit) — analog zu SaleRepository::
+        // test_updateBrokerageGuid() (Bugfix 15.07.2026): buys.brokerage_guid
+        // ist der Vorwärts-Link, den totalBuyValueBrokerageReduction() für
+        // seinen Brokerage-JOIN nutzt. Ohne ihn liefert die Aggregation immer
+        // 0 für Provision/Gebühren/Rabatt zurück, selbst wenn ein gültiger
+        // Brokerage-Datensatz existiert und über den Rückwärts-Link
+        // (brokerage.buy_guid, z.B. BrokerageRepository::findByBuyGuid())
+        // durchaus auffindbar wäre.
+        BuyRepository       buyRepo;
+        BrokerageRepository brokerageRepo;
+
+        const QString buyGuid       = newGuid();
+        const QString brokerageGuid = newGuid();
+
+        buyRepo.insert(BuyObject(buyGuid, k_shareGuid, "", "O003",
+                                 "2024-01-01T10:00:00", 10.0, 0.0, 100.0));
+
+        // Brokerage separat anlegen, zunächst nur über den Rückwärts-Link
+        // (buy_guid) verknüpft — wie ModelBuyEdit::updateBuy() es vor dem
+        // Fix im "kein Brokerage vorhanden"-Zweig tat, ohne
+        // buys.brokerage_guid zu setzen.
+        brokerageRepo.insert(BrokerageObject(brokerageGuid, k_shareGuid, buyGuid, QString(),
+                                             "2024-01-01T10:00:00",
+                                             /*provision=*/7.5));
+
+        // Vor dem Vorwärts-Link: der JOIN in totalBuyValueBrokerageReduction()
+        // findet nichts, nur der reine Kaufwert (10*100) zählt.
+        QCOMPARE(buyRepo.totalBuyValueBrokerageReduction(k_shareGuid), 1000.0);
+
+        QVERIFY(buyRepo.updateBrokerageGuid(buyGuid, brokerageGuid));
+
+        // Nach dem Vorwärts-Link: Provision kommt korrekt über den JOIN
+        // dazu (1000 + 7.5).
+        QCOMPARE(buyRepo.totalBuyValueBrokerageReduction(k_shareGuid), 1007.5);
+    }
 };
 
 QTEST_MAIN(TestBuyRepository)
