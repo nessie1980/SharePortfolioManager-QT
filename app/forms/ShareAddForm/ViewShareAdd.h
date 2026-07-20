@@ -143,6 +143,7 @@ private:
     QLineEdit*      m_endbetrag      = nullptr;   ///< read-only
 
     QLineEdit*      m_documentPath   = nullptr;
+    QLabel*         m_docTypeIcon    = nullptr;   ///< Fallback-Icon je Dateiendung (20.07.2026)
     QPushButton*    m_btnBrowse      = nullptr;
     QPushButton*    m_btnSave        = nullptr;
     QPushButton*    m_btnCancel      = nullptr;

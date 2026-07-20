@@ -1035,7 +1035,7 @@ void ViewBuyEdit::onBrowseDocument()
         this,
         tr("PDF-Dokument auswählen"),
         startDir,
-        tr("PDF-Dokumente (*.pdf);;Alle Dateien (*)"));
+        tr("PDF-Dokumente (*.pdf)"));
 
     if (path.isEmpty())
         return;

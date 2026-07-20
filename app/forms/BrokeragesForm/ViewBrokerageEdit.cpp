@@ -656,18 +656,14 @@ void ViewBrokerageEdit::onBrowseDocument()
     const QString root = AppSettings::instance().documentsRootPath();
     const QString startDir = !root.isEmpty() ? root : QDir::homePath();
 
-    // TODO (19.07.2026): Nur noch PDF zulassen — auf Nutzer-Entscheidung hin
-    // vorerst auf denselben Filter wie ViewBuyEdit/ViewSaleEdit/
-    // ViewDividendEdit/ViewShareAdd reduziert (vorher zusätzlich Word/Excel/
-    // alle Dateien zugelassen). Word-/Excel-Unterstützung soll nachgezogen
-    // werden, sobald möglich — vermutlich zusammen mit einer Vorschau-
-    // Möglichkeit für diese Dateitypen (DocumentPreviewPanel kann aktuell
-    // nur PDF anzeigen, siehe ARCHITECTURE.md "DocumentPreviewPanel").
+    // Nur PDF zulässig (Nessies Entscheidung, 20.07.2026 — siehe
+    // ARCHITECTURE.md, "Offene Punkte / TODO": Word-/Excel-Unterstützung
+    // bewusst nicht wieder eingebaut).
     const QString path = QFileDialog::getOpenFileName(
         this,
         tr("PDF-Dokument auswählen"),
         startDir,
-        tr("PDF-Dokumente (*.pdf);;Alle Dateien (*)"));
+        tr("PDF-Dokumente (*.pdf)"));
 
     if (path.isEmpty())
         return;

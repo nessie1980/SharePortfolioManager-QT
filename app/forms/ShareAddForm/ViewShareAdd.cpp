@@ -15,6 +15,7 @@
 #include <QSizePolicy>
 #include <QLocale>
 #include <QApplication>
+#include <QFileInfo>
 
 // ─────────────────────────────────────────────────────────────────────────────
 ViewShareAdd::ViewShareAdd(DocumentsConfig* config, QWidget* parent)
@@ -327,6 +328,17 @@ QGroupBox* ViewShareAdd::createDocumentGroup()
     m_documentPath = new QLineEdit;
     m_documentPath->setReadOnly(true);
     m_documentPath->setPlaceholderText(tr("Kein Dokument ausgewählt …"));
+
+    // Reine Fallback-Anzeige, kein aktiver Auswahlweg — Icon je nach
+    // Dateiendung, analog ViewBrokerageEdit::makeDocIconWidget() (20.07.2026,
+    // siehe ARCHITECTURE.md "Offene Punkte / TODO"). Aktuell kann hier nur
+    // PDF ausgewählt werden; die Logik bleibt für eine mögliche spätere
+    // Erweiterung bewusst erhalten.
+    m_docTypeIcon = new QLabel;
+    m_docTypeIcon->setObjectName(QStringLiteral("docTypeIcon"));
+    m_docTypeIcon->setFixedSize(16, 16);
+    m_docTypeIcon->setAlignment(Qt::AlignCenter);
+
     m_btnBrowse = new QPushButton(IconProvider::icon(IconProvider::MenuFolderOpen16), QString());
     m_btnBrowse->setFixedWidth(36);
     m_btnBrowse->setToolTip(tr("PDF-Dokument auswählen"));
@@ -335,7 +347,7 @@ QGroupBox* ViewShareAdd::createDocumentGroup()
     auto* docRow = new QWidget;
     auto* docL   = new QHBoxLayout(docRow);
     docL->setContentsMargins(0,0,0,0); docL->setSpacing(4);
-    docL->addWidget(m_documentPath, 1); docL->addWidget(m_btnBrowse);
+    docL->addWidget(m_documentPath, 1); docL->addWidget(m_docTypeIcon); docL->addWidget(m_btnBrowse);
 
     auto* label = new QLabel(tr("Dokument:"));
     label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -450,7 +462,7 @@ void ViewShareAdd::onBrowseDocument()
 
     const QString path = QFileDialog::getOpenFileName(
         this, tr("PDF-Dokument auswählen"), startDir,
-        tr("PDF-Dokumente (*.pdf);;Alle Dateien (*)"));
+        tr("PDF-Dokumente (*.pdf)"));
 
     if (path.isEmpty())
         return;
@@ -463,6 +475,21 @@ void ViewShareAdd::onBrowseDocument()
     }
 
     m_documentPath->setText(path);
+
+    // Fallback-Icon je nach Dateiendung — siehe createDocumentGroup().
+    const QString ext = QFileInfo(path).suffix().toLower();
+    IconProvider::IconName iconName;
+    if (ext == QStringLiteral("pdf"))
+        iconName = IconProvider::DocPdfImage16;
+    else if (ext == QStringLiteral("doc") || ext == QStringLiteral("docx"))
+        iconName = IconProvider::DocWordImage16;
+    else if (ext == QStringLiteral("xls") || ext == QStringLiteral("xlsx"))
+        iconName = IconProvider::DocExcelImage16;
+    else
+        iconName = IconProvider::SearchFailed2;
+    m_docTypeIcon->setPixmap(IconProvider::icon(iconName).pixmap(16, 16));
+    m_docTypeIcon->setToolTip(path);
+
     m_previewPanel->showDocument(path);
     m_presenter->onDocumentSelected(path);
 }

@@ -2598,7 +2598,7 @@ Dialoge, ohne eigene Parallel-Implementierung.
 
 ## Offene Punkte / TODO
 
-### ViewBrokerageEdit: Word-/Excel-Unterstützung wieder einbauen, sobald möglich (offen, 19.07.2026)
+### ViewBrokerageEdit: Word-/Excel-Unterstützung nicht wieder eingebaut — bewusste Entscheidung (hinfällig, 19.07.2026, entschieden 20.07.2026)
 
 `ViewBrokerageEdit::onBrowseDocument()` erlaubte bislang zusätzlich zu PDF
 auch Word- (`.doc`/`.docx`) und Excel-Dateien (sowie "Alle Dateien") — als
@@ -2608,13 +2608,31 @@ oben) auf Nutzer-Entscheidung hin vorerst auf denselben PDF-only-Filter wie
 die anderen vier Dialoge reduziert, um Root-Prüfung und Dateifilter über
 alle fünf Dialoge konsistent zu halten.
 
-Soll nachgezogen werden, sobald möglich — vermutlich sinnvollerweise
-zusammen mit einer Vorschau-Möglichkeit für diese Dateitypen, da
-`DocumentPreviewPanel` aktuell ausschließlich PDF rendern kann (nativer
-`QPdfView` bzw. `pdftoppm`-Fallback, siehe Abschnitt "DocumentPreviewPanel"
-oben). Ohne Vorschau könnten Word-/Excel-Dokumente zwar ausgewählt, aber
-nicht mehr im Panel angezeigt werden — ähnliches Problem wie bei
-`ViewShareAdd`s eigenständiger PDF-Vorschau.
+Nessies Entscheidung (20.07.2026): **nicht wieder einbauen.** Grund: eine
+formatierungstreue Vorschau für Word/Excel wäre entweder kostenpflichtig
+(Aspose, Spire, Syncfusion), an eine lokale Office-Installation gebunden
+(Interop, nur Windows) oder erforderte eine schwergewichtige externe
+Abhängigkeit (LibreOffice headless, ~300–600 MB, kein schlanker
+Kommandozeilen-Helfer wie `pdftoppm`) — in allen Fällen unverhältnismäßiger
+Aufwand gegenüber dem Nutzen. Wer ein Word-Dokument oder Excel-Sheet
+hinterlegen möchte, wandelt es vorher eigenständig in ein PDF.
+
+Konsequenz (umgesetzt 20.07.2026): In allen fünf `onBrowseDocument()`-
+Methoden (`ViewBuyEdit`, `ViewSaleEdit`, `ViewDividendEdit`,
+`ViewBrokerageEdit`, `ViewShareAdd`) wurde der zusätzliche Filter-Eintrag
+`;;Alle Dateien (*)` entfernt — vorher hätte man im `QFileDialog` trotz
+PDF-only-Vorauswahl auf "Alle Dateien" umschalten und doch eine Nicht-PDF-
+Datei auswählen können, was der eigentlichen Entscheidung widersprochen
+hätte. Der veraltete TODO-Kommentar (19.07.2026) in
+`ViewBrokerageEdit::onBrowseDocument()` wurde entsprechend entfernt.
+
+Die bereits vorhandene, rein defensive Icon-Auswahl-Logik (PDF-/Word-/
+Excel-Icon je nach Dateiendung, in `ViewBuyEdit`, `ViewSaleEdit`,
+`ViewDividendEdit`, `ViewBrokerageEdit` sowie neu ergänzt in `ViewShareAdd`)
+bleibt bewusst erhalten — sie ist kein aktiver Auswahlweg, sondern nur eine
+Absicherung für den Fall, dass doch einmal ein Nicht-PDF-Pfad in der DB
+landet (Altbestand, manuelle DB-Änderung o. Ä.), und hält die Tür für eine
+mögliche spätere Erweiterung offen.
 
 ### Dokument-Spalten: Breite auf 36px vereinheitlicht, keine Spaltenüberschrift (erledigt, ursprünglich 16.07.2026, umgesetzt 17.07.2026)
 

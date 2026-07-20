@@ -338,6 +338,7 @@ ViewShareAdd:
 | `test_viewShareAdd_onParseFinished_setsInfoOnUntouched` | Parse-Ergebnis befüllt unberührte Felder | Felder enthalten geparste Werte |
 | `test_viewShareAdd_markMissingFieldsAsFailed_doesNotCrash` | `markMissingFieldsAsFailed()` auf leerem Form | Kein Absturz |
 | `test_viewShareAdd_documentPreviewPanel_nonExistentFile_doesNotCrash` | `DocumentPreviewPanel::showDocument()` mit ungültigem Pfad, via `findChild()` | Kein Absturz |
+| `test_viewShareAdd_docTypeIcon_existsAndInitiallyEmpty` | Neues Fallback-Icon `m_docTypeIcon`, via `findChild<QLabel*>("docTypeIcon")` | Widget existiert, `pixmap()` vor Dokumentauswahl null |
 
 @note Anders als bei `ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit`/
 `ViewBrokerageEdit` ist `openPdfPreview()` bei `ViewShareAdd` kein Teil von
@@ -350,6 +351,22 @@ ruft dessen öffentliches `showDocument()` direkt auf — testet denselben Pfad
 wie `test_viewBrokerageEdit_openPdfPreview_nonExistentFile_doesNotCrash`,
 ohne den privaten `onBrowseDocument()`-Slot (echter `QFileDialog`) anfassen
 zu müssen.
+
+@note **Dokument-Typ-Icon-Fallback ergänzt (20.07.2026):** Analog zu
+`ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit`/`ViewBrokerageEdit` zeigt
+`ViewShareAdd` jetzt ebenfalls ein Icon je Dateiendung neben dem
+Dokumentpfad (`m_docTypeIcon`, siehe ARCHITECTURE.md, "Offene Punkte /
+TODO") — eine rein defensive Anzeige, aktuell ohne aktiven Auswahlweg, da
+alle fünf Dialoge auf PDF-only reduziert sind. Die Icon-Auswahl selbst
+sitzt in `onBrowseDocument()` und wird daher wie der übrige Inhalt dieser
+Methode nicht direkt getestet (kein automatisiertes Auslösen des echten
+`QFileDialog`, gleiche Einschränkung wie bei den anderen vier Dialogen,
+siehe ARCHITECTURE.md, "Durchsetzung 'nur Dokumente aus dem Root
+auswählbar'"). `test_viewShareAdd_docTypeIcon_existsAndInitiallyEmpty`
+deckt daher nur ab, dass das Widget existiert (`findChild<QLabel*>
+("docTypeIcon")`) und vor einer Dokumentauswahl korrekt leer ist —
+konsistent mit der bewusst unveränderten Testlücke bei
+`DocumentPreviewPanel` selbst.
 
 ModelShareEdit (Datenbanktests):
 
