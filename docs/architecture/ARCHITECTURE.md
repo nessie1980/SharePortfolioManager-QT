@@ -2126,6 +2126,12 @@ Ablauf bei Erfolg (`m_errorOccurred == false`):
    sodass das Grid wieder die erste Aktie zeigt statt der zuletzt
    aktualisierten. War es `false` (abgeschlossener Einzel-Refresh), bleibt
    die Selektion unverändert auf der gerade aktualisierten Aktie stehen.
+   Direkt im Anschluss wird `playUpdateFinishedSound()` aufgerufen (Feature
+   21.07.2026) — genau an dieser Stelle, also einmal pro abgeschlossenem
+   Lauf (Einzel-Refresh oder Ende von "Alle aktualisieren"), nie pro
+   einzelner Aktie innerhalb der Queue. Da dieser gesamte Zweig nur bei
+   `m_errorOccurred == false` erreicht wird, spielt der Sound ausschließlich
+   bei erfolgreichem Abschluss.
 
 Bei Fehler (`m_errorOccurred == true`) wird die Queue geleert und direkt
 `finaliseRefresh()` aufgerufen — der Footer wird in diesem Fall **nicht**
@@ -2604,6 +2610,31 @@ Aktuell keine TODOs vorhanden!
 ---
 
 ## Erledigt / Archiv
+
+### Sound bei erfolgreicher Aktualisierung (implementiert 21.07.2026)
+
+Neue Methode `MainWindow::playUpdateFinishedSound()`, aufgerufen aus
+`onRefreshShareFinished()` (siehe "Methode onRefreshShareFinished() —
+Footer-Aktualisierung" oben). Spielt die in `AppSettings::soundUpdateFile()`
+konfigurierte WAV-Datei aus `sounds/` neben der Executable ab, sofern
+`AppSettings::soundUpdateEnabled()` true ist und die Datei existiert (die
+Infrastruktur dafür — `SoundSettingsForm`, `AppSettings`, Existenzprüfung +
+automatisches Deaktivieren beim Start — existierte bereits vorher; es fehlte
+lediglich die eigentliche Wiedergabe).
+
+Gilt sowohl für einen einzelnen Refresh als auch für "Alle aktualisieren" —
+bei Letzterem aber bewusst nur **einmal am Ende** der Queue, nicht nach
+jeder einzelnen Aktie (Nessies ausdrückliche Vorgabe). Der Sound wird nur
+bei Erfolg abgespielt: der Aufruf sitzt im `else`-Zweig von
+`onRefreshShareFinished()`, der durch den vorangehenden
+`if (m_errorOccurred) { …; return; }`-Block nur bei fehlerfreiem Abschluss
+erreicht wird.
+
+`playUpdateFinishedSound()` ist `private virtual` deklariert (kein anderer
+Zweck als Testbarkeit) — eine Testklasse (`SoundCountingMainWindow` in
+tst_mainwindow.cpp) überschreibt sie, um Aufrufzeitpunkt/-anzahl zu prüfen,
+ohne von echter `QSoundEffect`-Wiedergabe (benötigt ein Audio-Gerät, das in
+CI/Testumgebungen ggf. fehlt) abhängig zu sein.
 
 ### ViewBrokerageEdit: Word-/Excel-Unterstützung nicht wieder eingebaut — bewusste Entscheidung (hinfällig, 19.07.2026, entschieden 20.07.2026)
 

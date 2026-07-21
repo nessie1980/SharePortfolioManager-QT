@@ -31,6 +31,8 @@
 #include <QFile>
 #include <QDir>
 #include <QDateTime>
+#include <QSoundEffect>
+#include <QUrl>
 #include <algorithm>
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
 #include "../BackupProgressForm/BackupProgressDialog.h"
@@ -1741,6 +1743,14 @@ void MainWindow::onRefreshShareFinished()
         finaliseRefresh();
         if (wasUpdateAll)
             selectFirstShareRow();
+
+        // Dieser Zweig wird genau einmal pro abgeschlossenem Refresh-Lauf
+        // erreicht — entweder ein fertiger Einzel-Refresh, oder das Ende
+        // eines erfolgreichen "Alle aktualisieren"-Laufs (Queue jetzt leer) —
+        // niemals pro einzelner Aktie innerhalb der Queue. Die Prüfung auf
+        // m_errorOccurred oben (early return) stellt sicher, dass dies nur
+        // bei Erfolg läuft.
+        playUpdateFinishedSound();
     }
 }
 
@@ -1767,6 +1777,29 @@ void MainWindow::finaliseRefresh()
     m_actionEdit->setEnabled(hasSelection);
     m_actionDelete->setEnabled(hasSelection);
     m_actionRefresh->setEnabled(hasSelection);
+}
+
+// ── playUpdateFinishedSound ────────────────────────────────────────────────────
+
+void MainWindow::playUpdateFinishedSound()
+{
+    const auto& settings = AppSettings::instance();
+    if (!settings.soundUpdateEnabled())
+        return;
+
+    const QString soundsDir = QCoreApplication::applicationDirPath()
+                             + QStringLiteral("/sounds");
+    const QString filePath  = soundsDir + QStringLiteral("/") + settings.soundUpdateFile();
+
+    // Defensive erneute Prüfung — checkAndLoadConfigurations() deaktiviert
+    // den Sound bereits beim Start, falls die Datei fehlt; der Nutzer könnte
+    // sie aber danach ohne Neustart gelöscht haben.
+    if (!QFileInfo::exists(filePath))
+        return;
+
+    m_updateSoundEffect.setSource(QUrl::fromLocalFile(filePath));
+    m_updateSoundEffect.setVolume(1.0);
+    m_updateSoundEffect.play();
 }
 
 // ── onMarketValuesUpdated ─────────────────────────────────────────────────────

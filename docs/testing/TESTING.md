@@ -275,6 +275,18 @@ MainWindow:
 | `test_soundSettings_saveErrorFile` | Sound-Datei (Fehler) gespeichert | Pfad korrekt geladen |
 | `test_soundSettings_scanFallback` | Kein Sound-Gerät → Fallback | Kein Absturz |
 | `test_soundFile_missingDisablesSound` | Fehlende Sound-Datei deaktiviert Sound | Sound disabled |
+| `test_onRefreshShare_success_playsUpdateSoundOnce_viaFakeNetwork` | Erfolgreicher Einzel-Refresh | `SoundCountingMainWindow::soundPlayCount` = 1 |
+| `test_onRefreshShare_error_doesNotPlayUpdateSound_viaFakeNetwork` | Fehlgeschlagener Einzel-Refresh | `soundPlayCount` = 0 |
+| `test_onRefreshAll_success_playsUpdateSoundExactlyOnce_viaFakeNetwork` | Erfolgreiches "Alle aktualisieren" (2 Aktien) | `soundPlayCount` = 1 (nicht pro Aktie) |
+| `test_onRefreshAll_error_doesNotPlayUpdateSound_viaFakeNetwork` | "Alle aktualisieren" bricht mit Fehler ab | `soundPlayCount` = 0 |
+
+@note **Sound bei erfolgreicher Aktualisierung (implementiert 21.07.2026):**
+`MainWindow::playUpdateFinishedSound()` ist `private virtual`, damit die
+Testklasse `SoundCountingMainWindow` (definiert direkt vor `TestMainWindow`
+in `tst_mainwindow.cpp`) sie per `override` abfangen und Aufrufzeitpunkt/
+-anzahl zählen kann, statt von echter `QSoundEffect`-Wiedergabe (benötigt
+ein Audio-Gerät, das in CI/Testumgebungen ggf. fehlt) abhängig zu sein.
+Siehe ARCHITECTURE.md, Abschnitt "Erledigt / Archiv".
 
 @note **BackupSettingsForm (implementiert 08.07.2026):** eigene Fälle in
 `tests/forms/tst_backupsettingsform.cpp` (siehe eigener Abschnitt weiter

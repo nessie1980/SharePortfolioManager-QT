@@ -13,6 +13,7 @@
 #include <QGroupBox>
 #include <QTextEdit>
 #include <QLineEdit>
+#include <QSoundEffect>
 
 #include "../../config/WebSitesConfig.h"
 #include "../../config/DocumentsConfig.h"
@@ -327,6 +328,25 @@ private:
     void finaliseRefresh();
 
     /**
+     * @brief Play the configured "Aktualisierung erfolgreich"-Sound (Feature 21.07.2026).
+     *
+     * Called exactly once per abgeschlossenem Refresh-Lauf — sowohl bei
+     * einem einzelnen Refresh als auch am Ende eines kompletten "Alle
+     * aktualisieren"-Laufs (nicht nach jeder einzelnen Aktie in der Queue) —
+     * und nur, wenn der Lauf ohne Fehler zu Ende ging
+     * (`m_errorOccurred == false`). No-op, wenn
+     * `AppSettings::soundUpdateEnabled()` false ist oder die konfigurierte
+     * Datei (`sounds/<AppSettings::soundUpdateFile()>` neben der
+     * Executable) nicht existiert.
+     *
+     * Deklariert als `private virtual`, damit eine Testklasse sie per
+     * `override` abfangen kann, um Aufrufzeitpunkt/-anzahl zu prüfen — ohne
+     * von echter QSoundEffect-Wiedergabe (benötigt ein Audio-Gerät, das in
+     * CI/Testumgebungen ggf. fehlt) abhängig zu sein.
+     */
+    virtual void playUpdateFinishedSound();
+
+    /**
      * @brief Update the portfolio label with entry count and last update time.
      * @param entryCount      Number of shares in the portfolio.
      * @param lastUpdate      Last update timestamp string (e.g. "15.06.2024 10:30").
@@ -487,6 +507,7 @@ private:
     bool               m_marketDone    = false; ///< MarketValues parser finished/idle for current share
     bool               m_dailyDone     = false; ///< DailyValues parser finished/idle for current share
     bool               m_errorOccurred = false; ///< At least one parser failed for current share
+    QSoundEffect       m_updateSoundEffect;  ///< Wiederverwendete Instanz für playUpdateFinishedSound()
     /**
      * @brief True from the start of startRefreshForShare() until finaliseRefresh().
      *

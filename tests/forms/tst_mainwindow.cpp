@@ -480,6 +480,23 @@ public:
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SoundCountingMainWindow — Test-Subklasse für das "Aktualisierung
+// erfolgreich"-Sound-Feature (21.07.2026). playUpdateFinishedSound() ist in
+// MainWindow als `private virtual` deklariert — genau damit eine Testklasse
+// sie per override abfangen kann, ohne von echter QSoundEffect-Wiedergabe
+// abhängig zu sein (kein Audio-Gerät in CI/Testumgebungen nötig).
+class SoundCountingMainWindow : public MainWindow
+{
+public:
+    using MainWindow::MainWindow;
+
+    int soundPlayCount = 0;
+
+protected:
+    void playUpdateFinishedSound() override { ++soundPlayCount; }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 class TestMainWindow : public QObject
 {
     Q_OBJECT
@@ -1871,6 +1888,131 @@ private slots:
         DailyValuesRepository dvRepo;
         for (const QString& guid : guids)
             QCOMPARE(dvRepo.findByShare(guid).size(), 2);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // MainWindow — Sound bei erfolgreicher Aktualisierung (Feature 21.07.2026)
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // playUpdateFinishedSound() wird über SoundCountingMainWindow (siehe
+    // oberhalb von TestMainWindow) abgefangen, statt echte QSoundEffect-
+    // Wiedergabe zu prüfen — kein Audio-Gerät in CI/Testumgebungen nötig.
+    // Geprüft wird ausschließlich WANN und WIE OFT der Sound ausgelöst wird:
+    // genau einmal bei Erfolg (Einzel- oder "Alle aktualisieren", bei
+    // letzterem NICHT pro Aktie), nie bei Fehler.
+
+    void test_onRefreshShare_success_playsUpdateSoundOnce_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/SoundSingleSuccess.db");
+        const QStringList guids = seedRefreshQueuePortfolio(1, dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[0])),
+            onVistaRealTimeJson(120.0));
+
+        SoundCountingMainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        finalTbl->setCurrentCell(0, 0);
+
+        QAction* actionRefresh = findActionByStatusTip(window,
+            QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+        QVERIFY(actionRefresh);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                 "Einzel-Refresh hat nicht beendet (finaliseRefresh() nicht erreicht).");
+
+        QCOMPARE(window.soundPlayCount, 1);
+    }
+
+    void test_onRefreshShare_error_doesNotPlayUpdateSound_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/SoundSingleError.db");
+        const QStringList guids = seedRefreshQueuePortfolio(1, dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setError(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[0])),
+            QNetworkReply::HostNotFoundError, QStringLiteral("host not found"));
+
+        SoundCountingMainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        finalTbl->setCurrentCell(0, 0);
+
+        QAction* actionRefresh = findActionByStatusTip(window,
+            QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+        QVERIFY(actionRefresh);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                 "Einzel-Refresh hat nicht beendet (finaliseRefresh() nicht erreicht).");
+
+        QCOMPARE(window.soundPlayCount, 0);
+    }
+
+    void test_onRefreshAll_success_playsUpdateSoundExactlyOnce_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/SoundAllSuccess.db");
+        const QStringList guids = seedRefreshQueuePortfolio(2, dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        for (int i = 0; i < guids.size(); ++i) {
+            fakeNam.setResponse(
+                QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[i])),
+                onVistaRealTimeJson(100.0 + i));
+        }
+
+        SoundCountingMainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QAction* actionRefreshAll = findActionByStatusTip(window,
+            QStringLiteral("Kurse aller Aktien aktualisieren"));
+        QVERIFY(actionRefreshAll);
+
+        QMetaObject::invokeMethod(&window, "onRefreshAll", Qt::DirectConnection);
+
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefreshAll->isEnabled(); }, 2000),
+                 "\"Alle aktualisieren\" hat nicht beendet (finaliseRefresh() nicht erreicht).");
+
+        // Genau EINMAL — nicht einmal pro Aktie in der Queue.
+        QCOMPARE(window.soundPlayCount, 1);
+    }
+
+    void test_onRefreshAll_error_doesNotPlayUpdateSound_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/SoundAllError.db");
+        const QStringList guids = seedRefreshQueuePortfolio(2, dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[0])),
+            onVistaRealTimeJson(100.0));
+        fakeNam.setError(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[1])),
+            QNetworkReply::HostNotFoundError, QStringLiteral("host not found"));
+
+        SoundCountingMainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QAction* actionRefreshAll = findActionByStatusTip(window,
+            QStringLiteral("Kurse aller Aktien aktualisieren"));
+        QVERIFY(actionRefreshAll);
+
+        QMetaObject::invokeMethod(&window, "onRefreshAll", Qt::DirectConnection);
+
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefreshAll->isEnabled(); }, 2000),
+                 "\"Alle aktualisieren\" hat nach dem Fehler nicht beendet.");
+
+        QCOMPARE(window.soundPlayCount, 0);
     }
 
     void test_onRefreshShare_bothUpdateType_updatesMarketPriceAndDailyValues_viaFakeNetwork()
