@@ -1463,6 +1463,60 @@ private slots:
         QCOMPARE(marketTbl->currentRow(), rowForGuid(marketTbl, guids[1]));
     }
 
+    void test_onRefreshShare_completed_selectionStaysOnUpdatedShare_viaFakeNetwork()
+    {
+        // Deckt den bislang offenen vierten Punkt aus TESTING.md
+        // ("Weiterhin offen" / ARCHITECTURE.md "Offene Punkte") ab:
+        // Selektion bleibt nach abgeschlossenem EINZEL-Refresh (kein "Alle
+        // aktualisieren") auf der aktualisierten Aktie stehen —
+        // selectFirstShareRow() darf hier NICHT aufgerufen werden.
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshSingleSelectionStays.db");
+        // 2 Aktien — bewusst NICHT die erste (Reihe 0) auswählen, sonst lässt
+        // sich "Selektion blieb stehen" nicht von "wurde auf Zeile 0
+        // zurückgesetzt" unterscheiden.
+        const QStringList guids = seedRefreshQueuePortfolio(2, dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[1])),
+            onVistaRealTimeJson(150.0));
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl  = findFinalTable(window, 2);
+        QTableWidget* marketTbl = findMarketTable(window, 2);
+        if (!finalTbl)  QFAIL("Depotwert-Datentabelle nicht gefunden");
+        if (!marketTbl) QFAIL("Marktwert-Datentabelle nicht gefunden");
+
+        const int finalRow  = rowForGuid(finalTbl,  guids[1]);
+        const int marketRow = rowForGuid(marketTbl, guids[1]);
+        QVERIFY(finalRow  > 0); // Sanity: darf nicht zufällig Zeile 0 sein
+        QVERIFY(marketRow > 0);
+
+        finalTbl->setCurrentCell(finalRow, 0);
+        QApplication::processEvents();
+
+        QAction* actionRefresh = findActionByStatusTip(window,
+            QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+        QVERIFY(actionRefresh);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        // finaliseRefresh() re-enables m_actionRefresh, sobald der
+        // Einzel-Refresh (kein Queue-Lauf) vollständig abgeschlossen ist —
+        // gleicher Checkpoint wie in
+        // test_onRefreshShare_footerUpdatesImmediately_viaFakeNetwork.
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                 "Einzel-Refresh hat nicht beendet (finaliseRefresh() nicht erreicht).");
+
+        // selectFirstShareRow() darf NICHT aufgerufen worden sein — Selektion
+        // bleibt in beiden Tabellen auf der aktualisierten Aktie stehen.
+        QCOMPARE(finalTbl->currentRow(),  finalRow);
+        QCOMPARE(marketTbl->currentRow(), marketRow);
+        QCOMPARE(fakeNam.requestCount(), 1);
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // MainWindow — Footer-Update bei Refresh (07.07.2026)
     // ─────────────────────────────────────────────────────────────────────

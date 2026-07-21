@@ -10,7 +10,7 @@ Executables gebaut und über CMake's `ctest` oder Qt Creators Test-Panel ausgef�
 ## Test-Ausführung
 
 ### Qt Creator (empfohlen)
-1. **Tools → Tests → Test-Ergebnisse** öffnen
+1. Tools → Tests → Test-Ergebnisse öffnen
 2. Play-Button klicken — alle Tests laufen automatisch
 3. Ergebnisse erscheinen farbig (grün ✅ / rot ❌)
 
@@ -99,7 +99,7 @@ Busy-Verhalten, sondern ausschließlich den `NoRegexListGiven`-Guard — der
 Kommentar im Code ("Can't easily test without a real network — just verify
 guard works...") war der ehrliche Grund dafür, aber Name und Testinhalt
 liefen dauerhaft auseinander. Mit der Parser-Mocking-Infrastruktur (siehe
-ARCHITECTURE.md, "Offene Punkte / TODO") ist ein echter Busy-Test jetzt
+ARCHITECTURE.md, "Erledigt / Archiv") ist ein echter Busy-Test jetzt
 möglich und wurde als `test_start_fails_when_busy_viaFakeNetwork` ergänzt.
 
 Regressionstest `test_reentrant_start_from_finished_signal_succeeds`
@@ -284,6 +284,8 @@ Präfix-Änderung, `mkpath()`, Enable/Disable) bleiben dagegen in
 `TestBackupForm` (unten in dieser Datei), da `createBackup()` eine private
 Methode von `MainWindow` ist und dessen volle Konstruktion braucht.
 
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
 | `test_aboutForm_appVersionSet` | About-Dialog zeigt App-Version | Version-Label nicht leer |
 | `test_aboutForm_pdfConverterDetected` | About-Dialog zeigt PDF-Converter-Status | Label nicht leer |
 | `test_deleteShare_removesShareFromDatabase` | Share + Remove → DB leer | `findAll().size()` = 0 |
@@ -355,8 +357,8 @@ zu müssen.
 @note **Dokument-Typ-Icon-Fallback ergänzt (20.07.2026):** Analog zu
 `ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit`/`ViewBrokerageEdit` zeigt
 `ViewShareAdd` jetzt ebenfalls ein Icon je Dateiendung neben dem
-Dokumentpfad (`m_docTypeIcon`, siehe ARCHITECTURE.md, "Offene Punkte /
-TODO") — eine rein defensive Anzeige, aktuell ohne aktiven Auswahlweg, da
+Dokumentpfad (`m_docTypeIcon`, siehe ARCHITECTURE.md, "Erledigt / Archiv")
+— eine rein defensive Anzeige, aktuell ohne aktiven Auswahlweg, da
 alle fünf Dialoge auf PDF-only reduziert sind. Die Icon-Auswahl selbst
 sitzt in `onBrowseDocument()` und wird daher wie der übrige Inhalt dieser
 Methode nicht direkt getestet (kein automatisiertes Auslösen des echten
@@ -701,7 +703,7 @@ Presenter-Ebene (reines Durchreichen der drei neuen
 `IModelShareDetails::load*()`-Methoden an `IViewShareDetails::populate*()`)
 durch zwei Tests unten abgedeckt. **Nicht** abgedeckt: `DocumentPreviewPanel`
 selbst (kein eigenes Test-Target, siehe ARCHITECTURE.md,
-"Offene Punkte / TODO") — insbesondere die Existenzprüfung in
+"Erledigt / Archiv") — insbesondere die Existenzprüfung in
 `DocumentPreviewPanel::showDocument()` ist bislang durch nichts abgesichert.
 `OverviewTabWidget` hat seit 14.07.2026 einen fixierten Übersicht-Tab (zwei
 `QTabBar`s + `QStackedWidget` statt einem `QTabWidget`, siehe
@@ -927,8 +929,8 @@ vom System-Locale der Baumaschine abhängen würden.
 | `test_onControlsChanged_beforeAnyData_doesNotCrashOrRefresh` | `onControlsChanged()` ohne vorheriges `loadAndDisplay()` | Kein `setChartData()`/`showEmptyChart()`-Aufruf (internes `m_hasData`-Guard) |
 | `test_onControlsChanged_afterLoad_reflectsNewIntervalCount` | Interval/Anzahl nach dem ersten Laden geändert | Serie wird bei erneutem `onControlsChanged()` mit dem neuen Zeitfenster neu berechnet |
 
-**Anzahl-Kappung (ergänzt 12.07.2026 auf Nessies Vorgabe, siehe
-ARCHITECTURE.md "ChartForm-Details"):** `FakeModelChart::earliestDailyValueDate()`
+Anzahl-Kappung (ergänzt 12.07.2026 auf Nessies Vorgabe, siehe
+ARCHITECTURE.md "ChartForm-Details"): `FakeModelChart::earliestDailyValueDate()`
 liefert das kleinste Datum über **alle** `m_dailyValues` hinweg (nicht auf
 das gerade abgefragte Fenster beschränkt) — spiegelt damit exakt
 `DailyValuesRepository::earliestDate()` gegen die volle Historie in der DB.
@@ -1210,7 +1212,7 @@ PresenterDividendEdit (via StubView + StubModel):
 
 ---
 
-ViewDividendEdit — Fremdwährungs-Modus:
+ViewDividendEdit — Fremdwaehrungs-Modus:
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_viewDividendEdit_fcFieldsDisabledByDefault` | FC-Felder initial deaktiviert | `enableForeignCurrency()` = false, `exchangeRatio()` = 1.0 |
@@ -1230,12 +1232,14 @@ ViewDividendEdit — Fremdwährungs-Modus:
 `populateFromResult()` (direkt nach dem Parsen, mit dem tatsächlich geparsten Datum)
 aufgerufen wird. Der zweite Aufrufpfad ist nicht separat unit-getestet — die
 Parse-Pipeline hängt an `ParserLib::Parser`/`QProcess` (pdftotext) und ist wie beim
-Refresh-Flow (siehe "Offene Punkte / TODO") noch nicht gemockt. Manuell verifiziert
+Refresh-Flow (siehe "Erledigt / Archiv") noch nicht gemockt. Manuell verifiziert
 am 07.07.2026: Preis wird nach dem Einlesen eines Dividenden-Dokuments korrekt anhand
 des geparsten Auszahlungsdatums gesetzt, auch wenn zuvor durch einen beiläufigen
 Fokuswechsel auf das Datumsfeld (noch mit Default "heute") ein abweichender
 Zwischenwert gesetzt wurde.
 
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
 | `test_presenterDividendEdit_onRateEdited_valid_setsOk` | Rate > 0 → Ok-Icon | kein Fehler-Dialog |
 | `test_presenterDividendEdit_onRateEdited_zero_setsError` | Rate = 0 → Error-Icon | Icon-Only, kein Dialog |
 | `test_presenterDividendEdit_onVolumeEdited_valid_setsOk` | Volume > 0 → Ok-Icon | kein Fehler-Dialog |
@@ -1595,7 +1599,7 @@ seit 07.07.2026 vollständig behoben:
 1. `Parser` besitzt einen Konstruktor zur `QNetworkAccessManager`-Injection;
    `ParserTestUtils::FakeNetworkAccessManager` (`tests/parser/FakeNetworkAccessManager.h/.cpp`)
    liefert vorab definierte Antworten ohne echten Netzwerkzugriff (siehe
-   ARCHITECTURE.md, "Offene Punkte / TODO", sowie den `tst_parser`-Testblock
+   ARCHITECTURE.md, "Erledigt / Archiv", sowie den `tst_parser`-Testblock
    weiter oben).
 2. `MainWindow` besitzt jetzt ebenfalls einen Test-Konstruktor:
    `MainWindow(QNetworkAccessManager* networkManagerForTesting, QWidget* parent = nullptr)`
@@ -1625,7 +1629,7 @@ jedem Aufruf ein frisches `QIcon` aus demselben Ressourcenpfad, daher sind
 zwei "gleiche" Icons nie `==`. Der Testhelper `iconsEqual()` vergleicht
 stattdessen `icon.pixmap(24,24).toImage()`.
 
-### `onDailyValuesUpdated()`-Pfad — erledigt (08.07.2026)
+### onDailyValuesUpdated()-Pfad — erledigt (08.07.2026)
 
 Bislang war über `FakeNetworkAccessManager` nur der `MarketPrice`-Zweig
 (`onMarketValuesUpdated()`) end-to-end abgedeckt. Analog dazu jetzt auch der
@@ -1698,7 +1702,7 @@ frage zu prüfen — nämlich schlicht: läuft `refreshPortfolioFooters()`
 Footer-Text vor/nach Refresh auf Änderung/Gleichheit statt auf einen
 bestimmten Zahlenwert.
 
-### `buildDailyValuesUrl()` — erledigt (07.07.2026)
+### buildDailyValuesUrl() — erledigt (07.07.2026)
 
 Reine, seiteneffektfreie Funktion ihrer drei Parameter — kein Parser, kein
 Netzwerk, keine `MainWindow`-Instanzzustände. Deswegen `public static`
@@ -1743,9 +1747,8 @@ bereits die aktualisierten Summen zeigen, nicht erst nach dem letzten Element
 der Queue. Im Fehlerfall (`m_errorOccurred`) darf der Footer für die
 betroffene Aktie nicht aktualisiert werden.
 
-**Grid-Selektion folgt dem Refresh (Feature vom 05.07.2026)** — teilweise bereits
-umgesetzt und getestet, teilweise weiterhin Teil des zurückgestellten
-Refresh-Flow-Testplans.
+Grid-Selektion folgt dem Refresh (Feature vom 05.07.2026) — vollständig
+umgesetzt und getestet (siehe "Grid-Selektions-Testplan vollständig" unten).
 
 @note Korrektur (07.07.2026): Diese Datei behauptete bis dahin fälschlich,
 `selectShareRow()`/`selectFirstShareRow()` seien `private` (keine
@@ -1766,10 +1769,10 @@ haben keine solche Abhängigkeit, nur ihre *Aufrufer* (`startRefreshForShare()`,
 die Selektionslogik isoliert testbar zu machen, ohne auf die
 Parser-Mocking-Infrastruktur warten zu müssen.
 
-**Erledigt (07.07.2026)** — mit `MainWindow(QNetworkAccessManager*, ...)` +
+Erledigt (07.07.2026) — mit `MainWindow(QNetworkAccessManager*, ...)` +
 `FakeNetworkAccessManager` (siehe oben):
 
-- **Regressionstest für Icon-Update bei Einzel-Refresh (Bugfix 06.07.2026):**
+- Regressionstest für Icon-Update bei Einzel-Refresh (Bugfix 06.07.2026):
   `test_onRefreshShare_iconRegression_updatesChartIconsViaFakeNetwork` —
   Aktie mit zuvor negativem Vortagswert (Icon `NegativStrong`), Refresh
   liefert einen positiven `prevDayPct` (+20 %) → Icon wechselt in **beiden**
@@ -1779,8 +1782,8 @@ Parser-Mocking-Infrastruktur warten zu müssen.
   Text-Spalten) — Text und Icon liefen dadurch nach einem Einzel-Refresh
   dauerhaft auseinander, bis der nächste volle `populatePortfolioTables()`-
   Aufbau (z. B. Neustart) das Icon wieder korrigierte.
-- **`enableShareActions`-Lambda-Busy-Guard — Regressionstest, deckte Bugfix
-  07.07.2026 auf:** `test_onRefreshShare_busyGuard_selectionDuringRefreshDoesNotReenableActions`.
+- `enableShareActions`-Lambda-Busy-Guard — Regressionstest, deckte Bugfix
+  07.07.2026 auf: `test_onRefreshShare_busyGuard_selectionDuringRefreshDoesNotReenableActions`.
   `startRefreshForShare()` ruft `selectShareRow()` auf, **bevor** einer der
   beiden Parser `startParsing()` aufruft. Wurde eine Tabelle (typischerweise
   `m_marketValueTable`) zuvor noch nie selektiert, löst `selectShareRow()`
@@ -1792,24 +1795,26 @@ Parser-Mocking-Infrastruktur warten zu müssen.
   zusätzliches Flag `m_refreshInProgress`, gesetzt in `startRefreshForShare()`
   vor `selectShareRow()`, zurückgesetzt in `finaliseRefresh()` (siehe
   ARCHITECTURE.md für Details).
-
-**Weiterhin offen** — die folgenden Aspekte hängen ebenfalls am Refresh-Flow,
-sind mit der jetzt vorhandenen Infrastruktur umsetzbar, aber noch nicht
-geschrieben:
-
-- Während `onRefreshAll()` läuft: nach dem Start jeder Aktie in der Queue ist
-  in **beiden** Tabellen (`m_finalValueTable`, `m_marketValueTable`) die Zeile
-  mit `item(row, 0)->data(Qt::UserRole) == share.guid()` selektiert
-  (`currentRow()` entsprechend gesetzt), unabhängig vom aktiven Tab.
-- Erfolgreicher Abschluss von "Alle aktualisieren" (Queue leer, kein Fehler):
-  nach `onRefreshShareFinished()` ist in beiden Tabellen Zeile 0 selektiert.
+- Grid-Selektion während `onRefreshAll()` folgt jeder Aktie in der Queue, und
+  springt nach erfolgreichem Abschluss (Queue leer, kein Fehler) in beiden
+  Tabellen auf Zeile 0:
+  `test_onRefreshAll_gridSelectionFollowsQueueProgress_viaFakeNetwork`.
+- Fehlerfall während `onRefreshAll()`: Selektion bleibt unverändert auf der
+  Aktie stehen, bei der der Fehler auftrat — `selectFirstShareRow()` wird
+  nicht aufgerufen, unabhängig davon ob noch weitere Aktien in der Queue
+  standen:
+  `test_onRefreshAll_errorMidQueue_selectionStaysOnFailedShare_viaFakeNetwork`.
 - Abgeschlossener Einzel-Refresh (`onRefreshShare()`, kein "Alle
   aktualisieren"): Selektion bleibt auf der aktualisierten Aktie stehen,
-  `selectFirstShareRow()` wird nicht aufgerufen.
-- Fehlerfall (`m_errorOccurred == true`) während `onRefreshAll()`: Selektion
-  bleibt unverändert auf der Aktie stehen, bei der der Fehler auftrat —
-  `selectFirstShareRow()` wird nicht aufgerufen, unabhängig davon ob noch
-  weitere Aktien in der Queue standen.
+  `selectFirstShareRow()` wird nicht aufgerufen (ergänzt 20.07.2026, bis
+  dahin als einziger der vier Grid-Selektions-Punkte noch offen):
+  `test_onRefreshShare_completed_selectionStaysOnUpdatedShare_viaFakeNetwork`.
+
+@note **Grid-Selektions-Testplan vollständig (20.07.2026):** Mit dem letzten
+der vier oben genannten Tests ist der ursprünglich zurückgestellte
+Refresh-Flow-Selektions-Testplan (siehe "Grid-Selektion folgt dem Refresh"
+oben) komplett abgedeckt. Es gibt aktuell keine offenen Punkte mehr zur
+Grid-Selektion beim Refresh.
 
 ---
 

@@ -224,7 +224,7 @@ Vollstaendig nach MVP-Pattern implementiert, geoeffnet via Pencil-Button Kaeufe 
 
 @note **Bugfix: fehlender Brokerage-Vorwärts-Link (20.07.2026).** Nachprüfung
 des am 15.07.2026 in `ModelSaleEdit` gefundenen Bugs (siehe "SalesForm-
-Details" oben, "Offene Punkte / TODO", "Brokerage-Vorwärts-Link:
+Details" oben, "Erledigt / Archiv", "Brokerage-Vorwärts-Link:
 ModelBuyEdit/ModelBrokerageEdit ungeprüft") ergab: `ModelBuyEdit::addBuy()`
 war nicht betroffen — die `brokerageGuid` wird dort bereits vor dem Insert
 erzeugt und direkt ins `BuyObject` eingebaut, der Vorwärts-Link
@@ -813,11 +813,11 @@ und wird von zwei Stellen aus aufgerufen:
 ```
 
 Wichtige Designentscheidungen:
-- **Überschreibt einen bereits vorhandenen Wert** bei jeder Datumsänderung mit Treffer —
+- Überschreibt einen bereits vorhandenen Wert bei jeder Datumsänderung mit Treffer —
   auch einen zuvor manuell eingegebenen. Der Nutzer kann den Wert danach jederzeit
   wieder von Hand korrigieren (kein Sperren des Felds).
-- **Kein Treffer → keine Änderung.**
-- **Pfad ② (Preis-Abgleich direkt nach dem Parsen) ist notwendig, nicht nur bequem.**
+- Kein Treffer → keine Änderung.
+- Pfad ② (Preis-Abgleich direkt nach dem Parsen) ist notwendig, nicht nur bequem.
   Ursprünglich war angenommen, für das Default-Datum "heute" (beim frischen Öffnen
   des Dialogs) läge ohnehin noch kein Schlusskurs vor, sodass Pfad ① allein reicht.
   In der Praxis bestätigt (07.07.2026): Wenn beim Öffnen des Datei-Auswahldialogs
@@ -830,11 +830,11 @@ Wichtige Designentscheidungen:
   auslöst. Pfad ② behebt das: Nach dem Parsen wird der Abgleich zwangsläufig
   nochmal mit dem tatsächlichen Dokumentdatum ausgeführt und überschreibt einen
   eventuellen "heute"-Fehltreffer.
-- **Tooltip als Unterscheidungsmerkmal:** `IViewDividendEdit::setFieldOk()` erhält einen
+- Tooltip als Unterscheidungsmerkmal: `IViewDividendEdit::setFieldOk()` erhält einen
   optionalen dritten Parameter `tooltip`, damit automatisch befüllte Werte
   ("Aus Tageswerten übernommen (Kurs vom ...)") sich vom Standard-Tooltip
   ("Eingabe gültig") bei manueller Eingabe unterscheiden lassen. Leerer String → Standard-Tooltip.
-- **Keine Währungsumrechnung nötig:** `daily_values.closing` liegt ebenso wie `rate` immer
+- Keine Währungsumrechnung nötig: `daily_values.closing` liegt ebenso wie `rate` immer
   in EUR vor, unabhängig vom Fremdwährungs-Modus der Dividende — kein Äpfel-mit-Birnen-Vergleich
   bei der Dividenden-Rendite.
 
@@ -881,12 +881,13 @@ wird die Prüfung übersprungen — kein False-Positive für Dokumente ohne Iden
 | `ExchangeRate` | `exchangeRatio` | — |
 | `Currency` | `currency` | — |
 
-> Hinweis (Stand 08.07.2026): Das frühere `PriceAtPayday`-Mapping wurde entfernt
-> — kein `Document Type="Dividend"` in `Documents.xml` definierte je ein
-> `PriceAtPayday`-Feld, der Eintrag war totes Gewicht. Details siehe
-> **"Totes Mapping: `PriceAtPayday` in `xmlNameToViewField()`"** unter "Offene Punkte / TODO".
-> `knownXmlNames` in `populateFromResult()` enthält den Namen weiterhin (bewusst
-> unangetastet, siehe dort).
+@note **PriceAtPayday-Mapping entfernt (08.07.2026):** Das frühere
+`PriceAtPayday`-Mapping wurde entfernt — kein `Document Type="Dividend"` in
+`Documents.xml` definierte je ein `PriceAtPayday`-Feld, der Eintrag war
+totes Gewicht. Details siehe "Totes Mapping: PriceAtPayday in
+xmlNameToViewField()" unter "Erledigt / Archiv". `knownXmlNames` in
+`populateFromResult()` enthält den Namen weiterhin (bewusst unangetastet,
+siehe dort).
 
 #### Dividenden-Übersicht — Frozen-Footer-Layout:
 
@@ -1041,7 +1042,7 @@ Reine Anzeige-Form (kein Speichern, keine Bearbeitung), Portierung von
 `FrmShareDetails` aus der C#-Referenz. Geöffnet per Doppelklick auf eine Zeile
 in `m_finalValueTable` oder `m_marketValueTable` (MainWindow).
 
-**Wichtiger Hinweis zum Umfang dieser Iteration:** Ein früherer Anlauf hatte
+Wichtiger Hinweis zum Umfang dieser Iteration: Ein früherer Anlauf hatte
 diese Form ohne Abgleich mit der C#-Referenz gebaut (Tabs für Stammdaten,
 Käufe, Verkäufe, Dividenden, Brokerages) — die Referenz sieht davon nichts vor.
 Die tatsächliche Struktur von `FrmShareDetails` (`ShareDetailsForm.cs` +
@@ -1063,7 +1064,7 @@ Konstruktor, je nachdem ob der Aufruf vom Depotwert- oder Marktwert-Tab in
 MainWindow kam): Marktwert-Modus zeigt nur Chart + Marktbewertung; Depotwert-
 Modus zeigt Chart + Depotbewertung + die drei Jahres-Tab-Bereiche.
 
-**Umfang dieser Iteration (auf Nessies Vorgabe eingegrenzt):**
+Umfang dieser Iteration (auf Nessies Vorgabe eingegrenzt):
 
 | Teil | Status |
 | ------ | ------ |
@@ -1099,7 +1100,7 @@ Bild "AGIF-Allianz Glo.Eq.Insights") kam ein drittes additives Feld hinzu:
 - `ShareValues::salePayoutMarket` — rohe Verkaufserlöse OHNE Brokerage,
   Marktwert-Pendant zu `salePayoutFinal`.
 
-**Wichtig:** Für die Marktwert-Box `Gesamt-Bestandsberechnung` werden
+Wichtig: Für die Marktwert-Box `Gesamt-Bestandsberechnung` werden
 bewusst **nicht** `completeCurValueMarket`/`completeProfitLossMarket`/
 `completeProfitPctMarket` verwendet — laut eigenem Doc-Kommentar in
 `ShareCalculator.h` mischen diese den brokeragehaltigen realisierten
@@ -1345,7 +1346,7 @@ ihrem Chart-Tab).
 └─────────────────────────────────────────────────────────┴────────────────┘
 @endcode
 
-**"Start-Datum" ist das Ende des Zeitraums, nicht der Anfang** — matcht die
+"Start-Datum" ist das Ende des Zeitraums, nicht der Anfang — matcht die
 C#-Referenz exakt (Screenshot 12.07.2026: Start-Datum=10.7.2026,
 Interval=Month, Anzahl=1 → Zeitraum 10.06.2026–10.07.2026). Der Anfang wird
 in `PresenterChart::computeRangeStart()` rückwärts aus
@@ -1354,7 +1355,7 @@ Anders als der Name vermuten lässt, steuern Interval/Anzahl also nur die
 Größe des angezeigten Fensters, keine Aggregation der Datenpunkte — geplottet
 werden immer die rohen Tageswerte aus `daily_values` im berechneten Fenster.
 
-**Sechs Selektions-Checkboxen** (`SeriesKind`: `ClosingPrice`/`OpeningPrice`/
+Sechs Selektions-Checkboxen (`SeriesKind`: `ClosingPrice`/`OpeningPrice`/
 `High`/`Low`/`HeldVolume`/`TradedVolume`) — Default nur `ClosingPrice` aktiv,
 wie im C#-Referenz-Screenshot. Jede Serie trägt ein `ChartAxis`-Feld
 (`Price`/`Volume`), das bestimmt, an welcher der zwei unabhängigen Y-Achsen
@@ -1400,7 +1401,7 @@ Alle Achsen werden bei jedem Refresh komplett neu aufgebaut
 (`ViewChart::rebuildAxes()`) statt nur die Range anzupassen, da sich die
 Menge der sichtbaren Serien jederzeit ändern kann.
 
-**"Legende"-Box statt Qt-Charts-eigener Legende:** `m_chart->legend()->hide()`
+"Legende"-Box statt Qt-Charts-eigener Legende: `m_chart->legend()->hide()`
 — die rechte Box wird stattdessen manuell aus `PresenterChart`-formatierten
 `LegendEntry`-Zeilen aufgebaut (Farbquadrat + fett Titel + Min/Max-Zeile),
 da sie mehr zeigen muss als reine Serien-Namen: "Letzter Kauf:"/"Letzter
@@ -1410,7 +1411,7 @@ Eintrag der nach Datum aufsteigend sortierten `BuyRepository`/
 im aktuell angezeigten Zeitraum. Diese beiden Referenzzeilen erscheinen nur,
 wenn für die Aktie tatsächlich Käufe/Verkäufe existieren.
 
-**Fenstertitel:** `PresenterChart::refresh()` baut die Zeile "Zeitraum: ... -
+Fenstertitel: `PresenterChart::refresh()` baut die Zeile "Zeitraum: ... -
 ... / Entwicklung: X€ (Y %)" (erster/letzter Schluss-Kurs im Fenster) und
 gibt sie über `IViewChart::setRangeInfo()` an die View. `ViewChart` emittiert
 das unverändert als eigenes Qt-Signal `titleInfoChanged`, das
@@ -1421,7 +1422,7 @@ fällt auf den reinen Aktiennamen zurück — hält
 `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText`
 unverändert grün.
 
-**Qt6 QComboBox-Interaktionssignal:** Die Interval-ComboBox verbindet
+Qt6 QComboBox-Interaktionssignal: Die Interval-ComboBox verbindet
 `activated(int)`, nicht `currentIndexChanged(int)` — nur echte
 Nutzerauswahl soll `PresenterChart::onControlsChanged()` auslösen (gleiches
 Prinzip wie an anderer Stelle im Projekt bereits etabliert, siehe
@@ -1501,7 +1502,7 @@ ein moderateres Maß, das die längste Zeile weiterhin einzeilig zeigt. Die
 Dialoggröße selbst (1150×600 / 1550×780) blieb unverändert — der jetzt
 größere Chart-Anteil war nicht Teil der Rückmeldung.
 
-**Bugfix (12.07.2026):** Die Serienfarbe (`ChartSeriesData::color`, in
+Bugfix (12.07.2026): Die Serienfarbe (`ChartSeriesData::color`, in
 `PresenterChart` vergeben — Schluss-Kurs Schwarz, Kauf/Verkauf-Referenzlinien
 Blau/Rot usw.) wurde bisher **vor** `m_chart->addSeries(line)` gesetzt.
 `QChart` wendet sein Theme aber beim Hinzufügen einer Serie an und
@@ -1512,7 +1513,7 @@ korrekt Schwarz zeigte. Nessie ist das an der Diskrepanz Legende ↔ Graph
 aufgefallen. Behoben durch `line->setColor(s.color)` **nach**
 `m_chart->addSeries(line)` in `ViewChart::setChartData()`.
 
-**Hover-Tooltip (ergänzt 12.07.2026):** Portiert vom C#-Referenz-Verhalten
+Hover-Tooltip (ergänzt 12.07.2026): Portiert vom C#-Referenz-Verhalten
 ("Maus über den Graphen bewegen zeigt Datum + Wert als Tooltip"). Jede
 `QLineSeries` wird in `ViewChart::setChartData()` einzeln mit
 `onSeriesHovered()` verbunden (`QLineSeries::hovered(QPointF, bool)`) — Qt
@@ -1526,7 +1527,7 @@ die beiden Stück-Serien (`HeldVolume`/`TradedVolume`) ohne Nachkommastellen —
 `QToolTip::showText(QCursor::pos(), ...)` bei `state == true`,
 `QToolTip::hideText()` bei `state == false` (Maus verlässt die Linie).
 
-**Vertikale Kauf-/Verkauf-Markerlinien (ergänzt 12.07.2026):** Portiert vom
+Vertikale Kauf-/Verkauf-Markerlinien (ergänzt 12.07.2026): Portiert vom
 C#-Referenz-Verhalten — jeder Kauf/Verkauf, dessen Datum in den aktuell
 angezeigten Zeitraum fällt, bekommt eine gestrichelte vertikale Linie über
 die volle Höhe der Preis-Achse. Farbcodierung identisch zu den
@@ -1563,7 +1564,7 @@ trotzdem, nur eben ohne blaue/rote Linie.
   `m_chart->series().contains(s)`, bevor es entfernt/löscht, für den Fall
   eines Aufrufs ohne vorheriges `setChartData()`.
 
-**Hover-Tooltip für die Markerlinien (ergänzt 12.07.2026, zweiter Anlauf):**
+Hover-Tooltip für die Markerlinien (ergänzt 12.07.2026, zweiter Anlauf):
 Auf Nessies Vorgabe nachgezogen — jede Kauf-/Verkauf-Markerlinie bekommt
 denselben Hover-Mechanismus wie die Daten-Serien, über einen eigenen Handler
 `ViewChart::onReferenceLineHovered()` statt `onSeriesHovered()`, da
@@ -1582,7 +1583,7 @@ mit Datum, Preis **und** Stückzahl) ersetzt.
 `volume` — für das reine Zeichnen der Linie selbst weiterhin nur `date` und
 `color` relevant, die Linie geht immer über die volle Preis-Achsen-Höhe.
 
-**Bewusste Vereinfachungen dieser ersten Iteration** (auf Wunsch bei
+Bewusste Vereinfachungen dieser ersten Iteration (auf Wunsch bei
 Bedarf später verfeinerbar):
 - Zahlenformatierung in der Legende durchgängig mit 2 (Preis/Anteile) bzw.
   0 Nachkommastellen (Anteile-Min/Max), nicht exakt wie im C#-Screenshot
@@ -1593,7 +1594,7 @@ Bedarf später verfeinerbar):
   (Türkis/Orange) — nur die Linien selbst im Chart, die Legende zeigt
   weiterhin nur den jeweils letzten Kauf/Verkauf.
 
-**Tests (`tst_chartform`):** Fake-View/Fake-Model-Paar (analog
+Tests (`tst_chartform`): Fake-View/Fake-Model-Paar (analog
 `tst_sharedetailsform`) — kein `QWidget`, keine Qt-Charts-Instanziierung,
 keine Datenbank. Deckt ab: leerer/gefüllter Initialzustand, Default-Selektion
 (nur Schluss-Kurs), Zeitraum-Berechnung für Tag-/Monat-Intervall,
@@ -1603,16 +1604,16 @@ Min/Max- sowie Letzter-Kauf/Verkauf-Legendenzeilen (inkl. Fehlen bei
 fehlenden Käufen/Verkäufen), und dass `onControlsChanged()` vor dem ersten
 `loadAndDisplay()` keinen Effekt hat.
 
-**Mausrad-Steuerung der "Anzahl" (ergänzt 12.07.2026 auf Nessies Vorgabe,
-portiert vom C#-Referenz-Verhalten):** In der C#-Referenz lässt sich der
+Mausrad-Steuerung der "Anzahl" (ergänzt 12.07.2026 auf Nessies Vorgabe,
+portiert vom C#-Referenz-Verhalten): In der C#-Referenz lässt sich der
 Zeitraum sowohl über das "Anzahl"-Feld selbst als auch per Mausrad direkt im
 Chart ändern. Beide Wege sind über `ViewChart::eventFilter()` auf dieselbe
 Logik zurückgeführt:
 
-- **`m_countSpin`:** `QAbstractSpinBox::wheelEvent()` ignoriert Mausrad-
+- `m_countSpin`: `QAbstractSpinBox::wheelEvent()` ignoriert Mausrad-
   Events ohne Fokus — der Event-Filter fängt sie stattdessen direkt ab, damit
   Scrollen auch ohne vorherigen Klick funktioniert.
-- **`m_chartView->viewport()`, nicht `m_chartView` selbst:** `QChartView`
+- `m_chartView->viewport()`, nicht `m_chartView` selbst: `QChartView`
   (als `QGraphicsView`-Ableitung) leitet Mausrad-Events intern an seinen
   Viewport weiter — ein Filter direkt auf dem `QChartView`-Objekt würde sie
   nie sehen. Der Viewport deckt exakt die Zeichenfläche ab (nicht Legende/
@@ -1627,17 +1628,17 @@ Das löst automatisch die bereits bestehende `valueChanged()`-Verbindung zu
 nötig. Regressionstest: `test_chartWheel_overCountSpinAndChartView_
 changesIntervalCountAndRefreshes` (`tst_mainwindow.cpp`, siehe TESTING.md).
 
-**Obergrenze für "Anzahl" (ergänzt 12.07.2026 auf Nessies Vorgabe):** Ohne
+Obergrenze für "Anzahl" (ergänzt 12.07.2026 auf Nessies Vorgabe): Ohne
 Begrenzung ließ sich "Anzahl" beliebig weit über den Punkt hinaus erhöhen, an
 dem der älteste vorhandene Tageswert bereits im Fenster lag — jede weitere
 Vergrößerung zeigte exakt dieselben Daten, ohne dass das für den Nutzer
 erkennbar war. Die Begrenzung sitzt komplett im `PresenterChart` (Business-
 Logik), nicht im `ViewChart` — reine MVP-Trennung, die View bleibt dumm.
 
-- **`DailyValuesRepository::earliestDate()`** (Gegenstück zu `latestDate()`,
+- `DailyValuesRepository::earliestDate()` (Gegenstück zu `latestDate()`,
   `MIN(date)`) → `IModelChart::earliestDailyValueDate()` →
   `ModelChart::earliestDailyValueDate()` reichen das durch.
-- **`PresenterChart::computeMaxIntervalCount(rangeEnd, unit, earliestDate)`**
+- `PresenterChart::computeMaxIntervalCount(rangeEnd, unit, earliestDate)`
   berechnet bei jedem `refresh()` die kleinste "Anzahl", für die das Fenster
   den ältesten Wert erstmals vollständig einschließt (`rangeStart(count) <=
   earliestDate`). Kein geschlossener Ausdruck für Monat/Jahr möglich
@@ -1682,14 +1683,14 @@ Logik), nicht im `ViewChart` — reine MVP-Trennung, die View bleibt dumm.
   (z. B. ein kaputtes Datum wie Jahr 1) bestehen — auf Nessies ausdrücklichen
   Wunsch, obwohl die Schleife dafür rechnerisch nicht nötig wäre (auch
   Millionen einfacher `QDate`-Berechnungen sind in Millisekunden erledigt).
-- **`IViewChart::setMaxIntervalCount(int)`** reicht das Ergebnis an die View
+- `IViewChart::setMaxIntervalCount(int)` reicht das Ergebnis an die View
   durch. `ViewChart::setMaxIntervalCount()` ruft `m_countSpin->setMaximum()`
   auf (Signal geblockt — verhindert einen rekursiven `onControlsChanged()`-
   Aufruf, falls der aktuelle Wert dabei automatisch heruntergeklemmt wird).
   Das wirkt automatisch auf **alle** Eingabewege — Pfeiltasten, Tippen und
   die oben beschriebene Mausrad-Steuerung —, da Qt `QSpinBox` intern immer
   an `maximum()` clamped.
-- **Zusätzlich presenter-seitig geklemmt:** `refresh()` begrenzt die
+- Zusätzlich presenter-seitig geklemmt: `refresh()` begrenzt die
   tatsächlich für die Datenabfrage verwendete Anzahl selbst per
   `std::min(maxCount, ...)`, unabhängig davon, ob die View den Wert schon
   korrekt heruntergeklemmt hat. Macht die Presenter-Logik durch Fakes
@@ -1819,7 +1820,7 @@ Layout-Konventionen (an die C#-Anwendung angelehnt):
 
 Gilt für beide Tabs (Haupttabellen und Footer):
 
-- **Farben** sind theme-abhängig aus der Palette: `neutral` =
+- Farben sind theme-abhängig aus der Palette: `neutral` =
   `palette().color(QPalette::Text)`, `muted` = `neutral` mit Alpha 140
   (nur für leere Platzhalterwerte in Footer-Einzelwertzeilen genutzt — alle
   sichtbaren Zweitzeilen in Haupttabellen und Footer nutzen `neutral` bzw.
@@ -1829,7 +1830,7 @@ Gilt für beide Tabs (Haupttabellen und Footer):
   Schrift wirkte). Gewinn/Verlust nutzen dieselbe Quelle wie die
   Statusmeldungsbox — `AppSettings::logColorAt(5)` (Erfolg-Grün) bzw.
   `logColorAt(3)` (Fehler-Rot); ein Nullwert wird in Textfarbe gezeichnet.
-- **Icons**: `setIconSize(24×24)`; die Entwicklungs-Pfeile liegen als 24-px-PNGs
+- Icons: `setIconSize(24×24)`; die Entwicklungs-Pfeile liegen als 24-px-PNGs
   vor. Der `CenterIconDelegate` zentriert die Icon-Dekoration in den
   Icon-Spalten (Icon, PrevDayChart, CompleteChart) von Haupttabelle und Footer.
   Die Icon-Auswahl selbst läuft immer über dieselbe `devIcon(pct)`-Lambda
@@ -1844,7 +1845,7 @@ Gilt für beide Tabs (Haupttabellen und Footer):
   Werte (`+1,20 €`, `+0,26 %`) weiterhin mit einem fallenden Icon dargestellt
   werden, da `it->setIcon(...)` für `PrevDayChart`/`CompleteChart` im
   Einzel-Refresh-Pfad schlicht nie aufgerufen wurde.
-- **Zeilen**: Haupttabellen 38 px, Footer 34 px; alternierende Zeilenfarben und
+- Zeilen: Haupttabellen 38 px, Footer 34 px; alternierende Zeilenfarben und
   Gridlinien in Haupttabellen und Footer.
 
 #### TwoLineDelegate (forms/MainForm/TwoLineDelegate.h)
@@ -1997,7 +1998,7 @@ Guard hätte die programmatische Selektion aus `selectShareRow()` die drei
 Aktionen mitten im laufenden Refresh versehentlich wieder freigeschaltet,
 obwohl `onRefreshShare()`/`onRefreshAll()` sie explizit deaktiviert hatten.
 
-**Bugfix 07.07.2026 — Lücke im Busy-Guard:** `startRefreshForShare()` ruft
+Bugfix 07.07.2026 — Lücke im Busy-Guard: `startRefreshForShare()` ruft
 `selectShareRow()` auf, **bevor** einer der beiden Parser `startParsing()`
 aufruft. Wird eine Tabelle zum allerersten Mal selektiert (z. B.
 `m_marketValueTable`, wenn zuvor nur im Depotwert-Tab selektiert wurde), löst
@@ -2415,7 +2416,7 @@ Review noch verfeinerbar. `OverviewTabWidget` hat seit 14.07.2026 ein eigenes
 Test-Target, `tst_overviewtabwidget` (siehe TESTING.md).
 
 @note **Bugfixes nach erstem Build (14.07.2026, Nessies Feedback):**
-- **Übersicht-Tab nicht mehr anwählbar:** `m_pinnedBar` hat nur genau einen
+- Übersicht-Tab nicht mehr anwählbar: `m_pinnedBar` hat nur genau einen
   Tab (Index 0) — dessen `currentIndex` ändert sich also nie, wodurch
   `QTabBar::currentChanged` bei einem Klick auf einen bereits (intern) als
   "aktuell" geltenden Tab nicht feuert. Nach einem Sprung in einen Jahres-Tab
@@ -2430,7 +2431,7 @@ Test-Target, `tst_overviewtabwidget` (siehe TESTING.md).
   ursprüngliche `m_suppressTabSignal`-Tanz um die Bar-`setCurrentIndex()`-
   Aufrufe war nur zur Rekursionsvermeidung bei `currentChanged` nötig,
   `tabBarClicked` feuert nicht bei programmatischen Änderungen).
-- **Spaltenköpfe erst bei Selektion fett:** `buildFrozenTable()` setzte
+- Spaltenköpfe erst bei Selektion fett: `buildFrozenTable()` setzte
   Fettschrift bisher nur auf die Footer-Zeile — die als "erst bei Selektion
   fett" wahrgenommene Kopfzeile kam von Qt's Style-Standardverhalten
   (`QHeaderView::highlightSections`, hebt die zur Selektion gehörige
@@ -2574,7 +2575,7 @@ nicht — die Migration ist damit vollständig, keine Restausnahme wie bei
 @note **ViewShareAdd auf DocumentPreviewPanel umgestellt (19.07.2026):**
 `ViewShareAdd` nutzt jetzt `DocumentPreviewPanel` statt einer eigenen Kopie
 des QPdfView-/pdftoppm-Codes — der letzte der fünf Editier-Dialoge, der noch
-nicht umgestellt war (siehe "Offene Punkte / TODO",
+nicht umgestellt war (siehe "Erledigt / Archiv",
 "DocumentPreviewPanel: blockierender Dialog durch Inline-Anzeige ersetzt").
 Anders als bei BuysForm/SalesForm/DividendForm/BrokeragesForm gibt es hier
 kein `OverviewTabWidget` — `ViewShareAdd` ist ein reiner Anlage-Dialog ohne
@@ -2596,7 +2597,13 @@ Dialoge, ohne eigene Parallel-Implementierung.
 
 ---
 
-## Offene Punkte / TODO
+## Offene Punkte
+
+Aktuell keine TODOs vorhanden!
+
+---
+
+## Erledigt / Archiv
 
 ### ViewBrokerageEdit: Word-/Excel-Unterstützung nicht wieder eingebaut — bewusste Entscheidung (hinfällig, 19.07.2026, entschieden 20.07.2026)
 
@@ -2656,7 +2663,7 @@ Icon-Spalte. Betroffen waren:
 gegengecheckt: dort existiert **keine** eigene Dokument-Spalte (nur
 schreibgeschützte Summenfelder), kein Änderungsbedarf.
 
-**Reihenfolge (Nessies Vorgabe, 16.07.2026):** Erst `DividendForm` und
+Reihenfolge (Nessies Vorgabe, 16.07.2026): Erst `DividendForm` und
 `BrokeragesForm` vollständig auf `OverviewTabWidget`/`DocumentPreviewPanel`
 umbauen (seit 16.07.2026 abgeschlossen, siehe Migrationsnotizen oben), dann
 in einem eigenen Schritt global vereinheitlichen. Am 17.07.2026 umgesetzt,
@@ -2774,7 +2781,7 @@ von der Dialogbreite. `ViewShareEdit` wurde dabei gegengecheckt und hat
 ohnehin keine eigene Dokument-Spalte (siehe oben) — auch die ursprünglich
 offene Übertragungsfrage entfällt damit.
 
-### Totes Mapping: `PriceAtPayday` in `xmlNameToViewField()` (entfernt 08.07.2026)
+### Totes Mapping: PriceAtPayday in xmlNameToViewField() (entfernt 08.07.2026)
 
 `PresenterDividendEdit::xmlNameToViewField()` enthielt ein Mapping
 `"PriceAtPayday" → "priceAtPayday"`. Geprüft und geklärt (07.07.2026): **Keine**
@@ -2789,7 +2796,7 @@ Bewusst zunächst unangetastet gelassen (08.07.2026), inzwischen ebenfalls erled
 weiterhin — der Eintrag wurde dort seit jeher per `viewField.isEmpty() -> continue`
 übersprungen (unabhängig vom Mapping, da kein Bank-Konfig das Feld ohnehin liefert).
 
-### Folgepunkt: `PriceAtPayday` auch aus `knownXmlNames` entfernt (erledigt 08.07.2026)
+### Folgepunkt: PriceAtPayday auch aus knownXmlNames entfernt (erledigt 08.07.2026)
 
 Da `"PriceAtPayday"` in `knownXmlNames` mitgezählt wurde (`optionalTotal =
 knownXmlNames.size() - reqTotal`), aber wegen des fehlenden Mappings nie als
@@ -2858,26 +2865,26 @@ konfigurierbare Werte, keine Verhaltensänderung im Default-Fall.
 
 `createBackup()` liest jetzt vor jedem Lauf:
 
-- **`backupEnabled()`**: ist Backup deaktiviert, kehrt die Methode sofort
+- `backupEnabled()`: ist Backup deaktiviert, kehrt die Methode sofort
   zurück (kein Log-Eintrag als Statusmeldung, nur `qInfo()` — analog dazu,
   wie bisher schon eine fehlende Portfolio-Datei still übersprungen wurde).
-- **`backupDirectory()`**: leer → wie bisher `fi.absolutePath()` der
+- `backupDirectory()`: leer → wie bisher `fi.absolutePath()` der
   Portfolio-Datei. Ist ein eigenes Verzeichnis konfiguriert und existiert es
   noch nicht, wird es per `QDir::mkpath()` angelegt; schlägt das fehl, wird
   eine Warn-Statusmeldung ausgegeben und kein Backup erstellt.
-- **`backupNamePrefix()`** / **`backupDateFormat()`**: ersetzen die bisher
+- `backupNamePrefix()` / **`backupDateFormat()`**: ersetzen die bisher
   fest codierten Literale `"Backup"` bzw. `"yyyy_MM_dd_HH_mm_ss"` beim
   Erzeugen des neuen Dateinamens.
-- **`backupMaxCount()`**: ersetzt das bisherige `constexpr int kMaxBackups = 5`;
+- `backupMaxCount()`: ersetzt das bisherige `constexpr int kMaxBackups = 5`;
   über `qMax(1, ...)` gegen einen Wert ≤ 0 abgesichert (z. B. falls die INI
   von Hand manipuliert wurde).
 
-**Rotation: Namensfilter präfix-unabhängig, Sortierung nach Änderungsdatum
-(Nachtrag 08.07.2026):** Auf Nutzer-Rückfrage geprüft — "funktioniert die
+Rotation: Namensfilter präfix-unabhängig, Sortierung nach Änderungsdatum
+(Nachtrag 08.07.2026): Auf Nutzer-Rückfrage geprüft — "funktioniert die
 Rotation noch, wenn Präfix oder Datumsformat geändert werden?" — und dabei
 zwei Robustheitslücken behoben:
 
-- **Namensfilter ohne Präfix:** Die Rotation filtert nach
+- Namensfilter ohne Präfix: Die Rotation filtert nach
   `*_<Portfolioname>_*.<Endung>`, nicht nach
   `<Präfix>_<Portfolioname>_*.<Endung>`. Mit einem präfixgebundenen Filter
   würde eine Präfix-Änderung in `BackupSettingsForm` alle bisherigen Backups
@@ -2887,7 +2894,7 @@ zwei Robustheitslücken behoben:
   mehr treffen. Der Portfolioname (Basisdateiname) plus Endung reicht als
   Anker aus, um Backups dieses Portfolios von fremden Dateien im selben
   Verzeichnis zu unterscheiden.
-- **Sortierung nach `QFileInfo::lastModified()`, nicht nach Dateiname:** Eine
+- Sortierung nach `QFileInfo::lastModified()`, nicht nach Dateiname: Eine
   rein alphabetische Sortierung wäre nur zufällig korrekt gewesen, solange
   `backupDateFormat()` nullgepolstert und groß-nach-klein aufgebaut ist (wie
   der Standard `yyyy_MM_dd_HH_mm_ss`). Ändert der Benutzer das Format
@@ -2898,7 +2905,7 @@ zwei Robustheitslücken behoben:
   tatsächliche Änderungsdatum der Datei ist von der gewählten
   Textdarstellung unabhängig und bleibt daher auch nach einer
   Formatänderung korrekt.
-- **Leerer/fehlerhafter Präfix bzw. leeres Datumsformat:**
+- Leerer/fehlerhafter Präfix bzw. leeres Datumsformat:
   `BackupSettingsForm::saveSettings()` ersetzt leere Eingaben bereits vor dem
   Speichern durch die Standardwerte. `createBackup()` verlässt sich darauf
   zusätzlich nicht blind, sondern wendet denselben Fallback nochmal auf
@@ -2974,7 +2981,7 @@ Letzterer deckte dabei einen echten, bis dahin unbekannten Bug auf (siehe
 Instanzzustand zu) und direkt getestet, ohne `QMetaObject::invokeMethod`
 (siehe TESTING.md, Abschnitt "`buildDailyValuesUrl()` — erledigt").
 
-### `onDailyValuesUpdated()`-Pfad (erledigt 08.07.2026)
+### onDailyValuesUpdated()-Pfad (erledigt 08.07.2026)
 
 Analog zu `onMarketValuesUpdated()` (siehe oben) ist jetzt auch der
 `DailyValues`-Zweig über `FakeNetworkAccessManager` end-to-end abgedeckt:
@@ -3255,16 +3262,16 @@ Vorab-Prüfung eine Lücke hat.
 
 ### Idempotenz / Wiederholbarkeit
 
-- **Shares** werden über die WKN abgeglichen (`ShareRepository::findByWkn`).
+- Shares werden über die WKN abgeglichen (`ShareRepository::findByWkn`).
   Existiert die Aktie bereits, wird ihre GUID wiederverwendet und die
   Stammdaten bleiben unangetastet — es werden nur fehlende Kindobjekte importiert.
-- **Buys/Sales/Dividends/Brokerages** übernehmen die GUID direkt aus dem
+- Buys/Sales/Dividends/Brokerages übernehmen die GUID direkt aus dem
   Quell-XML. Vor dem Insert prüft der Importer per `findByGuid()`, ob der
   Datensatz schon existiert, und überspringt ihn dann (`SKIPPED`). Ein erneuter
   Lauf über dieselbe (oder eine aktualisierte) Export-Datei ist damit sicher —
   `PortfolioValidator` behandelt einen solchen Re-Import derselben GUID
   ausdrücklich nicht als `OrderNumber`-Kollision (siehe oben).
-- **Daily values** verwenden `INSERT OR REPLACE` über den Composite-Key
+- Daily values verwenden `INSERT OR REPLACE` über den Composite-Key
   `(share_guid, date)` und sind dadurch immer gefahrlos erneut importierbar.
 
 ### Fehlerverhalten
@@ -3272,9 +3279,9 @@ Vorab-Prüfung eine Lücke hat.
 Seit der Einführung von `PortfolioValidator` (siehe oben) ist das
 Fehlerverhalten zweigeteilt:
 
-- **Vor dem Import:** Jedes gefundene Problem — egal in welcher Aktie —
+- Vor dem Import: Jedes gefundene Problem — egal in welcher Aktie —
   verhindert den kompletten Lauf. Es gibt keine Teilimporte mehr.
-- **Während des Imports:** Die bereits bestehenden Datensatz-Ebene-Prüfungen
+- Während des Imports: Die bereits bestehenden Datensatz-Ebene-Prüfungen
   (fehlende GUID, SQL-Fehler, nicht auflösbare Brokerage-Zuordnung, ...)
   bleiben als defensiver Fallback erhalten, sollten nach einer erfolgreichen
   Validierung aber nicht mehr auslösen. Ein unerwarteter DB-Fehler an dieser
@@ -3302,20 +3309,20 @@ selbst reparieren — seit 05.07.2026 verhindern sie zusätzlich den kompletten
 Import (siehe "Validierung vor dem Import" oben), statt nur den betroffenen
 Datensatz zu überspringen:
 
-1. **Falsche `OrderNumber`** — ein einzelner Buy trug eine `OrderNumber`, die
+1. Falsche `OrderNumber` — ein einzelner Buy trug eine `OrderNumber`, die
    nicht zum zugehörigen PDF-Beleg passte und stattdessen mit einer völlig
    anderen Aktie kollidierte (`UNIQUE constraint failed: buys.order_number`).
    Nur durch Korrektur der `OrderNumber` in der Quelle behebbar (Beleg-Dateiname
    als Referenz).
-2. **Vertauschte `BuyPart`/`SalePart`-Flags** — siehe Abschnitt
+2. Vertauschte `BuyPart`/`SalePart`-Flags — siehe Abschnitt
    "Brokerage-Zuordnung" oben. Seit dem Fix vom 02.07.2026 fängt der Importer
    das automatisch ab und protokolliert es als `INFO`.
-3. **Doppelt-XML-escapte Ampersands in WebSite-URLs** (`&amp;amp;` statt
+3. Doppelt-XML-escapte Ampersands in WebSite-URLs (`&amp;amp;` statt
    `&amp;`, gefunden bei Nvidia/Wacker Chemie) — siehe Abschnitt
    "URL-Normalisierung" oben. Seit dem Fix vom 05.07.2026 erkennt und
    korrigiert `XmlPortfolioParser` das automatisch und protokolliert es als
    `INFO` (`RawShare::parseWarnings`).
-4. **Element `<MarketValues>` (Plural) statt `<MarketValue>` (Singular)** —
+4. Element `<MarketValues>` (Plural) statt `<MarketValue>` (Singular) —
    dieselben zwei Aktien (Nvidia/Wacker Chemie), 2 von 34 Vorkommen laut
    `grep -c`. Anders als Fall 3 ist das ein struktureller Fehler im
    Elementnamen, kein sicher normalisierbares Formatdetail — der Importer
@@ -3354,13 +3361,13 @@ Aufrufbar über `Einstellungen → Dokumente...`, analog zu
 `BackupSettingsForm`/`LoggerSettingsForm` als einzelner `QDialog` ohne eigenes
 IView/IModel/Presenter-Triple.
 
-**Entstehung (18.07.2026):** Ursprünglich als deutlich komplexerer
+Entstehung (18.07.2026): Ursprünglich als deutlich komplexerer
 Erstlauf-Zwangsdialog mit Auto-Erkennung, Existenzprüfung und mehreren
 Sonderfall-Zweigen umgesetzt — auf Nutzer-Feedback ("dieser Schritt ist
 einfach zu komplex") bewusst zurückgebaut auf ein einfaches Zwei-Felder-Muster.
 
-**Zwei Felder, keine Zwangslogik:**
-- **Alter Root-Pfad** (`m_editOldRoot`, frei editierbar, kein Browse-Button):
+Zwei Felder, keine Zwangslogik:
+- Alter Root-Pfad (`m_editOldRoot`, frei editierbar, kein Browse-Button):
   vorbefüllt mit `AppSettings::documentsRootPath()`, falls bereits ein Root
   bekannt ist; sonst mit einer automatischen Vorschlag aus
   `DocumentRootMigrator::detectCommonRoot()`. Muss auf diesem Rechner NICHT
@@ -3368,23 +3375,23 @@ einfach zu komplex") bewusst zurückgebaut auf ein einfaches Zwei-Felder-Muster.
   die gespeicherten Dokumentpfade (genau das ist der Kernanwendungsfall: ein
   alter Windows-Pfad wie `B:\Depot\...` existiert unter Linux naturgemäß
   nicht, soll aber trotzdem als Such-Präfix funktionieren).
-- **Neuer Root-Pfad** (`m_editNewRoot`, nur per "Durchsuchen..."): muss ein
+- Neuer Root-Pfad (`m_editNewRoot`, nur per "Durchsuchen..."): muss ein
   echtes, existierendes oder anlegbares Verzeichnis auf diesem Rechner sein.
 
-**OK** ruft `DocumentRootMigrator::changeRoot(alt, neu)` auf (reine
+OK ruft `DocumentRootMigrator::changeRoot(alt, neu)` auf (reine
 Präfix-Ersetzung über alle `document`-Spalten in `buys`/`sales`/`brokerage`/
 `dividends`, via `updateDocument(guid, path)` der jeweiligen Repositories —
 keine Datei-Operationen, die Dateien müssen bereits am neuen Ort liegen) und
 speichert den neuen Pfad in `AppSettings`. **Abbrechen** macht nichts — kein
 DB-Write, keine Settings-Änderung.
 
-**Kein Zwang mehr:** `MainWindow::ensureDocumentsRootConfigured()` öffnet den
+Kein Zwang mehr: `MainWindow::ensureDocumentsRootConfigured()` öffnet den
 Dialog beim Start, wenn `AppSettings::documentsRootPath()` leer ist — aber
 nicht mehr blockierend. Bricht der Benutzer ab, bleibt der Root-Pfad leer und
 der Dialog wird beim nächsten Start erneut angeboten. Muss nach dem Öffnen
 der Portfolio-DB laufen, damit `detectCommonRoot()` etwas zum Auswerten hat.
 
-**Cross-Plattform-Pfaderkennung:** `DocumentRootMigrator` normalisiert
+Cross-Plattform-Pfaderkennung: `DocumentRootMigrator` normalisiert
 Backslashes zu Forward-Slashes und erkennt einen Windows-Laufwerksbuchstaben
 (`B:`) als absoluten Pfad-Anfang, unabhängig davon, für welches Betriebssystem
 Qt selbst gebaut wurde (`QDir::isAbsolutePath()` würde einen Windows-Pfad
@@ -3430,16 +3437,20 @@ In jedem der fünf `onBrowseDocument()`:
 
 `ViewBrokerageEdit` erlaubte bislang zusätzlich zu PDF auch Word-/
 Excel-Dateien und "Alle Dateien" — auf Nutzer-Entscheidung (19.07.2026)
-vorerst auf denselben PDF-only-Filter wie die anderen vier Dialoge reduziert
-(TODO: Word-/Excel-Unterstützung nachziehen, sobald möglich, siehe "Offene
-Punkte / TODO" unten). Die Root-Einschränkung selbst gilt unabhängig vom
-Dateityp, nur der Ordner zählt.
+vorerst auf denselben PDF-only-Filter wie die anderen vier Dialoge
+reduziert. Eine Wiedereinführung wurde am 20.07.2026 bewusst verworfen (siehe
+"Erledigt / Archiv", "ViewBrokerageEdit: Word-/Excel-Unterstützung nicht
+wieder eingebaut — bewusste Entscheidung") — inzwischen wurde zusätzlich in
+allen fünf Dialogen der Zusatzfilter `;;Alle Dateien (*)` entfernt, sodass
+im `QFileDialog` wirklich nur noch PDF auswählbar ist. Die Root-Einschränkung
+selbst gilt unabhängig vom Dateityp, nur der Ordner zählt.
 
-`ViewShareAdd` hat weiterhin eine eigene, nicht an `DocumentPreviewPanel`
-delegierte PDF-Vorschau (siehe oben, Abschnitt zu `DocumentPreviewPanel`) —
-die Root-Prüfung selbst ist davon unabhängig und greift dort genauso.
+`ViewShareAdd` delegiert seit der Migration auf `DocumentPreviewPanel`
+(19.07.2026, siehe "ViewShareAdd auf DocumentPreviewPanel umgestellt" oben)
+ebenfalls vollständig an das gemeinsame Vorschau-Panel — die Root-Prüfung
+selbst war davon unabhängig und griff schon vorher genauso.
 
-**Nicht Teil dieser Änderung:** Unit-Tests für die `onBrowseDocument()`-
+Nicht Teil dieser Änderung: Unit-Tests für die `onBrowseDocument()`-
 Methoden selbst (der Fehlerfall ruft `OwnMessageBox::critical()` auf, s.
 bekannte Testkonvention) — nur die zugrundeliegende `isPathWithinRoot()`-
 Logik ist in `tst_documentssettingsform.cpp` unit-getestet.
@@ -3455,7 +3466,7 @@ Zeilenauswahl-Verhalten in `ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit`/
 `ViewBrokerageEdit` (dort lädt ein Zeilenklick über den Presenter den
 kompletten Datensatz inkl. Dokument).
 
-**`OverviewTabWidget`:** Neues Signal `rowActivatedWithDocument(userData,
+`OverviewTabWidget`: Neues Signal `rowActivatedWithDocument(userData,
 documentPath)` — gefeuert bei jedem Klick auf eine Jahres-Tab-Zeile (im
 selben `cellClicked`-Handler wie das bestehende `rowActivated()`),
 zusätzlich mit dem Dokumentpfad aus der (falls über `jahresDocColumn`
@@ -3468,7 +3479,7 @@ beim ersten Anlauf dieser Änderung übersehen worden und hatte kurzzeitig
 den Build gebrochen (`documentActivated` versehentlich entfernt), daher
 jetzt bewusst als Ergänzung statt als Ersatz umgesetzt.
 
-**`ViewShareDetails`:** Neue private Hilfsmethode `wireOverviewTab(tabs,
+`ViewShareDetails`: Neue private Hilfsmethode `wireOverviewTab(tabs,
 preview, docColumn)`, aufgerufen aus `setupGewinneVerlusteTab()`/
 `setupDividendenTab()`/`setupKostenTab()` (docColumn: 4/4/5, siehe die
 jeweiligen `populate*()`-Methoden), ersetzt die bisherige einzeilige
@@ -3489,7 +3500,7 @@ verdrahtet zwei Dinge:
    ausgehend automatisch das Leeren der Vorschau, ohne dass `onMainTabChanged()`
    selbst etwas von den drei `DocumentPreviewPanel`-Instanzen wissen muss.
 
-**Testabdeckung nachgezogen (19.07.2026):** `tst_overviewtabwidget.cpp` deckt
+Testabdeckung nachgezogen (19.07.2026): `tst_overviewtabwidget.cpp` deckt
 `rowActivatedWithDocument()` sowie eine Regression für das weiterhin
 bestehende `documentActivated()` mit sieben neuen Tests ab;
 `tst_mainwindow.cpp` deckt `wireOverviewTab()` (Erst-Zeilen-Auswahl bei
@@ -3500,3 +3511,21 @@ Details siehe TESTING.md, "ShareDetailsForm: Dokument-Vorschau per
 Zeilenauswahl (19.07.2026) — Testabdeckung nachgezogen". Bewusst weiterhin
 nicht abgedeckt: ob `DocumentPreviewPanel` das Dokument tatsächlich korrekt
 anzeigt (kein öffentliches Zustands-API, bekannte Lücke).
+
+### Grid-Selektions-Testplan (Refresh-Flow) vollständig abgeschlossen (erledigt, 20.07.2026)
+
+Der bei der Parser-Mocking-Infrastruktur (07.07.2026) zunächst
+zurückgestellte Testplan zur Grid-Selektion während des Refresh-Flows
+("Grid-Selektion folgt dem Refresh", Feature vom 05.07.2026) bestand aus
+vier Teilaspekten. Bei Durchsicht von `tst_mainwindow.cpp` (20.07.2026)
+bestätigt: drei der vier waren bereits über bestehende Tests abgedeckt
+(`test_onRefreshAll_gridSelectionFollowsQueueProgress_viaFakeNetwork` für
+Selektion während der Queue und Rücksprung auf Zeile 0 nach Abschluss,
+`test_onRefreshAll_errorMidQueue_selectionStaysOnFailedShare_viaFakeNetwork`
+für den Fehlerfall). Der vierte — Selektion bleibt nach abgeschlossenem
+Einzel-Refresh (`onRefreshShare()`, kein "Alle aktualisieren") auf der
+aktualisierten Aktie stehen, `selectFirstShareRow()` wird nicht aufgerufen —
+fehlte tatsächlich noch und wurde ergänzt:
+`test_onRefreshShare_completed_selectionStaysOnUpdatedShare_viaFakeNetwork`
+(siehe TESTING.md, Refresh-Flow-Abschnitt). Damit ist dieser Testplan
+vollständig abgeschlossen, keine offenen Punkte mehr zur Grid-Selektion.
