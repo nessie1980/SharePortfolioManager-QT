@@ -151,6 +151,17 @@ des Tests verweist. Da `init()` `brokerage` nicht mit aufräumte, scheiterte
 Zeile blieb liegen — `test_totalVolume` summierte in der Folge 13,0 statt
 8,0. Fix: `init()` löscht jetzt auch `brokerage`, vor `sales`.
 
+**`ShareRepository::maxLastInternetUpdate()` (Feature 21.07.2026, `tst_sharerepository.cpp`):**
+Vier neue Tests decken die Grundlage für das Portfolio-Label "Letzte
+Aktualisierung" ab:
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_maxLastInternetUpdate_emptyPortfolio_returnsEmpty` | Leeres Portfolio → leerer String |
+| `test_maxLastInternetUpdate_noShareEverUpdated_returnsEmpty` | Aktie ohne jemals gesetztes `last_internet_update` → leerer String (nicht `NULL`-als-Text o.ä.) |
+| `test_maxLastInternetUpdate_returnsLatestAcrossShares` | Zwei Aktien mit unterschiedlichen Zeitstempeln → jüngerer Wert wird geliefert (ISO-8601-String-Vergleich) |
+| `test_maxLastInternetUpdate_ignoresSharesNeverUpdated` | Eine aktualisierte + eine nie aktualisierte Aktie → Ergebnis ist der Wert der aktualisierten Aktie, nicht leer |
+
 Regressionstest `test_totalPayoutWithTaxes_matchesDoubleRoundedDividendObjectSum`
 (tst_dividendrepository.cpp): Verifiziert, dass `DividendRepository::totalPayoutWithTaxes()`
 bei Fremdwährungs-Dividenden dieselbe zweistufige Rundung anwendet wie
@@ -1713,6 +1724,31 @@ frage zu prüfen — nämlich schlicht: läuft `refreshPortfolioFooters()`
 überhaupt, und zu welchem Zeitpunkt. Die Tests vergleichen daher den
 Footer-Text vor/nach Refresh auf Änderung/Gleichheit statt auf einen
 bestimmten Zahlenwert.
+
+### Portfolio-Label "Letzte Aktualisierung" — erledigt (21.07.2026)
+
+`updatePortfolioLabel(entryCount, formatLastPortfolioUpdate())` wird an
+derselben Stelle in `onRefreshShareFinished()` aufgerufen wie
+`refreshPortfolioFooters()` (siehe Abschnitt "Footer-Update bei Refresh"
+oben) — direkt danach, vor dem Verketten zur nächsten Aktie bzw. vor
+`finaliseRefresh()`. Grundlage ist `ShareRepository::maxLastInternetUpdate()`
+(siehe `tests/repositories/tst_sharerepository.cpp`), nicht ein eigener
+Persistenz-Mechanismus — der Zeitstempel lebt also in `shares.
+last_internet_update` und übersteht dadurch auch einen Neustart der
+Anwendung (dieselbe Portfolio-Datei erneut geöffnet).
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_populatePortfolioTables_neverUpdated_labelShowsDash` | Frisches Portfolio, Aktie ohne jemals gesetztes `last_internet_update` | Label enthält "Letzte Aktualisierung: -" |
+| `test_onRefreshShare_marketPriceSuccess_labelShowsCurrentTimestamp_viaFakeNetwork` | Erfolgreicher Einzel-Refresh (MarketPrice) | Label wechselt von "-" zu einem echten Zeitstempel |
+| `test_onRefreshShare_dailyValuesOnlySuccess_labelShowsCurrentTimestamp_viaFakeNetwork` | Erfolgreicher Einzel-Refresh, `ShareUpdateType::DailyValues`-only | Regressionstest für die geschlossene Lücke in `onDailyValuesUpdated()` (siehe ARCHITECTURE.md) — Label wechselt ebenfalls von "-" zu einem Zeitstempel |
+| `test_onRefreshShare_networkError_labelStaysAtDash_viaFakeNetwork` | Einzel-Refresh liefert `QNetworkReply::HostNotFoundError` | Label bleibt exakt bei "Letzte Aktualisierung: -" |
+| `test_populatePortfolioTables_afterRefresh_timestampPersistsAcrossReload_viaFakeNetwork` | Erfolgreicher Refresh gegen eine echte Datei-DB, Fenster geschlossen, DB erneut geöffnet, neues `MainWindow` konstruiert | Zeitstempel bleibt nach dem simulierten Neustart erhalten (nicht zurück auf "-") |
+
+@note Wie bei den Sound-Tests wird `window.findChild<QLabel*>()` ohne
+Namensfilter verwendet — `m_portfolioLabel` ist das erste `QLabel`, das
+`setupCentralWidget()` erzeugt, dasselbe Muster wie bereits in
+`test_updatePortfolioLabel_defaultValues` etabliert.
 
 ### buildDailyValuesUrl() — erledigt (07.07.2026)
 

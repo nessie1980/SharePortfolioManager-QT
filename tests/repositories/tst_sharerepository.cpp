@@ -177,6 +177,51 @@ private slots:
                  QString("2024-06-15T12:00:00"));
     }
 
+    // ── maxLastInternetUpdate (Feature 21.07.2026) ─────────────────────────
+    void test_maxLastInternetUpdate_emptyPortfolio_returnsEmpty()
+    {
+        ShareRepository repo;
+        QVERIFY(repo.maxLastInternetUpdate().isEmpty());
+    }
+
+    void test_maxLastInternetUpdate_noShareEverUpdated_returnsEmpty()
+    {
+        ShareRepository repo;
+        repo.insert(makeShare(newGuid(), "NUP001", "Never Updated AG"));
+
+        QVERIFY(repo.maxLastInternetUpdate().isEmpty());
+    }
+
+    void test_maxLastInternetUpdate_returnsLatestAcrossShares()
+    {
+        ShareRepository repo;
+        const QString g1 = newGuid();
+        const QString g2 = newGuid();
+        repo.insert(makeShare(g1, "OLD001", "Older AG"));
+        repo.insert(makeShare(g2, "NEW001", "Newer AG"));
+
+        repo.updateLastInternetUpdate(g1, "2026-07-01T10:00:00");
+        repo.updateLastInternetUpdate(g2, "2026-07-15T09:30:00");
+
+        QCOMPARE(repo.maxLastInternetUpdate(), QString("2026-07-15T09:30:00"));
+    }
+
+    void test_maxLastInternetUpdate_ignoresSharesNeverUpdated()
+    {
+        // Eine Aktie ohne jemals gesetzten last_internet_update darf das
+        // Ergebnis nicht auf einen leeren String zurückfallen lassen, solange
+        // mindestens eine andere Aktie aktualisiert wurde.
+        ShareRepository repo;
+        const QString gUpdated   = newGuid();
+        const QString gNeverUsed = newGuid();
+        repo.insert(makeShare(gUpdated,   "UPD001", "Updated AG"));
+        repo.insert(makeShare(gNeverUsed, "NUP002", "Never Updated 2 AG"));
+
+        repo.updateLastInternetUpdate(gUpdated, "2026-07-10T08:00:00");
+
+        QCOMPARE(repo.maxLastInternetUpdate(), QString("2026-07-10T08:00:00"));
+    }
+
     void test_remove()
     {
         ShareRepository repo;

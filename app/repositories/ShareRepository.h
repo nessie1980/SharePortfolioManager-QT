@@ -89,6 +89,20 @@ public:
      */
     bool updateLastInternetUpdate(const QString& guid, const QString& lastUpdate);
 
+    /**
+     * @brief Returns the most recent last_internet_update value across all shares.
+     *
+     * Used by MainWindow to display the portfolio-weite "Letzte Aktualisierung"
+     * im Portfolio-Label (Feature 21.07.2026) — ISO-8601-Strings sortieren
+     * lexikographisch korrekt, SQL MAX() funktioniert also direkt ohne
+     * Konvertierung nach QDateTime.
+     *
+     * @return ISO-8601-Datetime-String der zuletzt aktualisierten Aktie, oder
+     *         ein leerer String, wenn noch keine Aktie aktualisiert wurde
+     *         (oder das Portfolio leer ist).
+     */
+    QString maxLastInternetUpdate() const;
+
     // ── Delete ────────────────────────────────────────────────────────────
     /**
      * @brief Delete a share by GUID.

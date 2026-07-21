@@ -747,6 +747,21 @@ void MainWindow::addStatusMessage(const QString& message, MessageType type)
 }
 
 
+QString MainWindow::formatLastPortfolioUpdate() const
+{
+    ShareRepository shareRepo;
+    const QString iso = shareRepo.maxLastInternetUpdate();
+    if (iso.isEmpty())
+        return tr("-");
+
+    const QDateTime dt = QDateTime::fromString(iso, Qt::ISODate);
+    if (!dt.isValid())
+        return iso; // defensiver Fallback, analog zu formatDateTime() in PresenterShareDetails
+
+    const QLocale locale;
+    return locale.toString(dt, QLocale::ShortFormat);
+}
+
 void MainWindow::updatePortfolioLabel(int entryCount, const QString& lastUpdate)
 {
     m_portfolioLabel->setText(
@@ -1120,7 +1135,7 @@ void MainWindow::populatePortfolioTables()
     }
 
     updatePortfolioFooters(allValues);
-    updatePortfolioLabel(shareCount);
+    updatePortfolioLabel(shareCount, formatLastPortfolioUpdate());
 
     m_actionAdd->setEnabled(true);
     m_actionRefreshAll->setEnabled(shareCount > 0);
@@ -1731,6 +1746,13 @@ void MainWindow::onRefreshShareFinished()
     // once "Alle aktualisieren" has finished.
     refreshPortfolioFooters();
 
+    // Feature 21.07.2026: Portfolio-Label ("Letzte Aktualisierung") live
+    // mitziehen — nicht erst beim nächsten populatePortfolioTables()
+    // (Neustart/Neuladen). Entry-Count bleibt unverändert (kein Hinzufügen/
+    // Entfernen während eines Refreshs), daher genügt m_finalValueTable->
+    // rowCount() statt einer erneuten ShareRepository::findAll()-Abfrage.
+    updatePortfolioLabel(m_finalValueTable->rowCount(), formatLastPortfolioUpdate());
+
     if (m_updateAllFlag && !m_refreshQueue.isEmpty()) {
         // Start next share in queue
         startRefreshForShare(m_refreshQueue.dequeue());
@@ -2102,6 +2124,19 @@ void MainWindow::onDailyValuesUpdated(const ParserLib::ParserInfoState& state)
     // ── Finished ──────────────────────────────────────────────────────────
     if (state.lastErrorCode == EC::Finished) {
         if (m_dailyDone) return; // guard against double-firing
+
+        // Feature 21.07.2026: last_internet_update wurde bisher nur von
+        // onMarketValuesUpdated() gesetzt — ein reiner DailyValues-Refresh
+        // (ShareUpdateType::DailyValues) blieb dadurch unberücksichtigt,
+        // obwohl der Internet-Zugriff erfolgreich war. Analog zu
+        // onMarketValuesUpdated() unbedingt bei Finished setzen (auch wenn
+        // dvList leer ist oder der Upsert unten fehlschlägt — der
+        // Internet-Abruf selbst war erfolgreich), damit
+        // ShareRepository::maxLastInternetUpdate() auch reine
+        // Tageswerte-Refreshs im Portfolio-Label widerspiegelt.
+        const QString now = QDateTime::currentDateTime().toString(Qt::ISODate);
+        ShareRepository().updateLastInternetUpdate(m_refreshShare.guid(), now);
+
         const QList<ParserLib::DailyValues>& dvList = state.dailyValuesList;
 
         if (!dvList.isEmpty()) {

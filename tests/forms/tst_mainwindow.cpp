@@ -1706,6 +1706,195 @@ private slots:
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // MainWindow — Portfolio-Label "Letzte Aktualisierung" (Feature 21.07.2026)
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // Analog zum Footer-Update oben: updatePortfolioLabel(entryCount,
+    // formatLastPortfolioUpdate()) wird an derselben Stelle in
+    // onRefreshShareFinished() aufgerufen (direkt nach refreshPortfolioFooters(),
+    // vor dem Verketten zur nächsten Aktie bzw. vor finaliseRefresh()). Das
+    // Label ist über window.findChild<QLabel*>() erreichbar — dasselbe Muster
+    // wie test_updatePortfolioLabel_defaultValues weiter oben nutzt es bereits
+    // (m_portfolioLabel ist das erste QLabel-Kind, das setupCentralWidget()
+    // erzeugt).
+
+    void test_populatePortfolioTables_neverUpdated_labelShowsDash()
+    {
+        openMemoryDb();
+        ShareRepository().insert(ShareObject(
+            QStringLiteral("g-label-dash"), QStringLiteral("LD01"),
+            QStringLiteral("DE000LD00001"), QStringLiteral("Label Dash AG")));
+
+        MainWindow window;
+        auto* label = window.findChild<QLabel*>();
+        QVERIFY(label != nullptr);
+        QVERIFY2(label->text().contains(QStringLiteral("Letzte Aktualisierung: -")),
+                 qPrintable(label->text()));
+    }
+
+    void test_onRefreshShare_marketPriceSuccess_labelShowsCurrentTimestamp_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/LabelSingleSuccess.db");
+        const QStringList guids = seedRefreshQueuePortfolio(1, dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[0])),
+            onVistaRealTimeJson(150.0));
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        auto* label = window.findChild<QLabel*>();
+        QVERIFY(label != nullptr);
+        QVERIFY2(label->text().contains(QStringLiteral("Letzte Aktualisierung: -")),
+                 qPrintable(label->text())); // Vorher-Zustand: noch nie aktualisiert
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        finalTbl->setCurrentCell(0, 0);
+
+        QAction* actionRefresh = findActionByStatusTip(window,
+            QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+        QVERIFY(actionRefresh);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                 "Einzel-Refresh hat nicht beendet (finaliseRefresh() nicht erreicht).");
+
+        QVERIFY2(!label->text().contains(QStringLiteral("Letzte Aktualisierung: -")),
+                 qPrintable(label->text()));
+    }
+
+    void test_onRefreshShare_dailyValuesOnlySuccess_labelShowsCurrentTimestamp_viaFakeNetwork()
+    {
+        // Regressionstest für die geschlossene Lücke: vor dieser Änderung
+        // rief onDailyValuesUpdated() ShareRepository::updateLastInternetUpdate()
+        // nie auf, wodurch ein reiner DailyValues-Refresh das Portfolio-Label
+        // nie aktualisiert hätte.
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/LabelDailyValuesSingle.db");
+        const QStringList guids = seedDailyValuesQueuePortfolio(1, dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/yahoo-daily/%1?range=20y").arg(guids[0])),
+            yahooDailyHistoryJson());
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        auto* label = window.findChild<QLabel*>();
+        QVERIFY(label != nullptr);
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        finalTbl->setCurrentCell(0, 0);
+
+        QAction* actionRefresh = findActionByStatusTip(window,
+            QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+        QVERIFY(actionRefresh);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                 "Einzel-Refresh (DailyValues-only) hat nicht beendet "
+                 "(finaliseRefresh() nicht erreicht).");
+
+        QVERIFY2(!label->text().contains(QStringLiteral("Letzte Aktualisierung: -")),
+                 qPrintable(label->text()));
+    }
+
+    void test_onRefreshShare_networkError_labelStaysAtDash_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/LabelSingleError.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        ShareObject share(QStringLiteral("g-label-err"), QStringLiteral("LE01"),
+                          QStringLiteral("DE000LE00001"), QStringLiteral("LabelError AG"));
+        share.setUpdateType(ShareUpdateType::MarketPrice);
+        share.setMarketPriceParsingType(ShareParsingType::ApiOnVista);
+        share.setMarketPriceUrl(QStringLiteral("https://example.com/onvista/label-err"));
+        share.setMarketPriceEncoding(QStringLiteral("UTF-8"));
+        ShareRepository().insert(share);
+        insertTestBuy(QStringLiteral("g-label-err"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 5.0, 100.0);
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setError(QUrl(QStringLiteral("https://example.com/onvista/label-err")),
+                         QNetworkReply::HostNotFoundError, QStringLiteral("host not found"));
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        auto* label = window.findChild<QLabel*>();
+        QVERIFY(label != nullptr);
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        finalTbl->setCurrentCell(0, 0);
+
+        QAction* actionRefresh = findActionByStatusTip(window,
+            QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+        QVERIFY(actionRefresh);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                 "Einzel-Refresh (Fehlerfall) hat nicht beendet "
+                 "(finaliseRefresh() nicht erreicht).");
+
+        QVERIFY2(label->text().contains(QStringLiteral("Letzte Aktualisierung: -")),
+                 qPrintable(label->text()));
+    }
+
+    void test_populatePortfolioTables_afterRefresh_timestampPersistsAcrossReload_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/LabelPersistReload.db");
+        const QStringList guids = seedRefreshQueuePortfolio(1, dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/onvista/%1").arg(guids[0])),
+            onVistaRealTimeJson(180.0));
+
+        {
+            MainWindow window(&fakeNam);
+            QApplication::processEvents();
+
+            QTableWidget* finalTbl = findFinalTable(window, 1);
+            if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+            finalTbl->setCurrentCell(0, 0);
+
+            QAction* actionRefresh = findActionByStatusTip(window,
+                QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+            QVERIFY(actionRefresh);
+
+            QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+            QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                     "Einzel-Refresh hat nicht beendet (finaliseRefresh() nicht erreicht).");
+
+            auto* label = window.findChild<QLabel*>();
+            QVERIFY(label != nullptr);
+            QVERIFY(!label->text().contains(QStringLiteral("Letzte Aktualisierung: -")));
+
+            Database::instance().close(); // "Neustart" simulieren
+        }
+
+        // Neues MainWindow gegen dieselbe (echte Datei-)DB — populatePortfolioTables()
+        // läuft automatisch im Konstruktor. Der Zeitstempel muss aus
+        // shares.last_internet_update erhalten bleiben, nicht auf "-" zurückfallen.
+        Database::instance().open(dbPath);
+        MainWindow reopened;
+        auto* reopenedLabel = reopened.findChild<QLabel*>();
+        QVERIFY(reopenedLabel != nullptr);
+        QVERIFY2(!reopenedLabel->text().contains(QStringLiteral("Letzte Aktualisierung: -")),
+                 qPrintable(reopenedLabel->text()));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // MainWindow — onDailyValuesUpdated()-Pfad (08.07.2026)
     // ─────────────────────────────────────────────────────────────────────
     //

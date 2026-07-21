@@ -263,6 +263,20 @@ bool ShareRepository::updateLastInternetUpdate(const QString& guid, const QStrin
     return true;
 }
 
+QString ShareRepository::maxLastInternetUpdate() const
+{
+    QSqlQuery sqlQuery(QSqlDatabase::database("spm_main"));
+    if (!sqlQuery.exec(
+            "SELECT MAX(last_internet_update) FROM shares "
+            "WHERE last_internet_update IS NOT NULL AND last_internet_update != ''")) {
+        m_lastError = sqlQuery.lastError();
+        return QString();
+    }
+    if (sqlQuery.next())
+        return sqlQuery.value(0).toString();
+    return QString();
+}
+
 // ── Delete ────────────────────────────────────────────────────────────────────
 
 bool ShareRepository::remove(const QString& guid)

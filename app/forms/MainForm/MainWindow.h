@@ -347,6 +347,18 @@ private:
     virtual void playUpdateFinishedSound();
 
     /**
+     * @brief Compute the display string for the portfolio-wide "Letzte
+     * Aktualisierung" im Portfolio-Label (Feature 21.07.2026).
+     *
+     * Liest MAX(last_internet_update) über alle Aktien via
+     * ShareRepository::maxLastInternetUpdate() und formatiert das Ergebnis
+     * mit der App-Locale (QLocale::ShortFormat) — gleiche Konvention wie
+     * PresenterShareDetails::formatDateTime(). Fällt auf "-" zurück, wenn
+     * noch keine Aktie jemals aktualisiert wurde (oder das Portfolio leer ist).
+     */
+    QString formatLastPortfolioUpdate() const;
+
+    /**
      * @brief Update the portfolio label with entry count and last update time.
      * @param entryCount      Number of shares in the portfolio.
      * @param lastUpdate      Last update timestamp string (e.g. "15.06.2024 10:30").

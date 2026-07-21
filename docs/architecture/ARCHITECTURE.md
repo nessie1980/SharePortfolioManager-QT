@@ -1761,6 +1761,37 @@ brokeragefrei. Die Komplett-Spalten sind in sich konsistent
 | Komplette Entwicklung | `completeProfitLossMarket` € | `completeProfitPctMarket` % |
 | Kpl. Einzahlung / Kpl. Marktwert | `completePurchaseMarket` € | `completeCurValueMarket` € |
 
+#### Portfolio-Label — "Letzte Aktualisierung" (Feature 21.07.2026)
+
+`m_portfolioLabel` ("Portfolio-Übersicht ( Einträge: X ) / Letzte
+Aktualisierung: Y") zeigte den Zeitstempel-Teil dauerhaft als "-" —
+`updatePortfolioLabel()` wurde nie mit einem echten Wert für `lastUpdate`
+aufgerufen, obwohl der Parameter dafür bereits vorgesehen war.
+
+Statt eines separaten Persistenz-Mechanismus (z.B. eigene Meta-Tabelle) wird
+der bereits vorhandene `shares.last_internet_update`-Wert wiederverwendet:
+
+- `ShareRepository::maxLastInternetUpdate()` liefert per SQL `MAX()` das
+  Maximum über alle Aktien. ISO-8601-Strings (`yyyy-MM-ddTHH:mm:ss`) sortieren
+  lexikographisch korrekt, eine Konvertierung nach `QDateTime` ist dafür nicht
+  nötig. Aktien, deren `last_internet_update` `NULL` oder leer ist (noch nie
+  aktualisiert), werden per `WHERE`-Klausel ausgeschlossen, damit eine einzelne
+  nie aktualisierte Aktie das Ergebnis nicht auf einen leeren String zieht.
+- `MainWindow::formatLastPortfolioUpdate()` ruft `maxLastInternetUpdate()` auf
+  und formatiert das Ergebnis mit der App-Locale (`QLocale::ShortFormat`) —
+  gleiche Konvention wie `formatDateTime()` in `PresenterShareDetails`. Liefert
+  `maxLastInternetUpdate()` einen leeren String (Portfolio leer oder noch nie
+  aktualisiert), wird `"-"` zurückgegeben.
+- Aufrufstellen: `populatePortfolioTables()` (Laden/Neustart derselben
+  Portfolio-Datei) sowie `onRefreshShareFinished()` (live während "Alle
+  aktualisieren" — siehe "Methode onRefreshShareFinished()" unten), jeweils
+  über `updatePortfolioLabel(entryCount, formatLastPortfolioUpdate())`.
+
+Voraussetzung für ein korrektes `MAX()` über alle `ShareUpdateType`-Varianten:
+`onDailyValuesUpdated()` musste um einen `updateLastInternetUpdate()`-Aufruf
+ergänzt werden, da bis dahin nur `onMarketValuesUpdated()` diesen Wert
+schrieb — siehe @note bei "Callback onDailyValuesUpdated()" oben.
+
 #### Footer-Tabelle (Summenzeilen)
 
 Jeder Tab hat unter der Haupttabelle eine eigene 3-zeilige Footer-Tabelle. Der
@@ -2081,20 +2112,35 @@ den Fehler aus und stoppt die Queue.
 
 Bei `ParserErrorCode::Finished`:
 
-1. `state.dailyValuesList` nach `QList<DailyValuesObject>` konvertieren
+1. `ShareRepository::updateLastInternetUpdate(guid, now)` in DB speichern
+   (Feature 21.07.2026 — siehe @note unten).
+2. `state.dailyValuesList` nach `QList<DailyValuesObject>` konvertieren
    (GUID aus `m_refreshShare.guid()`).
-2. `DailyValuesRepository::upsertList(objects, &stats)` — Transaktion; jeder
+3. `DailyValuesRepository::upsertList(objects, &stats)` — Transaktion; jeder
    Datensatz wird gegen den bestehenden DB-Eintrag verglichen
    (`findByShareAndDate()` + `valuesEqual()`, Toleranz `1e-9`). Neue/geänderte
    Zeilen werden per `INSERT OR REPLACE` geschrieben, unveränderte Zeilen
    übersprungen (kein DB-Write). Rückgabe der Zähler in
    `DailyValuesRepository::UpsertStats` (`fetched`/`inserted`/`updated`/`unchanged`).
-3. Statusmeldung: `"Tageswerte aktualisiert: <Name> — <N> Einträge geholt
+4. Statusmeldung: `"Tageswerte aktualisiert: <Name> — <N> Einträge geholt
    (Eingefügt: X / Aktualisiert: Y / Unverändert: Z)"`.
-4. `m_dailyDone = true` → wenn auch `m_marketDone`, `onRefreshShareFinished()` aufrufen.
+5. `m_dailyDone = true` → wenn auch `m_marketDone`, `onRefreshShareFinished()` aufrufen.
 
 Bei Fehler: analog zu `onMarketValuesUpdated()` — `m_errorOccurred = true`,
 `m_dailyDone = true`, MarketValues-Parser läuft unabhängig weiter.
+
+@note **Feature (21.07.2026):** `updateLastInternetUpdate()` wurde bisher nur
+von `onMarketValuesUpdated()` aufgerufen — ein reiner
+`ShareUpdateType::DailyValues`-Refresh hinterließ dadurch nie eine Spur in
+`shares.last_internet_update`, obwohl der Internet-Zugriff erfolgreich war.
+`onDailyValuesUpdated()` ruft den Aufruf jetzt ebenfalls unbedingt bei
+`Finished` auf — auch wenn `dvList` leer ist oder der nachfolgende Upsert
+fehlschlägt, da bereits der erfolgreiche Internet-Abruf selbst zählt (gleiche
+Semantik wie bei `onMarketValuesUpdated()`, das `updateLastInternetUpdate()`
+ebenfalls unabhängig vom Erfolg der nachfolgenden `updatePrice()`-Persistenz
+aufruft). Grund: `ShareRepository::maxLastInternetUpdate()` (siehe Abschnitt
+"Portfolio-Label" unten) soll jede Art erfolgreicher Aktualisierung
+widerspiegeln, nicht nur Kurswert-Refreshs.
 
 @note Die OnVista-API liefert JSON-Keys in camelCase (`datetimeLast`, `first`,
 `last`, `high`, `low`, `volume`). `OnVistaObjects::HistoryData::fromJson()` und
@@ -2114,7 +2160,12 @@ Ablauf bei Erfolg (`m_errorOccurred == false`):
    `ShareCalculator::compute()` je Aktie) und ruft damit
    `updatePortfolioFooters()` auf. Dadurch werden beide Footer (Depotwert-
    und Marktwert-Tab) sofort nach jeder einzelnen Aktie neu berechnet — nicht
-   erst am Ende von "Alle aktualisieren".
+   erst am Ende von "Alle aktualisieren". Direkt im Anschluss wird auch
+   `updatePortfolioLabel(m_finalValueTable->rowCount(),
+   formatLastPortfolioUpdate())` aufgerufen (Feature 21.07.2026), sodass die
+   "Letzte Aktualisierung" im Portfolio-Label während "Alle aktualisieren"
+   live nach jeder Aktie mitzieht statt erst nach einem Neuladen — siehe
+   Abschnitt "Portfolio-Label" unten.
 2. Im "Alle aktualisieren"-Modus (`m_updateAllFlag == true`) und solange die
    Queue nicht leer ist: nächste Aktie via `startRefreshForShare()` starten
    (welches wiederum `selectShareRow()` für die neue Aktie aufruft).
@@ -2605,7 +2656,18 @@ Dialoge, ohne eigene Parallel-Implementierung.
 
 ## Offene Punkte
 
-Aktuell keine TODOs vorhanden!
+- **`test_deleteShare_actionDeleteEnabledAfterSelection` (`tst_mainwindow.cpp`)
+  nicht robust gegen Tabellen-Auswahl-Timing (gefunden 21.07.2026):** Der Test
+  nutzt `window.findChildren<QTableWidget*>().first()`, um sich die
+  Depotwert-Datentabelle zu holen, statt der bereits an anderer Stelle
+  etablierten eindeutigen Hilfsfunktion `findFinalTable(window, wantRows)`
+  (siehe Refresh-Flow-Tests). Je nach Timing kann `.first()` stattdessen eine
+  der (noch) leeren Footer-Tabellen treffen — der Test greift dann auf
+  `QSKIP("Table is empty — share not loaded yet")` zurück, statt die Aktie
+  zuverlässig in der Datentabelle zu finden. Fix: `findFinalTable(window, 1)`
+  statt `findChildren<QTableWidget*>().first()` verwenden, damit der Test
+  nicht mehr vom Skip abhängt, sondern die richtige Tabelle deterministisch
+  trifft.
 
 ---
 
