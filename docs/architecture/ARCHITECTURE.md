@@ -2708,8 +2708,26 @@ Struktur (`count()`/`widget()`/`tabText()`/`currentIndex()`/
 abgedeckt (direkt neben `test_shareDetailsDialog_validShare_
 constructsAndShowsCloseButtonText`, siehe TESTING.md). `DocumentPreviewPanel`
 und `ViewShareDetails` als Ganzes bleiben weiterhin durch kein eigenes
-Test-Target abgesichert (siehe TESTING.md, Abschnitt `tst_sharedetailsform`)
-— das ist eine bewusste, unveränderte Lücke aus früheren Sessions, keine neue.
+Test-Target abgesichert (siehe TESTING.md, Abschnitt `tst_sharedetailsform`,
+und "DocumentPreviewPanel / ViewShareDetails: Testabdeckung bewusst nicht
+erweitert" unten) — eine bereits entschiedene, unveränderte Einschränkung
+aus früheren Sessions, keine neue.
+
+### DocumentPreviewPanel / ViewShareDetails: Testabdeckung bewusst nicht erweitert (entschieden, 21.07.2026)
+
+`DocumentPreviewPanel::showDocument()`/`clearDocument()` besitzen kein
+öffentliches Zustands-API (kein Getter für den aktuell angezeigten
+Dokumentpfad o. ä.). Eine direkte Prüfung "wird das richtige Dokument
+angezeigt" ist daher nicht möglich, ohne ein rein testgetriebenes API
+(z. B. `currentDocumentPath()`) einzuführen, das keinen Produktionsnutzen
+hätte.
+
+**Entscheidung:** Kein eigenes Test-Target für `DocumentPreviewPanel` bzw.
+`ViewShareDetails` als Ganzes. Stattdessen wird die umliegende Logik
+getestet (Zeilenauswahl, Signal-Payload `rowActivatedWithDocument()`,
+Reset-Verhalten bei Tab-Wechsel — siehe `tst_overviewtabwidget` und
+`tst_mainwindow.cpp`). Die tatsächliche Panel-Anzeige bleibt ungetestet.
+Dieser Punkt gilt damit als abgeschlossen, nicht als offene Aufgabe.
 
 ### ShareDetailsForm: Gewinne/Dividenden/Kosten (erledigt, ursprünglich 12.07.2026, umgesetzt 13.07.2026)
 
