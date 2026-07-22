@@ -30,7 +30,7 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel 2
 
       - name: Test
         env:
@@ -73,9 +73,14 @@ jobs:
         run: cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --parallel
+        run: cmake --build build --parallel 2
 
       - name: Test
         env:
           QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build --output-on-failure
+
+      - name: Show full test log on failure
+        if: failure()
+        shell: pwsh
+        run: Get-Content build\Testing\Temporary\LastTest.log -Tail 300
