@@ -4263,22 +4263,22 @@ private slots:
 
     void test_deleteShare_actionDeleteEnabledAfterSelection()
     {
-        const QString dbPath = m_tempDir.path() + QStringLiteral("/delete_sel.db");
-        Database::instance().open(dbPath);
-        ShareRepository repo;
-        repo.insert(ShareObject(QStringLiteral("sel-g1"), QStringLiteral("SEL001"),
-                                QStringLiteral("DE000SEL001"), QStringLiteral("Select Me")));
+        // Bugfix (22.07.2026): Das bisherige Setup (nur ShareRepository::insert(),
+        // ohne Buy, ohne AppSettings::instance().setPortfolioPath()) ließ die
+        // Aktie nicht zuverlässig mit genau 1 Zeile in der Depotwert-Tabelle
+        // erscheinen — deshalb griff der alte Code auf .first() + QSKIP zurück.
+        // seedDepotwertPortfolio() ist das bereits etablierte, getestete Muster
+        // (Buy + Brokerage + AppSettings::portfolioPath gesetzt), das auch
+        // test_finalValueTable_showsFinalFields() u.a. zuverlässig verwenden.
+        seedDepotwertPortfolio();
 
         MainWindow window;
         window.show();
+        QApplication::processEvents();
 
-        // Simulate row selection in the first table
-        const auto tables = window.findChildren<QTableWidget*>();
-        if (tables.isEmpty()) QFAIL("No table found in MainWindow");
-        QTableWidget* table = tables.first();
+        QTableWidget* table = findFinalTable(window, 1);
+        if (!table) QFAIL("Depotwert-Datentabelle nicht gefunden");
 
-        // The table needs at least one row to select
-        if (table->rowCount() == 0) QSKIP("Table is empty — share not loaded yet");
         table->selectRow(0);
         QApplication::processEvents();
 

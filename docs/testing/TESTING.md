@@ -314,7 +314,7 @@ Methode von `MainWindow` ist und dessen volle Konstruktion braucht.
 | `test_deleteShare_removesShareFromDatabase` | Share + Remove → DB leer | `findAll().size()` = 0 |
 | `test_deleteShare_nonExistentGuid_returnsFalse` | Nicht-existente GUID → kein Absturz | DB bleibt leer |
 | `test_deleteShare_actionDeleteDisabledAtStart` | Entfernen-Aktion ohne Selektion deaktiviert | `isEnabled()` = false |
-| `test_deleteShare_actionDeleteEnabledAfterSelection` | Entfernen-Aktion nach Zeilenauswahl aktiv | `isEnabled()` = true |
+| `test_deleteShare_actionDeleteEnabledAfterSelection` | Entfernen-Aktion nach Zeilenauswahl aktiv (Bugfix 21./22.07.2026: `seedDepotwertPortfolio()` + `findFinalTable(window, 1)` statt manuellem `ShareRepository::insert()` ohne Buy + `findChildren<QTableWidget*>().first()` — vorher fehlten Buy-Transaktion und `AppSettings::portfolioPath`, wodurch die Aktie nicht zuverlässig mit 1 Zeile erschien und der Test in `QSKIP` lief) | `isEnabled()` = true |
 | `test_onPortfolioRowDoubleClicked_nullItem_doesNotCrash` | Doppelklick-Slot mit `item == nullptr` | Kein Absturz |
 | `test_onPortfolioRowDoubleClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole) | Kein Absturz, kein modaler Dialog |
 | `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText` | `ViewShareDetails` direkt konstruiert | `hasValidShare()` = true, Fenstertitel = Aktienname, Close-Button = "Schließen" |

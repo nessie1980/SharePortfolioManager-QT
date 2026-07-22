@@ -2656,22 +2656,29 @@ Dialoge, ohne eigene Parallel-Implementierung.
 
 ## Offene Punkte
 
-- **`test_deleteShare_actionDeleteEnabledAfterSelection` (`tst_mainwindow.cpp`)
-  nicht robust gegen Tabellen-Auswahl-Timing (gefunden 21.07.2026):** Der Test
-  nutzt `window.findChildren<QTableWidget*>().first()`, um sich die
-  Depotwert-Datentabelle zu holen, statt der bereits an anderer Stelle
-  etablierten eindeutigen Hilfsfunktion `findFinalTable(window, wantRows)`
-  (siehe Refresh-Flow-Tests). Je nach Timing kann `.first()` stattdessen eine
-  der (noch) leeren Footer-Tabellen treffen — der Test greift dann auf
-  `QSKIP("Table is empty — share not loaded yet")` zurück, statt die Aktie
-  zuverlässig in der Datentabelle zu finden. Fix: `findFinalTable(window, 1)`
-  statt `findChildren<QTableWidget*>().first()` verwenden, damit der Test
-  nicht mehr vom Skip abhängt, sondern die richtige Tabelle deterministisch
-  trifft.
+Aktuell keine TODOs vorhanden!
 
 ---
 
 ## Erledigt / Archiv
+
+### test_deleteShare_actionDeleteEnabledAfterSelection — Timing-Bug behoben (21./22.07.2026)
+
+Der Test nutzte `window.findChildren<QTableWidget*>().first()`, um sich die
+Depotwert-Datentabelle zu holen. Je nach Timing konnte `.first()` stattdessen
+eine der (noch) leeren Footer-Tabellen treffen, sodass der Test auf
+`QSKIP("Table is empty — share not loaded yet")` zurückfiel, statt die Aktie
+zuverlässig zu finden.
+
+Erster Fix-Versuch (`findFinalTable(window, 1)` statt `.first()`) deckte einen
+tieferliegenden Root Cause auf: Das Testsetup fügte nur eine Aktie per
+`ShareRepository::insert()` ein — ohne Buy-Transaktion und ohne
+`AppSettings::instance().setPortfolioPath()`. Dadurch erschien die Aktie nicht
+zuverlässig mit genau einer Zeile in der Depotwert-Tabelle. Finaler Fix: das
+bereits etablierte Helper-Muster `seedDepotwertPortfolio()` verwenden (Buy +
+Brokerage + `AppSettings::portfolioPath` gesetzt), das auch
+`test_finalValueTable_showsFinalFields()` u.a. zuverlässig nutzen. `QSKIP`
+entfällt dadurch komplett.
 
 ### Sound bei erfolgreicher Aktualisierung (implementiert 21.07.2026)
 
