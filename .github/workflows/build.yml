@@ -16,15 +16,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Qt & build dependencies
+      - name: Install build tools & poppler-utils
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            qt6-base-dev qt6-tools-dev qt6-l10n-tools \
-            libqt6sql6-sqlite libqt6charts6-dev \
-            qt6-multimedia-dev \
-            qt6-pdf-dev \
-            cmake build-essential poppler-utils
+          sudo apt-get install -y cmake build-essential poppler-utils
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.0'
+          host: 'linux'
+          target: 'desktop'
+          arch: 'linux_gcc_64'
+          modules: 'qtcharts qtmultimedia qtpdf'
 
       - name: Configure
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -36,6 +40,10 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build --output-on-failure
+
+      - name: Show full test log on failure
+        if: failure()
+        run: tail -n 300 build/Testing/Temporary/LastTest.log
 
   build-windows:
     name: Windows (MSVC)
@@ -84,3 +92,12 @@ jobs:
         if: failure()
         shell: pwsh
         run: Get-Content build\Testing\Temporary\LastTest.log -Tail 300
+
+      - name: Diagnostics — run tst_mainwindow directly
+        if: always()
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          & "build\bin\tst_mainwindow.exe" -v2 2>&1 | Tee-Object -FilePath tst_mainwindow_direct.log
+          Write-Host "Exit code: $LASTEXITCODE"
