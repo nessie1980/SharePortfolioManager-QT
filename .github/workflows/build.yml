@@ -1,0 +1,76 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [ main, development ]
+  pull_request:
+    branches: [ main, development ]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    name: Linux (Ubuntu, GCC)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt & build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qt6-base-dev qt6-tools-dev qt6-l10n-tools \
+            libqt6sql6-sqlite libqt6charts6-dev \
+            qt6-multimedia-dev \
+            libqt6pdf6-dev libqt6pdfwidgets6-dev \
+            cmake build-essential poppler-utils
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
+
+  build-windows:
+    name: Windows (MSVC)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.0'
+          arch: 'win64_msvc2019_64'
+          modules: 'qtcharts qtmultimedia qtpdf'
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install poppler-utils (pdftotext / pdftoppm)
+        run: |
+          curl -L -o poppler.zip https://github.com/oschwartz10612/poppler-windows/releases/latest/download/Release-24.08.0-0.zip
+          Expand-Archive -Path poppler.zip -DestinationPath poppler
+          echo "$PWD\poppler\poppler-24.08.0\Library\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        shell: pwsh
+
+      - name: Configure
+        run: cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build --output-on-failure
