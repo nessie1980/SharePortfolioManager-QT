@@ -8316,6 +8316,12 @@ private slots:
 // Test classes — run all via a custom main
 int main(int argc, char* argv[])
 {
+    // Bugfix 23.07.2026 — siehe ARCHITECTURE.md, "System-Locale-abhängiges
+    // Zahlenformat": muss vor jeder QLocale()-Verwendung gesetzt werden,
+    // damit formatMoney() auf jedem Runner/System deutsch formatiert,
+    // unabhängig von dessen System-Locale.
+    QLocale::setDefault(QLocale::German);
+
     QApplication app(argc, argv);
     app.setAttribute(Qt::AA_Use96Dpi, true);
 

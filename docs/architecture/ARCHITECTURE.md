@@ -2656,11 +2656,62 @@ Dialoge, ohne eigene Parallel-Implementierung.
 
 ## Offene Punkte
 
-Aktuell keine TODOs vorhanden!
+### Konfigurierbare Locale für Zahlenformat (Backlog-Idee, nicht priorisiert)
+
+Im Zuge des Locale-Bugfixes vom 23.07.2026 (siehe Erledigt/Archiv weiter unten)
+kam die Frage auf, ob das Zahlenformat (Dezimaltrennzeichen etc.) künftig pro
+Benutzer einstellbar sein sollte, unabhängig von der (ohnehin fest deutschen)
+UI-Sprache — z. B. für Schweizer/österreichische Formatierungskonventionen.
+
+Bewusst zurückgestellt (23.07.2026): Die Anwendung ist komplett
+deutschsprachig, es gibt aktuell keine konkrete Anfrage dafür, und der Aufwand
+(neue `AppSettings`-Einstellung, UI-Dialog, `QLocale::setDefault()` beim Start
+aus der gespeicherten Einstellung ableiten, zusätzliche Testfälle) steht in
+keinem Verhältnis zum eigentlichen Bugfix. Nur als Idee für die Zukunft
+vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 
 ---
 
 ## Erledigt / Archiv
+
+### System-Locale-abhängiges Zahlenformat — Bugfix (23.07.2026)
+
+Beim Einrichten der CI (siehe TESTING.md, GitHub-Actions-Abschnitt) fielen
+unter Linux (System-Locale `C`/`en_US`, nicht Deutsch wie auf Nessies
+Windows-Entwicklungsrechner) vier Tests fehl: `test_viewBrokerageEdit_
+setGesamtGebuehren_updatesField`, `test_viewBrokerageEdit_
+setBrokerageReduction_positiveGreen`/`_negativeRed` sowie
+`test_viewDividendEdit_clearForm_resetsDerivedFields`.
+
+Root Cause: `formatMoney()` (u. a. in `ViewBrokerageEdit`, `ViewShareEdit`,
+`ViewBuyEdit`, `ViewDividendEdit`, `ViewShareAdd`) formatiert über
+`QLocale().toString(value, 'f', 2)` — der No-Argument-Konstruktor `QLocale()`
+verwendet die **System-Locale des ausführenden Rechners**, nicht fest
+Deutsch. Auf einem System mit anderer Standard-Locale erscheint z. B. `12,50`
+als `12.50` (Punkt statt Komma) — die betroffenen Tests suchen aber fest nach
+deutsch formatierten Strings (`"12,50"` etc.).
+
+@note Das **Einlesen** von Zahlen (`parseDouble()` in allen Views sowie
+`PortfolioImporter::toDouble()` im XML-Importer) ist von diesem Bug NICHT
+betroffen — dort wird das Komma manuell durch einen Punkt ersetzt und
+anschließend `QString::toDouble()` verwendet, welches laut Qt-Dokumentation
+IMMER locale-unabhängig (C-Konvention) arbeitet. Betroffen war ausschließlich
+die **Anzeige** abgeleiteter/geladener Werte, keine Dateneingabe oder
+-interpretation.
+
+Fix: `QLocale::setDefault(QLocale::German)` wird jetzt zentral in `main()`
+(vor der `QApplication`-Konstruktion) sowie im gemeinsamen `main()` von
+`tst_mainwindow.cpp` gesetzt. Da alle betroffenen `formatMoney()`-Implementie-
+rungen den No-Argument-Konstruktor `QLocale()` verwenden, greift dieser eine
+zentrale Aufruf für die gesamte Anwendung und alle Formulare, ohne dass jede
+View einzeln angepasst werden musste. `tst_buysform` und `tst_shareeditform`
+waren von den Testfehlern nicht betroffen (ihre Tests prüfen keine deutsch
+formatierten Anzeige-Strings) und wurden daher nicht angefasst — bei Bedarf
+kann derselbe eine Zeile später ergänzt werden.
+
+Bewusst nicht umgesetzt (siehe Offene Punkte oben): eine benutzerseitig
+einstellbare Locale — das wäre ein eigenständiges Feature, kein Teil dieses
+Bugfixes.
 
 ### test_deleteShare_actionDeleteEnabledAfterSelection — Timing-Bug behoben (21./22.07.2026)
 
