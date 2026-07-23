@@ -1,0 +1,148 @@
+name: Package Installers
+
+# Bewusst nur manuell auslösbar (workflow_dispatch), noch nicht bei jedem
+# Push/Tag — kann bei Bedarf später leicht umgestellt werden, z. B. auf:
+#   on:
+#     push:
+#       tags: [ 'v*' ]
+on:
+  workflow_dispatch:
+
+jobs:
+  package-windows:
+    name: Windows Installer (Inno Setup)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.0'
+          arch: 'win64_msvc2019_64'
+          modules: 'qtcharts qtmultimedia qtpdf'
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install poppler-utils (pdftotext / pdftoppm)
+        shell: pwsh
+        run: |
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/oschwartz10612/poppler-windows/releases/latest"
+          $asset = $release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
+          if (-not $asset) { throw "Kein ZIP-Asset im aktuellen poppler-windows-Release gefunden." }
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile poppler.zip
+          Expand-Archive -Path poppler.zip -DestinationPath poppler
+          $binDir = Get-ChildItem -Path poppler -Recurse -Directory -Filter "bin" | Select-Object -First 1
+          if (-not $binDir) { throw "Kein bin-Verzeichnis im entpackten poppler-Archiv gefunden." }
+          $binDir.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Configure (Release)
+        run: cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build (Release)
+        run: cmake --build build --parallel 2
+
+      - name: Prepare deploy directory
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path deploy | Out-Null
+          Copy-Item build\bin\SharePortfolioManager.exe deploy\
+          Copy-Item build\bin\WebSites.xml deploy\ -ErrorAction SilentlyContinue
+          Copy-Item build\bin\Documents.xml deploy\ -ErrorAction SilentlyContinue
+          if (Test-Path build\bin\sounds) { Copy-Item build\bin\sounds deploy\sounds -Recurse }
+          if (Test-Path build\bin\translations) { Copy-Item build\bin\translations deploy\translations -Recurse }
+
+      - name: windeployqt
+        shell: pwsh
+        run: windeployqt --release deploy\SharePortfolioManager.exe
+
+      - name: Install Inno Setup (if not already present)
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc "packaging\windows\installer.iss"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SharePortfolioManager-Windows-Installer
+          path: packaging\windows\Output\*.exe
+          if-no-files-found: error
+
+  package-linux:
+    name: Linux AppImage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools & poppler-utils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential poppler-utils
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.0'
+          host: 'linux'
+          target: 'desktop'
+          arch: 'linux_gcc_64'
+          modules: 'qtcharts qtmultimedia qtpdf'
+
+      - name: Configure (Release)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build (Release)
+        run: cmake --build build --parallel 2
+
+      - name: Assemble AppDir
+        run: |
+          set -e
+          mkdir -p AppDir/usr/bin
+          cp build/bin/SharePortfolioManager AppDir/usr/bin/
+          [ -f build/bin/WebSites.xml ]  && cp build/bin/WebSites.xml  AppDir/usr/bin/ || true
+          [ -f build/bin/Documents.xml ] && cp build/bin/Documents.xml AppDir/usr/bin/ || true
+          [ -d build/bin/sounds ]        && cp -r build/bin/sounds        AppDir/usr/bin/ || true
+          [ -d build/bin/translations ]  && cp -r build/bin/translations  AppDir/usr/bin/ || true
+          cp app/resources/icons/app/app_icon_256.png AppDir/spm-qt.png
+
+      - name: Download linuxdeploy + Qt plugin
+        run: |
+          set -e
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
+
+      - name: Build AppImage
+        env:
+          QMAKE: qmake
+        run: |
+          ./linuxdeploy-x86_64.AppImage --appimage-extract-and-run \
+            --appdir AppDir \
+            --executable build/bin/SharePortfolioManager \
+            --desktop-file app/resources/linux/spm-qt.desktop \
+            --icon-file app/resources/icons/app/app_icon_256.png \
+            --plugin qt \
+            --output appimage
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SharePortfolioManager-Linux-AppImage
+          path: '*.AppImage'
+          if-no-files-found: error

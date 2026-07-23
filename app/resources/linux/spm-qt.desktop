@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Share Portfolio Manager
+Comment=Verwaltung von Aktienportfolios
+Exec=SharePortfolioManager
+Icon=spm-qt
+Categories=Office;Finance;
+Terminal=false
