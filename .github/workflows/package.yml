@@ -128,6 +128,20 @@ jobs:
           wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage
 
+      - name: Strip unused Qt SQL driver plugins
+        # linuxdeploy-plugin-qt deployt standardmäßig ALLE in der
+        # Qt-Installation vorhandenen sqldrivers-Plugins, nicht nur die
+        # tatsächlich verwendeten. Das Projekt nutzt ausschließlich SQLite
+        # (siehe ARCHITECTURE.md) — andere Treiber wie libqsqlmimer.so haben
+        # auf dem Runner fehlende Abhängigkeiten (z. B. libmimerapi.so) und
+        # lassen den Deploy-Schritt sonst mit "Could not find dependency"
+        # fehlschlagen. Vorsorglich werden daher alle Treiber außer
+        # libqsqlite.so vorher entfernt.
+        run: |
+          set -e
+          QT_PLUGIN_DIR="$(dirname "$(command -v qmake)")/../plugins"
+          find "$QT_PLUGIN_DIR/sqldrivers" -type f ! -name 'libqsqlite.so' -print -delete
+
       - name: Build AppImage
         env:
           QMAKE: qmake
