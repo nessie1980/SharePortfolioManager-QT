@@ -2656,6 +2656,25 @@ Dialoge, ohne eigene Parallel-Implementierung.
 
 ## Offene Punkte
 
+### GitHub-Release-Automatisierung für Installer (Backlog-Idee, nicht priorisiert)
+
+Seit 23.07.2026 existiert `.github/workflows/package.yml` (manuell auslösbar
+via `workflow_dispatch`), der einen Windows-Installer (Inno Setup) sowie ein
+Linux-AppImage baut. Die fertigen Dateien landen dabei aktuell nur als
+GitHub-Actions-**Artefakte** am jeweiligen Workflow-Lauf — nicht öffentlich
+zugänglich (nur für Personen mit Repo-Zugriff), mit Standard-Aufbewahrung von
+90 Tagen, und ohne Verknüpfung zu einer offiziell markierten Version.
+
+Für eine echte Veröffentlichung fehlt noch: ein GitHub-Release-Schritt (z. B.
+via `softprops/action-gh-release`), der beide Installer an ein GitHub Release
+anhängt — sinnvollerweise ausgelöst durch einen Git-Tag (z. B. `v1.0.0`)
+statt weiterhin nur manuell. Damit könnte der Ablauf künftig lauten: Tag
+pushen → Installer bauen → automatisch als Release veröffentlichen.
+
+Bewusst zurückgestellt (23.07.2026): Es ist noch keine erste Version zur
+Veröffentlichung vorgesehen. Nur als Idee für später vermerkt, sobald
+tatsächlich veröffentlicht werden soll — keine aktive Aufgabe.
+
 ### Konfigurierbare Locale für Zahlenformat (Backlog-Idee, nicht priorisiert)
 
 Im Zuge des Locale-Bugfixes vom 23.07.2026 (siehe Erledigt/Archiv weiter unten)
