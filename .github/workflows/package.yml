@@ -119,6 +119,11 @@ jobs:
           [ -f build/bin/Documents.xml ] && cp build/bin/Documents.xml AppDir/usr/bin/ || true
           [ -d build/bin/sounds ]        && cp -r build/bin/sounds        AppDir/usr/bin/ || true
           [ -d build/bin/translations ]  && cp -r build/bin/translations  AppDir/usr/bin/ || true
+          # Umbenannt auf spm-qt.png, da linuxdeploy den Dateinamen des via
+          # --icon-file übergebenen Bildes 1:1 als Icon-Namen deployt — der
+          # muss exakt zum "Icon=spm-qt"-Eintrag in spm-qt.desktop passen,
+          # sonst schlägt "Could not find suitable icon" fehl.
+          cp app/resources/icons/app/app_icon_256.png spm-qt.png
           cp app/resources/icons/app/app_icon_256.png AppDir/spm-qt.png
 
       - name: Download linuxdeploy + Qt plugin
@@ -150,7 +155,7 @@ jobs:
             --appdir AppDir \
             --executable build/bin/SharePortfolioManager \
             --desktop-file app/resources/linux/spm-qt.desktop \
-            --icon-file app/resources/icons/app/app_icon_256.png \
+            --icon-file spm-qt.png \
             --plugin qt \
             --output appimage
 
