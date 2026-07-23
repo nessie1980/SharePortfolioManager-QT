@@ -92,12 +92,3 @@ jobs:
         if: failure()
         shell: pwsh
         run: Get-Content build\Testing\Temporary\LastTest.log -Tail 300
-
-      - name: Diagnostics — run tst_mainwindow directly
-        if: always()
-        shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: |
-          & "build\bin\tst_mainwindow.exe" -v2 2>&1 | Tee-Object -FilePath tst_mainwindow_direct.log
-          Write-Host "Exit code: $LASTEXITCODE"
