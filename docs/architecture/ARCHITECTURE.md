@@ -2693,6 +2693,83 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 
 ## Erledigt / Archiv
 
+### Log-Meldungsfarben theme-neutral — Bugfix (24.07.2026)
+
+Gemeldet von Nessie (Screenshot): nach dem vorherigen Fix ("Erstlauf ohne
+settings.ini") ließ sich auf Linux zwar ein Portfolio anlegen, aber die
+Status-Meldungen im Hauptfenster waren auf hellem Theme kaum lesbar — vor
+allem "Start"/"Info" (fast unsichtbar, blasses Grau auf weißem Hintergrund).
+
+Root Cause: `AppSettings::m_logColors` (Default-Werte in `AppSettings.h`)
+waren laut Code-Kommentar explizit "optimiert für Dark Theme"
+(`#e0e0e0` — praktisch weiß — für Start/Info, dazu helle Varianten für
+Warning/Error/Success). Die App selbst setzt an keiner Stelle aktiv ein
+Theme oder eine Palette (geprüft — kein `QApplication::setStyle()`, keine
+`QPalette`-Umstellung); sie übernimmt komplett, was die jeweilige
+Laufzeitumgebung an Qt-Theme liefert.
+
+Auf Nessies Windows-Entwicklungsrechner (dunkles System-/Qt-Theme) fiel das
+nie auf. Auf Linux ist das Verhalten aber nicht mal vom tatsächlichen
+Desktop-Theme abhängig, sondern vom **Packaging**: Die Linux-AppImage-
+Pipeline (`.github/workflows/package.yml`) verwendet die offizielle,
+vorkompilierte Qt-Distribution (`jurplel/install-qt-action`,
+`arch: linux_gcc_64`, via aqtinstall) — diese ist nicht gegen GTK3 gelinkt
+und bringt daher kein funktionierendes Platform-Theme-Plugin
+(`platformthemes/libqgtk3.so` o. ä.) mit. `linuxdeploy-plugin-qt` bündelt
+zwar korrekt alles, was in der Qt-Installation *vorhanden* ist — ist aber
+selbst nichts vorhanden, gibt es nichts zu bündeln. Die im AppImage
+laufende Qt-Instanz hat dadurch grundsätzlich keine Möglichkeit, das
+System-Theme abzufragen, und fällt auf Qts helle Standardpalette zurück —
+unabhängig vom tatsächlichen Desktop-Theme des Nutzers. Aus Qt Creator
+gestartet läuft die App dagegen mit der (distro-eigenen, meist
+theme-fähigen) System-Qt-Installation, daher dort korrekt dunkel.
+
+Bewusst NICHT als Lösung gewählt: die App selbst auf ein festes Dark Theme
+zwingen (z. B. `QApplication::setStyle("Fusion")` + dunkle `QPalette` in
+`main()`). Das hätte zwar zu den bisherigen Farben gepasst, wäre aber ein
+großer, ungewollter optischer Eingriff (komplette App inkl. aller Dialoge
+wird immer dunkel dargestellt, unabhängig vom System) und hätte das
+eigentliche Problem nur kaschiert — ein selbst gegen GTK3 gebautes Qt im CI
+wäre der einzige Weg, das AppImage zuverlässig ans System-Theme
+heranzuführen, und selbst dann bliebe es abhängig vom jeweiligen
+Ziel-Desktop des Nutzers (GNOME/GTK vs. KDE/Plasma vs. andere).
+
+Fix: `AppSettings::m_logColors`-Defaults durch theme-neutrale Farben
+ersetzt, die auf hellem UND dunklem Hintergrund mit ausreichendem Kontrast
+lesbar sind (grobe Prüfung nach WCAG-Relativluminanz-Formel, jeweils
+Kontrastverhältnis ca. 4:1 sowohl zu Schwarz als auch zu Weiß, statt nahe
+1:1 auf einer Seite wie zuvor bei `#e0e0e0` auf weißem Hintergrund):
+
+| Index | Zustand    | Alt (Dark-Theme-optimiert) | Neu (theme-neutral) |
+|-------|------------|----------------------------|----------------------|
+| 0     | Start      | `#e0e0e0`                  | `#808080`            |
+| 1     | Info       | `#e0e0e0`                  | `#808080`            |
+| 2     | Warning    | `#ffa500`                  | `#b36b00`             |
+| 3     | Error      | `#ff4444`                  | `#d32f2f`             |
+| 4     | FatalError | `#ff0000`                  | `#b71c1c`             |
+| 5     | Success    | `#44ff44`                  | `#388e3c`             |
+
+`LoggerSettingsForm::k_colorNames` (feste Dropdown-Liste im
+Logger-Einstellungsdialog) wurde um die fünf neuen Hex-Werte ergänzt. Die
+alten fünf Hex-Werte bleiben bewusst in der Liste erhalten — sonst würde
+der Dialog bei bereits vorhandenen `settings.ini`-Dateien mit den alten
+Farben fälschlich "Black" als Auswahl anzeigen (die tatsächlich aktive
+Farbe wäre davon unabhängig weiterhin korrekt, nur die Dropdown-Anzeige
+wäre irreführend).
+
+@note Farben bleiben über `Einstellungen → Logger...` weiterhin frei
+änderbar — dieser Fix ändert nur die *Defaults* für neue bzw. noch nicht
+konfigurierte Installationen. Bereits vorhandene `settings.ini`-Dateien
+(inkl. Nessies eigener) behalten ihre bisher gespeicherten Farbwerte; ein
+Umstieg auf die neuen Defaults erfordert dort ein manuelles Zurücksetzen
+über den Dialog oder das Löschen der `settings.ini`.
+
+@note Kein automatisierter Test für die konkreten Default-Hex-Werte ergänzt
+— Farben sind bewusst frei konfigurierbar, ein hartes `QCOMPARE` auf exakte
+Hex-Strings wäre bei der nächsten Farbanpassung nur Reibung ohne echten
+Regressionsschutz. Verifikation erfolgte visuell durch Nessie (Screenshot
+vor/nach dem Fix).
+
 ### Erstlauf ohne settings.ini — Bugfix (24.07.2026)
 
 Gemeldet von Nessie: Nach Installation über den Linux-AppImage-Build aus

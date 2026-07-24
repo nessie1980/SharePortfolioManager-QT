@@ -293,6 +293,22 @@ MainWindow:
 | `test_loggerSettings_saveColors` | Logger-Farben werden gespeichert und geladen | Gespeicherter Wert = gelesener Wert |
 | `test_loggerSettings_saveLevels` | Logger-Level werden gespeichert | Level korrekt geladen |
 | `test_loggerSettings_saveComponents` | Logger-Komponenten werden gespeichert | Komponenten korrekt geladen |
+
+@note Bugfix (24.07.2026, siehe ARCHITECTURE.md "Log-Meldungsfarben
+theme-neutral"): `AppSettings::m_logColors`-Defaults wurden von
+Dark-Theme-optimierten auf theme-neutrale Farben umgestellt (u. a. Start/Info
+von `#e0e0e0` auf `#808080`), da sie auf hellem Theme (reproduzierbar im
+Linux-AppImage mangels Platform-Theme-Plugin) praktisch unlesbar waren.
+`test_loggerSettings_saveColors` bleibt unverändert gültig, da er nur einen
+expliziten Farbwert rundtestet, nicht den Default. Kein neuer Test für die
+konkreten Default-Hex-Werte selbst — Farben sind bewusst frei über den
+Logger-Dialog konfigurierbar, ein hartes `QCOMPARE` auf exakte Hex-Strings
+wäre bei der nächsten Farbanpassung nur Reibung ohne echten
+Regressionsschutz. Verifikation erfolgte visuell (Screenshot vor/nach dem
+Fix). `LoggerSettingsForm::k_colorNames` wurde um die neuen Hex-Werte
+ergänzt, die alten bleiben zur Abwärtskompatibilität mit bereits
+gespeicherten `settings.ini`-Dateien erhalten.
+
 | `test_soundSettings_saveUpdateEnabled` | Sound-Einstellung (Update) gespeichert | `soundUpdateEnabled()` = true |
 | `test_soundSettings_saveErrorEnabled` | Sound-Einstellung (Fehler) gespeichert | `soundErrorEnabled()` = true |
 | `test_soundSettings_saveUpdateFile` | Sound-Datei (Update) gespeichert | Pfad korrekt geladen |

@@ -35,11 +35,22 @@ const QStringList LoggerSettingsForm::k_colorNames = {
     QStringLiteral("Cyan"),
     QStringLiteral("Magenta"),
     QStringLiteral("Purple"),
+    // Alte Dark-Theme-Defaults (bis 23.07.2026) — bewusst NICHT entfernt,
+    // damit bereits gespeicherte settings.ini-Dateien mit diesen Werten im
+    // Dropdown weiterhin den tatsächlich aktiven Eintrag zeigen, statt auf
+    // "Black" zurückzufallen (siehe createColorComboBox()).
     QStringLiteral("#e0e0e0"),
     QStringLiteral("#44ff44"),
     QStringLiteral("#ffa500"),
     QStringLiteral("#ff4444"),
     QStringLiteral("#ff0000"),
+    // Neue, theme-neutrale Defaults (seit 24.07.2026, siehe AppSettings.h
+    // und ARCHITECTURE.md, "Log-Meldungsfarben theme-neutral").
+    QStringLiteral("#808080"),
+    QStringLiteral("#b36b00"),
+    QStringLiteral("#d32f2f"),
+    QStringLiteral("#b71c1c"),
+    QStringLiteral("#388e3c"),
 };
 
 // ── Constructor ───────────────────────────────────────────────────────────────

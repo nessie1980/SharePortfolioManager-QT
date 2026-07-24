@@ -270,14 +270,34 @@ private:
     int  m_logComponents       = 7;
     int  m_logLevels           = 31;
 
-    // Colors indexed by state position — optimized for dark theme
+    // Colors indexed by state position.
+    //
+    // Bugfix (24.07.2026): die vorherigen Defaults waren laut Kommentar
+    // "optimiert für Dark Theme" (u. a. #e0e0e0 — praktisch weiß). Die App
+    // setzt selbst nirgends aktiv ein Theme/eine Palette — sie übernimmt
+    // ungefiltert, was die jeweilige Laufzeitumgebung an Qt-Theme liefert
+    // (siehe ARCHITECTURE.md, "Log-Meldungsfarben theme-neutral"). Das
+    // funktionierte auf Nessies Windows-Entwicklungsrechner (dunkles
+    // System-/Qt-Theme), war aber auf hellem Theme unlesbar — reproduzierbar
+    // z. B. im Linux-AppImage, dessen gebündelte Qt-Laufzeit (aqtinstall-
+    // Binärpaket, nicht gegen GTK3 gelinkt) mangels Platform-Theme-Plugin
+    // gar nicht erst an ein System-Theme herankommt und auf Qts helle
+    // Standardpalette zurückfällt — unabhängig vom tatsächlichen Desktop.
+    // Die neuen Defaults sind bewusst mittelton/kontrastreich auf HELLEM
+    // wie DUNKLEM Hintergrund lesbar (grobe Kontrastprüfung nach WCAG-
+    // Luminanzformel, jeweils ca. 4:1 zu Schwarz UND Weiß) statt auf ein
+    // bestimmtes Theme hin optimiert. Bleiben über
+    // Einstellungen → Logger... (LoggerSettingsForm) weiterhin frei
+    // änderbar; die alten Dark-Theme-Werte bleiben dort in der Farbliste
+    // wählbar (siehe LoggerSettingsForm.cpp, k_colorNames), damit bereits
+    // gespeicherte alte Einstellungen weiter korrekt angezeigt werden.
     QList<QColor> m_logColors = {
-        QColor("#e0e0e0"),   // 0: Start       — light gray
-        QColor("#e0e0e0"),   // 1: Info         — light gray
-        QColor("#ffa500"),   // 2: Warning      — orange
-        QColor("#ff4444"),   // 3: Error        — light red
-        QColor("#ff0000"),   // 4: FatalError   — bright red
-        QColor("#44ff44")    // 5: Success      — light green
+        QColor("#808080"),   // 0: Start       — neutrales Grau
+        QColor("#808080"),   // 1: Info         — neutrales Grau
+        QColor("#b36b00"),   // 2: Warning      — dunkles Amber/Orange
+        QColor("#d32f2f"),   // 3: Error        — mittleres Rot
+        QColor("#b71c1c"),   // 4: FatalError   — dunkleres, kräftigeres Rot
+        QColor("#388e3c")    // 5: Success      — mittleres Grün
     };
 
     // Sounds
