@@ -32,7 +32,10 @@ int main(int argc, char* argv[])
 
     // ── Load settings ──────────────────────────────────────────────────────
     // Must happen before anything else so all components get their config.
-    AppSettings::instance().load(AppStartup::settingsPath());
+    // loadSettings() (statt AppSettings::instance().load() direkt) persistiert
+    // bei einer frischen Installation sofort die Defaults, siehe AppStartup.h
+    // und ARCHITECTURE.md, "Erstlauf ohne settings.ini".
+    AppStartup::loadSettings();
     qInfo() << "[main] Settings loaded from:" << AppStartup::settingsPath();
 
     // ── Install translator ─────────────────────────────────────────────────

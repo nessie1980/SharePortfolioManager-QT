@@ -218,6 +218,19 @@ eine Datei) auslöst und sonst am Dialog hängen bliebe. Alle anderen
 betroffen. Produktivaufruf in `main.cpp` bleibt unverändert (`showErrorDialog`
 defaultet auf `true`).
 
+@note `AppStartup::loadSettings(path)` (neu, Bugfix 24.07.2026 — siehe
+ARCHITECTURE.md, "Erstlauf ohne settings.ini") ersetzt den bis dahin direkten
+`AppSettings::instance().load(...)`-Aufruf in `main()`. Persistiert die
+In-Memory-Defaults sofort per `AppSettings::save()`, falls die Datei am
+übergebenen Pfad vor dem Laden noch nicht existierte, und gibt zurück, ob sie
+vorher existierte. `test_loadSettings_missingFile_createsFileWithDefaults`
+prüft die Neuanlage in einem `QTemporaryDir`-Sandbox-Pfad (nie ein echter
+Installations- oder Testbinary-Pfad). `test_loadSettings_existingFile_
+returnsTrueAndPreservesValues` ruft `loadSettings()` zweimal auf denselben
+Pfad auf und ändert dazwischen `language` — der zweite Aufruf darf die schon
+vorhandene Datei nicht mit frischen Defaults überschreiben, was der Test über
+den erhalten gebliebenen Wert verifiziert.
+
 ---
 
 ### tests/config/ — Konfiguration Unit-Tests

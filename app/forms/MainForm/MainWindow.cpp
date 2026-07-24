@@ -597,12 +597,24 @@ bool MainWindow::checkAndLoadConfigurations()
     const QString appDir = QCoreApplication::applicationDirPath();
 
     // ── settings.ini ──────────────────────────────────────────────────────
-    // Already loaded by AppStartup — just verify it is accessible
+    // Already loaded by AppStartup — just verify it is accessible.
+    //
+    // Bugfix (24.07.2026): Fehlende settings.ini war bis hierhin ein
+    // FatalError, der über allOk=false disableAllControls() auslöste — die
+    // komplette App war dann bis auf "Beenden" gesperrt. Das traf jede
+    // frische Installation (z. B. Linux-AppImage), weil settings.ini nur
+    // durch einen tatsächlichen AppSettings::save()-Aufruf entsteht und der
+    // Installer bewusst keine Vorlage mitliefert (siehe ARCHITECTURE.md,
+    // "Erstlauf ohne settings.ini"). AppSettings::load() kommt mit fehlender
+    // Datei aber längst klar — es verwendet dann einfach die in AppSettings.h
+    // einprogrammierten Member-Defaults, mit denen die App voll funktionsfähig
+    // ist (leeres Portfolio/Dokumente-Root führt zu den üblichen, nicht
+    // fatalen Erstlauf-Hinweisen weiter unten). Fehlende settings.ini ist
+    // daher nur eine Warnung, kein Grund, allOk auf false zu setzen.
     const QString settingsPath = AppSettings::instance().settingsPath();
     if (!QFileInfo::exists(settingsPath)) {
-        addStatusMessage(tr("Einstellungsdatei nicht gefunden."),
-                         MessageType::FatalError);
-        allOk = false;
+        addStatusMessage(tr("Einstellungsdatei nicht gefunden — Standardwerte werden verwendet."),
+                         MessageType::Warning);
     } else {
         addStatusMessage(tr("Einstellungen geladen."),
                          MessageType::Success);

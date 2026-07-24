@@ -2693,6 +2693,70 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 
 ## Erledigt / Archiv
 
+### Erstlauf ohne settings.ini — Bugfix (24.07.2026)
+
+Gemeldet von Nessie: Nach Installation über den Linux-AppImage-Build aus
+`.github/workflows/package.yml` war die App komplett unbedienbar — nur
+"Beenden" verfügbar.
+
+Root Cause: `MainWindow::checkAndLoadConfigurations()` wertete eine fehlende
+`settings.ini` als `FatalError`, was über `allOk = false` `disableAllControls()`
+auslöste. `settings.ini` entsteht aber ausschließlich durch einen tatsächlichen
+`AppSettings::save()`-Aufruf — bei einer frischen Installation (egal ob
+Windows-Installer oder AppImage) existiert sie naturgemäß noch nicht, und im
+bisherigen Ablauf lief `MainWindow::checkAndLoadConfigurations()` beim Start
+schon vor jedem ersten Setter-Aufruf. Jede Neuinstallation traf also
+zwangsläufig diesen `FatalError` — unabhängig vom gewählten Installer/Paket
+und unabhängig von Dateisystem-Rechten. `AppSettings::load()` selbst kommt mit
+einer fehlenden Datei dagegen längst klar (verwendet dann einfach die in
+`AppSettings.h` einprogrammierten Member-Defaults) — die App wäre mit diesen
+Defaults voll funktionsfähig gewesen, nur eben nie bis dahin gekommen.
+
+Bewusst NICHT als Lösung gewählt: `settings.ini` analog zu `WebSites.xml`/
+`Documents.xml` einfach als Vorlage mitliefern. Anders als diese beiden reinen
+Lese-Ressourcen ist `settings.ini` Laufzeit-Nutzerdaten — jeder
+`AppSettings`-Setter persistiert sofort per `save()`. Eine mitgelieferte
+Vorlage hätte das eigentliche Problem (Schreibfehlschlag bei nicht
+beschreibbarem Installationsverzeichnis, z. B. ein später mal read-only
+gemountetes AppImage) nicht gelöst, sondern nur verschleiert: die Datei wäre
+zwar initial vorhanden, aber jeder weitere `save()`-Aufruf (Fenstergröße,
+Portfolio-Pfad, Dokumente-Root, ...) wäre bei fehlender Schreibberechtigung
+weiterhin still fehlgeschlagen, ohne dass der Benutzer das noch bemerkt hätte.
+
+Fix, zweiteilig:
+
+1. **`AppStartup::loadSettings(path)`** (neu, ersetzt den direkten
+   `AppSettings::instance().load(...)`-Aufruf in `main()`): lädt die
+   Einstellungen wie bisher, persistiert aber sofort die In-Memory-Defaults
+   per `AppSettings::save()`, falls die Datei vor dem Laden noch nicht
+   existierte. Damit liegt nach dem allerersten Start eine echte
+   `settings.ini` vor — vorausgesetzt, das Zielverzeichnis ist beschreibbar.
+   Ist es das nicht, schlägt `save()` weiterhin still fehl; das ist kein
+   Rückschritt gegenüber vorher, siehe Punkt 2.
+2. **`MainWindow::checkAndLoadConfigurations()`**: die Existenzprüfung der
+   `settings.ini` löst nur noch eine `Warning`-Statusmeldung aus
+   ("Einstellungsdatei nicht gefunden — Standardwerte werden verwendet."),
+   setzt `allOk` nicht mehr auf `false` und blockiert die UI damit nicht
+   mehr. `WebSites.xml`/`Documents.xml` bleiben unverändert `FatalError` —
+   ohne sie ist die App tatsächlich nicht sinnvoll nutzbar (keine
+   Kursquellen-/Dokumenttyp-Konfiguration), das ist kein vergleichbarer Fall.
+
+Damit ist eine fehlende `settings.ini` in keinem Fall mehr blockierend — weder
+wenn sie erst gar nicht existiert (Erstlauf, jetzt durch Punkt 1 ohnehin meist
+vermieden) noch wenn `save()` mangels Schreibrechten dauerhaft fehlschlägt
+(Punkt 2 als Netz).
+
+@note Ein AppImage mountet sein Dateisystem grundsätzlich read-only, was auch
+`portfolio.db`, Backups und Logs betreffen könnte, falls diese ebenfalls
+"neben der Executable" abgelegt werden. Das ist mit diesem Fix noch nicht
+untersucht — bewusst zurückgestellt, da beim akuten Fall (frische Installation,
+Verzeichnis vermutlich beschreibbar) `settings.ini` allein schon reproduzierbar
+zur kompletten Blockade führte. Ein grundsätzlicher Wechsel auf
+`QStandardPaths::AppConfigLocation`/`AppDataLocation` für alle
+Laufzeit-Nutzerdaten (nicht nur `settings.ini`) wäre der robustere,
+aber deutlich größere nächste Schritt, falls sich das read-only-Szenario
+tatsächlich bestätigt.
+
 ### System-Locale-abhängiges Zahlenformat — Bugfix (23.07.2026)
 
 Beim Einrichten der CI (siehe TESTING.md, GitHub-Actions-Abschnitt) fielen

@@ -79,6 +79,45 @@ private slots:
             QCoreApplication::applicationDirPath()));
     }
 
+    // ── AppStartup::loadSettings ────────────────────────────────────────────
+    //
+    // Bugfix (24.07.2026): eine frische Installation (z. B. Linux-AppImage)
+    // liefert bewusst keine settings.ini mit (siehe ARCHITECTURE.md,
+    // "Erstlauf ohne settings.ini") — vorher blieb die Datei dadurch bis zum
+    // ersten AppSettings-Setter-Aufruf unauffindbar, was MainWindows
+    // Startup-Check fälschlich als FatalError wertete. loadSettings()
+    // persistiert die Defaults jetzt sofort, wenn die Datei noch nicht
+    // existiert.
+
+    void test_loadSettings_missingFile_createsFileWithDefaults()
+    {
+        const QString path = m_tempDir.path() + QStringLiteral("/fresh_settings.ini");
+        QVERIFY(!QFileInfo::exists(path));
+
+        const bool existedBefore = AppStartup::loadSettings(path);
+
+        QVERIFY(!existedBefore);
+        QVERIFY(QFileInfo::exists(path));
+    }
+
+    void test_loadSettings_existingFile_returnsTrueAndPreservesValues()
+    {
+        const QString path = m_tempDir.path() + QStringLiteral("/existing_settings.ini");
+
+        // First call creates the file with defaults; then change a value
+        // so we have something distinctive to check survives the 2nd call.
+        AppStartup::loadSettings(path);
+        AppSettings::instance().setLanguage(QStringLiteral("fr"));
+        QVERIFY(QFileInfo::exists(path));
+
+        const bool existedBefore = AppStartup::loadSettings(path);
+
+        QVERIFY(existedBefore);
+        // Proof that loadSettings() didn't blindly re-save fresh defaults
+        // over an already-existing file on the second call.
+        QCOMPARE(AppSettings::instance().language(), QStringLiteral("fr"));
+    }
+
     // ── AppStartup::installTranslator ─────────────────────────────────────
 
     void test_installTranslator_missingFile_returnsFalse()

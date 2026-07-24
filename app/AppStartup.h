@@ -15,8 +15,9 @@
  *
  * ### Startup sequence (called from main())
  * 1. `settingsPath()`      — resolve the settings.ini path
- * 2. `installTranslator()` — load the configured .qm file
- * 3. `openDatabase()`      — open or create the portfolio SQLite database
+ * 2. `loadSettings()`      — load settings.ini, creating it with defaults if missing
+ * 3. `installTranslator()` — load the configured .qm file
+ * 4. `openDatabase()`      — open or create the portfolio SQLite database
  */
 class AppStartup
 {
@@ -31,6 +32,26 @@ public:
      * @return Absolute path to settings.ini.
      */
     static QString settingsPath();
+
+    /**
+     * @brief Loads settings.ini, creating it with default values if it
+     *        didn't exist yet.
+     *
+     * Bugfix (24.07.2026): a fresh install (no settings.ini shipped by the
+     * installer/AppImage — see ARCHITECTURE.md, "Erstlauf ohne
+     * settings.ini") previously left the file missing until the first
+     * AppSettings-Setter call, which happened long after MainWindow's
+     * startup checks had already run. Persisting the in-memory defaults
+     * immediately here means a real settings.ini exists on disk right after
+     * the very first start (as long as the target directory is writable —
+     * if it isn't, AppSettings::save() fails silently and the app simply
+     * keeps running on in-memory defaults, exactly as before this fix).
+     * @param path  Full path to the settings file. If empty, defaults to
+     *              settingsPath().
+     * @return true if settings.ini already existed before this call,
+     *         false if it was just newly created with defaults.
+     */
+    static bool loadSettings(const QString& path = {});
 
     /**
      * @brief Installs the Qt translator for the configured language.

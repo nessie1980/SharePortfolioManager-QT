@@ -16,6 +16,31 @@ QString AppStartup::settingsPath()
     return QCoreApplication::applicationDirPath() + QStringLiteral("/settings.ini");
 }
 
+// ── loadSettings ──────────────────────────────────────────────────────────────
+
+bool AppStartup::loadSettings(const QString& path)
+{
+    const QString resolvedPath = path.isEmpty() ? settingsPath() : path;
+    const bool existedBefore = QFileInfo::exists(resolvedPath);
+
+    AppSettings::instance().load(resolvedPath);
+
+    if (!existedBefore) {
+        // Fresh install / first run — persist the in-memory defaults right
+        // away instead of waiting for the first AppSettings-Setter call, so
+        // MainWindow's startup check (checkAndLoadConfigurations()) finds a
+        // real file. See AppStartup.h and ARCHITECTURE.md, "Erstlauf ohne
+        // settings.ini". If the directory isn't writable, save() fails
+        // silently here — that's fine, MainWindow now treats a still-missing
+        // settings.ini as a warning, not a fatal error.
+        AppSettings::instance().save();
+        qInfo() << "[AppStartup] No settings.ini found — created one with defaults at:"
+                << resolvedPath;
+    }
+
+    return existedBefore;
+}
+
 // ── installTranslator ─────────────────────────────────────────────────────────
 
 bool AppStartup::installTranslator(QApplication& app, QTranslator& translator,
