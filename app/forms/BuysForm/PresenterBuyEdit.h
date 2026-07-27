@@ -5,6 +5,7 @@
 #include "IViewBuyEdit.h"
 #include "IModelBuyEdit.h"
 #include "../../config/DocumentsConfig.h"
+#include "../../utils/PdfTextExtractor.h"
 #include "../../libs/parser/src/Parser.h"
 
 #include <QObject>
@@ -16,9 +17,21 @@
  * @brief Presenter for the "Käufe hinzufügen / editieren" dialog (MVP pattern).
  *
  * Parse pipeline is identical to PresenterShareAdd:
- * 1. onDocumentSelected() → pdftotext (QProcess) → onPdfConversionFinished()
- * 2. startParserForText() → BankIdentifier match → DocumentType detect → ParserLib
+ * 1. onDocumentSelected() → PdfTextExtractor → onPdfTextExtracted()
+ * 2. startParserForText() → DocumentClassifier::matchBankIndex()/
+ *    detectDocumentType() → ParserLib
  * 3. onParserUpdated() → populateFromResult() → setFieldOk/Error + onParseFinished
+ *
+ * @note PDF-to-text conversion and bank-/document-type detection used to be
+ * duplicated inline here (see ARCHITECTURE.md, "PDF-Erkennungslogik
+ * gebündelt in DocumentClassifier" / "PDF-Text-Extraktion gebündelt in
+ * PdfTextExtractor") — both now delegate to the shared `PdfTextExtractor`
+ * and `DocumentClassifier` utility classes in `app/utils/`. Behaviour is
+ * unchanged: `startParserForText()` still falls back to
+ * `DocumentType::Buy` when the bank matched but no explicit
+ * Buy-/Sale-/Dividend-/BrokerageIdentifier does, exactly as before —
+ * `DocumentClassifier::detectDocumentType()` takes that fallback as a
+ * parameter for precisely this reason.
  */
 class PresenterBuyEdit : public QObject
 {
@@ -58,8 +71,8 @@ signals:
     void dataChanged();
 
 private slots:
-    /** Called when pdftotext (QProcess) finishes. */
-    void onPdfConversionFinished(int exitCode, int exitStatus);
+    /** Called when PdfTextExtractor finishes converting the selected PDF. */
+    void onPdfTextExtracted(bool success, const QString& text);
 
     /** Called by ParserLib::Parser on every state change. */
     void onParserUpdated(const ParserLib::ParserInfoState& state);
@@ -91,6 +104,7 @@ private:
     bool             m_isLastBuy    = false;  ///< true when selected buy is most recent
 
     ParserLib::Parser m_parser;
+    PdfTextExtractor  m_pdfExtractor;
     QString           m_pendingPdfPath;
     QString           m_pdfText;
 };

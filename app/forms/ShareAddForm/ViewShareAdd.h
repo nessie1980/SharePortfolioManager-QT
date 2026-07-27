@@ -47,6 +47,15 @@ public:
                           QWidget*         parent = nullptr);
     ~ViewShareAdd() override = default;
 
+    /**
+     * @brief Access the presenter (added 27.07.2026 for the "Direkte
+     * Dokumentenerfassung" drop feature — see MainWindow::openCaptureDialog(),
+     * ARCHITECTURE.md). Matches the accessor already present on
+     * ViewBuyEdit/ViewSaleEdit/ViewDividendEdit; ViewShareAdd was the only
+     * one of the four sibling dialogs missing it.
+     */
+    PresenterShareAdd* presenter() const { return m_presenter; }
+
     // ── IViewShareAdd read accessors ──────────────────────────────────────
     QString  wkn()              const override;
     QString  isin()             const override;

@@ -106,6 +106,10 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/core/DocumentRootMigrator.h
     ../../app/core/DocumentRootMigrator.cpp
     ../../app/utils/ShareCalculator.cpp
+    ../../app/utils/PdfTextExtractor.h
+    ../../app/utils/PdfTextExtractor.cpp
+    ../../app/utils/DocumentClassifier.h
+    ../../app/utils/DocumentClassifier.cpp
     ${FORM_TEST_RESOURCES}
 )
 
@@ -185,6 +189,10 @@ qt_add_executable(tst_buysform tst_buysform.cpp
     ../../app/repositories/SaleRepository.cpp
     ../../app/repositories/DividendRepository.cpp
     ../../app/repositories/BrokerageRepository.cpp
+    ../../app/utils/PdfTextExtractor.h
+    ../../app/utils/PdfTextExtractor.cpp
+    ../../app/utils/DocumentClassifier.h
+    ../../app/utils/DocumentClassifier.cpp
     ${FORM_TEST_RESOURCES}
 )
 
@@ -294,6 +302,10 @@ qt_add_executable(tst_shareeditform tst_shareeditform.cpp
     ../../app/repositories/DividendRepository.cpp
     ../../app/repositories/BrokerageRepository.cpp
     ../../app/repositories/DailyValuesRepository.cpp
+    ../../app/utils/PdfTextExtractor.h
+    ../../app/utils/PdfTextExtractor.cpp
+    ../../app/utils/DocumentClassifier.h
+    ../../app/utils/DocumentClassifier.cpp
     ${FORM_TEST_RESOURCES}
 )
 

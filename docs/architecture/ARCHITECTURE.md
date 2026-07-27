@@ -2656,6 +2656,41 @@ Dialoge, ohne eigene Parallel-Implementierung.
 
 ## Offene Punkte
 
+### Manuelles Theme (Hell/Dunkel) erzwingbar machen (Backlog-Idee, nicht priorisiert, 24.07.2026)
+
+Im Zuge des Bugfixes "Log-Meldungsfarben theme-neutral" (siehe Erledigt/
+Archiv weiter unten) kam die Frage auf, ob sich ein Dark Theme künftig
+*manuell* in der App aktivieren lassen sollte — unabhängig von der
+automatischen System-Theme-Erkennung, die im Linux-AppImage mangels
+Platform-Theme-Plugin nicht funktioniert (siehe dort für die genaue
+Ursache).
+
+Der entscheidende Unterschied zur (fehlschlagenden) automatischen Erkennung:
+ein manuell erzwungenes Theme über `QStyleFactory::create("Fusion")` +
+eine fest definierte `QPalette` läuft komplett innerhalb von Qt selbst,
+ohne jede Abfrage ans Betriebssystem oder ein externes Plugin — würde also
+auch im AppImage zuverlässig funktionieren, wo die automatische Erkennung
+versagt.
+
+Mögliche Umsetzung, grob skizziert:
+- Neue `AppSettings`-Einstellung, z. B. `theme()` mit Werten "System"
+  (aktuelles Verhalten, unverändert) / "Hell" / "Dunkel".
+- Bei "Hell"/"Dunkel" wird beim Start `QApplication::setStyle("Fusion")`
+  + eine passende `QPalette` gesetzt.
+- Ein Theme-Wechsel würde vermutlich einen Neustart der App erfordern —
+  Qt-Stile lassen sich zwar zur Laufzeit umschalten, aber nicht alle
+  Widgets aktualisieren sich dabei zuverlässig live.
+
+Zu bedenken: `IconProvider` kennt aktuell nur ein einziges Icon-Set
+(`default`), das nicht hell/dunkel-optimiert ist — ein erzwungenes Dark
+Theme würde also nur Fenster-Hintergründe/Widgets betreffen, nicht die
+Icons selbst (kein Blocker, nur ein kosmetischer Nebenaspekt, den man bei
+der Umsetzung im Hinterkopf behalten sollte).
+
+Bewusst zurückgestellt (24.07.2026): reine Idee aus der Diskussion um den
+Log-Farben-Bugfix, keine konkrete Anfrage/aktive Aufgabe. Nur vermerkt,
+falls später tatsächlich Bedarf für ein erzwingbares Theme entsteht.
+
 ### GitHub-Release-Automatisierung für Installer (Backlog-Idee, nicht priorisiert)
 
 Seit 23.07.2026 existiert `.github/workflows/package.yml` (manuell auslösbar
@@ -2692,6 +2727,242 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 ---
 
 ## Erledigt / Archiv
+
+### Direkte Dokumentenerfassung per Drag+Drop (erledigt, 27.07.2026)
+
+Neues Feature, analog zur bereits in der C#-Referenzanwendung vorhandenen
+Logik: PDF-Dokumente werden per Drag+Drop auf die (bislang leere) Box
+"Direkte Dokumentenerfassung" im `MainWindow` abgelegt, automatisch als
+Kauf-/Verkaufs-/Dividenden-Dokument erkannt, und das passende
+Editier-Formular (`ViewShareAdd`/`ViewBuyEdit`/`ViewSaleEdit`/
+`ViewDividendEdit`) öffnet sich direkt mit vorbelegtem Dokumentpfad.
+
+Mit Nessie abgestimmtes Verhalten (27.07.2026):
+- **Einzeldatei-Drop only.** Bei Mehrfachauswahl im Drop-Event: Ablehnung
+  mit Statusmeldung, kein Verarbeitungsschritt.
+- **Kauf-Dokument, WKN/ISIN unbekannt** (keine passende Aktie im Portfolio)
+  → `ViewShareAdd` öffnen (legt Aktie + Kauf gemeinsam an), Dokumentpfad
+  vorbelegt.
+- **Kauf-Dokument, WKN/ISIN bekannt** → `ViewBuyEdit(shareGuid, ...)`
+  öffnen, Dokumentpfad vorbelegt.
+- **Verkauf/Dividende, WKN/ISIN unbekannt** → Fehlermeldung im
+  Status-Log, kein Dialog (ein Verkauf/eine Dividende ohne zugehörige,
+  bereits vorhandene Aktie ist fachlich nicht möglich).
+- **Kein Bank-/Typ-Match** → Statusmeldung "nicht zugeordnet", kein Dialog.
+- **Brokerage vorerst außen vor** — auch bei erkanntem
+  `DocumentType::Brokerage` kein Auto-Öffnen von `ViewBrokerageEdit` (auf
+  Nessies Vorgabe bewusst abgegrenzt, s.u. "Erledigt/Archiv" sobald
+  umgesetzt).
+
+**Schritt 1 (umgesetzt, 27.07.2026): Grundlage — DocumentClassifier /
+PdfTextExtractor**
+
+Die eigentliche Bank-/Dokumenttyp-Erkennung existierte bereits — nur
+vierfach dupliziert in `PresenterBuyEdit::startParserForText()`,
+`PresenterSaleEdit::startParserForText()`,
+`PresenterDividendEdit::startParserForText()` und
+`PresenterShareAdd::startParserForText()` (BankIdentifier-Regex →
+Buy-/Sale-/Dividend-/BrokerageIdentifier-Regex → passender `DocumentEntry`).
+Für die neue Direkterfassung wird genau diese Erkennung gebraucht, aber
+*bevor* überhaupt feststeht, welches Formular geöffnet werden soll — die
+Logik musste also so oder so aus den Presentern herausgelöst werden.
+
+Neue Klasse `app/utils/DocumentClassifier.h/.cpp` (statisch, kein
+QObject, keine GUI-Abhängigkeit):
+- `DocumentClassifier::classify(pdfText, config)` → `Result { matched,
+  bank, docEntry, type }`. Anders als die vier Presenter (die beim
+  Ausbleiben eines Identifier-Treffers auf ihren eigenen Dialogtyp
+  zurückfallen, weil der Benutzer den Dialog ja bereits bewusst gewählt
+  hat) liefert `classify()` bei fehlendem Bank- **oder** Typ-Treffer
+  `matched = false` zurück — ohne Vorwissen darf hier nicht geraten
+  werden.
+- `Result` speichert `BankEntry`/`DocumentEntry` **als Kopie**, nicht als
+  Zeiger: `DocumentsConfig::entries()` liefert `QList<BankEntry>` *by
+  value* zurück; ein `const BankEntry*` in den (bisherigen) Presentern
+  wird nur innerhalb derselben Funktion verwendet und übersteht das nie.
+  Für `DocumentClassifier` muss das Ergebnis aber auch nach Rückkehr aus
+  `classify()` noch gültig sein (der Aufrufer in `MainWindow` prüft erst
+  Schritt für Schritt WKN/ISIN, Aktien-Lookup, dann erst welches Formular
+  zu öffnen ist) — Kopie statt Zeiger vermeidet ein Dangling-Pointer-Bug,
+  der beim naiven Kopieren der Presenter-Logik sonst direkt entstanden
+  wäre.
+- `DocumentClassifier::extractFieldValue(pdfText, regexList, fieldName)`
+  + Convenience-Wrapper `extractWkn()`/`extractIsin()`: wendet eine
+  einzelne benannte Regel aus einer `RegExList` an (erste Capture-Gruppe,
+  sonst gesamter Treffer), unabhängig vom vollen `ParserLib::Parser`-Ablauf
+  — wird für den WKN-/ISIN-Abgleich mit `ShareRepository::findByWkn()`/
+  `findByIsin()` in Schritt 3 benötigt.
+- Die vier bestehenden Presenter wurden **noch nicht** umgestellt (folgt
+  in Schritt 2) — sie laufen unverändert weiter, ihre Bestandstests bleiben
+  unberührt.
+
+Neue Klasse `app/utils/PdfTextExtractor.h/.cpp` (QObject, asynchron):
+kapselt den `pdftotext -enc UTF-8 -layout <pfad> -`-Aufruf byte-für-byte
+identisch zum bisherigen, vierfach duplizierten `QProcess`-Code in den
+vier `onDocumentSelected()`-Implementierungen. Emittiert
+`finished(bool success, QString text)`. Bewusst **kein** automatisierter
+Test dafür (siehe TESTING.md) — konsistent mit der bestehenden Konvention
+im Projekt, `QProcess`-getriebene `pdftotext`-Codepfade nicht direkt zu
+testen (s. `onBrowseDocument()`-Methoden).
+
+**Offene Frage aus Schritt 1 — geklärt in Schritt 3 (siehe dort):** Ob die
+`Sale`- und `Dividend`-`Document`-Einträge in `Documents.xml` `Wkn`/`Isin`-
+Regeln enthalten, war zunächst unklar, da bislang niemand sie gebraucht
+hatte (`ViewSaleEdit`/`ViewDividendEdit` werden immer für eine bereits
+ausgewählte Aktie geöffnet, der Aktienbezug kommt über `shareGuid`, nicht
+aus dem Dokument). Nessies Praxistest bestätigte: die Regeln sind
+vorhanden, die Direkterfassung findet die passende Aktie auch für diese
+beiden Typen zuverlässig.
+
+**Schritt 2 (umgesetzt, 27.07.2026): Refactoring der vier Presenter**
+
+`PresenterBuyEdit`, `PresenterSaleEdit`, `PresenterDividendEdit` und
+`PresenterShareAdd` nutzen jetzt `PdfTextExtractor` + `DocumentClassifier`
+statt der eigenen, vierfach duplizierten `QProcess`-/Regex-Erkennungslogik.
+Reines Refactoring, bewusst ohne Verhaltensänderung:
+
+- `onDocumentSelected()` ruft jetzt `m_pdfExtractor.extract(path)` statt
+  selbst einen `QProcess` aufzusetzen.
+- Der bisherige private Slot `onPdfConversionFinished(int exitCode, int
+  exitStatus)` (an `QProcess::finished` gebunden) entfällt; neuer privater
+  Slot `onPdfTextExtracted(bool success, const QString& text)`, verbunden
+  mit `PdfTextExtractor::finished()`. Gleiche Fehlermeldung bei
+  `!success` ("PDF-Konvertierung fehlgeschlagen oder kein Text
+  extrahierbar."), gleiches Verhalten bei Erfolg
+  (`m_pdfText = text; startParserForText(m_pdfText);`).
+- `startParserForText()` bleibt als private Methode je Presenter bestehen
+  (unterschiedliche Required-Felder-Listen bei Bank-Fehltreffer,
+  unterschiedlicher `ParsingValues`-Aufbau), aber die Bank-/Typ-Erkennung
+  selbst ist durch zwei Aufrufe ersetzt:
+  `DocumentClassifier::matchBankIndex(pdfText, *m_config, bankIndex)` und
+  `DocumentClassifier::detectDocumentType(pdfText, matchedBank,
+  fallbackType)`. Der jeweilige `fallbackType` entspricht exakt der
+  bisherigen lokalen Default-Initialisierung (`PresenterBuyEdit`/
+  `PresenterShareAdd` → `DocumentType::Buy`, `PresenterSaleEdit` →
+  `DocumentType::Sale`, `PresenterDividendEdit` → `DocumentType::Dividend`)
+  — Verhalten bei "Bank erkannt, aber kein Dokumenttyp-Identifier trifft"
+  bleibt damit identisch.
+- `DocumentClassifier` wurde dafür um zwei neue Bausteine ergänzt:
+  `matchBankIndex()` (liefert nur den Index statt eines potenziell
+  wackligen Zeigers) und `detectDocumentType()` (mit Fallback-Parameter,
+  im Unterschied zu `classify()`, das bewusst nie rät). `classify()` selbst
+  wurde intern auf dieselben beiden Bausteine umgestellt, um Code-Doppelung
+  innerhalb von `DocumentClassifier` zu vermeiden.
+- `#include <QProcess>`/`#include <QRegularExpression>` sind aus allen vier
+  `.cpp`-Dateien entfallen — beides steckt jetzt ausschließlich in
+  `PdfTextExtractor`/`DocumentClassifier`.
+- Alles andere (WKN/ISIN-Gegenprüfung in `populateFromResult()`,
+  `xmlNameToViewField()`, Validierung, Speichern) ist unverändert
+  übernommen.
+
+@note **Noch nicht automatisiert nachgetestet:** Die bestehenden
+Presenter-Tests (`tst_buysform`, `tst_mainwindow` u. a.) wurden nicht
+angefasst, da `startParserForText()` weiterhin `private` ist und die
+Tests wie bisher nur über die öffentlichen Slots (`onDocumentSelected()`
+etc.) erreichbar sind — die Umbenennung von `onPdfConversionFinished`
+zu `onPdfTextExtracted` betrifft nur privates Slot-Wiring, keine
+öffentliche Schnittstelle. Nessie sollte nach dem Einspielen dennoch die
+volle Testsuite lokal laufen lassen, bevor Schritt 3 aufsetzt — falls
+irgendwo (z. B. in `tst_mainwindow.cpp`) doch direkt auf den alten
+Slotnamen oder die alte `QProcess`-Signatur Bezug genommen wird, muss das
+dort nachgezogen werden.
+
+**Schritt 3 (umgesetzt, 27.07.2026): MainWindow-Integration**
+
+`MainWindow` reagiert jetzt auf einen einzelnen per Drag+Drop abgelegten
+PDF-Anhang auf `m_documentCaptureGroup`:
+
+- **Event-Scoping statt globalem Drag-Handling:** Statt
+  `dragEnterEvent()`/`dropEvent()` auf dem gesamten `MainWindow` zu
+  überschreiben (was bei jedem PDF-Drop irgendwo im Fenster ausgelöst
+  hätte, z. B. versehentlich über der Portfolio-Tabelle), akzeptiert nur
+  `m_documentCaptureGroup` selbst Drops (`setAcceptDrops(true)`) und
+  `MainWindow` installiert sich per `installEventFilter(this)` als Filter
+  dafür — reagiert also ausschließlich auf `QEvent::DragEnter`/
+  `QEvent::Drop`, deren `watched`-Objekt `m_documentCaptureGroup` ist.
+  `m_documentCaptureEdit` (das `QLineEdit` in der Box) bekommt explizit
+  `setAcceptDrops(false)`, damit ein Drop nicht dort hängen bleibt,
+  sondern per Qt-Standardverhalten zum nächsten Vorfahren mit
+  `acceptDrops == true` durchgereicht wird.
+- **Einzeldatei-Drop only:** Mehr als eine Datei im Drop → Statusmeldung
+  "Bitte nur ein Dokument gleichzeitig ablegen." (Warning), keine
+  Verarbeitung. Nicht-PDF oder Nicht-lokale-Datei → stiller `ignore()`.
+- **`handleDroppedDocument(path)`:** neue private Methode (kein Slot —
+  nimmt nur einen `QString`, daher ohne `QMetaObject::invokeMethod`/
+  `Q_ARG` direkt aus Tests aufrufbar, analog zur Begründung bei
+  `selectShareRow()`). Setzt Statustext, startet
+  `m_documentCaptureExtractor.extract(path)`.
+- **`onDocumentCaptureTextExtracted(bool, QString)`:** neuer privater
+  Slot, verbunden mit `PdfTextExtractor::finished()`. Bei Fehlschlag:
+  Statusmeldung (Error), Abbruch. Bei Erfolg: `DocumentClassifier::
+  classify()` — bei `!matched`: Statusmeldung (Error, auf Nessies Vorgabe
+  vom 27.07.2026 — ursprünglich fälschlich Warning), Abbruch. Bei
+  Erfolg: `openCaptureDialog()`.
+- **`resolveShareGuidForDocument()`:** WKN zuerst, dann ISIN, via
+  `DocumentClassifier::extractWkn()`/`extractIsin()` +
+  `ShareRepository::findByWkn()`/`findByIsin()`. Leerer String (kein
+  Fehler), wenn der `DocumentEntry` gar keine Wkn-/Isin-Regel enthält.
+- **`openCaptureDialog()`:** öffnet je nach `DocumentType` und WKN/ISIN-
+  Treffer `ViewShareAdd` (Buy, unbekannte Aktie), `ViewBuyEdit` (Buy,
+  bekannte Aktie), `ViewSaleEdit`/`ViewDividendEdit` (Sale/Dividend,
+  bekannte Aktie — bei unbekannter Aktie nur Fehlermeldung, kein Dialog,
+  da fachlich nicht möglich) oder zeigt bei `Brokerage` nur eine
+  Info-Meldung (bewusst nicht unterstützt, siehe oben). Jeder geöffnete
+  Dialog bekommt das Dokument über `dlg.presenter()->onDocumentSelected
+  (pdfPath)` vorbelegt — exakt derselbe Aufruf, den auch der manuelle
+  "…"-Browse-Klick auslöst. Der Dialog parst das Dokument dadurch ein
+  zweites Mal über seine eigene, unveränderte Pipeline (zweiter
+  `pdftotext`-Aufruf) — eine bewusst in Kauf genommene kleine Redundanz,
+  um die vier Presenter nicht zusätzlich um eine "Text bereits vorhanden"-
+  Variante erweitern zu müssen.
+- **`ViewShareAdd::presenter()` ergänzt:** war der einzige der vier
+  Editier-Dialoge ohne den sonst überall vorhandenen `presenter()`-
+  Accessor (`ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit` hatten ihn
+  bereits) — rein additiv in `ViewShareAdd.h`, keine `.cpp`-Änderung
+  nötig (inline definiert, wie bei den drei Geschwistern).
+
+@note **Offene Frage aus der Entwicklungsphase — geklärt (27.07.2026):**
+Ob die `Sale`-/`Dividend`-`Document`-Einträge in der echten `Documents.xml`
+`Wkn`/`Isin`-Regeln enthalten, war zunächst unklar. Nessies Praxistest
+(alle vier Dokumenttypen per Drag+Drop, jeweils korrekt erkannt und der
+richtige Dialog geöffnet und befüllt) bestätigt: die Regeln sind vorhanden,
+`resolveShareGuidForDocument()` findet die passende Aktie auch für
+Verkaufs- und Dividenden-Dokumente zuverlässig.
+
+@note **Testbarkeit korrigiert (27.07.2026):** `resolveShareGuidForDocument()`
+war ursprünglich eine private, nicht-statische Methode mit dem (falschen)
+Kommentar, sie sei "direkt aus Tests aufrufbar" — eine private Methode ist
+von außen aber schlicht nicht erreichbar, weder direkt noch per
+`QMetaObject::invokeMethod` (das funktioniert nur bei Slots/
+`Q_INVOKABLE`). Behoben:
+- `resolveShareGuidForDocument()` ist jetzt `public static` (touched keine
+  Instanzdaten, nur `DocumentClassifier` + eine lokal konstruierte
+  `ShareRepository`) — analog zu `buildDailyValuesUrl()`. Direkt testbar
+  als `MainWindow::resolveShareGuidForDocument(...)`, siehe TESTING.md.
+- `handleDroppedDocument()` ist jetzt `private slot` (statt einer einfachen
+  privaten Methode) — analog `selectShareRow()`/`selectFirstShareRow()`,
+  testbar per `QMetaObject::invokeMethod`, auch wenn ein tatsächlicher
+  Test weiterhin einen echten `pdftotext`-Aufruf bräuchte (siehe unten).
+- `openCaptureDialog()` bleibt eine einfache private Methode — sie öffnet
+  echte, modale Dialoge und wird (wie der Rest der Codebase) nicht direkt
+  unit-getestet.
+
+@note **Testabdeckung:** `DocumentClassifier` vollständig in
+`tst_documentclassifier` abgedeckt. `resolveShareGuidForDocument()` neu in
+`tst_mainwindow` abgedeckt (5 Testfälle, siehe TESTING.md) — braucht nur
+eine echte Test-DB, kein `pdftotext`. Bewusst weiterhin ungetestet:
+`handleDroppedDocument()` (echter `pdftotext`-Aufruf nötig, konsistent mit
+der bestehenden Projektkonvention für `pdftotext`-`QProcess`-Codepfade),
+`eventFilter()` (echter Qt-Drag&Drop-Vorgang, kein einfaches `QTest`-Mittel
+dafür) und `openCaptureDialog()` (echte modale `QDialog::exec()`-Abläufe).
+
+**Feature-Status: Fertig.** Alle drei Umsetzungsschritte sind implementiert,
+bauen und linken sauber (inkl. der drei betroffenen CMake-Targets
+`SharePortfolioManager`, `tst_mainwindow`, `tst_buysform`,
+`tst_shareeditform` und des neuen `tst_documentclassifier`), die volle
+Testsuite läuft grün, und Nessie hat das Feature manuell mit echten
+Kauf-/Verkaufs-/Dividenden-PDFs verifiziert (27.07.2026): alle Dokumenttypen
+werden korrekt erkannt, der passende Dialog öffnet sich und wird befüllt.
 
 ### Log-Meldungsfarben theme-neutral — Bugfix (24.07.2026)
 

@@ -1,12 +1,11 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterBuyEdit.h"
+#include "../../utils/DocumentClassifier.h"
 
-#include <QProcess>
 #include <QTimer>
 #include <QUuid>
 #include <QDateTime>
-#include <QRegularExpression>
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
@@ -23,6 +22,8 @@ PresenterBuyEdit::PresenterBuyEdit(IViewBuyEdit*    view,
 {
     connect(&m_parser, &ParserLib::Parser::parserUpdated,
             this,      &PresenterBuyEdit::onParserUpdated);
+    connect(&m_pdfExtractor, &PdfTextExtractor::finished,
+            this,            &PresenterBuyEdit::onPdfTextExtracted);
 
     reloadOverview();
     m_view->clearForm();
@@ -289,62 +290,36 @@ void PresenterBuyEdit::onDocumentSelected(const QString& path)
     const bool isNonLatestEdit = !m_currentBuyGuid.isEmpty() && !m_isLastBuy;
     if (isNonLatestEdit) return;
 
-    // Convert PDF → text via pdftotext, output to stdout
-    auto* proc = new QProcess(this);
-    connect(proc,
-            QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this,
-            &PresenterBuyEdit::onPdfConversionFinished);
-
-    const QStringList args = {
-        QStringLiteral("-enc"),    QStringLiteral("UTF-8"),
-        QStringLiteral("-layout"),
-        path,
-        QStringLiteral("-")        // write to stdout
-    };
-    proc->start(QStringLiteral("pdftotext"), args);
+    m_pdfExtractor.extract(path);
 }
 
-// ── onPdfConversionFinished ───────────────────────────────────────────────────
-// Identical to PresenterShareAdd::onPdfConversionFinished()
+// ── onPdfTextExtracted ────────────────────────────────────────────────────────
+// Replaces the former onPdfConversionFinished(int, int) QProcess slot —
+// PdfTextExtractor now owns the pdftotext invocation (see ARCHITECTURE.md).
 
-void PresenterBuyEdit::onPdfConversionFinished(int exitCode, int /*exitStatus*/)
+void PresenterBuyEdit::onPdfTextExtracted(bool success, const QString& text)
 {
-    auto* proc = qobject_cast<QProcess*>(sender());
-    const QByteArray stdoutData = proc ? proc->readAllStandardOutput() : QByteArray();
-    if (proc) proc->deleteLater();
-
-    if (exitCode != 0 || stdoutData.isEmpty()) {
+    if (!success) {
         m_view->showError(QObject::tr(
             "PDF-Konvertierung fehlgeschlagen oder kein Text extrahierbar."));
         return;
     }
 
-    m_pdfText = QString::fromUtf8(stdoutData);
+    m_pdfText = text;
     startParserForText(m_pdfText);
 }
 
 // ── startParserForText ────────────────────────────────────────────────────────
-// Identical to PresenterShareAdd::startParserForText()
+// Bank-/document-type detection now delegates to DocumentClassifier
+// (see ARCHITECTURE.md) — behaviour unchanged, including the fallback to
+// DocumentType::Buy when the bank matched but no identifier did.
 
 void PresenterBuyEdit::startParserForText(const QString& pdfText)
 {
     if (!m_config || !m_config->isValid()) return;
 
-    // Step 1: find matching bank via BankIdentifier
-    const BankEntry* matchedBank = nullptr;
-    for (const auto& bank : m_config->entries()) {
-        const auto it = bank.identifierRegexList.constFind(
-            QStringLiteral("BankIdentifier"));
-        if (it == bank.identifierRegexList.constEnd()) continue;
-        QRegularExpression re(it->regexExpression);
-        if (re.isValid() && re.match(pdfText).hasMatch()) {
-            matchedBank = &bank;
-            break;
-        }
-    }
-
-    if (!matchedBank) {
+    int bankIndex = -1;
+    if (!DocumentClassifier::matchBankIndex(pdfText, *m_config, bankIndex)) {
         const QStringList required = {
             "date","depotNumber","orderNumber","volume","price"
         };
@@ -353,34 +328,17 @@ void PresenterBuyEdit::startParserForText(const QString& pdfText)
         return;
     }
 
-    // Step 2: determine document type (only Buy relevant here)
-    DocumentType docType = DocumentType::Buy;
-    const struct { const char* key; DocumentType type; } typeChecks[] = {
-        { "BuyIdentifier",       DocumentType::Buy       },
-        { "SaleIdentifier",      DocumentType::Sale      },
-        { "DividendIdentifier",  DocumentType::Dividend  },
-        { "BrokerageIdentifier", DocumentType::Brokerage }
-    };
-    for (const auto& check : typeChecks) {
-        const auto it = matchedBank->identifierRegexList.constFind(
-            QString::fromLatin1(check.key));
-        if (it == matchedBank->identifierRegexList.constEnd()) continue;
-        QRegularExpression re(it->regexExpression);
-        if (re.isValid() && re.match(pdfText).hasMatch()) {
-            docType = check.type;
-            break;
-        }
-    }
+    const BankEntry matchedBank = m_config->entries().at(bankIndex);
+    const DocumentType docType = DocumentClassifier::detectDocumentType(
+        pdfText, matchedBank, DocumentType::Buy);
 
-    // Step 3: get document entry
     const DocumentEntry* docEntry =
-        DocumentsConfig::findDocument(*matchedBank, docType);
+        DocumentsConfig::findDocument(matchedBank, docType);
     if (!docEntry) {
         m_view->onParseFinished();
         return;
     }
 
-    // Step 4: start ParserLib
     m_view->setUiBusy(true);
     m_view->setParseProgress(0, QObject::tr("Dokumenten-Analyse läuft..."));
 

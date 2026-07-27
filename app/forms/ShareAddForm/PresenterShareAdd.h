@@ -5,6 +5,7 @@
 #include "IViewShareAdd.h"
 #include "IModelShareAdd.h"
 #include "../../config/DocumentsConfig.h"
+#include "../../utils/PdfTextExtractor.h"
 #include "../../libs/parser/src/Parser.h"
 #include "../../libs/parser/src/ParsingValues.h"
 #include "../../libs/parser/src/DataTypes.h"
@@ -23,9 +24,15 @@
  * - Validates input and delegates the final save to IModelShareAdd.
  *
  * ### PDF parse pipeline
- * 1. `pdftotext` converts the PDF to a plain-text string (QProcess).
- * 2. DocumentsConfig provides the bank-specific regex rules from Documents.xml.
- * 3. ParserLib::Parser applies the regex rules and emits a result map.
+ * 1. `PdfTextExtractor` converts the PDF to a plain-text string (QProcess,
+ *    wrapped — see ARCHITECTURE.md, "PDF-Text-Extraktion gebündelt in
+ *    PdfTextExtractor").
+ * 2. `DocumentClassifier` provides the matched `BankEntry`/`DocumentEntry`
+ *    from Documents.xml (see ARCHITECTURE.md, "PDF-Erkennungslogik
+ *    gebündelt in DocumentClassifier"). Behaviour unchanged, including the
+ *    fallback to `DocumentType::Buy` when the bank matched but no explicit
+ *    identifier did.
+ * 3. `ParserLib::Parser` applies the regex rules and emits a result map.
  * 4. onParseFinished() distributes the results back to the view.
  */
 class PresenterShareAdd : public QObject
@@ -52,7 +59,7 @@ public slots:
      * @brief Called when the user clicks "…" to select a PDF document.
      * @param filePath  Full path to the selected PDF file.
      *
-     * Converts the PDF to text via pdftotext, then starts the regex
+     * Converts the PDF to text via PdfTextExtractor, then starts the regex
      * parser to populate form fields automatically.
      */
     void onDocumentSelected(const QString& filePath);
@@ -74,8 +81,9 @@ public slots:
     void onCancel();
 
 private slots:
-    /// Called when pdftotext (QProcess) finishes — kicks off the ParserLib parse.
-    void onPdfConversionFinished(int exitCode, int exitStatus);
+    /// Called when PdfTextExtractor finishes converting the selected PDF —
+    /// kicks off the ParserLib parse.
+    void onPdfTextExtracted(bool success, const QString& text);
 
     /// Called by ParserLib::Parser on every state change.
     void onParserUpdated(const ParserLib::ParserInfoState& state);
@@ -86,7 +94,7 @@ private:
     /**
      * @brief Determine bank + document type from the PDF text, then start
      *        the ParserLib::Parser with the matching RegExList.
-     * @param pdfText  Plain text extracted from the PDF by pdftotext.
+     * @param pdfText  Plain text extracted from the PDF.
      */
     void startParserForText(const QString& pdfText);
 
@@ -113,6 +121,7 @@ private:
     DocumentsConfig*    m_config = nullptr;
 
     ParserLib::Parser   m_parser;
+    PdfTextExtractor    m_pdfExtractor;
     QString             m_pendingPdfPath;
     QString             m_pdfText;
 };

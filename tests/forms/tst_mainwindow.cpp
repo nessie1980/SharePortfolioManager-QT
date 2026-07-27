@@ -4643,6 +4643,84 @@ private slots:
         QVERIFY(heldCb->toolTip().isEmpty());
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // MainWindow::resolveShareGuidForDocument() — Direkte Dokumentenerfassung
+    // (Feature 27.07.2026, siehe ARCHITECTURE.md). public static, braucht
+    // keine MainWindow-Instanz — nur eine offene Test-DB via openMemoryDb()/
+    // insertTestShare().
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_resolveShareGuidForDocument_matchesByWkn()
+    {
+        const QString guid = insertTestShare(); // WKN "TST01", ISIN "DE000TST0001"
+
+        DocumentEntry entry;
+        entry.regexList.insert(QStringLiteral("Wkn"),
+            ParserLib::RegExElement{ QStringLiteral("WKN:\\s+([A-Z0-9]{5})"), 0, false, {} });
+
+        const QString text = QStringLiteral("WKN: TST01");
+        QCOMPARE(MainWindow::resolveShareGuidForDocument(text, entry), guid);
+    }
+
+    void test_resolveShareGuidForDocument_matchesByIsin()
+    {
+        const QString guid = insertTestShare(); // WKN "TST01", ISIN "DE000TST0001"
+
+        // Bewusst nur eine Isin-Regel, keine Wkn-Regel — testet den
+        // ISIN-only-Pfad (extractWkn() liefert dann "" zurück, kein Absturz).
+        DocumentEntry entry;
+        entry.regexList.insert(QStringLiteral("Isin"),
+            ParserLib::RegExElement{ QStringLiteral("ISIN:\\s+([A-Z0-9]{12})"), 0, false, {} });
+
+        const QString text = QStringLiteral("ISIN: DE000TST0001");
+        QCOMPARE(MainWindow::resolveShareGuidForDocument(text, entry), guid);
+    }
+
+    void test_resolveShareGuidForDocument_wknTakesPrecedenceOverIsin()
+    {
+        openMemoryDb();
+        ShareRepository repo;
+        const QString wknGuid  = QStringLiteral("share-wkn-1");
+        const QString isinGuid = QStringLiteral("share-isin-1");
+        repo.insert(ShareObject(wknGuid, QStringLiteral("TST01"),
+                                QStringLiteral("DE000TST0001"), QStringLiteral("Test AG")));
+        repo.insert(ShareObject(isinGuid, QStringLiteral("SIE111"),
+                                QStringLiteral("DE0007236101"), QStringLiteral("Siemens AG")));
+
+        DocumentEntry entry;
+        entry.regexList.insert(QStringLiteral("Wkn"),
+            ParserLib::RegExElement{ QStringLiteral("WKN:\\s+([A-Z0-9]{5,6})"), 0, false, {} });
+        entry.regexList.insert(QStringLiteral("Isin"),
+            ParserLib::RegExElement{ QStringLiteral("ISIN:\\s+([A-Z0-9]{12})"), 0, false, {} });
+
+        // WKN gehört zu "Test AG", ISIN (absichtlich widersprüchlich) zu
+        // Siemens — die WKN muss gewinnen; resolveShareGuidForDocument()
+        // darf die ISIN in diesem Fall gar nicht erst nachschlagen.
+        const QString text = QStringLiteral("WKN: TST01\nISIN: DE0007236101");
+        QCOMPARE(MainWindow::resolveShareGuidForDocument(text, entry), wknGuid);
+    }
+
+    void test_resolveShareGuidForDocument_noMatch_returnsEmpty()
+    {
+        openMemoryDb(); // leere DB — keine Aktie vorhanden
+
+        DocumentEntry entry;
+        entry.regexList.insert(QStringLiteral("Wkn"),
+            ParserLib::RegExElement{ QStringLiteral("WKN:\\s+([A-Z0-9]{6})"), 0, false, {} });
+
+        const QString text = QStringLiteral("WKN: UNKNWN");
+        QVERIFY(MainWindow::resolveShareGuidForDocument(text, entry).isEmpty());
+    }
+
+    void test_resolveShareGuidForDocument_noWknIsinRuleInDocEntry_returnsEmpty()
+    {
+        openMemoryDb();
+        DocumentEntry entry; // regexList bewusst leer — simuliert einen
+                             // Sale-/Dividend-DocumentEntry ohne Wkn/Isin-Regel
+        QVERIFY(MainWindow::resolveShareGuidForDocument(
+            QStringLiteral("beliebiger Text"), entry).isEmpty());
+    }
+
 }; // end of TestMainWindow
 
 // ─────────────────────────────────────────────────────────────────────────────

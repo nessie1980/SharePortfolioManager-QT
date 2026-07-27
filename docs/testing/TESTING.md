@@ -239,6 +239,51 @@ Laden und Parsen von `WebSites.xml` und `Documents.xml` — `tst_websitesconfig`
 
 ---
 
+### tests/utils/ — Utility Unit-Tests (neu 27.07.2026)
+
+#### tst_documentclassifier — DocumentClassifier
+
+Executable: `tst_documentclassifier`
+Klasse unter Test: `DocumentClassifier` (app/utils/)
+
+Reine Logik-Tests, kein GUI, kein `pdftotext`, keine Datenbank — baut sich
+je Testfall ein kleines `Documents.xml`-Fixture per `QTemporaryDir`, exakt
+nach demselben Muster wie `tst_documentsconfig` (`writeXml()`-Helper).
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_classify_buyDocument_matched` | BankIdentifier + BuyIdentifier treffen | `matched = true`, `type = Buy` |
+| `test_classify_saleDocument_matched` | BankIdentifier + SaleIdentifier treffen | `matched = true`, `type = Sale` |
+| `test_classify_dividendDocument_matched` | BankIdentifier + DividendIdentifier treffen | `matched = true`, `type = Dividend` |
+| `test_classify_unknownBank_notMatched` | Kein BankIdentifier trifft | `matched = false` |
+| `test_classify_knownBank_unknownType_notMatched` | Bank erkannt, aber kein Dokumenttyp-Identifier trifft | `matched = false` — bewusst kein Fallback (anders als in den vier Presentern) |
+| `test_classify_emptyConfig_notMatched` | `DocumentsConfig` nie geladen | `matched = false`, kein Absturz |
+| `test_extractWkn_found` / `test_extractIsin_found` | Regel mit Capture-Gruppe im Text vorhanden | Getrimmter Wert der ersten Capture-Gruppe |
+| `test_extractWkn_notPresentInDocType_returnsEmpty` | Dokumenttyp (hier: Sale) hat keine `Wkn`-Regel | Leerer String, kein Absturz |
+| `test_extractFieldValue_noMatch_returnsEmpty` | Regel vorhanden, aber Text enthält keinen Treffer | Leerer String |
+| `test_matchBankIndex_found` / `test_matchBankIndex_notFound_leavesIndexUnchanged` | Bank-Erkennung isoliert (ohne Typ-Erkennung) | Index gesetzt bzw. unverändert |
+| `test_detectDocumentType_matches_buyIdentifier` | Identifier-Treffer gewinnt gegen einen absichtlich "falschen" Fallback | Erkannter Typ, nicht der Fallback |
+| `test_detectDocumentType_noIdentifierMatch_returnsFallback` | Bank erkannt, kein Identifier trifft | Übergebener Fallback-Typ (spiegelt z. B. `PresenterSaleEdit`s Default auf `DocumentType::Sale`) |
+
+@note **`matchBankIndex()`/`detectDocumentType()` (ergänzt 27.07.2026):**
+Diese beiden Bausteine wurden zusätzlich zu `classify()` eingeführt, damit
+`PresenterBuyEdit`/`PresenterSaleEdit`/`PresenterDividendEdit`/
+`PresenterShareAdd` nach ihrem Refactoring (s. ARCHITECTURE.md, "Schritt 2")
+weiterhin ihren jeweils eigenen Dokumenttyp-Fallback verwenden können, wenn
+die Bank erkannt wurde, aber kein Identifier eindeutig trifft — anders als
+`classify()`, das für die Direkterfassung bewusst nie rät.
+
+@note **Kein Test für `PdfTextExtractor`:** Die Klasse kapselt nur den
+`QProcess`-Aufruf von `pdftotext` — konsistent mit der bestehenden
+Projektkonvention, `QProcess`-getriebene `pdftotext`-Codepfade nicht direkt
+zu automatisieren (siehe z. B. die `onBrowseDocument()`-Methoden der fünf
+Editier-Dialoge, ebenfalls ungetestet aus demselben Grund). Ein Test müsste
+entweder einen echten `pdftotext`-Aufruf gegen eine mitgelieferte Test-PDF
+voraussetzen (Umgebungsabhängigkeit in CI) oder `QProcess` selbst mocken,
+was für einen so simplen Wrapper unverhältnismäßigen Aufwand bedeuten würde.
+
+---
+
 ### tests/forms/ — Forms Unit-Tests
 
 #### tst_mainwindow — MainWindow + ShareAddForm + ShareEditForm + SalesForm + DividendForm + BrokeragesForm + OwnMessageBox + BackupProgressForm
@@ -349,6 +394,112 @@ Methode von `MainWindow` ist und dessen volle Konstruktion braucht.
 | `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText` | `ViewShareDetails` direkt konstruiert | `hasValidShare()` = true, Fenstertitel = Aktienname, Close-Button = "Schließen" |
 | `test_chartWheel_overCountSpinAndChartView_changesIntervalCountAndRefreshes` | Mausrad-Events (`QWheelEvent`) auf `countSpin` (ohne Fokus) und auf `chartView`-Viewport | Beide erhöhen/verringern `intervalCount()`; löst jeweils einen Refresh aus (siehe ARCHITECTURE.md, "ChartForm-Details") |
 | `test_chartCheckboxes_heldAndTradedVolumeAreMutuallyExclusive` | `seriesCheckBox_HeldVolume` per `findChild()` angehakt (ergänzt 12.07.2026, siehe ARCHITECTURE.md "ChartForm-Details") | `seriesCheckBox_TradedVolume` wird `setDisabled(true)` und bekommt einen Tooltip; nach dem Abhaken wieder `isEnabled() == true` und Tooltip leer — Prüfung erfolgt symmetrisch in beide Richtungen |
+| `test_resolveShareGuidForDocument_matchesByWkn` | WKN im Dokumenttext vorhanden, Aktie mit dieser WKN in DB | GUID der gefundenen Aktie |
+| `test_resolveShareGuidForDocument_matchesByIsin` | Nur ISIN im Dokumenttext, Aktie mit dieser ISIN in DB | GUID der gefundenen Aktie |
+| `test_resolveShareGuidForDocument_wknTakesPrecedenceOverIsin` | WKN und ISIN vorhanden, gehören zu unterschiedlichen Aktien | GUID der über WKN gefundenen Aktie |
+| `test_resolveShareGuidForDocument_noMatch_returnsEmpty` | WKN/ISIN im Text, aber keine passende Aktie in DB | Leerer String |
+| `test_resolveShareGuidForDocument_noWknIsinRuleInDocEntry_returnsEmpty` | `DocumentEntry` ohne Wkn-/Isin-Regel (z. B. Sale/Dividend, falls in `Documents.xml` nicht vorhanden) | Leerer String, kein Absturz |
+
+@note **"Direkte Dokumentenerfassung" (Drag+Drop, Feature 27.07.2026) —
+Testabdeckung:** `DocumentClassifier::classify()`/`extractWkn()`/
+`extractIsin()` sind in `tst_documentclassifier` abgedeckt (siehe
+`tests/utils/`). `MainWindow::resolveShareGuidForDocument()` ist seit
+27.07.2026 `public static` (korrigiert von einer ursprünglich privaten,
+fälschlich als "direkt testbar" dokumentierten Fassung — eine private
+Methode ist von außen schlicht nicht erreichbar) und braucht nur
+`ShareRepository` gegen eine echte Test-DB, kein `pdftotext` und keinen
+`MainWindow`-Instanz — Tests siehe oben.
+
+**Bewusst weiterhin ungetestet:**
+- `MainWindow::handleDroppedDocument()` — jetzt `private slot` (analog
+  `selectShareRow()`/`selectFirstShareRow()`, testbar per
+  `QMetaObject::invokeMethod`), aber ein Test bräuchte einen echten
+  `pdftotext`-Aufruf (kein Mock) — konsistent mit der bestehenden
+  Projektkonvention, `pdftotext`-`QProcess`-Codepfade nicht direkt zu
+  automatisieren.
+- `MainWindow::eventFilter()` — würde einen echten Qt-Drag&Drop-Vorgang
+  simulieren müssen (`QTest` bietet dafür keine einfache Unterstützung);
+  die eigentliche Filter-Logik (Einzeldatei-, PDF-Only-Prüfung) ist bewusst
+  simpel gehalten, um das Risiko unentdeckter Bugs dort gering zu halten.
+- `MainWindow::openCaptureDialog()` — öffnet echte, modale `QDialog`s
+  (`dlg.exec()`); wie der Rest der Codebase testet dieses Projekt keine
+  echten `exec()`-Abläufe direkt (vgl. `onBrowseDocument()`-Methoden).
+
+Anzufügender Test-Ausschnitt für `tst_mainwindow.cpp` (private slots-Sektion
+der Testklasse; DB-Setup ggf. an das bereits vorhandene Muster in
+`initTestCase()`/`init()` dieser Datei anpassen). Nutzt `QUuid::createUuid()`
+direkt statt eines evtl. vorhandenen `newGuid()`-Helpers — falls die Datei
+bereits einen solchen Helper hat, gerne dafür austauschen, rein kosmetisch:
+
+```cpp
+void test_resolveShareGuidForDocument_matchesByWkn()
+{
+    ShareRepository repo;
+    const QString guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    repo.insert(ShareObject(guid, "BASF11", "DE000BASF111", "BASF SE"));
+
+    DocumentEntry entry;
+    entry.regexList.insert("Wkn",
+        ParserLib::RegExElement{ "WKN:\\s+([A-Z0-9]{6})", 0, false, {} });
+
+    const QString text = "WKN: BASF11";
+    QCOMPARE(MainWindow::resolveShareGuidForDocument(text, entry), guid);
+}
+
+void test_resolveShareGuidForDocument_matchesByIsin()
+{
+    ShareRepository repo;
+    const QString guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    repo.insert(ShareObject(guid, "BASF11", "DE000BASF111", "BASF SE"));
+
+    // Bewusst nur eine Isin-Regel, keine Wkn-Regel — testet den
+    // ISIN-only-Pfad (extractWkn() liefert dann "" zurück, kein Absturz).
+    DocumentEntry entry;
+    entry.regexList.insert("Isin",
+        ParserLib::RegExElement{ "ISIN:\\s+([A-Z0-9]{12})", 0, false, {} });
+
+    const QString text = "ISIN: DE000BASF111";
+    QCOMPARE(MainWindow::resolveShareGuidForDocument(text, entry), guid);
+}
+
+void test_resolveShareGuidForDocument_wknTakesPrecedenceOverIsin()
+{
+    ShareRepository repo;
+    const QString wknGuid  = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString isinGuid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    repo.insert(ShareObject(wknGuid,  "BASF11", "DE000BASF111", "BASF SE"));
+    repo.insert(ShareObject(isinGuid, "SIE111", "DE0007236101", "Siemens AG"));
+
+    DocumentEntry entry;
+    entry.regexList.insert("Wkn",
+        ParserLib::RegExElement{ "WKN:\\s+([A-Z0-9]{6})", 0, false, {} });
+    entry.regexList.insert("Isin",
+        ParserLib::RegExElement{ "ISIN:\\s+([A-Z0-9]{12})", 0, false, {} });
+
+    // WKN gehört zu BASF, ISIN (absichtlich widersprüchlich) zu Siemens —
+    // die WKN muss gewinnen, resolveShareGuidForDocument() darf die ISIN
+    // in diesem Fall gar nicht erst nachschlagen.
+    const QString text = "WKN: BASF11\nISIN: DE0007236101";
+    QCOMPARE(MainWindow::resolveShareGuidForDocument(text, entry), wknGuid);
+}
+
+void test_resolveShareGuidForDocument_noMatch_returnsEmpty()
+{
+    DocumentEntry entry;
+    entry.regexList.insert("Wkn",
+        ParserLib::RegExElement{ "WKN:\\s+([A-Z0-9]{6})", 0, false, {} });
+
+    const QString text = "WKN: UNKNWN"; // keine Aktie mit dieser WKN in der DB
+    QVERIFY(MainWindow::resolveShareGuidForDocument(text, entry).isEmpty());
+}
+
+void test_resolveShareGuidForDocument_noWknIsinRuleInDocEntry_returnsEmpty()
+{
+    DocumentEntry entry; // regexList bewusst leer — simuliert einen
+                         // Sale-/Dividend-DocumentEntry ohne Wkn/Isin-Regel
+    QVERIFY(MainWindow::resolveShareGuidForDocument("beliebiger Text", entry).isEmpty());
+}
+```
 
 ModelShareAdd:
 | Test | Beschreibung | Prüft |

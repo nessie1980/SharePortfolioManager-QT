@@ -6,6 +6,7 @@
 #include "IModelDividendEdit.h"
 #include "../../libs/parser/src/Parser.h"
 #include "../../config/DocumentsConfig.h"
+#include "../../utils/PdfTextExtractor.h"
 
 #include <QObject>
 #include <QString>
@@ -17,8 +18,9 @@
  * @brief Presenter for the "Dividenden hinzufügen / editieren" dialog (MVP pattern).
  *
  * Parse pipeline is identical to PresenterBuyEdit:
- * 1. onDocumentSelected() → pdftotext (QProcess) → onPdfConversionFinished()
- * 2. startParserForText() → BankIdentifier match → DocumentType detect → ParserLib
+ * 1. onDocumentSelected() → PdfTextExtractor → onPdfTextExtracted()
+ * 2. startParserForText() → DocumentClassifier::matchBankIndex()/
+ *    detectDocumentType() → ParserLib
  * 3. onParserUpdated() → populateFromResult() → setFieldOk/Error + onParseFinished
  *
  * Dividend-specific logic:
@@ -26,6 +28,13 @@
  * - Derived values: dividendPayout, dividendPayoutFc, taxSum,
  *                   dividendPayoutWithTaxes, yield.
  * - Foreign currency mode: enableForeignCurrency checkbox toggles extra fields.
+ *
+ * @note PDF-to-text conversion and bank-/document-type detection now
+ * delegate to the shared `PdfTextExtractor`/`DocumentClassifier` utility
+ * classes (see ARCHITECTURE.md, "PDF-Erkennungslogik gebündelt in
+ * DocumentClassifier"). Behaviour unchanged, including the fallback to
+ * `DocumentType::Dividend` when the bank matched but no explicit
+ * identifier did.
  */
 class PresenterDividendEdit : public QObject
 {
@@ -61,7 +70,8 @@ signals:
     void dataChanged();
 
 private slots:
-    void onPdfConversionFinished(int exitCode, int exitStatus);
+    /** Called when PdfTextExtractor finishes converting the selected PDF. */
+    void onPdfTextExtracted(bool success, const QString& text);
     void onParserUpdated(const ParserLib::ParserInfoState& state);
 
 private:
@@ -92,6 +102,7 @@ private:
     QString               m_currentDividendGuid;
 
     ParserLib::Parser m_parser;
+    PdfTextExtractor  m_pdfExtractor;
     QString           m_pendingPdfPath;
     QString           m_pdfText;
 };

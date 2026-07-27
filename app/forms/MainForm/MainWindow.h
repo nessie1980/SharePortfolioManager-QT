@@ -25,6 +25,7 @@
 #include "TwoLineDelegate.h"
 #include "CenterIconDelegate.h"
 #include "../../utils/ShareCalculator.h"
+#include "../../utils/PdfTextExtractor.h"
 
 #include <QList>
 #include <QQueue>
@@ -142,6 +143,51 @@ public:
     static QString buildDailyValuesUrl(const QString& urlTemplate,
                                        const QDate&   latestExistingDate,
                                        ShareParsingType parsingType);
+
+    /**
+     * @brief Resolve which existing share (if any) a parsed document belongs to.
+     *
+     * Extracts WKN/ISIN from @p pdfText via DocumentClassifier::extractWkn()/
+     * extractIsin() and looks the share up via ShareRepository::findByWkn()/
+     * findByIsin(). WKN takes precedence if both are present (WKN is the
+     * primary identifier elsewhere in the app, e.g. ViewShareAdd's duplicate
+     * check). Returns an empty string — not an error — if the DocumentEntry
+     * has no Wkn/Isin rule at all.
+     *
+     * Declared `public static` (27.07.2026, corrected from an earlier private
+     * non-static version that was wrongly documented as "directly callable
+     * from tests" — a private method has no such access) for the same reason
+     * as buildDailyValuesUrl(): it touches no instance state (only
+     * DocumentClassifier + a locally constructed ShareRepository), so static
+     * is both more correct and lets tests call it directly
+     * (`MainWindow::resolveShareGuidForDocument(...)`) against a real test
+     * database without any MainWindow instance or QMetaObject::invokeMethod
+     * involved.
+     *
+     * @param pdfText   Plain text extracted from the PDF.
+     * @param docEntry  Matched DocumentEntry (regex rules) from DocumentsConfig.
+     * @return Matching share's GUID, or an empty string if none found.
+     */
+    static QString resolveShareGuidForDocument(const QString& pdfText,
+                                                const DocumentEntry& docEntry);
+
+protected:
+    /**
+     * @brief Scopes drag&drop handling to m_documentCaptureGroup only.
+     *
+     * "Direkte Dokumentenerfassung" (Feature 27.07.2026): rather than
+     * overriding dragEnterEvent()/dropEvent() on the whole MainWindow (which
+     * would trigger on a PDF dropped anywhere, e.g. onto the portfolio
+     * table), setupCentralWidget() calls
+     * `m_documentCaptureGroup->setAcceptDrops(true)` +
+     * `m_documentCaptureGroup->installEventFilter(this)` — this filter then
+     * only reacts to QEvent::DragEnter/QEvent::Drop on that one widget.
+     * Accepts exactly one dropped `*.pdf`; anything else (multiple files,
+     * non-PDF) is rejected with a status message (multi-file) or silently
+     * ignored (wrong type), per Nessies Vorgabe vom 27.07.2026 — siehe
+     * ARCHITECTURE.md, "Direkte Dokumentenerfassung per Drag+Drop".
+     */
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private slots:
     /**
@@ -271,6 +317,37 @@ private slots:
      */
     void onPortfolioRowDoubleClicked(QTableWidgetItem* item);
 
+    /**
+     * @brief Called when PdfTextExtractor finishes converting a document
+     * dropped onto "Direkte Dokumentenerfassung" (Feature 27.07.2026).
+     *
+     * On success: classifies the text via DocumentClassifier and routes to
+     * openCaptureDialog(). On failure: status message only, no dialog.
+     *
+     * @param success  true if pdftotext produced text.
+     * @param text     Extracted plain text, empty on failure.
+     */
+    void onDocumentCaptureTextExtracted(bool success, const QString& text);
+
+    /**
+     * @brief Entry point for a single PDF dropped onto "Direkte Dokumentenerfassung".
+     *
+     * Kicks off m_documentCaptureExtractor; classification and dialog
+     * routing happen in onDocumentCaptureTextExtracted() once the text is
+     * ready.
+     *
+     * Declared as a slot (27.07.2026, corrected from an earlier plain
+     * private method that was wrongly documented as "directly callable from
+     * tests" — a private non-slot method has no such access) solely so unit
+     * tests can invoke it via QMetaObject::invokeMethod without a real
+     * Qt drag&drop — same reasoning and pattern as selectShareRow()/
+     * selectFirstShareRow() above. No behavioral difference otherwise;
+     * called directly (not via invokeMethod) from eventFilter().
+     *
+     * @param pdfPath  Full path to the dropped PDF file.
+     */
+    void handleDroppedDocument(const QString& pdfPath);
+
 private:
     /**
      * @brief Create a timestamped backup of the given portfolio file.
@@ -283,6 +360,43 @@ private:
      * @param portfolioPath  Full path to the portfolio file to back up.
      */
     void createBackup(const QString& portfolioPath);
+
+    // ── Direkte Dokumentenerfassung (Drag+Drop, Feature 27.07.2026) ────────
+    // handleDroppedDocument() ist jetzt privater Slot (siehe oben,
+    // "private slots:"), resolveShareGuidForDocument() public static (siehe
+    // "public:" ganz oben) — beide aus demselben Grund aus diesem rein
+    // privaten Block herausgezogen: Testbarkeit.
+
+    /**
+     * @brief Open the correct edit dialog for a classified, dropped document.
+     *
+     * - Buy + unknown share  → ViewShareAdd (legt Aktie + Kauf gemeinsam an).
+     * - Buy + known share    → ViewBuyEdit(shareGuid, ...).
+     * - Sale/Dividend + known share   → ViewSaleEdit/ViewDividendEdit(shareGuid, ...).
+     * - Sale/Dividend + unknown share → Statusmeldung, kein Dialog (fachlich
+     *   nicht möglich: Verkauf/Dividende ohne vorhandene Aktie).
+     * - Brokerage → Statusmeldung, kein Dialog (bewusst außen vor, siehe
+     *   ARCHITECTURE.md).
+     *
+     * Each opened dialog receives the already-extracted document via its
+     * presenter's onDocumentSelected(pdfPath) — same effect as the user
+     * clicking "…" manually, so the document re-parses inside that dialog's
+     * own, unmodified pipeline (a second pdftotext run; see ARCHITECTURE.md
+     * for why this deliberate small redundancy was chosen over threading
+     * pre-extracted text through all four presenters). Not directly
+     * unit-tested — opens real, modal QDialogs (dlg.exec()), same as the
+     * rest of the codebase never unit-tests real dialog-exec() flows.
+     *
+     * @param pdfText   Plain text extracted from the dropped PDF.
+     * @param pdfPath   Full path to the dropped PDF file.
+     * @param docType   Document type determined by DocumentClassifier.
+     * @param docEntry  Matching DocumentEntry for the WKN/ISIN lookup.
+     */
+    void openCaptureDialog(const QString& pdfText,
+                           const QString& pdfPath,
+                           DocumentType docType,
+                           const DocumentEntry& docEntry);
+
 private:
     /**
      * @brief Shared construction body for both constructors.
@@ -493,6 +607,13 @@ private:
     // ── Bottom panel — right ──────────────────────────────────────────────
     QGroupBox*    m_documentCaptureGroup  = nullptr;
     QLineEdit*    m_documentCaptureEdit   = nullptr;
+
+    /// PDF→Text-Konvertierung für Direkte Dokumentenerfassung (Feature 27.07.2026).
+    PdfTextExtractor m_documentCaptureExtractor;
+    /// Pfad des zuletzt abgelegten Dokuments — zwischen handleDroppedDocument()
+    /// und onDocumentCaptureTextExtracted() gültig (analog m_pendingPdfPath in
+    /// den vier Presentern).
+    QString          m_pendingCaptureDocumentPath;
 
     QGroupBox*    m_updateStateGroup      = nullptr;
     QLabel*       m_marketValueStateLabel = nullptr;

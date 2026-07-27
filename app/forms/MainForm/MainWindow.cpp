@@ -16,7 +16,20 @@
 #include "../../repositories/DailyValuesRepository.h"
 #include "../../models/ShareObject.h"
 #include "../../utils/ShareCalculator.h"
+#include "../../utils/DocumentClassifier.h"
 #include "../../IconProvider.h"
+
+// ── Direkte Dokumentenerfassung (Drag+Drop, Feature 27.07.2026) ───────────────
+// Full presenter headers (not just the forward-declared View headers) are
+// needed here because openCaptureDialog() calls a method directly on the
+// presenter returned by each dialog's presenter() accessor.
+#include "../BuysForm/ViewBuyEdit.h"
+#include "../BuysForm/PresenterBuyEdit.h"
+#include "../SalesForm/ViewSaleEdit.h"
+#include "../SalesForm/PresenterSaleEdit.h"
+#include "../DividendForm/ViewDividendEdit.h"
+#include "../DividendForm/PresenterDividendEdit.h"
+#include "../ShareAddForm/PresenterShareAdd.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -33,6 +46,9 @@
 #include <QDateTime>
 #include <QSoundEffect>
 #include <QUrl>
+#include <QMimeData>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <algorithm>
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
 #include "../BackupProgressForm/BackupProgressDialog.h"
@@ -513,10 +529,25 @@ void MainWindow::setupCentralWidget()
     m_documentCaptureGroup = new QGroupBox(tr("  Direkte Dokumentenerfassung"));
     m_documentCaptureEdit  = new QLineEdit();
     m_documentCaptureEdit->setReadOnly(true);
+    m_documentCaptureEdit->setPlaceholderText(
+        tr("PDF-Dokument hier ablegen (Kauf/Verkauf/Dividende)"));
+    // Explizit deaktiviert: ein QLineEdit kann eigene Drop-Handhabung mitbringen,
+    // die das Event abfangen würde, bevor es (per Qt-Default-Bubbling an den
+    // nächsten Vorfahren mit acceptDrops == true) bei m_documentCaptureGroup
+    // ankommt — siehe eventFilter() weiter unten.
+    m_documentCaptureEdit->setAcceptDrops(false);
     auto* captureLayout = new QVBoxLayout(m_documentCaptureGroup);
     captureLayout->setContentsMargins(8, 8, 4, 4);
     captureLayout->addWidget(m_documentCaptureEdit);
     m_documentCaptureGroup->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+
+    // Direkte Dokumentenerfassung per Drag+Drop (Feature 27.07.2026): Drops
+    // werden bewusst nur auf dieser einen Gruppe akzeptiert (nicht auf dem
+    // gesamten Fenster) — siehe eventFilter() und ARCHITECTURE.md.
+    m_documentCaptureGroup->setAcceptDrops(true);
+    m_documentCaptureGroup->installEventFilter(this);
+    connect(&m_documentCaptureExtractor, &PdfTextExtractor::finished,
+            this, &MainWindow::onDocumentCaptureTextExtracted);
 
     // ── Bottom panel — right: Aktualisierungs-Status ──────────────────────
     m_updateStateGroup      = new QGroupBox(tr("  Aktualisierungs-Status"));
@@ -1341,6 +1372,221 @@ void MainWindow::onPortfolioRowDoubleClicked(QTableWidgetItem* item)
         return; // Error already reported via showError() inside the presenter
 
     dlg.exec();
+}
+
+// ── Direkte Dokumentenerfassung (Drag+Drop, Feature 27.07.2026) ───────────────
+
+// ── eventFilter ───────────────────────────────────────────────────────────────
+// Scopes drag&drop handling to m_documentCaptureGroup only (installed via
+// setAcceptDrops(true) + installEventFilter(this) in setupCentralWidget()).
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == m_documentCaptureGroup) {
+        if (event->type() == QEvent::DragEnter) {
+            auto* dragEvent = static_cast<QDragEnterEvent*>(event);
+            const QList<QUrl> urls = dragEvent->mimeData()->urls();
+            const bool singlePdf = urls.size() == 1
+                && urls.first().isLocalFile()
+                && urls.first().toLocalFile().endsWith(
+                       QStringLiteral(".pdf"), Qt::CaseInsensitive);
+            if (singlePdf)
+                dragEvent->acceptProposedAction();
+            else
+                dragEvent->ignore();
+            return true;
+        }
+
+        if (event->type() == QEvent::Drop) {
+            auto* dropEvent = static_cast<QDropEvent*>(event);
+            const QList<QUrl> urls = dropEvent->mimeData()->urls();
+
+            // Einzeldatei-Drop only (Nessies Vorgabe, 27.07.2026) — bei
+            // Mehrfachauswahl: Ablehnung mit Statusmeldung, keine Verarbeitung.
+            if (urls.size() != 1) {
+                addStatusMessage(
+                    tr("Bitte nur ein Dokument gleichzeitig ablegen."),
+                    MessageType::Warning);
+                dropEvent->ignore();
+                return true;
+            }
+
+            const QUrl& url = urls.first();
+            if (!url.isLocalFile()
+                || !url.toLocalFile().endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive)) {
+                dropEvent->ignore();
+                return true;
+            }
+
+            dropEvent->acceptProposedAction();
+            handleDroppedDocument(url.toLocalFile());
+            return true;
+        }
+    }
+
+    return QMainWindow::eventFilter(watched, event);
+}
+
+// ── handleDroppedDocument ──────────────────────────────────────────────────────
+
+void MainWindow::handleDroppedDocument(const QString& pdfPath)
+{
+    m_pendingCaptureDocumentPath = pdfPath;
+    m_documentCaptureEdit->setText(QFileInfo(pdfPath).fileName());
+
+    addStatusMessage(
+        tr("Analysiere Dokument: %1 …").arg(QFileInfo(pdfPath).fileName()),
+        MessageType::Info);
+
+    m_documentCaptureExtractor.extract(pdfPath);
+}
+
+// ── onDocumentCaptureTextExtracted ─────────────────────────────────────────────
+
+void MainWindow::onDocumentCaptureTextExtracted(bool success, const QString& text)
+{
+    const QString fileName = QFileInfo(m_pendingCaptureDocumentPath).fileName();
+
+    if (!success) {
+        addStatusMessage(
+            tr("PDF-Konvertierung fehlgeschlagen oder kein Text extrahierbar: %1")
+                .arg(fileName),
+            MessageType::Error);
+        m_documentCaptureEdit->clear();
+        return;
+    }
+
+    const DocumentClassifier::Result result =
+        DocumentClassifier::classify(text, m_documentsConfig);
+    if (!result.matched) {
+        addStatusMessage(
+            tr("Dokument konnte keiner Bank/keinem Dokumenttyp zugeordnet werden: %1")
+                .arg(fileName),
+            MessageType::Error);
+        m_documentCaptureEdit->clear();
+        return;
+    }
+
+    openCaptureDialog(text, m_pendingCaptureDocumentPath, result.type, result.docEntry);
+    // Feld erst nach Rückkehr aus openCaptureDialog() leeren — dessen
+    // dlg.exec()-Aufrufe blockieren, bis der Benutzer den geöffneten Dialog
+    // schließt, das Feld soll den Dateinamen also so lange sichtbar halten.
+    m_documentCaptureEdit->clear();
+}
+
+// ── resolveShareGuidForDocument ────────────────────────────────────────────────
+
+QString MainWindow::resolveShareGuidForDocument(const QString& pdfText,
+                                                const DocumentEntry& docEntry)
+{
+    const QString wkn  = DocumentClassifier::extractWkn(pdfText, docEntry).toUpper();
+    const QString isin = DocumentClassifier::extractIsin(pdfText, docEntry).toUpper();
+
+    ShareRepository shareRepo;
+
+    if (!wkn.isEmpty()) {
+        const ShareObject share = shareRepo.findByWkn(wkn);
+        if (share.isValid())
+            return share.guid();
+    }
+    if (!isin.isEmpty()) {
+        const ShareObject share = shareRepo.findByIsin(isin);
+        if (share.isValid())
+            return share.guid();
+    }
+    return QString();
+}
+
+// ── openCaptureDialog ──────────────────────────────────────────────────────────
+
+void MainWindow::openCaptureDialog(const QString& pdfText,
+                                   const QString& pdfPath,
+                                   DocumentType docType,
+                                   const DocumentEntry& docEntry)
+{
+    const QString fileName = QFileInfo(pdfPath).fileName();
+
+    switch (docType) {
+    case DocumentType::Buy: {
+        const QString shareGuid = resolveShareGuidForDocument(pdfText, docEntry);
+        if (shareGuid.isEmpty()) {
+            addStatusMessage(
+                tr("Keine passende Aktie im Portfolio gefunden — öffne "
+                   "\"Aktie hinzufügen\" für %1").arg(fileName),
+                MessageType::Info);
+
+            ViewShareAdd dlg(&m_documentsConfig, this);
+            dlg.presenter()->onDocumentSelected(pdfPath);
+            if (dlg.exec() == QDialog::Accepted) {
+                addStatusMessage(
+                    tr("Aktie \"%1\" (%2) wurde erfolgreich hinzugefügt.")
+                        .arg(dlg.name().trimmed(), dlg.wkn().trimmed()),
+                    MessageType::Success);
+                populatePortfolioTables();
+            } else {
+                addStatusMessage(tr("Aktie hinzufügen wurde abgebrochen."),
+                                 MessageType::Info);
+            }
+        } else {
+            addStatusMessage(
+                tr("Kauf-Dokument erkannt — öffne \"Käufe\" für %1").arg(fileName),
+                MessageType::Info);
+
+            ViewBuyEdit dlg(shareGuid, &m_documentsConfig, this);
+            dlg.presenter()->onDocumentSelected(pdfPath);
+            dlg.exec();
+            populatePortfolioTables();
+        }
+        break;
+    }
+    case DocumentType::Sale: {
+        const QString shareGuid = resolveShareGuidForDocument(pdfText, docEntry);
+        if (shareGuid.isEmpty()) {
+            addStatusMessage(
+                tr("Keine passende Aktie im Portfolio gefunden für "
+                   "Verkaufs-Dokument: %1").arg(fileName),
+                MessageType::Error);
+            break;
+        }
+
+        addStatusMessage(
+            tr("Verkaufs-Dokument erkannt — öffne \"Verkäufe\" für %1").arg(fileName),
+            MessageType::Info);
+
+        ViewSaleEdit dlg(shareGuid, &m_documentsConfig, this);
+        dlg.presenter()->onDocumentSelected(pdfPath);
+        dlg.exec();
+        populatePortfolioTables();
+        break;
+    }
+    case DocumentType::Dividend: {
+        const QString shareGuid = resolveShareGuidForDocument(pdfText, docEntry);
+        if (shareGuid.isEmpty()) {
+            addStatusMessage(
+                tr("Keine passende Aktie im Portfolio gefunden für "
+                   "Dividenden-Dokument: %1").arg(fileName),
+                MessageType::Error);
+            break;
+        }
+
+        addStatusMessage(
+            tr("Dividenden-Dokument erkannt — öffne \"Dividenden\" für %1").arg(fileName),
+            MessageType::Info);
+
+        ViewDividendEdit dlg(shareGuid, &m_documentsConfig, this);
+        dlg.presenter()->onDocumentSelected(pdfPath);
+        dlg.exec();
+        populatePortfolioTables();
+        break;
+    }
+    case DocumentType::Brokerage:
+        // Bewusst außen vor (Nessies Vorgabe, 27.07.2026) — siehe ARCHITECTURE.md.
+        addStatusMessage(
+            tr("Dokumenttyp \"Kosten\" wird über die Direkte Dokumentenerfassung "
+               "aktuell nicht unterstützt: %1").arg(fileName),
+            MessageType::Info);
+        break;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

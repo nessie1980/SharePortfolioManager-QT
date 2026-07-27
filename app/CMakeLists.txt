@@ -52,6 +52,10 @@ set(APP_SOURCES
     # ── Utils ──────────────────────────────────────────────────────────────
     utils/ShareCalculator.h
     utils/ShareCalculator.cpp
+    utils/PdfTextExtractor.h
+    utils/PdfTextExtractor.cpp
+    utils/DocumentClassifier.h
+    utils/DocumentClassifier.cpp
 
     # ── Widgets (shared) ──────────────────────────────────────────────────
     widgets/OverviewTabWidget.h

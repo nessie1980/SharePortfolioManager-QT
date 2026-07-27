@@ -1,26 +1,20 @@
-find_package(Qt6 REQUIRED COMPONENTS Test Sql)
+find_package(Qt6 REQUIRED COMPONENTS Test)
 
-# ── ShareCalculator tests ─────────────────────────────────────────────────────
-qt_add_executable(tst_sharecalculator tst_sharecalculator.cpp
-    ../../app/utils/ShareCalculator.cpp
-    ../../app/models/BuyObject.cpp
-    ../../app/models/SaleObject.cpp
-    ../../app/models/BrokerageObject.cpp
-    ../../app/models/DividendObject.cpp
-    ../../app/repositories/BuyRepository.cpp
-    ../../app/repositories/SaleRepository.cpp
-    ../../app/repositories/BrokerageRepository.cpp
-    ../../app/repositories/DividendRepository.cpp
+# ── DocumentClassifier tests ───────────────────────────────────────────────────
+qt_add_executable(tst_documentclassifier tst_documentclassifier.cpp
+    ../../app/config/DocumentsConfig.cpp
+    ../../app/utils/DocumentClassifier.cpp
 )
 
-target_include_directories(tst_sharecalculator
+target_include_directories(tst_documentclassifier
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../libs/parser/src
 )
 
-target_link_libraries(tst_sharecalculator
-    PRIVATE Qt6::Test Qt6::Sql Database
+target_link_libraries(tst_documentclassifier
+    PRIVATE Qt6::Test Parser
 )
 
-set_target_properties(tst_sharecalculator PROPERTIES AUTOMOC ON)
+set_target_properties(tst_documentclassifier PROPERTIES AUTOMOC ON)
 
-add_test(NAME tst_sharecalculator COMMAND tst_sharecalculator)
+add_test(NAME tst_documentclassifier COMMAND tst_documentclassifier)
