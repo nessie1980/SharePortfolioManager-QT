@@ -5,6 +5,7 @@
 #include <QTranslator>
 #include <QDir>
 #include <QFile>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 
 #include "../../app/AppStartup.h"
@@ -62,6 +63,13 @@ private slots:
     }
 
     // ── AppStartup::settingsPath ───────────────────────────────────────────
+    //
+    // Bugfix (29.07.2026): settingsPath() no longer lives next to the
+    // executable (broken under a Linux AppImage — that directory is a
+    // fresh, random FUSE mount on every launch, see ARCHITECTURE.md,
+    // "settings.ini nicht persistent im AppImage"). It now resolves to
+    // QStandardPaths::AppConfigLocation, so the old "starts with
+    // applicationDirPath()" assertion has been replaced accordingly.
 
     void test_settingsPath_endsWithSettingsIni()
     {
@@ -73,10 +81,21 @@ private slots:
         QVERIFY(QDir::isAbsolutePath(AppStartup::settingsPath()));
     }
 
-    void test_settingsPath_containsAppDir()
+    void test_settingsPath_isInStandardConfigLocation()
     {
-        QVERIFY(AppStartup::settingsPath().startsWith(
-            QCoreApplication::applicationDirPath()));
+        const QString configDir =
+            QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+        QVERIFY(AppStartup::settingsPath().startsWith(configDir));
+    }
+
+    void test_settingsPath_directoryIsCreated()
+    {
+        // settingsPath() must ensure its parent directory exists, since a
+        // fresh install (no prior AppConfigLocation directory) must not
+        // silently fail to write settings.ini.
+        const QString path = AppStartup::settingsPath();
+        const QFileInfo info(path);
+        QVERIFY(info.dir().exists());
     }
 
     // ── AppStartup::loadSettings ────────────────────────────────────────────

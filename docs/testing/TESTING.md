@@ -208,6 +208,19 @@ Tabellen-Existenz, Indizes, Foreign Keys, Default-Werte, WAL-Modus und Transakti
 Startverhalten der Applikation (fehlende DB, leerer Pfad, erstes Öffnen) und Icon-Verfügbarkeit
 aller definierten `IconProvider::IconName`-Werte — `tst_appstartup` und `tst_iconprovider`.
 
+@note `AppStartup::settingsPath()` liefert seit dem Bugfix vom 29.07.2026
+(siehe ARCHITECTURE.md, "settings.ini nicht persistent im AppImage") einen
+Pfad unter `QStandardPaths::AppConfigLocation` statt neben der Executable —
+letzteres brach unter einem Linux-AppImage, dessen FUSE-Mountpunkt bei jedem
+Start ein neues, zufälliges Verzeichnis ist. Der bisherige Test
+`test_settingsPath_containsAppDir` (prüfte `startsWith(applicationDirPath())`)
+wurde durch `test_settingsPath_isInStandardConfigLocation` ersetzt (prüft
+`startsWith(QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation))`).
+Neu hinzugekommen: `test_settingsPath_directoryIsCreated`, da `settingsPath()`
+jetzt aktiv `QDir().mkpath(...)` auf das Zielverzeichnis aufruft — bei einem
+brandneuen Config-Verzeichnis existiert es sonst noch nicht, und `QSettings`
+legt darin ohne existierendes Elternverzeichnis keine Datei an.
+
 @note `AppStartup::openDatabase()` hat seit 19.07.2026 einen zweiten Parameter
 `showErrorDialog = true` — bei `false` wird bei einem Öffnungsfehler nur
 `qCritical()` geloggt statt eines blockierenden `QMessageBox::critical()`.

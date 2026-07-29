@@ -4,6 +4,7 @@
 
 #include <QSettings>
 #include <QCoreApplication>
+#include <QStandardPaths>
 #include <QFileInfo>
 #include <QDir>
 
@@ -23,10 +24,22 @@ AppSettings::AppSettings(QObject* parent)
 
 void AppSettings::load(const QString& path)
 {
-    // Default to settings.ini next to the executable if no path is given.
-    m_settingsPath = path.isEmpty()
-        ? QCoreApplication::applicationDirPath() + QStringLiteral("/settings.ini")
-        : path;
+    // Bugfix (29.07.2026): the previous default (applicationDirPath() +
+    // "/settings.ini") broke under a Linux AppImage, where that directory
+    // is a freshly-mounted, random temp path on every launch — see
+    // ARCHITECTURE.md, "settings.ini nicht persistent im AppImage". This
+    // fallback path is only reached if load() is called directly with no
+    // path (production code always goes through AppStartup::loadSettings(),
+    // which resolves AppStartup::settingsPath() itself); kept in sync with
+    // that fix so direct calls behave the same way.
+    if (path.isEmpty()) {
+        const QString configDir =
+            QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+        QDir().mkpath(configDir);
+        m_settingsPath = configDir + QStringLiteral("/settings.ini");
+    } else {
+        m_settingsPath = path;
+    }
 
     QSettings settings(m_settingsPath, QSettings::IniFormat);
 

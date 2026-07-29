@@ -1,31 +1,26 @@
 # Changelog
 
-Alle nennenswerten Änderungen an der SharePortfolioManager-App werden hier
-dokumentiert. Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
-Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
+Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei
+dokumentiert.
 
-Für die drei mitgelieferten Bibliotheken (jeweils eigene, unabhängige
-Versionsnummer) siehe:
-- [libs/logger/CHANGELOG.md](libs/logger/CHANGELOG.md)
-- [libs/parser/CHANGELOG.md](libs/parser/CHANGELOG.md)
-- [app/core/CHANGELOG.md](app/core/CHANGELOG.md) (Database)
+Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
+Versionierung nach [SemVer](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [1.0.1] - 2026-07-29
 
-## [1.0.0] - 2026-07-28
-### Hinzugefügt
-- Erster funktionsvollständiger Stand der Anwendung: Verwaltung von
-  Depotwerten/Marktwerten, Erfassung von Käufen, Verkäufen, Dividenden und
-  Brokeragegebühren, automatischer Kursabruf (OnVista/Yahoo/Regex-Parser).
-- ShareDetailsForm mit Jahres-Übersichten (Gewinne/Verluste, Dividenden,
-  Kosten) und Aktien-Chart (ChartForm, Qt Charts) inkl. Kauf-/Verkaufs-
-  Markerlinien.
-- Direkte Dokumentenerfassung per Drag+Drop (PDF) mit automatischer
-  Kauf-/Verkaufs-/Dividenden-Erkennung.
-- Konfigurierbares Dokumenten-Root-Verzeichnis mit Migrationswerkzeug
-  (DocumentRootMigrator) und Durchsetzung "nur Dokumente aus dem Root
-  auswählbar".
-- Linux-AppImage- und Windows-Installer-Packaging über GitHub Actions
-  (manuell auslösbar).
-- Deutschsprachige Oberfläche, SQLite-Persistenz, MVP-Architektur mit
-  umfangreicher automatisierter Testabdeckung.
+### Fixed
+
+- `settings.ini` wurde im Linux-AppImage nie dauerhaft gespeichert: nach
+  jedem Neustart musste u. a. das Dokumente-Root-Verzeichnis erneut gewählt
+  werden. Ursache war `AppStartup::settingsPath()`, das auf
+  `QCoreApplication::applicationDirPath()` basierte — im AppImage der bei
+  jedem Start neu und zufällig gemountete FUSE-Pfad. Betraf strukturell auch
+  Windows-Standardinstallationen unter `Program Files`, wo dieses
+  Verzeichnis für normale Benutzerkonten nicht ohne Weiteres beschreibbar
+  ist. Umgestellt auf `QStandardPaths::AppConfigLocation`, stabil und
+  nutzerseitig beschreibbar über alle Paketierungsformen hinweg (AppImage,
+  Windows-Installer, portabler Build). Siehe
+  `docs/architecture/ARCHITECTURE.md`, "settings.ini nicht persistent im
+  AppImage".
+
+[1.0.1]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.0.0...v1.0.1

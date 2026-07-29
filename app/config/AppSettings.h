@@ -12,7 +12,14 @@
 /**
  * @brief Application settings — replaces Settings.xml.
  *
- * Stored as settings.ini (QSettings IniFormat) next to the executable.
+ * Stored as settings.ini (QSettings IniFormat) in the user's standard
+ * application-config directory (see AppStartup::settingsPath() /
+ * QStandardPaths::AppConfigLocation — bugfix 29.07.2026, see
+ * ARCHITECTURE.md, "settings.ini nicht persistent im AppImage"). The
+ * production code path (main.cpp → AppStartup::loadSettings()) always
+ * resolves this path itself and passes it explicitly to load(); the
+ * fallback below (path.isEmpty()) uses the same standard location so that
+ * calling load() directly — e.g. from ad-hoc tooling — behaves consistently.
  * Log colors are stored as a QList<QColor> indexed by state level,
  * matching Logger's stateList order — no Logger dependency needed here.
  */
@@ -36,7 +43,8 @@ public:
     /**
      * @brief Load settings from the INI file.
      * @param path  Full path to the settings file.
-     *              If empty, defaults to the application directory.
+     *              If empty, defaults to the user's standard app-config
+     *              directory (see class documentation above).
      */
     void load(const QString& path = {});
 

@@ -27,8 +27,17 @@ public:
     /**
      * @brief Returns the full path to the settings.ini file.
      *
-     * The file is always placed next to the executable, keeping the
-     * application self-contained and portable.
+     * Bugfix (29.07.2026): previously returned a path next to the executable
+     * (`QCoreApplication::applicationDirPath()`). Under a Linux AppImage that
+     * directory is the FUSE mount point, which is recreated at a new, random
+     * location on every launch (`/tmp/.mount_<random>/usr/bin`) — settings.ini
+     * was therefore written correctly on every start, but the path used to
+     * find it again on the *next* start no longer existed, so the file
+     * appeared to never persist. See ARCHITECTURE.md, "settings.ini nicht
+     * persistent im AppImage". Now uses
+     * `QStandardPaths::AppConfigLocation`, which stays stable across
+     * launches regardless of how or where the executable itself is
+     * packaged (AppImage, Windows installer, portable build, ...).
      * @return Absolute path to settings.ini.
      */
     static QString settingsPath();

@@ -5,15 +5,31 @@
 #include "core/Database.h"
 
 #include <QCoreApplication>
+#include <QStandardPaths>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QDir>
 #include <QDebug>
 
 // ── settingsPath ──────────────────────────────────────────────────────────────
 
 QString AppStartup::settingsPath()
 {
-    return QCoreApplication::applicationDirPath() + QStringLiteral("/settings.ini");
+    // Bugfix (29.07.2026): QCoreApplication::applicationDirPath() pointed
+    // into the AppImage's FUSE mount (/tmp/.mount_<random>/usr/bin), which
+    // is a fresh, random directory on every launch — settings.ini was
+    // written there correctly, but the next start looked in a different,
+    // now-nonexistent mount directory and never found it again. See
+    // ARCHITECTURE.md, "settings.ini nicht persistent im AppImage".
+    // QStandardPaths::AppConfigLocation resolves to a stable, per-user
+    // config directory (e.g. ~/.config/<OrganizationName>/<ApplicationName>
+    // on Linux) that does not depend on where the executable itself lives,
+    // so it works the same for AppImage, a normal Linux install, and the
+    // Windows installer.
+    const QString configDir =
+        QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    QDir().mkpath(configDir);
+    return configDir + QStringLiteral("/settings.ini");
 }
 
 // ── loadSettings ──────────────────────────────────────────────────────────────
