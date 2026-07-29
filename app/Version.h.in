@@ -1,10 +1,16 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 //
-// Automatisch von CMake aus Version.h.in generiert — nicht manuell
-// bearbeiten. Die Versionsnummer wird zentral in der Root-CMakeLists.txt
-// gepflegt (project(SharePortfolioManager VERSION x.y.z ...)).
-// Siehe ARCHITECTURE.md, Abschnitt "Versionierung".
+// Generiert durch CMake (configure_file(), siehe app/CMakeLists.txt) als
+// Version.h im Build-Verzeichnis. Diese Datei (Version.h.in) ist die
+// einzige Vorlage, die im Repository/Quellbaum liegt und von Hand
+// gepflegt wird — die generierte Version.h selbst landet im Build-
+// Verzeichnis und wird nicht eingecheckt (siehe .gitignore, "build/").
+//
+// Die eigentlichen Versionswerte kommen ausschließlich aus
+// project(SharePortfolioManager VERSION ...) in der Root-CMakeLists.txt.
+// Ein Versionsbump erfolgt daher nur an genau einer Stelle — siehe
+// ARCHITECTURE.md, Abschnitt "Versionierung".
 #pragma once
 
 #define SPM_VERSION_MAJOR  @PROJECT_VERSION_MAJOR@

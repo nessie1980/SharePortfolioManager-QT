@@ -5,8 +5,8 @@
 #include <QTranslator>
 #include <QDebug>
 
-#include "Version.h"
 #include "AppStartup.h"
+#include "Version.h"
 #include "config/AppSettings.h"
 #include "core/Database.h"
 #include "forms/MainForm/MainWindow.h"
@@ -28,11 +28,23 @@ int main(int argc, char* argv[])
 
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("SharePortfolioManager"));
-    // Versionsnummer kommt aus der Root-CMakeLists.txt (project(...
-    // VERSION x.y.z)) und wird über Version.h.in zu SPM_VERSION_STRING
-    // generiert — siehe ARCHITECTURE.md, Abschnitt "Versionierung".
+    // Bugfix (29.07.2026): zuvor ein Hardcoded-Literal ("1.0.0"/"1.0.1"),
+    // unabhängig von project(SharePortfolioManager VERSION ...) in der
+    // Root-CMakeLists.txt gepflegt — ein Versionsbump musste dadurch an
+    // zwei Stellen erfolgen, was schon beim ersten PATCH-Bump (1.0.1)
+    // prompt vergessen wurde. SPM_VERSION_STRING kommt jetzt aus der von
+    // CMake generierten Version.h (siehe app/Version.h.in,
+    // app/CMakeLists.txt und ARCHITECTURE.md, Abschnitt "Versionierung") —
+    // die Versionsnummer hat damit nur noch eine einzige Quelle.
     app.setApplicationVersion(QStringLiteral(SPM_VERSION_STRING));
-    app.setOrganizationName(QStringLiteral("nessie1980"));
+    // OrganizationName (29.07.2026): "BT" statt des zuvor verwendeten
+    // GitHub-Handles "nessie1980" — QStandardPaths::AppConfigLocation baut
+    // den Konfigurationspfad unter Linux als
+    // ~/.config/<OrganizationName>/<ApplicationName>/ auf (siehe
+    // AppStartup::settingsPath() und ARCHITECTURE.md, "settings.ini nicht
+    // persistent im AppImage"); ein neutraler, nicht-persönlicher Name ist
+    // dort auf Nessies Wunsch dem persönlichen Handle vorgezogen worden.
+    app.setOrganizationName(QStringLiteral("BT"));
 
     // ── Load settings ──────────────────────────────────────────────────────
     // Must happen before anything else so all components get their config.

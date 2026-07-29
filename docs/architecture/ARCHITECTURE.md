@@ -2654,6 +2654,44 @@ Dialoge, ohne eigene Parallel-Implementierung.
 
 ---
 
+## Versionierung
+
+Die Versionsnummer der Anwendung selbst (`SharePortfolioManager`, Executable
+in `app/`) hat genau **eine** Quelle: `project(SharePortfolioManager VERSION
+...)` in der Root-`CMakeLists.txt`. Ein Bump erfolgt ausschließlich dort.
+
+Feature (29.07.2026): Bis dahin gab es eine zweite, unabhängig gepflegte
+Stelle — `app.setApplicationVersion(QStringLiteral("1.0.0"))` als
+Hardcoded-Literal in `main.cpp`. Das führte prompt beim ersten PATCH-Bump
+(auf `1.0.1`, siehe CHANGELOG.md) dazu, dass die Literal-Stelle in `main.cpp`
+vergessen wurde und weiterhin `"1.0.0"` auslieferte. Behoben durch einen
+generierten Versions-Header:
+
+- **`app/Version.h.in`** — Vorlage im Quellbaum, definiert
+  `SPM_VERSION_MAJOR`/`_MINOR`/`_PATCH`/`_STRING` als `@...@`-Platzhalter.
+- **`app/CMakeLists.txt`** — `configure_file(Version.h.in ... @ONLY)`
+  erzeugt daraus `Version.h` im Build-Verzeichnis (nicht im Quellbaum, daher
+  kein zusätzlicher `.gitignore`-Eintrag nötig — `build/` ist dort bereits
+  ausgeschlossen), mit `${CMAKE_CURRENT_BINARY_DIR}` im Include-Pfad des
+  `SharePortfolioManager`-Targets.
+- **`main.cpp`** — `#include "Version.h"`,
+  `app.setApplicationVersion(QStringLiteral(SPM_VERSION_STRING))` statt des
+  Literals.
+
+`AboutForm` und dessen Zwischenablage-Export waren von Anfang an über
+`QCoreApplication::applicationVersion()` implementiert und mussten daher
+nicht angepasst werden — sie zeigen automatisch den korrekten, jetzt aus
+CMake generierten Wert an.
+
+Bewusst außerhalb dieses Mechanismus: `Logging::Logger::version()`,
+`ParserLib::Parser::version()` und `Database::version()` — das sind
+eigenständige, von der Applikationsversion unabhängige Bibliotheksversionen
+(jeweils eigene, von Hand gepflegte Konstante in ihrer Quelldatei), die ein
+eigenes Versionierungsschema mit eigenem Bump-Rhythmus haben. Kein
+gemeinsamer Mechanismus mit `SPM_VERSION_STRING` vorgesehen, da eine
+Kopplung an die Applikationsversion fachlich falsch wäre — die Bibliotheken
+können sich unabhängig von der Applikation weiterentwickeln.
+
 ## Offene Punkte
 
 ### Manuelles Theme (Hell/Dunkel) erzwingbar machen (Backlog-Idee, nicht priorisiert, 24.07.2026)
@@ -2755,11 +2793,11 @@ Fix: `AppStartup::settingsPath()` verwendet jetzt
 `QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation)`
 (inkl. `QDir().mkpath(...)`, falls das Verzeichnis noch nicht existiert)
 statt `applicationDirPath()`. Das liefert unter Linux z. B.
-`~/.config/SharePortfolioManager/settings.ini`, unabhängig vom
-AppImage-Mount, und bleibt über alle Paketierungsformen (AppImage,
-Windows-Installer, portabler Build) hinweg stabil. `AppSettings::load()`s
-eigener Default-Pfad (nur relevant, wenn `load()` direkt ohne Pfad
-aufgerufen wird — der Produktivpfad über `main()` →
+`~/.config/<OrganizationName>/SharePortfolioManager/settings.ini`,
+unabhängig vom AppImage-Mount, und bleibt über alle Paketierungsformen
+(AppImage, Windows-Installer, portabler Build) hinweg stabil.
+`AppSettings::load()`s eigener Default-Pfad (nur relevant, wenn `load()`
+direkt ohne Pfad aufgerufen wird — der Produktivpfad über `main()` →
 `AppStartup::loadSettings()` übergibt immer schon einen konkreten Pfad)
 wurde aus Konsistenzgründen auf denselben Mechanismus umgestellt.
 
@@ -2778,6 +2816,23 @@ per `QDir().mkpath(...)`, bevor der Pfad zurückgegeben wird — bei einem
 brandneuen Config-Verzeichnis (erster Start auf einem System überhaupt)
 existiert es sonst noch nicht, und `QSettings` legt zwar die Datei an, aber
 nur, wenn das übergeordnete Verzeichnis bereits vorhanden ist.
+
+@note **OrganizationName "BT" statt "nessie1980" (29.07.2026):** Der
+Config-Pfad unter Linux setzt sich über `QStandardPaths::AppConfigLocation`
+aus `~/.config/<OrganizationName>/<ApplicationName>/` zusammen —
+`OrganizationName` wird in `main()` per `app.setOrganizationName(...)`
+gesetzt und stand zuvor auf Nessies GitHub-Handle `"nessie1980"`. Auf
+Nessies Wunsch durch den neutralen, nicht-personenbezogenen Bezeichner
+`"BT"` ersetzt, da der Pfad-Bestandteil keinen Mehrwert aus einem
+persönlichen Handle zieht. Rein kosmetisch, betrifft nur den Dateisystempfad
+der `settings.ini`/zukünftiger Konfigurationsdaten — keine Auswirkung auf
+Verhalten, Datenbankschema oder gespeicherte Werte selbst. Konsequenz: eine
+bereits unter `~/.config/nessie1980/SharePortfolioManager/settings.ini`
+existierende Datei (z. B. aus Nessies lokalem Test des vorherigen Fixes)
+wird beim nächsten Start nicht mehr gefunden — es wird, wie bei jeder
+fehlenden `settings.ini`, einfach eine neue mit Defaults unter dem neuen
+Pfad angelegt (siehe Bugfix "Erstlauf ohne settings.ini", 24.07.2026). Keine
+Migration, aus denselben Gründen wie beim AppImage-Pfadwechsel oben.
 
 ### Direkte Dokumentenerfassung per Drag+Drop (erledigt, 27.07.2026)
 
