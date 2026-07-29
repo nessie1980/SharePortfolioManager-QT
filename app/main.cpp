@@ -5,6 +5,7 @@
 #include <QTranslator>
 #include <QDebug>
 
+#include "Version.h"
 #include "AppStartup.h"
 #include "config/AppSettings.h"
 #include "core/Database.h"
@@ -27,7 +28,10 @@ int main(int argc, char* argv[])
 
     QApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("SharePortfolioManager"));
-    app.setApplicationVersion(QStringLiteral("1.0.0"));
+    // Versionsnummer kommt aus der Root-CMakeLists.txt (project(...
+    // VERSION x.y.z)) und wird über Version.h.in zu SPM_VERSION_STRING
+    // generiert — siehe ARCHITECTURE.md, Abschnitt "Versionierung".
+    app.setApplicationVersion(QStringLiteral(SPM_VERSION_STRING));
     app.setOrganizationName(QStringLiteral("nessie1980"));
 
     // ── Load settings ──────────────────────────────────────────────────────

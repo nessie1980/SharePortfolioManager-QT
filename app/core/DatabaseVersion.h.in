@@ -1,0 +1,14 @@
+// MIT License
+// Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
+//
+// Automatisch von CMake aus DatabaseVersion.h.in generiert — nicht manuell
+// bearbeiten. Die Versionsnummer wird zentral in app/core/CMakeLists.txt
+// gepflegt (project(Database VERSION x.y.z ...)) — unabhängig von der
+// SharePortfolioManager-App-Version. Siehe ARCHITECTURE.md, Abschnitt
+// "Versionierung".
+#pragma once
+
+#define DATABASE_VERSION_MAJOR  @PROJECT_VERSION_MAJOR@
+#define DATABASE_VERSION_MINOR  @PROJECT_VERSION_MINOR@
+#define DATABASE_VERSION_PATCH  @PROJECT_VERSION_PATCH@
+#define DATABASE_VERSION_STRING "@PROJECT_VERSION@"

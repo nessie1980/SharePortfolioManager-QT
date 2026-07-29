@@ -1,5 +1,6 @@
 set(APP_SOURCES
     main.cpp
+    Version.h.in
     AppStartup.h
     AppStartup.cpp
     IconProvider.h
@@ -164,6 +165,17 @@ set(APP_SOURCES
     forms/OwnMessageBoxForm/OwnMessageBox.cpp
 )
 
+# ── Version header (generiert aus Version.h.in) ────────────────────────────
+# Zentrale Versionsnummer kommt aus project(SharePortfolioManager VERSION ...)
+# in der Root-CMakeLists.txt — hier nur zu einem verwendbaren C++-Header
+# umgewandelt. main.cpp verwendet SPM_VERSION_STRING statt eines Hardcodes.
+# Siehe ARCHITECTURE.md, Abschnitt "Versionierung".
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/Version.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/Version.h
+    @ONLY
+)
+
 # ── Translation files (.ts) ────────────────────────────────────────────────
 # qt_add_translations() in Qt >= 6.7 must be attached to an existing target.
 # We attach it to the executable after qt_add_executable() below.
@@ -188,6 +200,7 @@ target_include_directories(SharePortfolioManager
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/core
+        ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 target_link_libraries(SharePortfolioManager

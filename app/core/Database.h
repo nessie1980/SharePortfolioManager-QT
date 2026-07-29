@@ -2,6 +2,8 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #pragma once
 
+#include "DatabaseVersion.h"
+
 #include <QObject>
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -25,9 +27,13 @@ class Database : public QObject
 public:
     /**
      * @brief Returns the Database library version string.
+     *
+     * Independent of the SharePortfolioManager app version — see
+     * app/core/CMakeLists.txt (project(Database VERSION ...)) and
+     * ARCHITECTURE.md, Abschnitt "Versionierung".
      * @return Version string (e.g. "1.0.0").
      */
-    static QString version() { return QStringLiteral("1.0.0"); }
+    static QString version() { return QStringLiteral(DATABASE_VERSION_STRING); }
 
     /**
      * @brief Returns the named connection string used for all database access.

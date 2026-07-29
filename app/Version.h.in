@@ -1,0 +1,13 @@
+// MIT License
+// Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
+//
+// Automatisch von CMake aus Version.h.in generiert — nicht manuell
+// bearbeiten. Die Versionsnummer wird zentral in der Root-CMakeLists.txt
+// gepflegt (project(SharePortfolioManager VERSION x.y.z ...)).
+// Siehe ARCHITECTURE.md, Abschnitt "Versionierung".
+#pragma once
+
+#define SPM_VERSION_MAJOR  @PROJECT_VERSION_MAJOR@
+#define SPM_VERSION_MINOR  @PROJECT_VERSION_MINOR@
+#define SPM_VERSION_PATCH  @PROJECT_VERSION_PATCH@
+#define SPM_VERSION_STRING "@PROJECT_VERSION@"

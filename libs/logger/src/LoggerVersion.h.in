@@ -1,0 +1,14 @@
+// MIT License
+// Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
+//
+// Automatisch von CMake aus LoggerVersion.h.in generiert — nicht manuell
+// bearbeiten. Die Versionsnummer wird zentral in libs/logger/CMakeLists.txt
+// gepflegt (project(Logger VERSION x.y.z ...)) — unabhängig von der
+// SharePortfolioManager-App-Version. Siehe ARCHITECTURE.md, Abschnitt
+// "Versionierung".
+#pragma once
+
+#define LOGGER_VERSION_MAJOR  @PROJECT_VERSION_MAJOR@
+#define LOGGER_VERSION_MINOR  @PROJECT_VERSION_MINOR@
+#define LOGGER_VERSION_PATCH  @PROJECT_VERSION_PATCH@
+#define LOGGER_VERSION_STRING "@PROJECT_VERSION@"

@@ -1,0 +1,14 @@
+// MIT License
+// Copyright (c) 2021 nessie1980 (nessie1980@gmx.de)
+//
+// Automatisch von CMake aus ParserVersion.h.in generiert — nicht manuell
+// bearbeiten. Die Versionsnummer wird zentral in libs/parser/CMakeLists.txt
+// gepflegt (project(Parser VERSION x.y.z ...)) — unabhängig von der
+// SharePortfolioManager-App-Version. Siehe ARCHITECTURE.md, Abschnitt
+// "Versionierung".
+#pragma once
+
+#define PARSER_VERSION_MAJOR  @PROJECT_VERSION_MAJOR@
+#define PARSER_VERSION_MINOR  @PROJECT_VERSION_MINOR@
+#define PARSER_VERSION_PATCH  @PROJECT_VERSION_PATCH@
+#define PARSER_VERSION_STRING "@PROJECT_VERSION@"

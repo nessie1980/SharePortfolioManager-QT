@@ -129,6 +129,88 @@ tst_chartform           ← PresenterChart über Fake-View/Fake-Model (IViewChar
 
 ---
 
+## Versionierung
+
+Vier unabhängig versionierte Teile: die App selbst sowie die drei
+mitgelieferten Bibliotheken Logger, Parser und Database. Jeder Teil folgt
+Semantic Versioning (`MAJOR.MINOR.PATCH`):
+
+- **PATCH** — reine Bugfixes, keine neuen Features, keine Breaking Changes
+  (z. B. Datenbank-Schema ohne Migration).
+- **MINOR** — neue Features, rückwärtskompatibel.
+- **MAJOR** — Breaking Changes, insbesondere DB-Schema-Änderungen ohne
+  Migration oder große Architektur-Umbrüche.
+
+Grobe Zuordnung zu den bestehenden Commit-Präfixen: `Bugfix:` → PATCH,
+`Feature:` → MINOR.
+
+### Single Source of Truth
+
+Jeder der vier Teile pflegt seine Versionsnummer an genau einer Stelle im
+jeweiligen `CMakeLists.txt`. Alle anderen Stellen im Code lesen die Nummer
+aus einem zur Build-Zeit generierten Header (`configure_file()`), statt sie
+selbst hart zu kodieren:
+
+| Teil | Versionsquelle | Generierter Header | Makro |
+| ------ | ------ | ------ | ------ |
+| App (SharePortfolioManager) | Root-`CMakeLists.txt`, `project(... VERSION x.y.z)` | `app/Version.h` | `SPM_VERSION_STRING` |
+| Logger | `libs/logger/CMakeLists.txt`, `project(Logger VERSION x.y.z)` | `LoggerVersion.h` | `LOGGER_VERSION_STRING` |
+| Parser | `libs/parser/CMakeLists.txt`, `project(Parser VERSION x.y.z)` | `ParserVersion.h` | `PARSER_VERSION_STRING` |
+| Database | `app/core/CMakeLists.txt`, `project(Database VERSION x.y.z)` | `DatabaseVersion.h` | `DATABASE_VERSION_STRING` |
+
+Die generierten Header landen im jeweiligen Build-Verzeichnis (nicht im
+Quellbaum, nicht versioniert) und werden aus einer `*.h.in`-Vorlage im
+Quellverzeichnis erzeugt. Eindeutige Dateinamen (`LoggerVersion.h` statt z. B.
+`Version.h`) verhindern Namenskollisionen, da mehrere Libs gleichzeitig im
+Include-Pfad eines Consumers (App, Tests) landen können.
+
+`main.cpp` verwendet `SPM_VERSION_STRING` für
+`app.setApplicationVersion(...)`. `Logger::version()`, `Parser::version()`
+und `Database::version()` lesen jeweils ihr eigenes Makro — `AboutForm`
+zeigt alle vier Versionsnummern unverändert nebeneinander an, nur die
+Implementierung dahinter ist jetzt generiert statt hartkodiert.
+
+Die drei Bibliotheks-Versionen sind bewusst **unabhängig** von der
+App-Version und voneinander — sie könnten grundsätzlich auch separat
+wiederverwendet werden, auch wenn das aktuell nicht der Fall ist.
+
+Technischer Hinweis zum Geltungsbereich: `project(Logger ...)`,
+`project(Parser ...)` und `project(Database ...)` werden jeweils innerhalb
+der über `add_subdirectory()` eingebundenen Unterverzeichnisse aufgerufen.
+CMake-Projektvariablen (`PROJECT_VERSION` etc.) sind pro Verzeichnis-Scope
+gültig — der erneute `project()`-Aufruf in einer Unterbibliothek überschreibt
+daher nicht die `PROJECT_VERSION` der Root- bzw. `app/`-Ebene, aus der
+`Version.h` für die App generiert wird.
+
+### Wann wird eine Version erhöht?
+
+Kein CI-erzwungener Automatismus — manuelle Policy, an den bestehenden
+Dokumentations-Workflow angelehnt: Eine Versionsnummer wird bei jedem
+abgeschlossenen Feature-/Bugfix-Block erhöht, der unter "Erledigt / Archiv"
+dokumentiert wird. Ablauf: `project(VERSION ...)` im betroffenen
+`CMakeLists.txt` hochsetzen → passenden `CHANGELOG.md`-Eintrag ergänzen →
+beides im selben Commit wie die eigentliche Änderung.
+
+### Changelogs
+
+Jeder der vier Teile hat sein eigenes `CHANGELOG.md` (Format angelehnt an
+"Keep a Changelog"), damit sich Änderungen an einer Bibliothek nicht mit
+App- oder anderen Lib-Änderungen vermischen:
+
+- `CHANGELOG.md` (Root) — App
+- `libs/logger/CHANGELOG.md` — Logger
+- `libs/parser/CHANGELOG.md` — Parser
+- `app/core/CHANGELOG.md` — Database
+
+### Bewusst nicht Teil dieses Konzepts
+
+Keine Git-Tags und keine CI-Kopplung — siehe "Offene Punkte", Abschnitt
+"GitHub-Release-Automatisierung für Installer". Die Versionsnummern ändern
+sich weiterhin nur durch einen bewussten manuellen Schritt, nicht
+automatisch.
+
+---
+
 ## UI-Größenkonstanten (forms/UiConstants.h)
 
 Alle Eingabe-Widgets und Buttons in allen Form-Dialogen verwenden gemeinsame Konstanten
@@ -2709,6 +2791,12 @@ pushen → Installer bauen → automatisch als Release veröffentlichen.
 Bewusst zurückgestellt (23.07.2026): Es ist noch keine erste Version zur
 Veröffentlichung vorgesehen. Nur als Idee für später vermerkt, sobald
 tatsächlich veröffentlicht werden soll — keine aktive Aufgabe.
+
+Ergänzung (28.07.2026): Die manuelle Versionierung selbst (SemVer,
+generierte Versions-Header, vier separate Changelogs) ist inzwischen
+eingeführt — siehe Abschnitt "Versionierung" weiter oben. Diese hier
+beschriebene Git-Tag-/CI-Kopplung bleibt davon unberührt weiterhin
+zurückgestellt.
 
 ### Konfigurierbare Locale für Zahlenformat (Backlog-Idee, nicht priorisiert)
 

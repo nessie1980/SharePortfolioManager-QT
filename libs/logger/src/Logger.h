@@ -3,6 +3,7 @@
 #pragma once
 
 #include "LogEntry.h"
+#include "LoggerVersion.h"
 
 #include <QObject>
 #include <QList>
@@ -43,9 +44,13 @@ class Logger : public QObject
 public:
     /**
      * @brief Returns the Logger library version string.
+     *
+     * Independent of the SharePortfolioManager app version — see
+     * libs/logger/CMakeLists.txt (project(Logger VERSION ...)) and
+     * ARCHITECTURE.md, Abschnitt "Versionierung".
      * @return Version string (e.g. "1.0.0").
      */
-    static QString version() { return QStringLiteral("1.0.0"); }
+    static QString version() { return QStringLiteral(LOGGER_VERSION_STRING); }
 
     // ── State levels (bit flags, powers of 2) ───────────────────────────
     enum class StateLevel : int {

@@ -4,6 +4,7 @@
 
 #include "DataTypes.h"
 #include "ParsingValues.h"
+#include "ParserVersion.h"
 
 #include <QObject>
 #include <QNetworkAccessManager>
@@ -43,9 +44,13 @@ class Parser : public QObject
 public:
     /**
      * @brief Returns the Parser library version string.
+     *
+     * Independent of the SharePortfolioManager app version — see
+     * libs/parser/CMakeLists.txt (project(Parser VERSION ...)) and
+     * ARCHITECTURE.md, Abschnitt "Versionierung".
      * @return Version string (e.g. "1.0.0").
      */
-    static QString version() { return QStringLiteral("1.0.0"); }
+    static QString version() { return QStringLiteral(PARSER_VERSION_STRING); }
 
     /**
      * @brief Construct a Parser with its own internally owned QNetworkAccessManager.
