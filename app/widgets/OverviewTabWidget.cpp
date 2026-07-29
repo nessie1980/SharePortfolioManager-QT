@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "OverviewTabWidget.h"
+#include "GridStyle.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -178,6 +179,9 @@ QWidget* OverviewTabWidget::buildFrozenTable(
     data->setSelectionBehavior(QAbstractItemView::SelectRows);
     data->setSelectionMode(QAbstractItemView::SingleSelection);
     data->setAlternatingRowColors(true);
+    // Einheitliche App-weite Selektionsfarbe (Blau/Gelb, wie C#-Referenz) —
+    // footer bleibt unangetastet, da NoSelection (siehe unten).
+    GridStyle::applySelectionStyle(data);
     data->verticalHeader()->setVisible(false);
     data->setFrameShape(QFrame::NoFrame);
     data->horizontalHeader()->setStretchLastSection(false);

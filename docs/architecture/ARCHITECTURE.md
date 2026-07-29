@@ -1894,6 +1894,37 @@ mit leerer Unterzeile aus. Standardausrichtung ist rechtsbündig/vertikal zentri
 Tabellen explizit vor (`setFixedHeight`: Haupttabelle 38 px, Footer 34 px); der
 `sizeHint` ist damit nicht die maßgebliche Größe.
 
+@note **Bugfix Grid-Selektionsfarbe (29.07.2026, zweiter Anlauf):** Nach
+Einführung von `GridStyle::applySelectionStyle()` (siehe "GridStyle" unten)
+blieben genau die von `TwoLineDelegate` gerenderten Spalten (Kosten /
+Dividenden, Preis, Vortag, Aktuelle Entwicklung, Einzahlung / Marktwert,
+Komplette Entwicklung, Kpl. Einzahlung / Kpl. Marktwert) bei Zeilen-Selektion
+uneingefärbt, während alle einzeiligen Spalten korrekt blau/gelb erschienen.
+
+Erster Fixversuch (`opt.widget->style()` statt `QApplication::style()` für
+`drawControl()`, analog zu Qt's eigenem `QStyledItemDelegate::paint()`) traf
+zwar denselben Style-Objekt-Pfad wie die einzeiligen Spalten, löste das
+Problem aber nicht: Qt spiegelt eine per Stylesheet gesetzte
+`item:selected { color: ...; background-color: ...; }`-Regel nicht in eine
+über `QPalette` abfragbare Farbe zurück — `pal.color(QPalette::
+HighlightedText)` lieferte weiterhin die alte System-Highlight-Farbe (meist
+Weiß) statt Gelb, nur der Hintergrund näherte sich zufällig dem
+System-Standard-Blau an, wodurch der Unterschied optisch kaum auffiel
+("nichts geändert").
+
+Endgültiger Fix: `TwoLineDelegate::paint()` fragt bei Selektion nicht mehr
+Style/Palette ab, sondern verwendet direkt `GridStyle::kSelectionBackground`/
+`kSelectionForeground` (`painter->fillRect()` für den Hintergrund, direkte
+Stiftfarbe für beide Textzeilen) — dieselben Konstanten, die auch
+`table->setStyleSheet()` setzt. Damit ist die Farbe garantiert identisch zum
+Rest der Zeile, unabhängig von Qt's QSS-zu-Palette-Übersetzung. Die bei
+Selektion bisher Vorrang genießende explizite `TopColor`/`BottomColor`
+(Grün/Rot bei Gewinn/Verlust) wird bei Selektion jetzt konsequent von der
+Selektionsfarbe überschrieben, nicht umgekehrt.
+
+Betrifft ausschließlich `MainWindow` (Depotwert-/Marktwert-Haupttabellen) —
+die Editier-Dialoge/`ViewShareDetails` nutzen `TwoLineDelegate` nicht.
+
 #### CenterIconDelegate (forms/MainForm/CenterIconDelegate.h)
 
 Header-only `QStyledItemDelegate` ohne `Q_OBJECT`. Überschreibt nur
@@ -1901,6 +1932,42 @@ Header-only `QStyledItemDelegate` ohne `Q_OBJECT`. Überschreibt nur
 werden die Icons in den reinen Icon-Spalten (Icon/Status, PrevDayChart, CompleteChart)
 zentriert statt linksbündig dargestellt — angewandt auf beide Haupttabellen und beide
 Footer.
+
+#### GridStyle (widgets/GridStyle.h) — App-weite Grid-Selektionsfarbe (erledigt, 29.07.2026)
+
+Auf Nessies Vorgabe: In der C#-Referenzanwendung wird die selektierte Zeile in
+allen Grids mit blauem Hintergrund und gelber Schrift dargestellt (statt der
+Standard-Highlight-Farbe der Qt-Palette/des Systemthemes) — bisher galt das
+in der Qt-Portierung nirgends explizit, alle Tabellen nutzten die
+Palette-Highlight-Farbe des jeweiligen Themes.
+
+Header-only Helper `GridStyle::applySelectionStyle(QTableWidget*)`, analog zu
+`CenterIconDelegate`/`TwoLineDelegate` (kein `Q_OBJECT`, keine eigene `.cpp`).
+Setzt additiv (hängt an ein evtl. vorhandenes Stylesheet an, statt es zu
+überschreiben) `QTableWidget::item:selected { background-color: ...; color: ...; }`.
+Farbwerte theme-neutral gewählt, angelehnt an den Log-Farben-Fix vom
+24.07.2026 (ausreichender Kontrast auf hellem und dunklem Hintergrund, da das
+Linux-AppImage mangels Platform-Theme-Plugin immer auf die helle Palette
+zurückfällt):
+
+| Konstante | Wert | Verwendung |
+| --- | --- | --- |
+| `GridStyle::kSelectionBackground` | `#1c3f8f` | Hintergrund selektierte Zeile |
+| `GridStyle::kSelectionForeground` | `#ffd400` | Schrift selektierte Zeile |
+
+Angewandt auf alle selektierbaren Daten-Tabellen der App:
+- `MainWindow::setupCentralWidget()` — `setupTable`-Lambda, deckt beide
+  Haupttabellen (Depotwert `m_finalValueTable`, Marktwert `m_marketValueTable`) ab.
+- `OverviewTabWidget::buildFrozenTable()` — deckt automatisch alle fünf
+  Edit-Dialoge (`ViewBuyEdit`, `ViewSaleEdit`, `ViewDividendEdit`,
+  `ViewBrokerageEdit`, `ViewShareAdd`) sowie die drei Tabs in
+  `ViewShareDetails` (Gewinne/Verluste, Dividenden, Kosten) ab, da alle
+  über dieses gemeinsame Widget laufen.
+
+Bewusst NICHT angewandt auf Footer-Tabellen (Gesamt-Zeile in
+`OverviewTabWidget` sowie `m_finalValueFooter`/`m_marketValueFooter` in
+`MainWindow`) — diese haben durchgängig `QAbstractItemView::NoSelection`,
+ein Selektionsstil wäre dort wirkungslos.
 
 #### ShareCalculator (utils/ShareCalculator.h/.cpp)
 
@@ -2765,6 +2832,51 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 ---
 
 ## Erledigt / Archiv
+
+### Grid-Selektionsfarbe (Blau/Gelb) in allen Grids (erledigt, 30.07.2026)
+
+Auf Nessies Vorgabe: In der C#-Referenzanwendung wird die selektierte Zeile
+in allen Grids mit blauem Hintergrund und gelber Schrift dargestellt (siehe
+Screenshot der C#-Anwendung) — bislang nutzten alle Qt-Tabellen stattdessen
+die Standard-Highlight-Farbe der Palette/des Systemthemes, und zwar
+uneinheitlich je nach Theme/Betriebssystem.
+
+Umsetzung als zentraler, wiederverwendbarer Helper statt Duplikation an
+jeder Tabellen-Erzeugungsstelle: neuer Header-only-Helper `GridStyle`
+(`widgets/GridStyle.h`, siehe "GridStyle" unter "Darstellung (Farben, Icons,
+Zeilen)" oben) mit den theme-neutralen Konstanten
+`kSelectionBackground = #1c3f8f` / `kSelectionForeground = #ffd400`, analog
+zu `CenterIconDelegate`/`TwoLineDelegate` (kein `Q_OBJECT`, keine eigene
+`.cpp`). Angewandt auf:
+
+- Beide MainWindow-Haupttabellen (Depotwert `m_finalValueTable`, Marktwert
+  `m_marketValueTable`) in `setupCentralWidget()`.
+- `OverviewTabWidget::buildFrozenTable()` — deckt dadurch automatisch alle
+  fünf Edit-Dialoge (`ViewBuyEdit`, `ViewSaleEdit`, `ViewDividendEdit`,
+  `ViewBrokerageEdit`, `ViewShareAdd`) sowie die drei Tabs in
+  `ViewShareDetails` ab.
+
+Bewusst NICHT angewandt auf Footer-Tabellen (Gesamt-Zeile in
+`OverviewTabWidget` sowie `m_finalValueFooter`/`m_marketValueFooter`) — diese
+haben durchgängig `QAbstractItemView::NoSelection`.
+
+**Nachgezogener Bugfix (siehe "TwoLineDelegate" oben für die volle
+Analyse):** Die sieben von `TwoLineDelegate` gerenderten Spalten (Kosten /
+Dividenden, Preis, Vortag, Aktuelle Entwicklung, Einzahlung / Marktwert,
+Komplette Entwicklung, Kpl. Einzahlung / Kpl. Marktwert) blieben zunächst bei
+Selektion uneingefärbt, da Qt eine per Stylesheet gesetzte
+`item:selected`-Regel nicht in eine über `QPalette` abfragbare Farbe
+zurückspiegelt. Behoben, indem `TwoLineDelegate::paint()` bei Selektion
+direkt dieselben `GridStyle`-Konstanten referenziert statt sie indirekt über
+Style/Palette zu ermitteln. Von Nessie visuell bestätigt (30.07.2026): alle
+Grids inkl. der zuvor betroffenen Spalten färben sich jetzt korrekt ein.
+
+Testabdeckung: `tst_overviewtabwidget.cpp` prüft für Übersicht- und
+Jahres-Tabs, dass `dataTable->styleSheet()` die `GridStyle`-Konstanten
+enthält und `footerTable` sie bewusst nicht enthält (siehe TESTING.md).
+`tst_mainwindow.cpp` prüft analog beide Haupttabellen. `TwoLineDelegate`
+selbst bleibt wie zuvor ohne dedizierten Test (reine `QPainter`-Zeichenlogik
+ohne Zustands-API) — Verifikation visuell durch Nessie.
 
 ### settings.ini nicht persistent im AppImage — Bugfix (29.07.2026)
 

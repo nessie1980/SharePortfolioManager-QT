@@ -1087,6 +1087,21 @@ Test. Keine Datenbank nötig.
 | `test_uebersichtRowClick_unknownYear_doesNothing` | Klick auf eine künstliche Zeile mit einem nicht vorhandenen Jahr | `currentIndex()` bleibt unverändert |
 | `test_clear_removesAllTabsAndResetsCount` | `clear()` nach `populateOverview()` | `count()` = 0, beide `QTabBar`s leer |
 | `test_populateOverview_calledTwice_replacesOldTabs` | Zweiter `populateOverview()`-Aufruf mit nur einem Jahr | `count()` = 2 (nicht 3+2) — alte Tabs werden vollständig ersetzt, nicht angehängt |
+| `test_populateOverview_dataTablesHaveGridSelectionStyle` | Grid-Selektionsfarbe (Feature 29.07.2026) | `dataTable->styleSheet()` jedes Tabs (Übersicht + Jahre) enthält `GridStyle::kSelectionBackground` und `kSelectionForeground` |
+| `test_populateOverview_footerTableHasNoGridSelectionStyle` | footerTable ist `NoSelection` | `footerTable->styleSheet()` enthält die Selektionsfarbe NICHT |
+
+**Grid-Selektionsfarbe (ergänzt 29.07.2026, siehe ARCHITECTURE.md,
+"GridStyle — App-weite Grid-Selektionsfarbe"):** `OverviewTabWidget` deckt
+über `buildFrozenTable()` automatisch alle fünf Edit-Dialoge sowie
+`ViewShareDetails` ab, daher genügen die beiden Tests oben für den gesamten
+Dialog-Bereich der App. Für die zwei Haupttabellen in `MainWindow`
+(Depotwert/Marktwert) existieren die analogen Tests
+`test_mainWindow_portfolioTables_haveGridSelectionStyle` und
+`test_mainWindow_portfolioFooters_haveNoGridSelectionStyle` in
+`tst_mainwindow.cpp` (prüfen `m_finalValueTable`/`m_marketValueTable` auf
+dieselben `GridStyle`-Konstanten bzw. die beiden Footer-Tabellen explizit auf
+deren Abwesenheit, da nicht selektierbar — kein Seeding nötig, der Stil wird
+unabhängig von Daten bereits in `setupCentralWidget()` gesetzt).
 
 `rowActivatedWithDocument()` / `documentActivated()` (ergänzt 19.07.2026,
 siehe ARCHITECTURE.md, "ShareDetailsForm: Dokument-Vorschau per Zeilenauswahl
@@ -1770,6 +1785,17 @@ Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
 
 `TwoLineDelegate` und `CenterIconDelegate` sind Header-only ohne `Q_OBJECT` —
 kein eigenständiger Test nötig.
+
+@note **Bugfix Grid-Selektionsfarbe (29.07.2026, siehe ARCHITECTURE.md,
+"TwoLineDelegate"):** Ein erster Fixversuch in `TwoLineDelegate::paint()`
+(`opt.widget->style()` statt `QApplication::style()`) reichte nicht aus, da
+Qt eine per Stylesheet gesetzte `item:selected`-Farbe nicht in eine über
+`QPalette` abfragbare Farbe zurückspiegelt. Endgültiger Fix verwendet bei
+Selektion direkt `GridStyle::kSelectionBackground`/`kSelectionForeground`
+statt Style/Palette-Abfragen. Kein eigener automatisierter Test ergänzt —
+reine `QPainter`-Zeichenlogik ohne öffentliches Zustands-API, Verifikation
+weiterhin visuell durch Nessie, analog zu den übrigen Farb-Defaults dieser
+Delegates.
 
 @note **Bugfix (10.07.2026):** Rabatt (`reduction`) wurde in den Marktwert-
 Feldern (`purchaseValueMarket`, `completePurchaseMarket`, `salePayoutMarket`)

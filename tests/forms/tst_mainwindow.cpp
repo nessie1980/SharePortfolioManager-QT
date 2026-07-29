@@ -28,6 +28,7 @@
 
 #include "../../app/forms/MainForm/MainWindow.h"
 #include "../../app/forms/MainForm/TwoLineDelegate.h"  // TwoLineRole::Top/Bottom
+#include "../../app/widgets/GridStyle.h"
 #include "../../app/forms/ShareAddForm/ViewShareAdd.h"
 #include "../../app/widgets/DocumentPreviewPanel.h"
 #include "../../app/forms/ShareDetailsForm/ViewShareDetails.h"
@@ -751,6 +752,47 @@ private slots:
         MainWindow window;
         const auto* label = window.findChild<QLabel*>();
         QVERIFY(label != nullptr);
+    }
+
+    // Grid-Selektionsfarbe (Feature 29.07.2026, Nessies Vorgabe: wie im
+    // C#-Original — blauer Hintergrund/gelbe Schrift bei Selektion in allen
+    // Grids). OverviewTabWidget deckt die Edit-Dialoge und ShareDetailsForm
+    // bereits über eigene Tests ab (tst_overviewtabwidget.cpp); hier werden
+    // die beiden MainWindow-Haupttabellen selbst geprüft. Kein Seeding nötig
+    // — der Stil wird unabhängig von Daten schon in setupCentralWidget()
+    // gesetzt, die leeren Datentabellen (0 Zeilen) reichen aus.
+    void test_mainWindow_portfolioTables_haveGridSelectionStyle()
+    {
+        openMemoryDb();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl  = findFinalTable(window, 0);
+        QTableWidget* marketTbl = findMarketTable(window, 0);
+        if (!finalTbl)  QFAIL("Depotwert-Datentabelle nicht gefunden");
+        if (!marketTbl) QFAIL("Marktwert-Datentabelle nicht gefunden");
+
+        for (auto* tbl : { finalTbl, marketTbl }) {
+            QVERIFY(tbl->styleSheet().contains(GridStyle::kSelectionBackground));
+            QVERIFY(tbl->styleSheet().contains(GridStyle::kSelectionForeground));
+        }
+    }
+
+    // Die Footer-Tabellen sind nicht selektierbar (NoSelection) und bekommen
+    // daher bewusst kein Selektions-Stylesheet.
+    void test_mainWindow_portfolioFooters_haveNoGridSelectionStyle()
+    {
+        openMemoryDb();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* finalFooter  = findFinalTable(window, 3);
+        QTableWidget* marketFooter = findMarketTable(window, 3);
+        if (!finalFooter)  QFAIL("Depotwert-Footer nicht gefunden");
+        if (!marketFooter) QFAIL("Marktwert-Footer nicht gefunden");
+
+        for (auto* tbl : { finalFooter, marketFooter })
+            QVERIFY(!tbl->styleSheet().contains(GridStyle::kSelectionBackground));
     }
 
     void test_clearPortfolioTables_removesAllRows()

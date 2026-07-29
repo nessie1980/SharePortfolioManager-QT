@@ -6,6 +6,8 @@
 #include <QPainter>
 #include <QApplication>
 
+#include "../../widgets/GridStyle.h"
+
 /**
  * @brief Qt roles used to supply the two text lines and their colors.
  *
@@ -54,11 +56,36 @@ public:
                const QStyleOptionViewItem& option,
                const QModelIndex& index) const override
     {
-        // Draw selection / hover background via the style
+        // Draw selection / hover background via the style.
+        //
+        // Bugfix (29.07.2026, Nessies Vorgabe "Grid-Selektionsfarbe in allen
+        // Grids") — zweiter Anlauf: Der erste Versuch (opt.widget->style()
+        // statt QApplication::style()) traf zwar Qt's eigenen Default-Pfad
+        // (siehe QStyledItemDelegate::paint()), löste das eigentliche Problem
+        // aber nicht vollständig — Qt spiegelt eine per Stylesheet gesetzte
+        // `item:selected { color: ...; background-color: ...; }`-Regel NICHT
+        // in eine über QPalette abfragbare Farbe zurück. `pal.color(
+        // QPalette::HighlightedText)` lieferte also weiterhin die alte
+        // System-Highlight-Farbe (meist Weiß) statt unser Gelb — nur der
+        // Hintergrund näherte sich zufällig dem System-Blau an, wodurch der
+        // Unterschied kaum auffiel.
+        //
+        // Robuster: bei Selektion direkt dieselben GridStyle-Konstanten
+        // verwenden, die auch table->setStyleSheet() setzt — garantiert
+        // exakt dieselbe Farbe wie im Rest der Zeile, unabhängig von Qt's
+        // QSS-zu-Palette-Übersetzung.
+        const bool selected = option.state & QStyle::State_Selected;
+
         QStyleOptionViewItem opt = option;
         initStyleOption(&opt, index);
         opt.text.clear(); // suppress default text rendering
-        QApplication::style()->drawControl(QStyle::CE_ItemViewItem, &opt, painter);
+
+        if (selected) {
+            painter->fillRect(option.rect, QColor(GridStyle::kSelectionBackground));
+        } else {
+            QStyle* style = opt.widget ? opt.widget->style() : QApplication::style();
+            style->drawControl(QStyle::CE_ItemViewItem, &opt, painter);
+        }
 
         painter->save();
 
@@ -86,16 +113,23 @@ public:
                           + (lineHeight - fmBot.height()) / 2 + fmBot.ascent();
 
         // ── Colors ────────────────────────────────────────────────────────
-        const bool selected = option.state & QStyle::State_Selected;
         const QPalette& pal = option.palette;
 
         auto resolveColor = [&](int role, const QColor& fallback) -> QColor {
+            // Bugfix (29.07.2026, wie oben): Selektion hat immer Vorrang vor
+            // einer explizit gesetzten TopColor/BottomColor (z.B. Grün/Rot
+            // bei Gewinn/Verlust) — sonst gewinnt praktisch immer die alte
+            // Farbe, da fast jede Zelle hier eine explizite Farbe trägt und
+            // der Selektions-Fallback dadurch nie zum Zug kam. Direkt
+            // GridStyle::kSelectionForeground statt pal.color(HighlightedText)
+            // — Qt spiegelt die per Stylesheet gesetzte item:selected-Farbe
+            // nicht in die QPalette zurück, siehe Kommentar oben.
+            if (selected)
+                return QColor(GridStyle::kSelectionForeground);
             QVariant v = index.data(role);
             if (v.isValid() && v.canConvert<QColor>())
                 return v.value<QColor>();
-            return selected
-                ? pal.color(QPalette::HighlightedText)
-                : fallback;
+            return fallback;
         };
 
         const QColor topColor = resolveColor(
@@ -104,8 +138,7 @@ public:
 
         const QColor bottomColor = resolveColor(
             TwoLineRole::BottomColor,
-            selected ? pal.color(QPalette::HighlightedText)
-                     : pal.color(QPalette::PlaceholderText));
+            pal.color(QPalette::PlaceholderText));
 
         // ── Alignment ─────────────────────────────────────────────────────
         const int alignFlags = index.data(Qt::TextAlignmentRole).isValid()

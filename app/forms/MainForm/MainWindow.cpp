@@ -18,6 +18,7 @@
 #include "../../utils/ShareCalculator.h"
 #include "../../utils/DocumentClassifier.h"
 #include "../../IconProvider.h"
+#include "../../widgets/GridStyle.h"
 
 // ── Direkte Dokumentenerfassung (Drag+Drop, Feature 27.07.2026) ───────────────
 // Full presenter headers (not just the forward-declared View headers) are
@@ -341,6 +342,10 @@ void MainWindow::setupCentralWidget()
         tbl->setSortingEnabled(false); // disabled while inserting; enabled after load
         tbl->setShowGrid(true);
         tbl->setIconSize(QSize(24, 24)); // development arrows ship as 24px PNGs
+        // Einheitliche App-weite Selektionsfarbe (Blau/Gelb, wie C#-Referenz);
+        // derselbe Helper wird von OverviewTabWidget für alle Edit-Dialoge und
+        // ShareDetailsForm verwendet, siehe GridStyle.h.
+        GridStyle::applySelectionStyle(tbl);
     };
 
     auto setupFooter = [](QTableWidget* tbl) {
