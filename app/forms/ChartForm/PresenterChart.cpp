@@ -68,6 +68,15 @@ double valueForKind(const DailyValuesObject& dv, SeriesKind kind)
     return 0.0;
 }
 
+/** Farbe für Käufe/Verkäufe, die NICHT der jeweils global letzte sind —
+ *  gemeinsam verwendet von den "Ältere Käufe"/"Ältere Verkäufe"-Legende-
+ *  Einträgen und den türkisen/orangen Kauf-/Verkauf-Markerlinien im Chart
+ *  (ergänzt 30.07.2026, auf Nessies Vorgabe — siehe ARCHITECTURE.md,
+ *  "ChartForm-Details"), damit beide Stellen garantiert dieselbe Farbe
+ *  verwenden statt zweier unabhängiger magischer QColor-Werte. */
+const QColor kOlderBuyColor(0, 170, 170);
+const QColor kOlderSaleColor(255, 140, 0);
+
 } // namespace
 
 // ── Constructor ───────────────────────────────────────────────────────────────
@@ -226,24 +235,60 @@ void PresenterChart::refresh()
     const ChartReferenceInfo latestBuyInfo  = m_model->latestBuy(m_shareGuid);
     const ChartReferenceInfo latestSaleInfo = m_model->latestSale(m_shareGuid);
 
-    addReferenceEntry(tr("Letzter Kauf:"),    latestBuyInfo,  Qt::blue);
+    // Einmal abgefragt und für die Legende-Kategorie-Entscheidung UND die
+    // Markerlinien weiter unten wiederverwendet, statt den Model zweimal mit
+    // derselben Spanne zu befragen.
+    const auto buysInRange  = m_model->buysInRange(m_shareGuid, rangeStart, rangeEnd);
+    const auto salesInRange = m_model->salesInRange(m_shareGuid, rangeStart, rangeEnd);
+
+    const bool hasOlderBuyInRange = std::any_of(buysInRange.cbegin(), buysInRange.cend(),
+        [&](const ChartReferenceInfo& buy) {
+            return !(latestBuyInfo.valid && buy.date == latestBuyInfo.date);
+        });
+    const bool hasOlderSaleInRange = std::any_of(salesInRange.cbegin(), salesInRange.cend(),
+        [&](const ChartReferenceInfo& sale) {
+            return !(latestSaleInfo.valid && sale.date == latestSaleInfo.date);
+        });
+
+    // ── "Ältere Käufe" / "Ältere Verkäufe" Legende-Einträge ──────────────────
+    // Nur Farbe + Bezeichnung, kein line1/line2 (ergänzt 30.07.2026, auf
+    // Nessies Vorgabe, portiert vom C#-Referenz-Verhalten — siehe
+    // ARCHITECTURE.md, "ChartForm-Details"). Erscheint nur, sobald mindestens
+    // ein Kauf/Verkauf im aktuell angezeigten Zeitraum liegt, der NICHT der
+    // global letzte ist — z. B. weil der Nutzer die Zeitspanne vergrößert
+    // hat und dadurch ältere Käufe/Verkäufe erstmals im Graphen auftauchen.
+    auto addCategoryEntry = [&](const QString& title, const QColor& color) {
+        LegendEntry entry;
+        entry.color = color;
+        entry.title = title;
+        legend.append(entry);
+    };
+
+    addReferenceEntry(tr("Letzter Kauf:"), latestBuyInfo, Qt::blue);
+    if (hasOlderBuyInRange)
+        addCategoryEntry(tr("Ältere Käufe"), kOlderBuyColor);
+
     addReferenceEntry(tr("Letzter Verkauf:"), latestSaleInfo, Qt::red);
+    if (hasOlderSaleInRange)
+        addCategoryEntry(tr("Ältere Verkäufe"), kOlderSaleColor);
 
     // ── Vertikale Kauf-/Verkauf-Markerlinien im Chart ─────────────────────────
     // Ported from the C# reference: jeder Kauf/Verkauf im angezeigten
     // Zeitraum bekommt eine vertikale Linie über die Preis-Achse. Der jeweils
     // global letzte Kauf/Verkauf (dieselbe Definition wie "Letzter Kauf"/
     // "Letzter Verkauf" oben) ist dunkelblau bzw. rot, ältere im Zeitraum
-    // liegende Käufe/Verkäufe türkis bzw. orange.
+    // liegende Käufe/Verkäufe türkis bzw. orange — dieselben Farben wie die
+    // "Ältere Käufe"/"Ältere Verkäufe"-Legende-Einträge oben (kOlderBuyColor/
+    // kOlderSaleColor).
     QList<ChartReferenceLine> referenceLines;
-    for (const auto& buy : m_model->buysInRange(m_shareGuid, rangeStart, rangeEnd)) {
+    for (const auto& buy : buysInRange) {
         const bool isLatest = latestBuyInfo.valid && buy.date == latestBuyInfo.date;
-        referenceLines.append({ buy.date, isLatest ? Qt::blue : QColor(0, 170, 170),
+        referenceLines.append({ buy.date, isLatest ? Qt::blue : kOlderBuyColor,
                                  ChartReferenceLineKind::Buy, buy.price, buy.volume });
     }
-    for (const auto& sale : m_model->salesInRange(m_shareGuid, rangeStart, rangeEnd)) {
+    for (const auto& sale : salesInRange) {
         const bool isLatest = latestSaleInfo.valid && sale.date == latestSaleInfo.date;
-        referenceLines.append({ sale.date, isLatest ? Qt::red : QColor(255, 140, 0),
+        referenceLines.append({ sale.date, isLatest ? Qt::red : kOlderSaleColor,
                                  ChartReferenceLineKind::Sale, sale.price, sale.volume });
     }
 

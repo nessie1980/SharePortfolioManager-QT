@@ -521,6 +521,98 @@ private slots:
         QCOMPARE(latest->price, 410.0);
     }
 
+    void test_refresh_legendEntries_olderBuyInRange_addsAltereKaeufeEntry()
+    {
+        // Ergänzt 30.07.2026, auf Nessies Vorgabe: sobald ein Kauf im
+        // angezeigten Zeitraum liegt, der NICHT der global letzte ist (z. B.
+        // weil der Nutzer die Zeitspanne vergrößert hat), soll die Legende um
+        // einen reinen Farbe+Bezeichnung-Eintrag "Ältere Käufe" ergänzt
+        // werden — dieselbe Türkis-Farbe wie die Markerlinie.
+        FakeViewChart view;
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 100.0, 422.4, 106.0, 99.0, 1000.0));
+        model.m_latestBuy = ChartReferenceInfo{ true, QDate(2026, 7, 5), 400.0 };
+        model.m_buysInRange = {
+            ChartReferenceInfo{ true, QDate(2026, 6, 10), 380.0, 20.0 }, // älter
+            ChartReferenceInfo{ true, QDate(2026, 7, 5),  400.0, 30.0 }, // global letzter
+        };
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        const auto* entry = view.findLegendEntry(QStringLiteral("Ältere Käufe"));
+        if (!entry) QFAIL("'Ältere Käufe'-Legende-Eintrag fehlt");
+        QCOMPARE(entry->color, QColor(0, 170, 170));
+        QVERIFY(entry->line1.isEmpty());
+        QVERIFY(entry->line2.isEmpty());
+    }
+
+    void test_refresh_legendEntries_olderSaleInRange_addsAltereVerkaeufeEntry()
+    {
+        FakeViewChart view;
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 100.0, 422.4, 106.0, 99.0, 1000.0));
+        model.m_latestSale = ChartReferenceInfo{ true, QDate(2026, 7, 8), 410.0 };
+        model.m_salesInRange = {
+            ChartReferenceInfo{ true, QDate(2026, 6, 15), 395.0, 10.0 }, // älter
+            ChartReferenceInfo{ true, QDate(2026, 7, 8),  410.0, 15.0 }, // global letzter
+        };
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        const auto* entry = view.findLegendEntry(QStringLiteral("Ältere Verkäufe"));
+        if (!entry) QFAIL("'Ältere Verkäufe'-Legende-Eintrag fehlt");
+        QCOMPARE(entry->color, QColor(255, 140, 0));
+        QVERIFY(entry->line1.isEmpty());
+        QVERIFY(entry->line2.isEmpty());
+    }
+
+    void test_refresh_legendEntries_onlyLatestInRange_noOlderCategoryEntries()
+    {
+        // Solange nur der jeweils global letzte Kauf/Verkauf im Zeitraum
+        // liegt (kein weiterer, älterer), dürfen die Kategorie-Einträge
+        // NICHT erscheinen — sonst würde die Legende bei jedem Kauf/Verkauf
+        // fälschlich "Ältere Käufe"/"Ältere Verkäufe" mit anzeigen.
+        FakeViewChart view;
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 100.0, 422.4, 106.0, 99.0, 1000.0));
+        model.m_latestBuy  = ChartReferenceInfo{ true, QDate(2026, 7, 5), 400.0 };
+        model.m_latestSale = ChartReferenceInfo{ true, QDate(2026, 7, 8), 410.0 };
+        model.m_buysInRange  = { ChartReferenceInfo{ true, QDate(2026, 7, 5), 400.0, 30.0 } };
+        model.m_salesInRange = { ChartReferenceInfo{ true, QDate(2026, 7, 8), 410.0, 15.0 } };
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        QVERIFY(!view.findLegendEntry(QStringLiteral("Ältere Käufe")));
+        QVERIFY(!view.findLegendEntry(QStringLiteral("Ältere Verkäufe")));
+    }
+
+    void test_refresh_legendEntries_olderBuyEntry_evenWithoutValidLatestBuy()
+    {
+        // Kein globaler "letzter Kauf" vorhanden (m_latestBuy bleibt invalid),
+        // aber Käufe liegen im Zeitraum -> jeder davon gilt als "älter"
+        // (dieselbe Logik wie bei den Markerlinien: isLatest ist ohne
+        // gültiges latestBuyInfo immer false). Die Legende soll den
+        // Kategorie-Eintrag trotzdem zeigen, aber KEINEN "Letzter Kauf:"-
+        // Eintrag (siehe test_refresh_noReferenceEntries_whenModelReturnsInvalid).
+        FakeViewChart view;
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 100.0, 422.4, 106.0, 99.0, 1000.0));
+        model.m_buysInRange = { ChartReferenceInfo{ true, QDate(2026, 6, 10), 380.0, 20.0 } };
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        QVERIFY(!view.findLegendEntry(QStringLiteral("Letzter Kauf")));
+        QVERIFY(view.findLegendEntry(QStringLiteral("Ältere Käufe")));
+    }
+
     void test_refresh_referenceLines_onlyDatesWithinComputedRange()
     {
         // Die Referenzlinien muessen exakt denselben berechneten Zeitraum

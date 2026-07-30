@@ -67,8 +67,11 @@ enum class IntervalUnit { Day, Week, Month, Year };
 struct LegendEntry
 {
     QColor  color;
-    QString title;  ///< e.g. "Schluss-Kurs(€)" or "Letzter Kauf:"
-    QString line1;  ///< e.g. "Min: 379,7 / Max: 422,4" or "12.05.2022: 198,36€"
+    QString title;  ///< e.g. "Schluss-Kurs(€)", "Letzter Kauf:" or "Ältere Käufe"
+    QString line1;  ///< e.g. "Min: 379,7 / Max: 422,4" or "12.05.2022: 198,36€" — bleibt
+                     ///< leer für reine Farbe+Bezeichnung-Einträge wie "Ältere Käufe"/
+                     ///< "Ältere Verkäufe" (ergänzt 30.07.2026), ViewChart rendert dann
+                     ///< keine zweite Zeile.
     QString line2;  ///< e.g. "" or "422,4€ - 198,36€ = 224,04€ (112,95 %)"
 };
 

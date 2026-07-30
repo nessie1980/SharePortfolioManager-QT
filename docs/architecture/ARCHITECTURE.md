@@ -1590,9 +1590,25 @@ Bedarf später verfeinerbar):
   (dort teils 1 Nachkommastelle).
 - Legende-Titeltext für "Letzter Kauf"/"Letzter Verkauf" ist in der
   Swatch-Farbe (Blau/Rot) statt wie im Referenz-Screenshot grün.
-- Keine eigenen Legende-Einträge für "ältere Käufe"/"ältere Verkäufe"
-  (Türkis/Orange) — nur die Linien selbst im Chart, die Legende zeigt
-  weiterhin nur den jeweils letzten Kauf/Verkauf.
+
+@note **"Ältere Käufe"/"Ältere Verkäufe"-Legende-Einträge (ergänzt
+30.07.2026, auf Nessies Vorgabe, portiert vom C#-Referenz-Verhalten):** Die
+Legende wird um reine Farbe+Bezeichnung-Einträge "Ältere Käufe" (Türkis,
+`kOlderBuyColor` = `QColor(0, 170, 170)`) und "Ältere Verkäufe" (Orange,
+`kOlderSaleColor` = `QColor(255, 140, 0)`) ergänzt, sobald mindestens ein
+Kauf bzw. Verkauf im aktuell angezeigten Zeitraum liegt, der NICHT der
+global letzte ist — z. B. weil der Nutzer die Zeitspanne vergrößert hat und
+dadurch ältere Käufe/Verkäufe erstmals im Graphen auftauchen. Dieselbe
+Bedingung (`!isLatest`), die auch die türkise/orange Markerlinie auslöst;
+beide Stellen verwenden dieselben benannten Farbkonstanten in
+`PresenterChart.cpp`, statt zweier unabhängiger magischer `QColor`-Werte.
+`LegendEntry::line1`/`line2` bleiben bei diesen beiden Einträgen leer —
+`ViewChart::setLegendEntries()` rendert dann nur `<b>Titel</b>` ohne
+zusätzliche Zeilen, dasselbe Rich-Text-Label wie bei den übrigen Einträgen.
+`buysInRange()`/`salesInRange()` werden dafür in `PresenterChart::refresh()`
+nur noch je einmal aufgerufen und für sowohl die Kategorie-Entscheidung als
+auch den Aufbau der Markerlinien wiederverwendet (vorher zwei getrennte,
+identische Model-Aufrufe).
 
 Tests (`tst_chartform`): Fake-View/Fake-Model-Paar (analog
 `tst_sharedetailsform`) — kein `QWidget`, keine Qt-Charts-Instanziierung,
