@@ -44,13 +44,27 @@ class QWheelEvent;
  * Pure MVP View: no repository access, no formatting/business logic. All
  * data arrives already formatted via IViewChart, computed by PresenterChart
  * from ModelChart.
+ *
+ * @note **Compact-Modus (ergänzt 31.07.2026, für ChartPopup — siehe
+ * ARCHITECTURE.md, "ChartPopup — Rechtsklick-Popup-Chart"):** Der optionale
+ * @p compact-Konstruktor-Parameter blendet die "Selektion:"-Box (Serien-
+ * Checkboxen + Start-Datum/Interval/Anzahl-Formular) aus dem sichtbaren
+ * Layout aus — nur Chart + "Legende"-Box bleiben sichtbar, wie im
+ * C#-Referenz-Popup (`FrmChart`). Die ausgeblendeten Widgets werden trotzdem
+ * ganz normal angelegt (nur eben nie ins Layout eingehängt) — alle
+ * IViewChart-Getter sowie die bestehende Mausrad-Steuerung auf m_countSpin
+ * (siehe eventFilter()/applyWheelStep()) funktionieren dadurch unverändert,
+ * ganz ohne Sonderfall-Code in PresenterChart. Da im Compact-Modus ohnehin
+ * nur die Default-Checkbox (ClosingPrice) angehakt ist und nie umgeschaltet
+ * werden kann, zeigt der Chart wie in der C#-Referenz immer nur die
+ * Schluss-Kurs-Serie (+ Kauf-/Verkauf-Markerlinien).
  */
 class ViewChart : public QWidget, public IViewChart
 {
     Q_OBJECT
 
 public:
-    explicit ViewChart(const QString& shareGuid, QWidget* parent = nullptr);
+    explicit ViewChart(const QString& shareGuid, bool compact = false, QWidget* parent = nullptr);
     ~ViewChart() override = default;
 
     // ── IViewChart: getters (read by the Presenter) ─────────────────────────
@@ -68,6 +82,19 @@ public:
     void setReferenceLines(const QList<ChartReferenceLine>& lines) override;
     void setRangeInfo(const QString& infoText) override;
     void showError(const QString& message) override;
+
+    /**
+     * @brief Letzter per setRangeInfo() gesetzter Text ("Zeitraum: ... /
+     * Entwicklung: ..." bzw. leerer String ohne Daten) — ergänzt 31.07.2026
+     * für ChartPopup. Kein Teil von IViewChart (reiner ViewChart-Getter):
+     * ChartPopup verbindet sich erst NACH der Konstruktion mit
+     * titleInfoChanged() (siehe ChartPopup.cpp) und würde die bereits im
+     * Konstruktor (PresenterChart::loadAndDisplay()) gefeuerte erste
+     * Emission sonst verpassen — derselbe Effekt, den ViewShareDetails über
+     * setHeaderName() umgeht (siehe ARCHITECTURE.md, "ChartPopup —
+     * Rechtsklick-Popup-Chart").
+     */
+    QString rangeInfo() const { return m_lastRangeInfo; }
 
     /**
      * @brief Routes Mausrad-Events auf m_countSpin (unabhängig vom Fokus-
@@ -138,6 +165,7 @@ private:
     // ── MVP wiring ────────────────────────────────────────────────────────
     ModelChart     m_model;
     PresenterChart m_presenter;
+    bool           m_compact = false; ///< siehe Klassendoku "Compact-Modus"
 
     // ── Chart ─────────────────────────────────────────────────────────────
     QStackedWidget* m_stack     = nullptr; ///< index 0 = chart, index 1 = empty-state label
@@ -158,6 +186,7 @@ private:
 
     // ── Legende box (rebuilt on every refresh) ───────────────────────────────
     QVBoxLayout* m_legendLayout = nullptr;
+    QString      m_lastRangeInfo; ///< siehe rangeInfo()
 
     // ── Selektion box ─────────────────────────────────────────────────────
     QMap<SeriesKind, QCheckBox*> m_seriesCheckBoxes;

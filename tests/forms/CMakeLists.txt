@@ -54,6 +54,8 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/forms/ChartForm/PresenterChart.cpp
     ../../app/forms/ChartForm/ViewChart.h
     ../../app/forms/ChartForm/ViewChart.cpp
+    ../../app/forms/ChartForm/ChartPopup.h
+    ../../app/forms/ChartForm/ChartPopup.cpp
     ../../app/forms/BuysForm/IViewBuyEdit.h
     ../../app/forms/BuysForm/IModelBuyEdit.h
     ../../app/forms/BuysForm/ModelBuyEdit.h

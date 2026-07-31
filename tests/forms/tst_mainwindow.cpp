@@ -18,6 +18,7 @@
 #include <QSpinBox>
 #include <QCheckBox>
 #include <QWheelEvent>
+#include <QScreen>
 #include <QComboBox>
 #include <QMenuBar>
 #include <QSqlQuery>
@@ -32,6 +33,8 @@
 #include "../../app/forms/ShareAddForm/ViewShareAdd.h"
 #include "../../app/widgets/DocumentPreviewPanel.h"
 #include "../../app/forms/ShareDetailsForm/ViewShareDetails.h"
+#include "../../app/forms/ChartForm/ChartPopup.h"
+#include "../../app/forms/ChartForm/ViewChart.h"
 #include "../../app/forms/ShareAddForm/ModelShareAdd.h"
 #include "../../app/forms/ShareAddForm/IViewShareAdd.h"
 #include "../../app/forms/ShareAddForm/IModelShareAdd.h"
@@ -4389,6 +4392,159 @@ private slots:
                                   Q_ARG(QTableWidgetItem*, item));
 
         QVERIFY(true); // No crash, no modal dialog opened.
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // MainWindow — onPortfolioRowRightClicked (ChartPopup, Feature 31.07.2026)
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // Same convention as onPortfolioRowDoubleClicked() above: only the
+    // early-return guard paths (no item at the click position / empty GUID)
+    // are covered directly here. Unlike ViewShareDetails::exec(), ChartPopup's
+    // showAt() is non-blocking (show(), not exec()) — the full happy path
+    // (valid GUID) is instead covered separately below via a direct
+    // ChartPopup construction (test_chartPopup_validShare_constructsWithChartChild),
+    // without going through the slot's showAt()/positioning, to avoid
+    // depending on real on-screen window/cursor behavior in a headless test run.
+    //
+    // The slot reads its triggering table via sender() (see
+    // MainWindow::onPortfolioRowRightClicked() — necessary because, unlike
+    // the double-click handler, customContextMenuRequested() only supplies
+    // a QPoint, not a QTableWidgetItem to derive the table from). That means
+    // the signal must be genuinely emitted here — a plain call to the
+    // generated signal function — rather than routed through
+    // QMetaObject::invokeMethod() directly on the slot, which would leave
+    // sender() == nullptr and trivially pass every guard without exercising
+    // the itemAt()/GUID logic at all.
+
+    void test_onPortfolioRowRightClicked_noItemAtPos_doesNotCrash()
+    {
+        openMemoryDb();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* tbl = findFinalTable(window, 0); // empty data table, no rows
+        if (!tbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+
+        tbl->customContextMenuRequested(QPoint(5, 5)); // no row at this position
+
+        QVERIFY(true); // Reaching this line without a crash is the assertion.
+    }
+
+    void test_onPortfolioRowRightClicked_emptyGuid_doesNotCrash()
+    {
+        seedDepotwertPortfolio();
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* tbl = findFinalTable(window, 1); // data table, 1 share row
+        if (!tbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+
+        QTableWidgetItem* item = tbl->item(0, 0); // WKN cell, column 0
+        if (!item) QFAIL("WKN-Zelle fehlt");
+
+        // Blank the GUID on an otherwise-valid row — same rationale as
+        // test_onPortfolioRowDoubleClicked_emptyGuid_doesNotCrash() above.
+        item->setData(Qt::UserRole, QString());
+
+        const QPoint pos = tbl->visualItemRect(item).center();
+        tbl->customContextMenuRequested(pos);
+
+        QVERIFY(true); // No crash, no popup opened.
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ChartPopup — direct construction (no show()/showAt(), same rationale as
+    // test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText()
+    // below — exercises the real MVP wiring (ModelChart/PresenterChart/
+    // compact ViewChart) without opening an actual on-screen window).
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_chartPopup_validShare_constructsWithChartChild()
+    {
+        const QString shareGuid = insertTestShare();
+
+        ChartPopup popup(shareGuid, QStringLiteral("Test AG")); // insertTestShare()'s share name
+
+        auto* chart = popup.findChild<ViewChart*>(QStringLiteral("ViewChart"));
+        if (!chart) QFAIL("ViewChart-Kindwidget nicht gefunden");
+
+        // Compact-Modus (siehe ViewChart::setupUi()): die "Selektion:"-Box
+        // wird weiterhin angelegt (Getter/Mausrad-Steuerung bleiben
+        // funktionsfähig), aber explizit versteckt statt ins Layout gehängt.
+        // isHidden() (statt isVisible()) prüft genau das, unabhängig davon,
+        // dass popup selbst hier nie show()n wird.
+        auto* selektionBox = popup.findChild<QGroupBox*>(QStringLiteral("selektionBox"));
+        if (!selektionBox) QFAIL("selektionBox nicht gefunden");
+        QVERIFY(selektionBox->isHidden());
+
+        // Überschrift (ergänzt 31.07.2026, Nessies Rückmeldung "Was auch
+        // fehlt ist die Überschrift mit Informationen!") — der Aktienname
+        // muss unabhängig vom (im headless Testlauf ggf. leeren)
+        // Zeitraum-Text sofort nach der Konstruktion sichtbar sein (siehe
+        // ViewChart::rangeInfo()-Nachhol-Mechanismus in ChartPopup.cpp).
+        auto* header = popup.findChild<QLabel*>(QStringLiteral("chartPopupHeader"));
+        if (!header) QFAIL("chartPopupHeader nicht gefunden");
+        QVERIFY(header->text().contains(QStringLiteral("Test AG")));
+    }
+
+    // Regressionstest für Nessies Rückmeldungen (31.07.2026): das Popup soll
+    // horizontal zentriert zum Hauptfenster ausgerichtet sein, mit
+    // Hauptfensterbreite − 50px als Popup-Breite (Nessies Vereinfachung der
+    // vorherigen 2×5px+50px-Rechnung — bei zentrierter Ausrichtung
+    // gleichbedeutend mit 25px Rand auf jeder Seite).
+    // MainWindow::onPortfolioRowRightClicked() erzeugt ChartPopup ohne Owner
+    // (siehe ARCHITECTURE.md, "ChartPopup") — gesucht wird es daher über
+    // QApplication::topLevelWidgets() statt über window.findChildren(), da
+    // es kein Kind-Widget von MainWindow ist.
+    void test_onPortfolioRowRightClicked_validGuid_popupCenteredAndNarrowerThanMainWindow()
+    {
+        seedDepotwertPortfolio();
+        MainWindow window;
+
+        // Fenstergröße/-position bewusst von der verfügbaren Bildschirmgeometrie
+        // abgeleitet statt fest auf 900×600 — verhindert, dass ChartPopup::
+        // showAt()'s Bildschirmrand-Klemmung (siehe ChartPopup.cpp) die exakte
+        // Zentrierungs-Prüfung unten in einer kleineren (z. B. Offscreen-)
+        // Testumgebung verfälscht: Fenster UND Popup bleiben so garantiert
+        // vollständig innerhalb der verfügbaren Bildschirmfläche.
+        const QRect screenGeom = QGuiApplication::primaryScreen()->availableGeometry();
+        const int winWidth = qBound(300, screenGeom.width() - 100, 900);
+        window.resize(winWidth, 500);
+        window.move(screenGeom.left() + 10, screenGeom.top() + 10);
+        window.show();
+        QApplication::processEvents();
+
+        QTableWidget* tbl = findFinalTable(window, 1); // data table, 1 share row
+        if (!tbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+
+        QTableWidgetItem* item = tbl->item(0, 0);
+        if (!item) QFAIL("WKN-Zelle fehlt");
+
+        const QPoint pos = tbl->visualItemRect(item).center();
+        tbl->customContextMenuRequested(pos);
+        QApplication::processEvents();
+
+        ChartPopup* popup = nullptr;
+        for (auto* w : QApplication::topLevelWidgets()) {
+            popup = qobject_cast<ChartPopup*>(w);
+            if (popup) break;
+        }
+        if (!popup) QFAIL("ChartPopup wurde nicht erzeugt");
+
+        // Breite: Hauptfensterbreite − 50px (siehe MainWindow::
+        // onPortfolioRowRightClicked()).
+        QCOMPARE(popup->width(), window.width() - 50);
+
+        // Horizontal zentriert zum Hauptfenster — beide Mittelpunkte
+        // (Popup-x + halbe Popup-Breite bzw. Hauptfenster-x + halbe
+        // Hauptfensterbreite, jeweils in globalen Bildschirmkoordinaten)
+        // müssen übereinstimmen.
+        const int popupCenterX      = popup->x() + popup->width() / 2;
+        const int mainWindowCenterX = window.mapToGlobal(QPoint(window.width() / 2, 0)).x();
+        QCOMPARE(popupCenterX, mainWindowCenterX);
+
+        popup->close(); // Aufräumen — Qt::WA_DeleteOnClose plant die Zerstörung per deleteLater()
     }
 
     // ─────────────────────────────────────────────────────────────────────

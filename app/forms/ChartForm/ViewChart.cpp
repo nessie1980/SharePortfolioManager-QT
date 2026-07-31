@@ -49,9 +49,10 @@ bool isVolumeSeriesKind(SeriesKind kind)
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
-ViewChart::ViewChart(const QString& shareGuid, QWidget* parent)
+ViewChart::ViewChart(const QString& shareGuid, bool compact, QWidget* parent)
     : QWidget(parent)
     , m_presenter(this, &m_model, shareGuid)
+    , m_compact(compact)
 {
     setObjectName(QStringLiteral("ViewChart"));
     setupUi();
@@ -133,7 +134,21 @@ void ViewChart::setupUi()
     auto* rightLayout = new QVBoxLayout(rightContent);
     rightLayout->setContentsMargins(0, 0, 4, 0);
     rightLayout->addWidget(setupLegendeBox());
-    rightLayout->addWidget(setupSelektionBox());
+
+    // setupSelektionBox() wird immer aufgerufen (legt m_seriesCheckBoxes,
+    // m_startDateEdit, m_intervalCombo, m_countSpin an — von den
+    // IViewChart-Gettern und der Mausrad-Steuerung auf m_countSpin
+    // benötigt, siehe eventFilter()), im Compact-Modus aber nicht ins
+    // sichtbare Layout gehängt: dann bleibt nur die Legende-Box sichtbar,
+    // wie im C#-Referenz-Popup (ergänzt 31.07.2026, siehe Klassendoku
+    // "Compact-Modus" und ARCHITECTURE.md, "ChartPopup").
+    QGroupBox* selektionBox = setupSelektionBox();
+    if (!m_compact) {
+        rightLayout->addWidget(selektionBox);
+    } else {
+        selektionBox->setParent(this);
+        selektionBox->hide();
+    }
     rightLayout->addStretch(1);
 
     auto* rightScroll = new QScrollArea();
@@ -146,8 +161,10 @@ void ViewChart::setupUi()
     // setMaximumWidth()) — nach 520px (zu breit, Nessies Rückmeldung
     // 12.07.2026: "viel zu breit") wieder auf ein moderateres Maß reduziert,
     // das die längste Legende-Zeile noch einzeilig zeigt, ohne unnötig viel
-    // Leerraum rechts vom Text zu lassen.
-    rightScroll->setFixedWidth(380); // 360 Inhaltsbreite + Platz für die Scrollbar
+    // Leerraum rechts vom Text zu lassen. Im Compact-Modus genügt eine
+    // schmalere Breite, da nur noch die Legende-Box Platz braucht (ergänzt
+    // 31.07.2026).
+    rightScroll->setFixedWidth(m_compact ? 260 : 380); // 360 Inhaltsbreite + Platz für die Scrollbar
     mainLayout->addWidget(rightScroll);
 
     // ── Mausrad-Steuerung der "Anzahl" ───────────────────────────────────────
@@ -468,6 +485,7 @@ void ViewChart::setReferenceLines(const QList<ChartReferenceLine>& lines)
 
 void ViewChart::setRangeInfo(const QString& infoText)
 {
+    m_lastRangeInfo = infoText;
     emit titleInfoChanged(infoText);
 }
 

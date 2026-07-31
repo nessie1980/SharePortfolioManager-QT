@@ -405,6 +405,10 @@ Methode von `MainWindow` ist und dessen volle Konstruktion braucht.
 | `test_onPortfolioRowDoubleClicked_nullItem_doesNotCrash` | Doppelklick-Slot mit `item == nullptr` | Kein Absturz |
 | `test_onPortfolioRowDoubleClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole) | Kein Absturz, kein modaler Dialog |
 | `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText` | `ViewShareDetails` direkt konstruiert | `hasValidShare()` = true, Fenstertitel = Aktienname, Close-Button = "Schließen" |
+| `test_onPortfolioRowRightClicked_noItemAtPos_doesNotCrash` | `customContextMenuRequested()` mit Position ohne Zeile (leere Datentabelle) | Kein Absturz, kein Popup |
+| `test_onPortfolioRowRightClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole), Rechtsklick-Signal genuinely emittiert (nicht per `invokeMethod` direkt auf den Slot, siehe TESTING.md-Detailabschnitt) | Kein Absturz, kein Popup |
+| `test_chartPopup_validShare_constructsWithChartChild` | `ChartPopup` direkt konstruiert (kein `show()`/`showAt()`) | Enthält ein `ViewChart`-Kindwidget; dessen `selektionBox` ist `isHidden() == true` (Compact-Modus); `chartPopupHeader`-Label enthält den Aktiennamen |
+| `test_onPortfolioRowRightClicked_validGuid_popupCenteredAndNarrowerThanMainWindow` | Echter Rechtsklick auf gültige Zeile, `MainWindow` bildschirmgeometrie-bewusst positioniert/dimensioniert | Erzeugtes `ChartPopup` (gefunden über `QApplication::topLevelWidgets()`) hat `width() == window.width() - 50` und ist horizontal zum Hauptfenster zentriert |
 | `test_chartWheel_overCountSpinAndChartView_changesIntervalCountAndRefreshes` | Mausrad-Events (`QWheelEvent`) auf `countSpin` (ohne Fokus) und auf `chartView`-Viewport | Beide erhöhen/verringern `intervalCount()`; löst jeweils einen Refresh aus (siehe ARCHITECTURE.md, "ChartForm-Details") |
 | `test_chartCheckboxes_heldAndTradedVolumeAreMutuallyExclusive` | `seriesCheckBox_HeldVolume` per `findChild()` angehakt (ergänzt 12.07.2026, siehe ARCHITECTURE.md "ChartForm-Details") | `seriesCheckBox_TradedVolume` wird `setDisabled(true)` und bekommt einen Tooltip; nach dem Abhaken wieder `isEnabled() == true` und Tooltip leer — Prüfung erfolgt symmetrisch in beide Richtungen |
 | `test_resolveShareGuidForDocument_matchesByWkn` | WKN im Dokumenttext vorhanden, Aktie mit dieser WKN in DB | GUID der gefundenen Aktie |
@@ -1078,6 +1082,44 @@ Bewusst weiterhin **nicht** getestet: der "gültige GUID → `dlg.exec()`"-Pfad
 in `onPortfolioRowDoubleClicked()` selbst — ein echter modaler `QDialog::exec()`
 würde den (headless) Testlauf blockieren, exakt dieselbe Konvention wie bei
 `onEditShare()`/`onDeleteShare()` in derselben Datei.
+
+@note **`onPortfolioRowRightClicked()`/`ChartPopup` (ergänzt 31.07.2026,
+Feature "ChartPopup — Rechtsklick-Popup-Chart", siehe ARCHITECTURE.md):**
+Gleiche Guard-only-Konvention wie bei `onPortfolioRowDoubleClicked()` oben,
+mit einer wichtigen Abweichung: `ChartPopup::showAt()` ruft `show()`, nicht
+`exec()` — nicht-blockierend. Der "gültige GUID"-Pfad ist deshalb **nicht**
+über ein blockierendes Dialogproblem ausgeschlossen; er wird stattdessen
+bewusst über eine direkte `ChartPopup`-Konstruktion (ohne `show()`/`showAt()`)
+abgedeckt, um von echtem On-Screen-Fenster-/Cursor-Verhalten im headless
+Testlauf unabhängig zu bleiben.
+
+Wichtig für die beiden Guard-Tests: `onPortfolioRowRightClicked()` ermittelt
+die auslösende Tabelle über `sender()` (siehe ARCHITECTURE.md,
+"MainWindow-Verdrahtung" im ChartPopup-Abschnitt) — ein direkter
+`QMetaObject::invokeMethod()`-Aufruf auf den Slot (wie bei den
+`onPortfolioRowDoubleClicked()`-Tests oben) würde `sender() == nullptr`
+liefern und jeden Guard trivial bestehen lassen, ohne die
+`itemAt()`/GUID-Logik tatsächlich zu prüfen. Die Tests rufen daher das
+generierte Signal direkt auf (`tbl->customContextMenuRequested(pos)`), was
+eine echte Emission mit korrekt gesetztem `sender()` auslöst.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_onPortfolioRowRightClicked_noItemAtPos_doesNotCrash` | `customContextMenuRequested(QPoint(5,5))` auf der leeren Datentabelle (0 Zeilen) | Kein Absturz, kein Popup |
+| `test_onPortfolioRowRightClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole), Signal auf die reale Zeilenposition (`visualItemRect(item).center()`) emittiert | Kein Absturz, kein Popup |
+| `test_chartPopup_validShare_constructsWithChartChild` (erweitert 31.07.2026 um die Überschriften-Prüfung) | `ChartPopup` direkt konstruiert (kein `show()`/`showAt()`) | `findChild<ViewChart*>("ViewChart")` nicht null; dessen `findChild<QGroupBox*>("selektionBox")` ist `isHidden() == true` (Compact-Modus, siehe ARCHITECTURE.md); `findChild<QLabel*>("chartPopupHeader")` enthält den übergebenen Aktiennamen |
+| `test_onPortfolioRowRightClicked_validGuid_popupCenteredAndNarrowerThanMainWindow` (ergänzt 31.07.2026, überarbeitet nach mehreren Rückmeldungen — zuletzt "horizontal zentriert ... Hauptfensterbreite − 50px, also auf jeder Seite 25px schmäler") | Echter Rechtsklick (`customContextMenuRequested`) auf eine gültige Zeile — `MainWindow` wird dafür bewusst relativ zur verfügbaren Bildschirmgeometrie dimensioniert/positioniert (`QGuiApplication::primaryScreen()->availableGeometry()`), nicht fest auf 900×600, damit `ChartPopup::showAt()`'s Bildschirmrand-Klemmung die Zentrierungs-Prüfung in einer kleineren (z. B. Offscreen-)Testumgebung nicht verfälscht — anders als die Guard-Tests oben also der volle "gültige GUID"-Pfad, da `showAt()` nicht blockiert | `ChartPopup` wird über `QApplication::topLevelWidgets()` gefunden (kein Kind-Widget von `MainWindow`, da ownerlos erzeugt); `width() == window.width() - 50`; Popup-Mittelpunkt (`x() + width()/2`) == Hauptfenster-Mittelpunkt in globalen Koordinaten — Regressionstest für `MainWindow::onPortfolioRowRightClicked()`'s Breiten-/Positionsberechnung vor `showAt()` |
+
+@note **Spurious-Leave-Fix in `ChartPopup::leaveEvent()` (ergänzt 31.07.2026,
+Nessies Rückmeldung "Dialog geht zu, auch wenn die Maus noch auf dem Dialog
+ist" — siehe ARCHITECTURE.md, "ChartPopup"):** Bewusst **nicht** durch einen
+automatisierten Test abgedeckt. Der Fix prüft `QCursor::pos()` gegen die
+tatsächliche Bildschirmgeometrie des Popups — eine verlässliche
+automatisierte Prüfung bräuchte eine echte, plattformabhängige
+Cursor-Bewegungssimulation (`QCursor::setPos()` verhält sich auf der
+Offscreen-QPA-Plattform, mit der die Testsuite läuft, nicht zuverlässig
+gleich wie auf einer echten Anzeige), die keine belastbare Aussage liefern
+würde. Manuell durch Nessie verifiziert.
 
 ---
 

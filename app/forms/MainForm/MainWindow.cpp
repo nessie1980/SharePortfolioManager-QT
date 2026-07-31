@@ -10,6 +10,7 @@
 #include "../BackupSettingsForm/BackupSettingsForm.h"
 #include "../DocumentsSettingsForm/DocumentsSettingsForm.h"
 #include "../ShareDetailsForm/ViewShareDetails.h"
+#include "../ChartForm/ChartPopup.h"
 #include "../AboutForm/AboutForm.h"
 #include "../ApiSettingsForm/ApiSettingsForm.h"
 #include "../../repositories/ShareRepository.h"
@@ -499,6 +500,18 @@ void MainWindow::setupCentralWidget()
             this, &MainWindow::onPortfolioRowDoubleClicked);
     connect(m_marketValueTable, &QTableWidget::itemDoubleClicked,
             this, &MainWindow::onPortfolioRowDoubleClicked);
+
+    // Rechtsklick auf eine Portfolio-Zeile öffnet stattdessen das rahmenlose
+    // ChartPopup (nur Graph + Legende, siehe ARCHITECTURE.md, "ChartPopup —
+    // Rechtsklick-Popup-Chart", Feature 31.07.2026). Qt::CustomContextMenu
+    // wird bewusst zweckentfremdet, um Rechtsklicks abzufangen, ohne ein
+    // natives Kontextmenü zu zeigen.
+    m_finalValueTable->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_marketValueTable->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_finalValueTable, &QTableWidget::customContextMenuRequested,
+            this, &MainWindow::onPortfolioRowRightClicked);
+    connect(m_marketValueTable, &QTableWidget::customContextMenuRequested,
+            this, &MainWindow::onPortfolioRowRightClicked);
 
     // ── Main layout: portfolio (expands) + bottom panel (fixed) ──────────
     auto* centralWidget = new QWidget(this);
@@ -1377,6 +1390,61 @@ void MainWindow::onPortfolioRowDoubleClicked(QTableWidgetItem* item)
         return; // Error already reported via showError() inside the presenter
 
     dlg.exec();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+void MainWindow::onPortfolioRowRightClicked(const QPoint& pos)
+{
+    // Anders als bei onPortfolioRowDoubleClicked() liefert customContextMenuRequested()
+    // nur die Klick-Position, kein QTableWidgetItem — sender() liefert die auslösende
+    // Tabelle, dieselbe Konvention, die beide Tabellen mit einem gemeinsamen Slot
+    // verbindet (siehe Verbindung in setupCentralWidget()).
+    auto* table = qobject_cast<QTableWidget*>(sender());
+    if (!table)
+        return;
+
+    QTableWidgetItem* item = table->itemAt(pos);
+    if (!item)
+        return;
+
+    // Gleiche GUID-Ermittlung wie onPortfolioRowDoubleClicked() — siehe dort.
+    QTableWidgetItem* wknItem = table->item(item->row(), 0);
+    if (!wknItem)
+        return;
+
+    const QString shareGuid = wknItem->data(Qt::UserRole).toString();
+    if (shareGuid.isEmpty())
+        return;
+
+    // Name-Spalte für die Popup-Überschrift (siehe ChartPopup) — Index 2 bei
+    // FinalValueColumn UND MarketValueColumn (praktischer Zufall, siehe
+    // beide Enums in dieser Datei), daher hier ohne Fallunterscheidung
+    // zwischen den beiden Tabellen lesbar. Einfacher QTableWidgetItem::text()
+    // statt TwoLineRole, da die Name-Zelle (anders als die meisten übrigen
+    // Spalten) nur eine Zeile trägt (siehe populatePortfolioTables()).
+    QTableWidgetItem* nameItem = table->item(item->row(), 2);
+    const QString shareName = nameItem ? nameItem->text() : QString();
+
+    // Kein Owner: ChartPopup zerstört sich per Qt::WA_DeleteOnClose selbst,
+    // sobald die Maus das Popup verlässt (siehe ChartPopup::leaveEvent()).
+    auto* popup = new ChartPopup(shareGuid, shareName);
+
+    // Breite: Hauptfensterbreite − 50px (Nessies Vereinfachung, 31.07.2026:
+    // "Hauptfensterbreite − 50px" statt der vorherigen 2×5px+50px-Rechnung —
+    // mathematisch dasselbe Ergebnis bei zentrierter Ausrichtung, siehe
+    // unten). Horizontal zentriert zum Hauptfenster (Nessies Vorgabe:
+    // "horizontal zentriert zum Hauptfenster ausgerichtet") statt links
+    // ausgerichtet — ergibt bei dieser Breite automatisch 25px Rand auf
+    // jeder Seite. Nur die vertikale Position folgt weiterhin dem
+    // Rechtsklick. Höhe bleibt bei ChartPopup's kompaktem Standardmaß.
+    constexpr int kNarrower = 50;
+    const int popupWidth = qMax(200, this->width() - kNarrower);
+    popup->resize(popupWidth, popup->height());
+
+    const QPoint clickGlobalPos = table->viewport()->mapToGlobal(pos);
+    const int mainWindowGlobalCenterX = this->mapToGlobal(QPoint(this->width() / 2, 0)).x();
+    const QPoint topLeft(mainWindowGlobalCenterX - popupWidth / 2, clickGlobalPos.y());
+    popup->showAt(topLeft);
 }
 
 // ── Direkte Dokumentenerfassung (Drag+Drop, Feature 27.07.2026) ───────────────

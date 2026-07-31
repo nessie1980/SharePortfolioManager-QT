@@ -14,6 +14,7 @@
 #include <QTextEdit>
 #include <QLineEdit>
 #include <QSoundEffect>
+#include <QPoint>
 
 #include "../../config/WebSitesConfig.h"
 #include "../../config/DocumentsConfig.h"
@@ -316,6 +317,30 @@ private slots:
      * @param item  The QTableWidgetItem that was double-clicked (any column).
      */
     void onPortfolioRowDoubleClicked(QTableWidgetItem* item);
+
+    /**
+     * @brief Öffnet ChartPopup (rahmenloses Popup mit nur Graph + Legende)
+     * für eine rechtsgeklickte Portfolio-Zeile — Pendant zu
+     * onPortfolioRowDoubleClicked(), aber für Rechtsklick statt Doppelklick
+     * und ChartPopup statt ViewShareDetails (Feature 31.07.2026, siehe
+     * ARCHITECTURE.md, "ChartPopup — Rechtsklick-Popup-Chart").
+     *
+     * Verbunden mit customContextMenuRequested() beider Portfolio-Tabellen
+     * statt einem echten Kontextmenü — Qt::CustomContextMenu wird hier
+     * bewusst zweckentfremdet, um Rechtsklicks direkt abzufangen, ohne ein
+     * natives Kontextmenü zu zeigen (Nessies Vorgabe: einfacher Rechtsklick
+     * öffnet das Popup unmittelbar).
+     *
+     * Gleiche GUID-Ermittlung wie onPortfolioRowDoubleClicked() (WKN-Zelle,
+     * Spalte 0, Qt::UserRole) — anders als dort aber keine
+     * hasValidShare()-Prüfung nötig: eine leere/unbekannte GUID führt in
+     * ChartPopup/PresenterChart lediglich zum "keine Kursdaten"-Leerzustand,
+     * kein modaler Fehlerdialog.
+     *
+     * @param pos  Position (in Tabellen-Koordinaten) des Rechtsklicks — von
+     *             customContextMenuRequested() geliefert.
+     */
+    void onPortfolioRowRightClicked(const QPoint& pos);
 
     /**
      * @brief Called when PdfTextExtractor finishes converting a document

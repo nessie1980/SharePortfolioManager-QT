@@ -141,6 +141,8 @@ set(APP_SOURCES
     forms/ChartForm/PresenterChart.cpp
     forms/ChartForm/ViewChart.h
     forms/ChartForm/ViewChart.cpp
+    forms/ChartForm/ChartPopup.h
+    forms/ChartForm/ChartPopup.cpp
 
     # ── Forms – Settings ──────────────────────────────────────────────────
     forms/LoggerSettingsForm/LoggerSettingsForm.h

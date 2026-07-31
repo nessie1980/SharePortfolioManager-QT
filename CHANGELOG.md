@@ -6,6 +6,23 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.4.0] - 2026-07-31
+
+### Added
+
+- Rahmenloses Popup-Fenster (`ChartPopup`) mit nur Überschrift (Aktienname +
+  Zeitraum/Entwicklung) + Graph + Legende, portiert vom C#-Referenz-Popup
+  `FrmChart`. Öffnet sich per einfachem Rechtsklick auf eine Zeile in einer
+  der beiden Portfolio-Tabellen im Hauptfenster (Depotwert-/Marktwert-Tab)
+  und schließt sich automatisch, sobald die Maus den Fensterbereich
+  verlässt. Mausrad über dem Chart ändert weiterhin den dargestellten
+  Zeitraum, da die bestehende `ViewChart`-Steuerung wiederverwendet wird
+  (neuer Compact-Modus blendet lediglich die Selektion-/Zeitraum-
+  Steuerelemente aus dem Layout aus, ohne ihre Funktionalität abzuschalten).
+  Popup-Breite ist die Hauptfensterbreite minus 50px, horizontal zum
+  Hauptfenster zentriert. Siehe `docs/architecture/ARCHITECTURE.md`,
+  "ChartPopup — Rechtsklick-Popup-Chart".
+
 ## [1.3.0] - 2026-07-31
 
 ### Added
@@ -90,6 +107,7 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   `docs/architecture/ARCHITECTURE.md`, "settings.ini nicht persistent im
   AppImage".
 
+[1.4.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.0.2...v1.1.0

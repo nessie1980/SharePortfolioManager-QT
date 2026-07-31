@@ -191,7 +191,7 @@ austauschbar und isoliert testbar.
 | BackupProgressForm | `forms/BackupProgressForm/` | ✅ implementiert |
 | BackupSettingsForm | `forms/BackupSettingsForm/` | ✅ implementiert (08.07.2026) |
 | ShareDetailsForm | `forms/ShareDetailsForm/` | 🟨 MVP-Struktur steht, Depotwert-/Marktwert-Box und Aktien-Chart-Tab implementiert (12.07.2026) — siehe Detailabschnitt |
-| ChartForm | `forms/ChartForm/` | ✅ implementiert (12.07.2026), eingebettet als Tab 1 von ShareDetailsForm — siehe "ChartForm-Details" |
+| ChartForm | `forms/ChartForm/` | ✅ implementiert (12.07.2026), eingebettet als Tab 1 von ShareDetailsForm — siehe "ChartForm-Details"; zusätzlich ChartPopup (31.07.2026), rahmenloses Rechtsklick-Popup — siehe "ChartPopup — Rechtsklick-Popup-Chart" |
 
 @note **ShareDetailsForm — Umfang dieser Iteration (09.07.2026):** Nach
 Abgleich mit der C#-Referenzimplementierung (`FrmShareDetails` +
@@ -1766,6 +1766,135 @@ Regressionstests: `test_refresh_setsMaxIntervalCount_basedOnEarliestDailyValue`,
 (`tst_dailyvaluesrepository.cpp`) — siehe TESTING.md.
 
 ---
+
+### ChartPopup — Rechtsklick-Popup-Chart (implementiert 31.07.2026)
+
+Rahmenloses Popup-Fenster (`forms/ChartForm/ChartPopup.h/.cpp`), das nur
+Überschrift + Graph + Legende zeigt — portiert vom C#-Referenz-Popup
+`FrmChart`. Öffnet sich per einfachem Rechtsklick auf eine Portfolio-Zeile
+in `MainWindow` (`m_finalValueTable`/`m_marketValueTable`), unabhängig von
+einer eventuell bereits geöffneten `ShareDetailsForm`. Kein eigenes
+MVP-Presenter/Model nötig: `ChartPopup` bettet lediglich eine eigenständige
+`ViewChart`-Instanz ein — `ViewChart` bringt bereits ihre eigene
+`ModelChart`-/`PresenterChart`-Instanz mit (siehe "ChartForm-Details" oben).
+
+#### ViewChart: Compact-Modus
+
+`ViewChart` bekommt einen neuen optionalen Konstruktor-Parameter
+`bool compact = false`. Im Compact-Modus wird die "Selektion:"-Box
+(Serien-Checkboxen + Start-Datum/Interval/Anzahl-Formular — technisch eine
+einzige `QGroupBox`, siehe `ViewChart::setupSelektionBox()`) zwar wie gewohnt
+angelegt, aber nicht ins sichtbare Layout gehängt (`hide()` + `setParent
+(this)` statt `rightLayout->addWidget(...)`) — sichtbar bleibt nur die
+"Legende"-Box. Dadurch bleiben alle `IViewChart`-Getter sowie die
+bestehende Mausrad-Steuerung auf `m_countSpin` (`eventFilter()`/
+`applyWheelStep()`, siehe "ChartForm-Details" oben) unverändert
+funktionsfähig — Nessies Vorgabe "Mausrad ändert das Intervall" ist damit im
+Popup ohne jede Zusatzlogik erfüllt, exakt wie im C#-Referenzverhalten
+(`OnChartDailyValues_MouseWheel` in `FrmChart`). Da im Compact-Modus ohnehin
+nur die Default-Checkbox (`ClosingPrice`) angehakt ist und nie umgeschaltet
+werden kann, zeigt der Chart wie in der C#-Referenz immer nur die
+Schluss-Kurs-Serie (+ Kauf-/Verkauf-Markerlinien) — die C#-Referenz baut die
+Popup-Grafik ohnehin komplett unabhängig von etwaigen Checkbox-Zuständen.
+Die rechte Panel-Breite ist im Compact-Modus schmaler (260px statt 380px),
+da nur noch die Legende Platz braucht.
+
+Zusätzlich bekommt `ViewChart` einen rein View-internen Getter
+`rangeInfo() const` (kein Teil von `IViewChart`), der den zuletzt per
+`setRangeInfo()` gesetzten Text zurückgibt. Grund: `PresenterChart::
+loadAndDisplay()` läuft bereits synchron im `ViewChart`-Konstruktor und
+feuert `titleInfoChanged()` dabei ein erstes Mal — bevor sich `ChartPopup`
+(das `ViewChart` erst nach dessen vollständiger Konstruktion erzeugt und
+verbindet) überhaupt verbinden kann. `rangeInfo()` erlaubt `ChartPopup`,
+diesen initialen Wert direkt im Anschluss nachträglich abzugreifen, statt
+ihn zu verpassen (siehe "ChartPopup" unten).
+
+#### ChartPopup
+
+- Konstruktor nimmt neben der `shareGuid` auch den Aktiennamen entgegen
+  (`ChartPopup(shareGuid, shareName, parent)`) — `MainWindow` liest ihn
+  direkt aus der Name-Spalte der Portfolio-Zeile (Index 2, bei
+  `FinalValueColumn` UND `MarketValueColumn` identisch), statt ihn per
+  Repository nachzuschlagen.
+- **Überschrift** (ergänzt 31.07.2026, Nessies Rückmeldung "Was auch fehlt
+  ist die Überschrift mit Informationen!"): zentriertes `QLabel`
+  (`chartPopupHeader`) oberhalb des Charts zeigt `<b>Aktienname</b>` +
+  "Zeitraum: ... / Entwicklung: ..." — Pendant zum C#-Referenz-Chart-Titel
+  (`FrmChart.Title`, dort direkt auf das WinForms-Chart-Steuerelement
+  gezeichnet, hier ein eigenes Qt-Label, da `QChart` keinen vergleichbar
+  einfachen mehrzeiligen Titel unterstützt). Der Zeitraum-Teil kommt über
+  `ViewChart::titleInfoChanged()`; der initiale Wert wird direkt nach dem
+  Verbinden einmalig über `ViewChart::rangeInfo()` nachgeholt (siehe oben) —
+  spätere Änderungen (z. B. durch Mausrad-Zoom) aktualisieren die
+  Überschrift automatisch über dasselbe Signal.
+- Fensterflags: `Qt::Tool | Qt::FramelessWindowHint` — kein Rahmen, keine
+  Taskbar-Präsenz. `Qt::WA_DeleteOnClose` gesetzt: `MainWindow` erzeugt das
+  Popup per `new ChartPopup(...)` ohne Owner und muss sich um dessen
+  Zerstörung nicht weiter kümmern.
+- `leaveEvent()` schließt das Fenster automatisch, sobald die Maus den
+  Fensterbereich verlässt — Pendant zu
+  `OnChartDailyValues_MouseLeave`/`OnLblNoDataMessage_MouseLeave` in der
+  C#-Referenz (dort an zwei einzelne Kind-Widgets gebunden; hier genügt ein
+  einziger Handler auf dem Popup-Fenster selbst, da es außer Überschrift und
+  `ViewChart`-Instanz keine weiteren Geschwister-Widgets enthält).
+  **Spurious-Leave-Fix (ergänzt 31.07.2026, Nessies Rückmeldung "Dialog geht
+  zu, auch wenn die Maus noch auf dem Dialog ist"):** `QChartView`
+  (`QGraphicsView`) hat einen eigenen Viewport, an dessen inneren
+  Widget-Grenzen Qt gelegentlich ein Leave auf `ChartPopup` selbst auslöst,
+  obwohl die Maus tatsächlich noch innerhalb des Popups steht — ein
+  bekannter Qt-Effekt bei `QGraphicsView`-Kindwidgets. `leaveEvent()` prüft
+  deshalb zusätzlich `QCursor::pos()` gegen die eigene Bildschirmgeometrie
+  (`QRect(mapToGlobal(QPoint(0,0)), size())`) und schließt nur, wenn die
+  Maus tatsächlich außerhalb liegt — ein falsches Leave wird ignoriert.
+  Bewusst **nicht** automatisiert getestet (siehe TESTING.md): eine
+  verlässliche Prüfung bräuchte eine echte, plattformabhängige
+  Cursor-Bewegungssimulation, die in einer Offscreen-Testumgebung nicht
+  robust nachstellbar ist.
+- `showAt(globalPos)` positioniert das Popup so, dass sein oberer linker
+  Rand an `globalPos` liegt, geklemmt an die verfügbare Geometrie des
+  Bildschirms unter dem Cursor (`QGuiApplication::screenAt()`) — verhindert
+  ein Abschneiden am rechten/unteren Bildschirmrand bei einem Rechtsklick
+  nahe der Kante.
+- Standardgröße ist ein kompaktes Fenstermaß (`kPopupWidth`/`kPopupHeight`
+  in `ChartPopup.cpp`, letzteres seit der Überschrift um 40px erhöht).
+  `MainWindow::onPortfolioRowRightClicked()` überschreibt Breite und
+  horizontale Position jedoch vor `showAt()` (siehe "MainWindow-Verdrahtung"
+  unten) — die Höhe bleibt beim kompakten Standardmaß.
+
+#### MainWindow-Verdrahtung
+
+`m_finalValueTable`/`m_marketValueTable` bekommen
+`setContextMenuPolicy(Qt::CustomContextMenu)` — bewusst zweckentfremdet, um
+Rechtsklicks direkt abzufangen, ohne ein natives Kontextmenü zu zeigen.
+Beide Tabellen sind über `customContextMenuRequested()` mit dem neuen Slot
+`MainWindow::onPortfolioRowRightClicked(const QPoint&)` verbunden — Pendant
+zu `onPortfolioRowDoubleClicked()`, aber:
+
+- GUID-Ermittlung über `table->itemAt(pos)` statt eines direkt gelieferten
+  `QTableWidgetItem*` (die auslösende Tabelle liefert `sender()`, da
+  `customContextMenuRequested()` anders als `itemDoubleClicked()` keine
+  Tabellenreferenz mitliefert).
+- Keine `hasValidShare()`-Prüfung: eine leere/unbekannte GUID führt in
+  `ChartPopup`/`PresenterChart` lediglich zum bestehenden
+  "keine Kursdaten"-Leerzustand (`showEmptyChart()`), keinen modalen
+  Fehlerdialog wie bei `ViewShareDetails` — der frühe Return bei leerer GUID
+  ist daher nur eine Abkürzung, kein Fehlerfall.
+- **Breite/Position** (überarbeitet 31.07.2026, mehrere Rückmeldungen: erst
+  "etwas kleiner als das Hauptfenster ... Links und rechts 5px", dann
+  "nochmals um 50 px" schmäler, zuletzt "horizontal zentriert ... Du kannst
+  hier 'Hauptfensterbreite − 50px' einsetzen, also auf jeder Seite 25px
+  schmäler"): Popup-Breite = Hauptfensterbreite − 50px, mindestens 200px
+  (`qMax(200, ...)` als Sicherheitsnetz gegen ein sehr schmales
+  Hauptfenster). Horizontal **zentriert** zum Hauptfenster ausgerichtet
+  (nicht mehr linksbündig) — bei dieser Breite gleichbedeutend mit 25px
+  Rand auf jeder Seite, daher die vereinfachte Formel gegenüber der
+  vorherigen 2×5px+50px-Rechnung. Nur die vertikale Position folgt weiterhin
+  dem Rechtsklick-Punkt (`table->viewport()->mapToGlobal(pos)` liefert die
+  Y-Koordinate); die X-Koordinate kommt aus der Mittelpunkt-Berechnung
+  relativ zum Hauptfenster (`mapToGlobal(QPoint(width()/2, 0))`).
+
+---
+
 
 ### MainWindow-Details
 
