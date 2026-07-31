@@ -4,9 +4,11 @@
 
 #include <QCoreApplication>
 #include <QString>
+#include <QDate>
 
 #include "IViewShareDetails.h"
 #include "IModelShareDetails.h"
+#include "../../models/ShareObject.h"
 
 /**
  * @brief Presenter for the share-details dialog.
@@ -62,8 +64,44 @@ public:
      */
     bool loadAndDisplay();
 
+    /**
+     * @brief Letzter Werktag (Mo–Fr, keine Feiertagsprüfung) vor @p from.
+     *
+     * Portiert von der verschachtelten while-Schleife in der C#-Referenz
+     * (ShareDetailsForm_Shown()) — dort für jeden möglichen Wochentag
+     * durchgerechnet (30.07.2026): das Ergebnis ist in jedem Fall exakt "der
+     * letzte Werktag vor from", unabhängig vom Wochentag von @p from. Diese
+     * Methode ist die vereinfachte, äquivalente Fassung dieser Schleife.
+     *
+     * Public + static, damit tst_sharedetailsform.cpp sie direkt mit festen
+     * Datums-Kombinationen testen kann, ohne von der echten Systemzeit
+     * abzuhängen (dieselbe Konvention wie
+     * XmlPortfolioParser::normalizeWebSiteUrl()).
+     */
+    static QDate previousBusinessDay(const QDate& from);
+
+    /**
+     * @brief Ob die "Aktie sollte aktualisiert werden!"-Warnzeile angezeigt
+     * werden soll (ergänzt 30.07.2026, portiert von ShareDetailsForm_Shown()
+     * in der C#-Referenz, siehe ARCHITECTURE.md "ShareDetailsForm-Details").
+     *
+     * Kein Warnhinweis, wenn für diese Aktie ohnehin keine Tageswerte
+     * abgerufen werden sollen (@p updateType ist MarketPrice oder None —
+     * bewusste Einstellung, kein Datenproblem). Andernfalls: Warnhinweis,
+     * wenn entweder gar keine Tageswerte vorhanden sind (@p latestDataDate
+     * ungültig) oder der neueste vorhandene Tageswert älter als der letzte
+     * Werktag vor @p today ist (siehe previousBusinessDay()).
+     *
+     * Public + static aus demselben Testbarkeits-Grund wie
+     * previousBusinessDay() oben.
+     */
+    static bool needsUpdateWarning(ShareUpdateType updateType,
+                                   const QDate& latestDataDate,
+                                   const QDate& today);
+
 private:
     void buildHeader(const ShareObject& share);
+    void buildUpdateWarning(const ShareObject& share);
 
     CalculationRows buildGesamtBox(const ShareValues& v) const;
     CalculationRows buildVortagBox(const ShareValues& v) const;

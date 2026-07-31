@@ -28,3 +28,8 @@ QList<BrokerageObject> ModelShareDetails::loadBrokerages(const QString& shareGui
 {
     return m_brokerageRepo.findByShare(shareGuid);
 }
+
+QDate ModelShareDetails::latestDailyValueDate(const QString& shareGuid) const
+{
+    return m_dailyValuesRepo.latestDate(shareGuid);
+}

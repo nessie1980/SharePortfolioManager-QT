@@ -6,6 +6,21 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.3.0] - 2026-07-31
+
+### Added
+
+- Neue form-weite Warnzeile im ShareDetailsForm-Dialog ("Aktie sollte
+  aktualisiert werden! Daten sind evtl. nicht auf dem aktuellen Stand."),
+  unterhalb des Tab-Widgets — portiert von `toolStripStatusLabelUpdate` in
+  der C#-Referenz (`ShareDetailsForm_Shown()`). Wird einmalig beim Öffnen
+  des Dialogs geprüft: kein Warnhinweis, wenn für die Aktie ohnehin keine
+  Tageswerte abgerufen werden (Update-Typ "Nur Kurs"/"Kein Update" —
+  bewusste Einstellung), sonst Warnhinweis, wenn entweder gar keine
+  Tageswerte vorhanden sind oder der neueste vorhandene Tageswert älter als
+  der letzte Werktag ist. Siehe `docs/architecture/ARCHITECTURE.md`,
+  "ShareDetailsForm-Details".
+
 ## [1.2.0] - 2026-07-30
 
 ### Added
@@ -75,6 +90,7 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   `docs/architecture/ARCHITECTURE.md`, "settings.ini nicht persistent im
   AppImage".
 
+[1.3.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.0.1...v1.0.2

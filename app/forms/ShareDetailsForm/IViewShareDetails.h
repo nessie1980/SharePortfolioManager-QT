@@ -58,6 +58,17 @@ public:
     /** "Letzte Website-Aktualisierung: ..." bar inside the Depotwert-/Marktwert-tab. */
     virtual void setWebsiteUpdateLine(const QString& statusText) = 0;
 
+    /**
+     * @brief Form-weite Warnzeile ("Aktie sollte aktualisiert werden! Daten
+     * sind evtl. nicht auf dem aktuellen Stand."), unterhalb des Tab-Widgets —
+     * ergänzt 30.07.2026, portiert von toolStripStatusLabelUpdate in der
+     * C#-Referenz (FrmShareDetails_Shown()). Leerer String versteckt die
+     * Zeile; Text kommt bereits fertig formatiert vom Presenter, die View
+     * layoutet nur (dieselbe Konvention wie setStatusLine()/
+     * setWebsiteUpdateLine()).
+     */
+    virtual void setUpdateWarning(const QString& text) = 0;
+
     /** Tab title: "Komplette Depotbewertung" or "Komplette Marktbewertung", depending on mode. */
     virtual void setBoxesTabTitle(const QString& title) = 0;
 

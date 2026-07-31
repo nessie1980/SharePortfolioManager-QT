@@ -93,6 +93,7 @@ public:
     void setHeaderName(const QString& name) override;
     void setStatusLine(const QString& statusText) override;
     void setWebsiteUpdateLine(const QString& statusText) override;
+    void setUpdateWarning(const QString& text) override;
     void setBoxesTabTitle(const QString& title) override;
 
     void populateGesamtBox(const CalculationRows& rows) override;
@@ -181,6 +182,7 @@ private:
     QLabel*     m_statusLine        = nullptr;
     QTabWidget* m_tabs              = nullptr;
     QLabel*     m_websiteUpdateLine = nullptr; ///< Inside the Depotwert-/Marktwert-tab.
+    QLabel*     m_updateWarningLine = nullptr; ///< Form-weite "Aktie sollte aktualisiert werden!"-Zeile, unterhalb des Tab-Widgets, standardmäßig versteckt.
     int         m_boxesTabIndex     = -1;      ///< Index of the Depotwert-/Marktwert-tab, for setBoxesTabTitle().
 
     QGridLayout* m_gesamtGrid   = nullptr;

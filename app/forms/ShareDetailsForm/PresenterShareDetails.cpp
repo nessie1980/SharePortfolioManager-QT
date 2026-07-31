@@ -100,6 +100,7 @@ bool PresenterShareDetails::loadAndDisplay()
     }
 
     buildHeader(share);
+    buildUpdateWarning(share);
 
     const ShareValues v = m_model.computeShareValues(m_shareGuid, share.curPrice(), share.prevDayPrice());
 
@@ -149,6 +150,22 @@ void PresenterShareDetails::buildHeader(const ShareObject& share)
     m_view.setBoxesTabTitle(m_marketValueMode
         ? tr("Komplette Marktbewertung")
         : tr("Komplette Depotbewertung"));
+}
+
+// ── buildUpdateWarning ─────────────────────────────────────────────────────────
+
+void PresenterShareDetails::buildUpdateWarning(const ShareObject& share)
+{
+    // Wird — wie in der C#-Referenz (ShareDetailsForm_Shown()) — nur einmal
+    // beim Öffnen des Dialogs ausgewertet, nicht bei jeder Chart-Zeitraum-
+    // Änderung: die Meldung bewertet die tatsächliche Datenaktualität, nicht
+    // den gerade im Chart angezeigten Ausschnitt.
+    const QDate latestDate = m_model.latestDailyValueDate(m_shareGuid);
+    const bool  warn = needsUpdateWarning(share.updateType(), latestDate, QDate::currentDate());
+
+    m_view.setUpdateWarning(warn
+        ? tr("Aktie sollte aktualisiert werden! Daten sind evtl. nicht auf dem aktuellen Stand.")
+        : QString());
 }
 
 // ── buildGesamtBox ────────────────────────────────────────────────────────────
@@ -273,6 +290,34 @@ CalculationRow PresenterShareDetails::disabledRow(const QString& operatorSymbol,
     // Depotwert-only concept) — shown as a greyed-out "-" placeholder,
     // matching the disabled label in the C# reference screenshot.
     return CalculationRow{ operatorSymbol, label, QStringLiteral("-"), QColor(Qt::gray), false };
+}
+
+// ── previousBusinessDay ────────────────────────────────────────────────────────
+
+QDate PresenterShareDetails::previousBusinessDay(const QDate& from)
+{
+    QDate d = from.addDays(-1);
+    while (d.dayOfWeek() == Qt::Saturday || d.dayOfWeek() == Qt::Sunday)
+        d = d.addDays(-1);
+    return d;
+}
+
+// ── needsUpdateWarning ─────────────────────────────────────────────────────────
+
+bool PresenterShareDetails::needsUpdateWarning(ShareUpdateType updateType,
+                                               const QDate& latestDataDate,
+                                               const QDate& today)
+{
+    // Bewusste Einstellung, kein Datenproblem — es werden für diese Aktie
+    // ohnehin keine Tageswerte abgerufen, also auch kein Warnhinweis, egal
+    // wie alt (oder nicht vorhanden) die Tageswerte sind.
+    if (updateType == ShareUpdateType::MarketPrice || updateType == ShareUpdateType::None)
+        return false;
+
+    if (!latestDataDate.isValid())
+        return true;
+
+    return latestDataDate < previousBusinessDay(today);
 }
 
 // ── shareTypeToString ─────────────────────────────────────────────────────────

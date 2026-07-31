@@ -28,6 +28,7 @@ public:
     QString headerName;
     QString statusLine;
     QString websiteUpdateLine;
+    QString updateWarning;
     QString boxesTabTitle;
 
     CalculationRows gesamtRows;
@@ -51,6 +52,7 @@ public:
     void setHeaderName(const QString& name) override { headerName = name; }
     void setStatusLine(const QString& statusText) override { statusLine = statusText; }
     void setWebsiteUpdateLine(const QString& statusText) override { websiteUpdateLine = statusText; }
+    void setUpdateWarning(const QString& text) override { updateWarning = text; }
     void setBoxesTabTitle(const QString& title) override { boxesTabTitle = title; }
 
     void populateGesamtBox(const CalculationRows& rows) override { gesamtRows = rows; }
@@ -97,6 +99,7 @@ public:
     QList<SaleObject>      sales;
     QList<DividendObject>  dividends;
     QList<BrokerageObject> brokerages;
+    QDate                   latestDailyValueDateResult; // default invalid -> "keine Tageswerte"
 
     ShareObject loadShare(const QString&) const override { return share; }
 
@@ -108,6 +111,8 @@ public:
     QList<SaleObject> loadSales(const QString&) const override { return sales; }
     QList<DividendObject> loadDividends(const QString&) const override { return dividends; }
     QList<BrokerageObject> loadBrokerages(const QString&) const override { return brokerages; }
+
+    QDate latestDailyValueDate(const QString&) const override { return latestDailyValueDateResult; }
 };
 
 // ── Test class ─────────────────────────────────────────────────────────────
@@ -596,6 +601,146 @@ private slots:
         QCOMPARE(view.saleRows.size(), 2);
         QCOMPARE(view.dividendRows.size(), 1);
         QCOMPARE(view.brokerageRows.size(), 3);
+    }
+
+    // ── "Aktie sollte aktualisiert werden!"-Warnzeile (ergänzt 30.07.2026) ──
+    //
+    // previousBusinessDay()/needsUpdateWarning() sind public static, damit
+    // diese Tests mit festen Datums-/Enum-Kombinationen arbeiten können,
+    // statt von QDate::currentDate() abzuhängen (Nessies Vorgabe: nur einmal
+    // beim Öffnen prüfen, siehe ShareDetailsForm.cs, ShareDetailsForm_Shown()).
+    // Montag 03.08.2026 / Dienstag 04.08.2026 / ... als feste Referenzdaten.
+
+    void test_previousBusinessDay_monday_returnsPreviousFriday()
+    {
+        // Montag überspringt das komplette Wochenende -> Freitag davor.
+        QCOMPARE(PresenterShareDetails::previousBusinessDay(QDate(2026, 8, 3)), QDate(2026, 7, 31));
+    }
+
+    void test_previousBusinessDay_tuesday_returnsMonday()
+    {
+        QCOMPARE(PresenterShareDetails::previousBusinessDay(QDate(2026, 8, 4)), QDate(2026, 8, 3));
+    }
+
+    void test_previousBusinessDay_wednesday_returnsTuesday()
+    {
+        QCOMPARE(PresenterShareDetails::previousBusinessDay(QDate(2026, 8, 5)), QDate(2026, 8, 4));
+    }
+
+    void test_previousBusinessDay_thursday_returnsWednesday()
+    {
+        QCOMPARE(PresenterShareDetails::previousBusinessDay(QDate(2026, 8, 6)), QDate(2026, 8, 5));
+    }
+
+    void test_previousBusinessDay_friday_returnsThursday()
+    {
+        QCOMPARE(PresenterShareDetails::previousBusinessDay(QDate(2026, 8, 7)), QDate(2026, 8, 6));
+    }
+
+    void test_previousBusinessDay_saturday_returnsFriday()
+    {
+        QCOMPARE(PresenterShareDetails::previousBusinessDay(QDate(2026, 8, 8)), QDate(2026, 8, 7));
+    }
+
+    void test_previousBusinessDay_sunday_returnsFriday()
+    {
+        // Zwei Tage zurück (Samstag übersprungen) -> derselbe Freitag wie beim Samstag-Fall.
+        QCOMPARE(PresenterShareDetails::previousBusinessDay(QDate(2026, 8, 9)), QDate(2026, 8, 7));
+    }
+
+    void test_needsUpdateWarning_marketPriceOnly_neverWarns()
+    {
+        // Bewusste Einstellung (keine Tageswerte werden abgerufen) -> nie
+        // eine Warnung, unabhängig vom Datenstand.
+        QVERIFY(!PresenterShareDetails::needsUpdateWarning(
+            ShareUpdateType::MarketPrice, QDate(), QDate(2026, 8, 3)));
+        QVERIFY(!PresenterShareDetails::needsUpdateWarning(
+            ShareUpdateType::MarketPrice, QDate(2020, 1, 1), QDate(2026, 8, 3)));
+    }
+
+    void test_needsUpdateWarning_none_neverWarns()
+    {
+        QVERIFY(!PresenterShareDetails::needsUpdateWarning(
+            ShareUpdateType::None, QDate(), QDate(2026, 8, 3)));
+    }
+
+    void test_needsUpdateWarning_dailyValues_noData_warns()
+    {
+        QVERIFY(PresenterShareDetails::needsUpdateWarning(
+            ShareUpdateType::DailyValues, QDate(), QDate(2026, 8, 3)));
+    }
+
+    void test_needsUpdateWarning_both_noData_warns()
+    {
+        QVERIFY(PresenterShareDetails::needsUpdateWarning(
+            ShareUpdateType::Both, QDate(), QDate(2026, 8, 3)));
+    }
+
+    void test_needsUpdateWarning_dataExactlyOnPreviousBusinessDay_noWarning()
+    {
+        // Heute = Dienstag 04.08.2026 -> letzter Werktag = Montag 03.08.2026.
+        // Tageswert genau vom letzten Werktag -> KEINE Warnung (Grenzfall).
+        QVERIFY(!PresenterShareDetails::needsUpdateWarning(
+            ShareUpdateType::DailyValues, QDate(2026, 8, 3), QDate(2026, 8, 4)));
+    }
+
+    void test_needsUpdateWarning_dataOneBusinessDayOlderThanThreshold_warns()
+    {
+        // Wie oben, aber Tageswert vom Freitag 31.07. (einen Werktag zu alt) -> Warnung.
+        QVERIFY(PresenterShareDetails::needsUpdateWarning(
+            ShareUpdateType::DailyValues, QDate(2026, 7, 31), QDate(2026, 8, 4)));
+    }
+
+    void test_needsUpdateWarning_dataFromToday_noWarning()
+    {
+        QVERIFY(!PresenterShareDetails::needsUpdateWarning(
+            ShareUpdateType::Both, QDate(2026, 8, 4), QDate(2026, 8, 4)));
+    }
+
+    void test_loadAndDisplay_dailyValuesUpdateType_noData_setsUpdateWarningText()
+    {
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("uw1"), QStringLiteral("WKN009"),
+                                   QStringLiteral("ISIN0000009"), QStringLiteral("Neun AG"));
+        model.share.setUpdateType(ShareUpdateType::DailyValues);
+        // model.latestDailyValueDateResult bleibt ungültig -> keine Tageswerte vorhanden
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("uw1"));
+        QVERIFY(presenter.loadAndDisplay());
+
+        QCOMPARE(view.updateWarning,
+                 QStringLiteral("Aktie sollte aktualisiert werden! Daten sind evtl. nicht auf dem aktuellen Stand."));
+    }
+
+    void test_loadAndDisplay_marketPriceOnlyUpdateType_noWarningRegardlessOfData()
+    {
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("uw2"), QStringLiteral("WKN010"),
+                                   QStringLiteral("ISIN0000010"), QStringLiteral("Zehn AG"));
+        model.share.setUpdateType(ShareUpdateType::MarketPrice);
+        // Keine Tageswerte vorhanden, aber MarketPrice-only -> trotzdem keine Warnung.
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("uw2"));
+        QVERIFY(presenter.loadAndDisplay());
+
+        QVERIFY(view.updateWarning.isEmpty());
+    }
+
+    void test_loadAndDisplay_dailyValuesUpdateType_freshData_noWarning()
+    {
+        FakeViewShareDetails view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("uw3"), QStringLiteral("WKN011"),
+                                   QStringLiteral("ISIN0000011"), QStringLiteral("Elf AG"));
+        model.share.setUpdateType(ShareUpdateType::Both);
+        model.latestDailyValueDateResult = QDate::currentDate(); // stets "aktuell genug", unabhängig vom Testdatum
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("uw3"));
+        QVERIFY(presenter.loadAndDisplay());
+
+        QVERIFY(view.updateWarning.isEmpty());
     }
 };
 

@@ -991,6 +991,32 @@ den Listen selbst, damit Tests "gar nicht aufgerufen" (Marktwert-Modus) von
 | `test_loadAndDisplay_marketMode_populatesOnlyGewinneVerluste` (ergänzt 14.07.2026, ersetzt `..._doesNotPopulateNewTabs`) | `marketValueMode = true`, Model liefert 2 Sales/1 Dividend/3 Brokerages | `gewinneVerlusteCalled = true`, `saleRows.size() == 2`; `dividendenCalled`/`kostenCalled` bleiben `false`, `dividendRows`/`brokerageRows` bleiben leer — Gewinne/Verluste existiert seit 14.07.2026 in beiden Modi, Dividenden/Kosten bleiben Depotwert-only (siehe ARCHITECTURE.md, "Marktwert- vs. Depotwert-Modus") |
 | `test_loadAndDisplay_depotwertMode_populatesGewinneVerlusteDividendenKosten` | `marketValueMode = false` (Default), gleiche Fixture | Alle drei `*Called`-Flags `true`, `saleRows.size() == 2`/`dividendRows.size() == 1`/`brokerageRows.size() == 3` — reines Durchreichen der Model-Listen, keine Presenter-Logik |
 
+**"Aktie sollte aktualisiert werden!"-Warnzeile (ergänzt 30.07.2026)** —
+`previousBusinessDay()`/`needsUpdateWarning()` sind `public static` und
+werden direkt mit festen Datums-/Enum-Kombinationen getestet (feste
+Referenzwoche 03.–09.08.2026, Montag–Sonntag), unabhängig von
+`QDate::currentDate()`:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_previousBusinessDay_monday_returnsPreviousFriday` | Montag 03.08.2026 | Ergebnis = Freitag 31.07.2026 (überspringt das ganze Wochenende) |
+| `test_previousBusinessDay_tuesday_returnsMonday` | Dienstag 04.08.2026 | Ergebnis = Montag 03.08.2026 |
+| `test_previousBusinessDay_wednesday_returnsTuesday` | Mittwoch 05.08.2026 | Ergebnis = Dienstag 04.08.2026 |
+| `test_previousBusinessDay_thursday_returnsWednesday` | Donnerstag 06.08.2026 | Ergebnis = Mittwoch 05.08.2026 |
+| `test_previousBusinessDay_friday_returnsThursday` | Freitag 07.08.2026 | Ergebnis = Donnerstag 06.08.2026 |
+| `test_previousBusinessDay_saturday_returnsFriday` | Samstag 08.08.2026 | Ergebnis = Freitag 07.08.2026 |
+| `test_previousBusinessDay_sunday_returnsFriday` | Sonntag 09.08.2026 | Ergebnis = Freitag 07.08.2026 (überspringt Samstag) |
+| `test_needsUpdateWarning_marketPriceOnly_neverWarns` | `ShareUpdateType::MarketPrice`, sowohl ungültiges als auch weit zurückliegendes Datum | `false` in beiden Fällen — bewusste Einstellung, kein Datenproblem |
+| `test_needsUpdateWarning_none_neverWarns` | `ShareUpdateType::None`, ungültiges Datum | `false` |
+| `test_needsUpdateWarning_dailyValues_noData_warns` | `ShareUpdateType::DailyValues`, ungültiges Datum (keine Tageswerte vorhanden) | `true` |
+| `test_needsUpdateWarning_both_noData_warns` | `ShareUpdateType::Both`, ungültiges Datum | `true` |
+| `test_needsUpdateWarning_dataExactlyOnPreviousBusinessDay_noWarning` | Heute = Dienstag 04.08.2026, Tageswert genau vom Montag 03.08.2026 (letzter Werktag) | `false` — Grenzfall `>=`, nicht `>` |
+| `test_needsUpdateWarning_dataOneBusinessDayOlderThanThreshold_warns` | Gleiches "heute", Tageswert vom Freitag 31.07.2026 (einen Werktag zu alt) | `true` |
+| `test_needsUpdateWarning_dataFromToday_noWarning` | Tageswert vom selben Tag wie "heute" | `false` |
+| `test_loadAndDisplay_dailyValuesUpdateType_noData_setsUpdateWarningText` | `updateType = DailyValues`, keine Tageswerte (`latestDailyValueDateResult` bleibt ungültig) | `view.updateWarning` enthält exakt "Aktie sollte aktualisiert werden! Daten sind evtl. nicht auf dem aktuellen Stand." |
+| `test_loadAndDisplay_marketPriceOnlyUpdateType_noWarningRegardlessOfData` | `updateType = MarketPrice`, keine Tageswerte | `view.updateWarning` bleibt leer |
+| `test_loadAndDisplay_dailyValuesUpdateType_freshData_noWarning` | `updateType = Both`, `latestDailyValueDateResult = QDate::currentDate()` | `view.updateWarning` bleibt leer — deterministisch unabhängig vom tatsächlichen Testdatum, da "heute" nie älter als der letzte Werktag vor "heute" sein kann |
+
 @note **`lastInternetUpdate()`-Zweig (erledigt 09.07.2026):** `ShareObject`
 besitzt `setLastInternetUpdate(const QString&)` — der zuvor als offen
 markierte Test ist jetzt oben in der Tabelle enthalten.
@@ -1155,10 +1181,6 @@ vom System-Locale der Baumaschine abhängen würden.
 | `test_refresh_noReferenceEntries_whenModelReturnsInvalid` | `latestBuy`/`latestSale` bleiben `ChartReferenceInfo{}` (ungültig) | Keine "Letzter Kauf"/"Letzter Verkauf"-Zeilen in der Legende |
 | `test_refresh_referenceLines_latestBuyIsBlueOlderIsTurquoise` | Zwei Käufe im Zeitraum (`buysInRange`, mit Preis+Stückzahl), einer davon der global letzte (ergänzt 12.07.2026) | Global letzter Kauf → `Qt::blue`, älterer Kauf → `QColor(0, 170, 170)` (Türkis); `kind`/`price`/`volume` korrekt aus `ChartReferenceInfo` übernommen |
 | `test_refresh_referenceLines_latestSaleIsRedOlderIsOrange` | Zwei Verkäufe im Zeitraum (`salesInRange`), einer davon der global letzte | Global letzter Verkauf → `Qt::red`, älterer Verkauf → `QColor(255, 140, 0)` (Orange); `kind == Sale`, `price` korrekt |
-| `test_refresh_legendEntries_olderBuyInRange_addsAltereKaeufeEntry` (ergänzt 30.07.2026) | Zwei Käufe im Zeitraum, einer davon der global letzte | Legende enthält "Ältere Käufe"-Eintrag, Farbe `QColor(0, 170, 170)` (Türkis), `line1`/`line2` leer |
-| `test_refresh_legendEntries_olderSaleInRange_addsAltereVerkaeufeEntry` (ergänzt 30.07.2026) | Zwei Verkäufe im Zeitraum, einer davon der global letzte | Legende enthält "Ältere Verkäufe"-Eintrag, Farbe `QColor(255, 140, 0)` (Orange), `line1`/`line2` leer |
-| `test_refresh_legendEntries_onlyLatestInRange_noOlderCategoryEntries` (ergänzt 30.07.2026) | Nur der jeweils global letzte Kauf/Verkauf liegt im Zeitraum, kein weiterer | Weder "Ältere Käufe" noch "Ältere Verkäufe" erscheinen in der Legende |
-| `test_refresh_legendEntries_olderBuyEntry_evenWithoutValidLatestBuy` (ergänzt 30.07.2026) | Kein globaler "letzter Kauf" vorhanden (`m_latestBuy` invalid), aber ein Kauf liegt im Zeitraum | Kein "Letzter Kauf:"-Eintrag, aber "Ältere Käufe"-Eintrag erscheint trotzdem (jeder Kauf ohne gültiges `latestBuyInfo` gilt als "älter", dieselbe Logik wie bei den Markerlinien) |
 | `test_refresh_referenceLines_onlyDatesWithinComputedRange` | `Interval=Day`, `Anzahl=5`; zwei Käufe, nur einer im berechneten Fenster; zweiter, deutlich älterer Tageswert (01.05.2026) in der Fixture, damit die seit 12.07.2026 bestehende Anzahl-Kappung das Fenster nicht auf 1 zurückstutzt (siehe unten) | Nur das im Fenster liegende Datum erscheint in `setReferenceLines()` |
 | `test_loadAndDisplay_noData_clearsReferenceLines` | Keine Tageswerte vorhanden | `setReferenceLines({})` wird trotzdem aufgerufen (leere Liste, kein veralteter Zustand) |
 | `test_onControlsChanged_beforeAnyData_doesNotCrashOrRefresh` | `onControlsChanged()` ohne vorheriges `loadAndDisplay()` | Kein `setChartData()`/`showEmptyChart()`-Aufruf (internes `m_hasData`-Guard) |

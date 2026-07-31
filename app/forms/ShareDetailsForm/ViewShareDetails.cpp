@@ -103,6 +103,24 @@ void ViewShareDetails::setupUi()
     connect(m_tabs, &QTabWidget::currentChanged,
             this, &ViewShareDetails::onMainTabChanged);
 
+    // ── "Aktie sollte aktualisiert werden!"-Warnzeile (ergänzt 30.07.2026) ──
+    // Form-weite Statusleiste — bewusst NICHT Teil von ViewChart, siehe
+    // ARCHITECTURE.md, "ChartForm-Details": portiert von
+    // toolStripStatusLabelUpdate in der C#-Referenz (FrmShareDetails_Shown()),
+    // dort ebenfalls eine form-weite Statusleiste unterhalb aller Tabs, nicht
+    // an den Chart-Tab gebunden. Gleicher grauer Balken-Look wie
+    // m_websiteUpdateLine, aber roter Text; standardmäßig versteckt.
+    m_updateWarningLine = new QLabel();
+    m_updateWarningLine->setObjectName(QStringLiteral("updateWarningLine"));
+    m_updateWarningLine->setContentsMargins(8, 4, 8, 4);
+    m_updateWarningLine->setAutoFillBackground(true);
+    QPalette warningPalette = m_updateWarningLine->palette();
+    warningPalette.setColor(QPalette::Window, palette().color(QPalette::Mid));
+    warningPalette.setColor(QPalette::WindowText, Qt::red);
+    m_updateWarningLine->setPalette(warningPalette);
+    m_updateWarningLine->setVisible(false);
+    mainLayout->addWidget(m_updateWarningLine);
+
     // ── Close button ──────────────────────────────────────────────────────
     auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close);
     buttonBox->setObjectName(QStringLiteral("buttonBox"));
@@ -337,6 +355,12 @@ void ViewShareDetails::setStatusLine(const QString& statusText)
 void ViewShareDetails::setWebsiteUpdateLine(const QString& statusText)
 {
     m_websiteUpdateLine->setText(statusText);
+}
+
+void ViewShareDetails::setUpdateWarning(const QString& text)
+{
+    m_updateWarningLine->setText(text);
+    m_updateWarningLine->setVisible(!text.isEmpty());
 }
 
 void ViewShareDetails::setBoxesTabTitle(const QString& title)

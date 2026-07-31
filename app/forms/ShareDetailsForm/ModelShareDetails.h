@@ -7,6 +7,7 @@
 #include "../../repositories/SaleRepository.h"
 #include "../../repositories/DividendRepository.h"
 #include "../../repositories/BrokerageRepository.h"
+#include "../../repositories/DailyValuesRepository.h"
 
 /**
  * @brief Concrete read-only model for ShareDetailsForm.
@@ -36,9 +37,12 @@ public:
     QList<DividendObject> loadDividends(const QString& shareGuid) const override;
     QList<BrokerageObject> loadBrokerages(const QString& shareGuid) const override;
 
+    QDate latestDailyValueDate(const QString& shareGuid) const override;
+
 private:
-    mutable ShareRepository     m_shareRepo;
-    mutable SaleRepository      m_saleRepo;
-    mutable DividendRepository  m_dividendRepo;
-    mutable BrokerageRepository m_brokerageRepo;
+    mutable ShareRepository       m_shareRepo;
+    mutable SaleRepository        m_saleRepo;
+    mutable DividendRepository    m_dividendRepo;
+    mutable BrokerageRepository   m_brokerageRepo;
+    mutable DailyValuesRepository m_dailyValuesRepo;
 };

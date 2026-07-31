@@ -4,6 +4,7 @@
 
 #include <QString>
 #include <QList>
+#include <QDate>
 
 #include "../../models/ShareObject.h"
 #include "../../models/SaleObject.h"
@@ -54,4 +55,13 @@ public:
 
     /** Alle Kosten-Einträge der Aktie (Kauf/Verkauf/Sonstig), für den "Kosten"-Tab. */
     virtual QList<BrokerageObject> loadBrokerages(const QString& shareGuid) const = 0;
+
+    /**
+     * @brief Neuestes vorhandenes Datum in daily_values für die Aktie —
+     * ungültiges QDate, wenn keine Tageswerte vorhanden sind. Grundlage für
+     * die "Aktie sollte aktualisiert werden!"-Warnzeile (ergänzt 30.07.2026,
+     * siehe PresenterShareDetails::buildUpdateWarning()). Analog zu
+     * IModelChart::latestDailyValueDate().
+     */
+    virtual QDate latestDailyValueDate(const QString& shareGuid) const = 0;
 };

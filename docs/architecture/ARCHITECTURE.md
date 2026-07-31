@@ -1278,7 +1278,10 @@ vorformatiert vom Presenter, View rendert nur generisch (`populateBox()`).
 `computeShareValues()` (dünner Pass-Through zu
 `ShareCalculator::compute()`). Keine `loadBuys()`/`loadSales()`/... mehr,
 da die entsprechenden Tabs die bestehenden Sub-Dialog-Widgets wiederverwenden
-sollen statt eigene Datenlisten zu laden.
+sollen statt eigene Datenlisten zu laden. Ergänzt 30.07.2026 um
+`latestDailyValueDate()` (analog `IModelChart::latestDailyValueDate()`,
+dünner Pass-Through zu `DailyValuesRepository::latestDate()`) — Grundlage
+für die "Aktie sollte aktualisiert werden!"-Warnzeile, siehe Note unten.
 
 `PresenterShareDetails` — Wie bei den übrigen Presentern: bei unbekannter GUID
 wird `view->showError()` + `view->closeDialog()` aufgerufen (`loadAndDisplay()`
@@ -1306,6 +1309,57 @@ explizit (`buttonBox->button(QDialogButtonBox::Close)->setText(tr("Schließen"))
 statt sich auf die automatische Qt-Übersetzung zu verlassen. Regressionstest:
 `test_shareDetailsDialog_validShare_constructsAndShowsCloseButtonText`
 (`tst_mainwindow.cpp`, siehe TESTING.md).
+
+@note **"Aktie sollte aktualisiert werden!"-Warnzeile (ergänzt 30.07.2026,
+portiert von `ShareDetailsForm_Shown()` in der C#-Referenz,
+`ShareDetailsForm.cs`):** Form-weite Statusleiste unterhalb des
+`QTabWidget` (nicht Teil von `ViewChart`/dem Aktien-Chart-Tab — die
+C#-Referenz nutzt dafür `toolStripStatusLabelUpdate`, eine Statusleiste
+auf Form-Ebene, unabhängig vom aktuell aktiven Tab). Roter Text auf
+demselben grauen Balken-Look wie `m_websiteUpdateLine`
+(`QPalette::Mid`-Hintergrund), standardmäßig versteckt.
+
+Wird — wie in der C#-Referenz — nur **einmal** beim ersten Öffnen des
+Dialogs ausgewertet (`PresenterShareDetails::loadAndDisplay()` →
+`buildUpdateWarning()`), nicht bei jeder Chart-Zeitraum-Änderung: die
+Meldung bewertet die tatsächliche Datenaktualität der Aktie, nicht den
+gerade im Chart angezeigten Ausschnitt.
+
+Die C#-Bedingung (`ShareDetailsForm_Shown()`, Zeilen 628–654) ist auf den
+ersten Blick kryptisch, wurde aber vollständig durchgerechnet:
+
+- Die verschachtelte `while`-Schleife (Wochentag-Prüfung Sonntag/Samstag/
+  Montag, danach ggf. ein weiterer `AddDays(-1)`) berechnet — für alle
+  sieben möglichen Wochentage einzeln durchgerechnet — in jedem Fall exakt
+  **"den letzten Werktag (Mo–Fr) vor dem übergebenen Datum"**, keine
+  Feiertagsprüfung. Portiert als deutlich einfachere, äquivalente Methode
+  `PresenterShareDetails::previousBusinessDay(QDate)`.
+- Die anschließende Bedingung enthält in der C#-Quelle einen Bug: `if
+  (InternetUpdateOption == MarketPrice && InternetUpdateOption == None ||
+  ...)` — ein einzelner Enum-Wert kann nie gleichzeitig `MarketPrice` UND
+  `None` sein, dieser Teil ist toter Code. Von Nessie bestätigt (30.07.2026):
+  gemeint war ein `||`. Fachliche Absicht: **keine Warnung, wenn für die
+  Aktie ohnehin keine Tageswerte abgerufen werden** (`ShareUpdateType::
+  MarketPrice` oder `::None`) — das ist eine bewusste Einstellung, kein
+  Datenproblem, und wird deshalb bewusst NICHT als Fehler angezeigt.
+  Andernfalls (`DailyValues`/`Both`): Warnung, wenn entweder gar keine
+  Tageswerte vorhanden sind, oder der neueste vorhandene Tageswert älter
+  als der letzte Werktag vor heute ist. Portiert als
+  `PresenterShareDetails::needsUpdateWarning(ShareUpdateType,
+  latestDataDate, today)`.
+
+Beide Methoden sind bewusst `public static` (statt `private`, wie
+`PresenterChart::computeRangeStart()`), damit `tst_sharedetailsform.cpp`
+sie direkt mit festen Datums-/Enum-Kombinationen testen kann, ohne von der
+echten Systemzeit (`QDate::currentDate()`) abzuhängen — dieselbe
+Konvention wie bei `XmlPortfolioParser::normalizeWebSiteUrl()` (öffentliche,
+pur-statische, direkt getestete Utility-Methode). `buildUpdateWarning()`
+selbst ruft `needsUpdateWarning()` mit dem echten `QDate::currentDate()`
+auf; die Warntext-Formatierung ("Aktie sollte aktualisiert werden! Daten
+sind evtl. nicht auf dem aktuellen Stand.") liegt vollständig im Presenter,
+`IViewShareDetails::setUpdateWarning(text)` (leerer String versteckt die
+Zeile) layoutet nur — dieselbe Konvention wie `setStatusLine()`/
+`setWebsiteUpdateLine()`.
 
 #### Integration in MainWindow
 
@@ -1590,25 +1644,9 @@ Bedarf später verfeinerbar):
   (dort teils 1 Nachkommastelle).
 - Legende-Titeltext für "Letzter Kauf"/"Letzter Verkauf" ist in der
   Swatch-Farbe (Blau/Rot) statt wie im Referenz-Screenshot grün.
-
-@note **"Ältere Käufe"/"Ältere Verkäufe"-Legende-Einträge (ergänzt
-30.07.2026, auf Nessies Vorgabe, portiert vom C#-Referenz-Verhalten):** Die
-Legende wird um reine Farbe+Bezeichnung-Einträge "Ältere Käufe" (Türkis,
-`kOlderBuyColor` = `QColor(0, 170, 170)`) und "Ältere Verkäufe" (Orange,
-`kOlderSaleColor` = `QColor(255, 140, 0)`) ergänzt, sobald mindestens ein
-Kauf bzw. Verkauf im aktuell angezeigten Zeitraum liegt, der NICHT der
-global letzte ist — z. B. weil der Nutzer die Zeitspanne vergrößert hat und
-dadurch ältere Käufe/Verkäufe erstmals im Graphen auftauchen. Dieselbe
-Bedingung (`!isLatest`), die auch die türkise/orange Markerlinie auslöst;
-beide Stellen verwenden dieselben benannten Farbkonstanten in
-`PresenterChart.cpp`, statt zweier unabhängiger magischer `QColor`-Werte.
-`LegendEntry::line1`/`line2` bleiben bei diesen beiden Einträgen leer —
-`ViewChart::setLegendEntries()` rendert dann nur `<b>Titel</b>` ohne
-zusätzliche Zeilen, dasselbe Rich-Text-Label wie bei den übrigen Einträgen.
-`buysInRange()`/`salesInRange()` werden dafür in `PresenterChart::refresh()`
-nur noch je einmal aufgerufen und für sowohl die Kategorie-Entscheidung als
-auch den Aufbau der Markerlinien wiederverwendet (vorher zwei getrennte,
-identische Model-Aufrufe).
+- Keine eigenen Legende-Einträge für "ältere Käufe"/"ältere Verkäufe"
+  (Türkis/Orange) — nur die Linien selbst im Chart, die Legende zeigt
+  weiterhin nur den jeweils letzten Kauf/Verkauf.
 
 Tests (`tst_chartform`): Fake-View/Fake-Model-Paar (analog
 `tst_sharedetailsform`) — kein `QWidget`, keine Qt-Charts-Instanziierung,
