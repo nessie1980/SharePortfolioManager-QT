@@ -511,10 +511,21 @@ private:
     void clearPortfolioTables();
 
     /**
-     * @brief Update the window title to show the current portfolio file name.
-     * @param portfolioPath  Full path to the current portfolio database.
+     * @brief Baut den Basis-Fenstertitel "Share Portfolio Manager (Version X.Y.Z)".
+     *
+     * Feature (01.08.2026): Versionsnummer im Fenstertitel, dynamisch aus
+     * `QCoreApplication::applicationVersion()` — dieselbe App-weite Quelle,
+     * die `AboutForm` bereits verwendet (siehe main.cpp,
+     * `app.setApplicationVersion(SPM_VERSION_STRING)`, aus der von CMake
+     * generierten Version.h). Kein zusätzlicher Header-Include (Version.h)
+     * hier nötig, kein zweiter Versionsbump-Ort — siehe ARCHITECTURE.md,
+     * Abschnitt "Versionierung".
+     *
+     * Im selben Zug (Bugfix 01.08.2026) verwendet als alleinige Quelle für
+     * den Fenstertitel — der zuvor zusätzlich per updateWindowTitle()
+     * angehängte Portfolio-Dateiname wurde entfernt, siehe dort.
      */
-    void updateWindowTitle(const QString& portfolioPath);
+    QString baseWindowTitle() const;
 
     /**
      * @brief Update the right-hand status-bar label with the current portfolio path.

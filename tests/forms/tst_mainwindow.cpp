@@ -27,6 +27,8 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 
+#include "Version.h" // von CMake generiert, siehe app/Version.h.in — tests/forms/CMakeLists.txt
+                     // ergänzt dafür ${CMAKE_BINARY_DIR}/app in target_include_directories(tst_mainwindow)
 #include "../../app/forms/MainForm/MainWindow.h"
 #include "../../app/forms/MainForm/TwoLineDelegate.h"  // TwoLineRole::Top/Bottom
 #include "../../app/widgets/GridStyle.h"
@@ -739,6 +741,21 @@ private slots:
         MainWindow window;
         QVERIFY(window.windowTitle().contains(
             QStringLiteral("Share Portfolio Manager")));
+    }
+
+    // Feature (01.08.2026): Versionsnummer im Fenstertitel, dynamisch aus
+    // QCoreApplication::applicationVersion() (siehe MainWindow::baseWindowTitle()).
+    // Prüft ein echtes "X.Y.Z"-Muster statt nur des literalen SPM_VERSION_STRING,
+    // damit der Test bei einem künftigen Versionsbump nicht angepasst werden muss.
+    void test_construction_windowTitleContainsVersion()
+    {
+        openMemoryDb();
+        MainWindow window;
+        static const QRegularExpression versionPattern(
+            QStringLiteral("\\(Version \\d+\\.\\d+\\.\\d+\\)"));
+        QVERIFY2(versionPattern.match(window.windowTitle()).hasMatch(),
+                 qPrintable(QStringLiteral("Fenstertitel enthält keine Versionsnummer: \"%1\"")
+                                .arg(window.windowTitle())));
     }
 
     void test_construction_actionsDisabledAtStart()
@@ -2308,14 +2325,6 @@ private slots:
 
         DailyValuesRepository dvRepo;
         QCOMPARE(dvRepo.findByShare(guid).size(), 2);
-    }
-
-    void test_updateWindowTitle_showsFileName()
-    {
-        openMemoryDb();
-        MainWindow window;
-        QVERIFY(window.windowTitle().startsWith(
-            QStringLiteral("Share Portfolio Manager")));
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -8600,6 +8609,11 @@ int main(int argc, char* argv[])
 
     QApplication app(argc, argv);
     app.setAttribute(Qt::AA_Use96Dpi, true);
+    // Feature (01.08.2026): Fenstertitel zeigt die App-Version über
+    // QCoreApplication::applicationVersion() — hier wie in main.cpp gesetzt,
+    // damit test_construction_windowTitleContainsVersion() die echte
+    // SPM_VERSION_STRING prüfen kann statt eines leeren Strings.
+    app.setApplicationVersion(QStringLiteral(SPM_VERSION_STRING));
 
     int result = 0;
     {

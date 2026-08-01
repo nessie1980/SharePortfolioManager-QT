@@ -6,6 +6,26 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.4.1] - 2026-08-01
+
+### Fixed
+
+- Fenstertitel zeigte bei geöffnetem Portfolio zusätzlich dessen Dateinamen
+  an ("Share Portfolio Manager - portfolio.db") — redundant zur bereits
+  vorhandenen, live aktualisierten Anzeige des vollen Pfads unten rechts in
+  der Statusleiste. `MainWindow::updateWindowTitle()` wurde entfernt; ihre
+  Aufrufer aktualisieren jetzt nur noch die Statusleiste. Siehe
+  `docs/architecture/ARCHITECTURE.md`, "Fenstertitel — Version statt
+  Dateiname".
+
+### Added
+
+- Fenstertitel zeigt stattdessen die aktuelle Applikationsversion an
+  ("Share Portfolio Manager (Version X.Y.Z)"), dynamisch über
+  `QCoreApplication::applicationVersion()` — dieselbe Quelle, die
+  `AboutForm` bereits verwendet. Siehe `docs/architecture/ARCHITECTURE.md`,
+  "Fenstertitel — Version statt Dateiname".
+
 ## [1.4.0] - 2026-07-31
 
 ### Added
@@ -107,6 +127,7 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   `docs/architecture/ARCHITECTURE.md`, "settings.ini nicht persistent im
   AppImage".
 
+[1.4.1]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.1.0...v1.2.0

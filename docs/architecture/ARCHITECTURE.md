@@ -1975,6 +1975,50 @@ Voraussetzung für ein korrektes `MAX()` über alle `ShareUpdateType`-Varianten:
 ergänzt werden, da bis dahin nur `onMarketValuesUpdated()` diesen Wert
 schrieb — siehe @note bei "Callback onDailyValuesUpdated()" oben.
 
+#### Fenstertitel — Version statt Dateiname (Bugfix + Feature, 01.08.2026)
+
+Zwei zusammenhängende Änderungen an `setWindowTitle()`, auf Nessies Vorgabe:
+
+- **Bugfix:** `MainWindow::updateWindowTitle(portfolioPath)` hängte bislang
+  zusätzlich den Dateinamen des geöffneten Portfolios an den Fenstertitel
+  an ("Share Portfolio Manager - portfolio.db"). Das war redundant zur
+  bereits vorhandenen, live aktualisierten Anzeige des vollen Pfads unten
+  rechts in der Statusleiste (`updateStatusBarPortfolio()`, siehe
+  `m_portfolioPathLabel`). Die Methode `updateWindowTitle()` wurde
+  vollständig entfernt; ihre drei Aufrufer (`onNewPortfolio()`,
+  `onOpenPortfolio()`, `onSaveAsPortfolio()`) rufen jetzt direkt
+  `updateStatusBarPortfolio(filePath)` auf — der einzig verbliebene Teil
+  ihrer bisherigen Aufgabe.
+- **Feature:** Der Fenstertitel zeigt stattdessen die aktuelle
+  Applikationsversion: "Share Portfolio Manager (Version X.Y.Z)". Neue
+  private Hilfsmethode `MainWindow::baseWindowTitle()` liest die Version
+  über `QCoreApplication::applicationVersion()` — dieselbe App-weite
+  Quelle, die `AboutForm` bereits verwendet (siehe Abschnitt
+  "Versionierung" oben), damit kein zweiter Ort für den Versionsbump
+  entsteht und kein zusätzlicher `Version.h`-Include in `MainWindow.cpp`
+  nötig ist.
+
+`baseWindowTitle()` wird sowohl in `initialize()` (Titel beim Start) als
+auch — vor der Entfernung — in `updateWindowTitle()` verwendet; da Letztere
+komplett entfällt, ist `initialize()` inzwischen die einzige Aufrufstelle.
+Der Titel ändert sich damit nach dem Start nicht mehr automatisch mit
+geöffnetem/gewechseltem Portfolio — beabsichtigt, siehe Bugfix oben.
+
+Testabdeckung: `test_construction_windowTitleContainsVersion` in
+`tst_mainwindow.cpp` prüft per `QRegularExpression` auf ein `(Version
+X.Y.Z)`-Muster im Titel, statt den literalen `SPM_VERSION_STRING` zu
+vergleichen — bleibt damit bei künftigen Versionsbumps unverändert grün.
+Damit die Prüfung eine echte Versionsnummer sieht (nicht nur einen leeren
+String), setzt `tst_mainwindow.cpp`s eigene `main()` jetzt ebenfalls
+`app.setApplicationVersion(QStringLiteral(SPM_VERSION_STRING))`, analog zu
+`main.cpp` — dafür ergänzt `tests/forms/CMakeLists.txt` bei
+`target_include_directories(tst_mainwindow)` den Pfad
+`${CMAKE_BINARY_DIR}/app`, wo `Version.h` von CMake generiert wird. Der
+zuvor vorhandene, aber bereits vor diesem Feature bedeutungslose Test
+`test_updateWindowTitle_showsFileName` (konstruierte nur ein `MainWindow`
+und prüfte `startsWith("Share Portfolio Manager")`, ohne
+`updateWindowTitle()` je aufzurufen) wurde ersatzlos entfernt.
+
 #### Footer-Tabelle (Summenzeilen)
 
 Jeder Tab hat unter der Haupttabelle eine eigene 3-zeilige Footer-Tabelle. Der
@@ -2933,6 +2977,11 @@ generierten Versions-Header:
 nicht angepasst werden — sie zeigen automatisch den korrekten, jetzt aus
 CMake generierten Wert an.
 
+Feature (01.08.2026): `MainWindow::baseWindowTitle()` verwendet denselben
+Mechanismus für den Fenstertitel ("Share Portfolio Manager (Version
+X.Y.Z)") — siehe "MainWindow-Details", Abschnitt "Fenstertitel", für die
+Details und den zugehörigen Bugfix (redundante Dateiname-Anzeige entfernt).
+
 Bewusst außerhalb dieses Mechanismus: `Logging::Logger::version()`,
 `ParserLib::Parser::version()` und `Database::version()` — das sind
 eigenständige, von der Applikationsversion unabhängige Bibliotheksversionen
@@ -3015,6 +3064,17 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 ---
 
 ## Erledigt / Archiv
+
+### Fenstertitel: Versionsnummer statt redundantem Dateinamen (Bugfix + Feature, 01.08.2026)
+
+Auf Nessies Vorgabe: Der Fenstertitel zeigte bei geöffnetem Portfolio
+zusätzlich dessen Dateinamen an — redundant zur bereits vorhandenen
+Statusleisten-Anzeige unten rechts (Bugfix, `updateWindowTitle()` entfernt).
+Stattdessen zeigt der Titel jetzt die App-Version über
+`MainWindow::baseWindowTitle()` / `QCoreApplication::applicationVersion()`
+(Feature). Volle Details, betroffene Methoden und Testabdeckung siehe
+"MainWindow-Details", Abschnitt "Fenstertitel — Version statt Dateiname",
+sowie "Versionierung" oben.
 
 ### Grid-Selektionsfarbe (Blau/Gelb) in allen Grids (erledigt, 30.07.2026)
 

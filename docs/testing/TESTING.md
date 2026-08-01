@@ -326,6 +326,7 @@ MainWindow:
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_construction_windowTitleSet` | Fenstertitel nach Konstruktion gesetzt | Enthält "Share Portfolio Manager" |
+| `test_construction_windowTitleContainsVersion` | Feature 01.08.2026: Fenstertitel zeigt App-Version | Titel matcht `\(Version \d+\.\d+\.\d+\)` |
 | `test_construction_actionsDisabledAtStart` | Menüaktionen ohne Portfolio deaktiviert | `isEnabled()` = false |
 | `test_clearPortfolioTables_removesAllRows` | 2 Datentabellen starten leer, 2 Footer behalten ihre 3 Summenzeilen | `emptyCount` = 2, `footerCount` = 2 |
 | `test_finalValueTable_showsFinalFields` | Regression Depotwert-Anzeige: Tab zeigt die `…Final`-Felder (mit Brokerage), nicht die brokeragefreien Marktwerte | "Aktuelle Entwicklung" = `profitLossFinal` (-1009,90), "Einzahlung" = `purchaseValueFinal` (1009,90) statt 1000,00 |
@@ -333,7 +334,6 @@ MainWindow:
 | `test_marketValueTable_priceBottomColorIsNeutral` | Regression Bugfix 03.07.2026: Unterzeile von "Preis" (Marktwert) nutzt `neutral` statt `muted` | `BottomColor.alpha()` = `neutral.alpha()` |
 | `test_finalValueFooter_costDividendCell` | Depotwert-Footer: Kosten/Dividenden als 2-zeiliger Wert in der Mittelzeile | Zelle (Zeile 1, Spalte Kosten/Dividenden) `TwoLineRole::Top` = `totalBrokerage` (9,90), `Bottom` = `totalDividend` (0,00) |
 | `test_updatePortfolioLabel_defaultValues` | Portfolio-Label existiert | `findChild<QLabel*>()` nicht null |
-| `test_updateWindowTitle_showsFileName` | Fenstertitel enthält Dateinamen nach Öffnen | Titel enthält Dateinamen |
 | `test_newPortfolio_databaseCreated` | Neue DB-Datei wird angelegt | `QFileInfo::exists()` = true |
 | `test_newPortfolio_schemaCreated` | Schema-Tabellen vorhanden nach Anlage | Tabellen existieren in DB |
 | `test_newPortfolio_closePreviousBeforeOpening` | Bestehende DB wird vor Neuanlage geschlossen | Kein Verbindungsleck |

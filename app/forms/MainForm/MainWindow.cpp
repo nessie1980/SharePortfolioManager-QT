@@ -97,7 +97,7 @@ MainWindow::MainWindow(QNetworkAccessManager* networkManagerForTesting, QWidget*
 // No behavioral change versus the previous single-constructor version.
 void MainWindow::initialize()
 {
-    setWindowTitle(tr("Share Portfolio Manager"));
+    setWindowTitle(baseWindowTitle());
     setMinimumSize(900, 600);
 
     // Activate the configured icon set (default for now)
@@ -844,11 +844,10 @@ void MainWindow::clearPortfolioTables()
             if (auto* it = m_marketValueFooter->item(r, c)) it->setText(QString());
 }
 
-void MainWindow::updateWindowTitle(const QString& portfolioPath)
+QString MainWindow::baseWindowTitle() const
 {
-    const QString fileName = QFileInfo(portfolioPath).fileName();
-    setWindowTitle(tr("Share Portfolio Manager - %1").arg(fileName));
-    updateStatusBarPortfolio(portfolioPath);
+    return tr("Share Portfolio Manager (Version %1)")
+        .arg(QCoreApplication::applicationVersion());
 }
 
 // ── updateStatusBarPortfolio ──────────────────────────────────────────────────
@@ -896,7 +895,7 @@ void MainWindow::onNewPortfolio()
     // Update UI
     clearPortfolioTables();
     updatePortfolioLabel(0);
-    updateWindowTitle(filePath);
+    updateStatusBarPortfolio(filePath);
 
     // New empty portfolio: only Add is enabled — nothing to update yet
     m_actionAdd->setEnabled(true);
@@ -944,7 +943,7 @@ void MainWindow::onOpenPortfolio()
     AppSettings::instance().setPortfolioPath(filePath);
 
     // Update UI
-    updateWindowTitle(filePath);
+    updateStatusBarPortfolio(filePath);
     addStatusMessage(tr("Portfolio geöffnet: %1").arg(filePath),
                      MessageType::Success);
     populatePortfolioTables();
@@ -1240,7 +1239,7 @@ void MainWindow::onSaveAsPortfolio()
     Database::instance().close();
     AppSettings::instance().setPortfolioPath(filePath);
     Database::instance().open(filePath);
-    updateWindowTitle(filePath);
+    updateStatusBarPortfolio(filePath);
 
     addStatusMessage(tr("Portfolio gespeichert unter: %1").arg(filePath),
                      MessageType::Success);

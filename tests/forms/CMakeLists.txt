@@ -117,6 +117,13 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
 
 target_include_directories(tst_mainwindow
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            # Feature (01.08.2026): Version.h wird von CMake nur in app/CMakeLists.txt
+            # via configure_file(Version.h.in ... ${CMAKE_CURRENT_BINARY_DIR}/Version.h)
+            # generiert — CMAKE_CURRENT_BINARY_DIR ist zu diesem Zeitpunkt
+            # ${CMAKE_BINARY_DIR}/app (spiegelt den Quellbaum). tst_mainwindow.cpp
+            # braucht SPM_VERSION_STRING für den Fenstertitel-Versionstest, siehe
+            # tst_mainwindow.cpp main() und ARCHITECTURE.md, "Versionierung".
+            ${CMAKE_BINARY_DIR}/app
             ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/ShareEditForm
             ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/BuysForm
             ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/SalesForm
