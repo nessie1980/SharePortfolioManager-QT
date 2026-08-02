@@ -4545,6 +4545,46 @@ private slots:
         // onPortfolioRowRightClicked()).
         QCOMPARE(popup->width(), window.width() - 50);
 
+        // ── TEMPORÄRE DIAGNOSE (Commit "Diagnose: ...", 02.08.2026) ────────
+        // Ausschließlich zur Ursachenklärung des CI-only-Fehlschlags von
+        // popupCenterX vs. mainWindowCenterX (siehe ARCHITECTURE.md,
+        // "Erledigt / Archiv" — wird dort nach Auswertung wieder entfernt).
+        // Reproduziert exakt dieselbe globalPos-/avail-Berechnung wie
+        // MainWindow::onPortfolioRowRightClicked() + ChartPopup::showAt(),
+        // um zu sehen, ob screenAt() auf dem CI-Runner einen anderen/
+        // schmaleren Screen liefert als primaryScreen()->availableGeometry()
+        // (screenGeom, oben für die Fenstergröße verwendet).
+        {
+            const QPoint clickGlobalPosDbg = tbl->viewport()->mapToGlobal(pos);
+            const int mainWindowGlobalCenterXDbg =
+                window.mapToGlobal(QPoint(window.width() / 2, 0)).x();
+            const QPoint intendedTopLeftDbg(
+                mainWindowGlobalCenterXDbg - popup->width() / 2, clickGlobalPosDbg.y());
+            const QScreen* screenDbg = QGuiApplication::screenAt(intendedTopLeftDbg);
+            const QRect availDbg = screenDbg ? screenDbg->availableGeometry()
+                                              : QGuiApplication::primaryScreen()->availableGeometry();
+
+            qWarning().noquote() << "[DIAG] screenGeom (Basis fuer Fenstergroesse):" << screenGeom;
+            qWarning().noquote() << "[DIAG] window.geometry():" << window.geometry();
+            qWarning().noquote() << "[DIAG] window.frameGeometry():" << window.frameGeometry();
+            qWarning().noquote() << "[DIAG] window.devicePixelRatioF():" << window.devicePixelRatioF();
+            qWarning().noquote() << "[DIAG] popup->width():" << popup->width();
+            qWarning().noquote() << "[DIAG] intendedTopLeft (an showAt() uebergeben):" << intendedTopLeftDbg;
+            qWarning().noquote() << "[DIAG] screenAt(intendedTopLeft) == primaryScreen()?"
+                                  << (screenDbg == QGuiApplication::primaryScreen());
+            qWarning().noquote() << "[DIAG] avail (screenAt-Ergebnis, wie in showAt()):" << availDbg;
+            qWarning().noquote() << "[DIAG] popup->geometry() (nach Klemmung):" << popup->geometry();
+            qWarning().noquote() << "[DIAG] popup->devicePixelRatioF():" << popup->devicePixelRatioF();
+            qWarning().noquote() << "[DIAG] QGuiApplication::screens().size():"
+                                  << QGuiApplication::screens().size();
+            for (const QScreen* s : QGuiApplication::screens()) {
+                qWarning().noquote() << "[DIAG]   screen" << s->name() << "geometry:" << s->geometry()
+                                      << "availableGeometry:" << s->availableGeometry()
+                                      << "devicePixelRatio:" << s->devicePixelRatio();
+            }
+        }
+        // ── ENDE TEMPORÄRE DIAGNOSE ─────────────────────────────────────────
+
         // Horizontal zentriert zum Hauptfenster — beide Mittelpunkte
         // (Popup-x + halbe Popup-Breite bzw. Hauptfenster-x + halbe
         // Hauptfensterbreite, jeweils in globalen Bildschirmkoordinaten)
