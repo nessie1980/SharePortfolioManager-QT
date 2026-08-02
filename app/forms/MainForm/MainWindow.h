@@ -498,6 +498,50 @@ private:
     QString formatLastPortfolioUpdate() const;
 
     /**
+     * @brief Formats a money value with an explicit sign, e.g. "+123,45 €"
+     * or "-42,00 €" (locale-aware via QLocale). Exakt 0 bekommt bewusst KEIN
+     * "+" (Nessies Vorgabe 02.08.2026) — "0,00 €", nicht "+0,00 €", da ein
+     * neutraler Wert kein Vorzeichen tragen soll.
+     *
+     * Feature 02.08.2026 ("Vortag"-Tooltip): dieselbe Vorzeichen-Formatierung,
+     * die bereits lokal für prevDiffStr/prevPctStr dupliziert war
+     * (populatePortfolioTables()/onMarketValuesUpdated()), hier einmalig als
+     * Hilfsmethode, da sie jetzt zusätzlich für den Tooltip-Text der
+     * Vortag-Spalte (Grid + Footer-Gesamtsumme) gebraucht wird.
+     */
+    QString formatSignedMoney(double value) const;
+
+    /**
+     * @brief Wraps a preformatted tooltip text fragment in a colored HTML
+     * `<span>` (rot/grün je nach Entwicklung, wie im Grid selbst).
+     *
+     * Feature 02.08.2026 (Vortag-Tooltip, Nessies Vorgabe): `QToolTip`
+     * unterstützt einen Rich-Text-Teilsatz (Qt erkennt "sieht nach HTML aus"
+     * automatisch via `Qt::mightBeRichText()`) — ein `<span
+     * style="color:...">`-Tag genügt, kein `<html>`-Wrapper nötig. `color`
+     * kommt aus derselben `perfColor()`-Lambda, die auch die Grid-Zellen
+     * selbst einfärbt, daher garantiert farblich konsistent.
+     */
+    QString colorizeToolTip(const QString& text, const QColor& color) const;
+
+    /**
+     * @brief Formats a signed money value for a tooltip, colored only when
+     * non-zero (used both for the per-unit price movement and the total
+     * result in the "Vortag"-Tooltip — each colored by its own sign).
+     *
+     * Bugfix 02.08.2026: Bei exakt 0 wird bewusst KEIN `<span
+     * style="color:...">` angewendet — weder Farbe noch führendes "+". Ein
+     * expliziter Farb-Span mit `palette().color(QPalette::Text)` (der Farbe,
+     * die `perfColor()` für den Neutral-Fall liefert) rendert im `QToolTip`
+     * sichtbar gräulich statt sattem Schwarz, da `QToolTip` intern eine
+     * eigene Palette (`ToolTipText`) statt der `MainWindow`-Palette
+     * verwendet. Reiner Text ohne Span übernimmt automatisch dieselbe
+     * (korrekte) Standard-Tooltip-Textfarbe wie der übrige, ungefärbte
+     * Tooltip-Text.
+     */
+    QString formatSignedMoneyMaybeColored(double value, const QColor& color) const;
+
+    /**
      * @brief Update the portfolio label with entry count and last update time.
      * @param entryCount      Number of shares in the portfolio.
      * @param lastUpdate      Last update timestamp string (e.g. "15.06.2024 10:30").

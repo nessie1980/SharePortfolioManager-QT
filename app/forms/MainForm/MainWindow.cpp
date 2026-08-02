@@ -823,6 +823,28 @@ QString MainWindow::formatLastPortfolioUpdate() const
     return locale.toString(dt, QLocale::ShortFormat);
 }
 
+QString MainWindow::formatSignedMoney(double value) const
+{
+    const QLocale locale;
+    // Kein "+" bei exakt 0 (Nessies Vorgabe 02.08.2026) — QLocale::toString()
+    // liefert für negative Werte bereits selbst ein "-", daher genügt hier
+    // ein "value > 0.0"-Check statt ">= 0.0".
+    return (value > 0.0 ? QStringLiteral("+") : QString())
+         + locale.toString(value, 'f', 2) + QStringLiteral(" €");
+}
+
+QString MainWindow::colorizeToolTip(const QString& text, const QColor& color) const
+{
+    return QStringLiteral("<span style=\"color:%1;\">%2</span>").arg(color.name(), text);
+}
+
+QString MainWindow::formatSignedMoneyMaybeColored(double value, const QColor& color) const
+{
+    if (qFuzzyIsNull(value))
+        return formatSignedMoney(value);
+    return colorizeToolTip(formatSignedMoney(value), color);
+}
+
 void MainWindow::updatePortfolioLabel(int entryCount, const QString& lastUpdate)
 {
     m_portfolioLabel->setText(
@@ -1081,6 +1103,53 @@ void MainWindow::populatePortfolioTables()
         // Vortag (2-line, colored)
         auto* prevDayItemF = makeTwoLine(prevDiffStr, perfColor(v.prevDayDiff),
                                          prevPctStr,  perfColor(v.prevDayPct));
+        // Feature 02.08.2026: Tooltip zeigt die Gesamtänderung (Tagesänderung
+        // pro Aktie x aktuell gehaltene Anteile) statt der Pro-Aktie-Änderung —
+        // dieselbe Formel wie ShareDetailsForm-Vortag-Box
+        // (PresenterShareDetails::buildVortagBox()), hier direkt über
+        // ShareCalculator::roundAway() statt der dortigen DB-freien Kopie, da
+        // MainWindow ShareCalculator.cpp ohnehin schon linkt.
+        // Identisch für Depotwert- und Marktwert-Tab (Anteile/Vortagsdiff sind
+        // unabhängig vom Brokerage), daher nur einmal berechnet und unten für
+        // prevDayItemM wiederverwendet.
+        const double prevDayTotal = ShareCalculator::roundAway(v.volume * v.prevDayDiff);
+        // Farbe richtet sich nach dem TOTAL, nicht nach der reinen Kursbewegung
+        // (Nessies Vorgabe 02.08.2026): hält man 0 Anteile, ist das Ergebnis 0
+        // und damit neutral, auch wenn sich der Kurs bewegt hat — umgekehrt
+        // genauso neutral, wenn sich der Kurs nicht bewegt hat, auch bei
+        // gehaltenen Anteilen. perfColor(0.0) liefert bereits neutral/schwarz,
+        // die Fallunterscheidung ergibt sich also allein aus prevDayTotal.
+        const QColor prevDayColor = perfColor(prevDayTotal);
+        // Vier Nachkommastellen NUR im Tooltip (nicht in der Anteile-Spalte
+        // selbst, die weiterhin volumeStr mit 2 Nachkommastellen verwendet) —
+        // Nessies Vorgabe 02.08.2026, damit die von Auge nachvollzogene
+        // Rechnung (Stk. x Kurswert-Entw.) exakt zum Ergebnis passt, statt
+        // durch Rundung auf 2 Nachkommastellen leicht abzuweichen.
+        const QString tooltipVolumeStr = locale.toString(v.volume, 'f', 4);
+        // Vierter Anlauf (Nessies Vorgabe 02.08.2026): der Pro-Stück-Wert
+        // wird jetzt DOCH wieder eingefärbt — nach seinem EIGENEN Vorzeichen
+        // (perfColor(v.prevDayDiff)), unabhängig von der Farbe des
+        // Gesamtergebnisses (die weiterhin nach prevDayTotal geht). Beide
+        // Werte nutzen denselben Zero-Aware-Helfer, zeigen also bei 0 jeweils
+        // schwarzen Text ohne "+".
+        const QString coloredDiffStr =
+            formatSignedMoneyMaybeColored(v.prevDayDiff, perfColor(v.prevDayDiff));
+        // Layout (Nessies Vorgabe 02.08.2026): Zeile 1 nur die Beschriftung
+        // (kein Wert — der stand vorher bereits in Zeile 2 und wurde damit
+        // doppelt angezeigt), Zeile 2 der Rechenweg, beide Werte farbig nach
+        // ihrem jeweils eigenen Vorzeichen. `white-space:nowrap` verhindert
+        // einen Zeilenumbruch in Zeile 2 — ohne das bricht Qt die Rich-Text-
+        // Zeile sonst an der verfügbaren Tooltip-Breite um.
+        const QString prevDayTotalTooltip =
+            tr("<div style=\"white-space:nowrap;\">Gesamtänderung Aktie:<br>"
+               "%1 Stk. × %2 = %3</div>")
+                .arg(tooltipVolumeStr, coloredDiffStr,
+                     formatSignedMoneyMaybeColored(prevDayTotal, prevDayColor));
+        prevDayItemF->setToolTip(prevDayTotalTooltip);
+        // Nessies Vorgabe 02.08.2026: derselbe Tooltip auch auf der
+        // Piktogramm-Spalte davor (Entwicklungs-Pfeil-Icon), nicht nur auf
+        // "Vortag" selbst.
+        prevChartItemF->setToolTip(prevDayTotalTooltip);
 
         // Depotwert-specific strings (WITH brokerage)
         const QString profitFinalStr    = locale.toString(v.profitLossFinal, 'f', 2)
@@ -1154,8 +1223,10 @@ void MainWindow::populatePortfolioTables()
         auto* prevChartItemM = new QTableWidgetItem();
         prevChartItemM->setIcon(devIcon(v.prevDayPct));
         prevChartItemM->setFlags(prevChartItemM->flags() & ~Qt::ItemIsEditable);
+        prevChartItemM->setToolTip(prevDayTotalTooltip);
         auto* prevDayItemM   = makeTwoLine(prevDiffStr, perfColor(v.prevDayDiff),
                                            prevPctStr,  perfColor(v.prevDayPct));
+        prevDayItemM->setToolTip(prevDayTotalTooltip);
         // Aktuelle Entwicklung: profitLoss per buy (no brokerage)
         auto* perfItemM      = makeTwoLine(profitMStr,    perfColor(v.profitLoss),
                                            profitMPctStr, perfColor(v.profitLossPct));
@@ -2314,6 +2385,25 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
         const QString purchaseStr  = locale.toString(v.purchaseValue, 'f', 2) + QStringLiteral(" €");
         const QString curValStr    = locale.toString(v.curValue, 'f', 2) + QStringLiteral(" €");
 
+        // Vortag-Tooltip (Feature 02.08.2026, siehe populatePortfolioTables()) —
+        // muss beim Einzel-Refresh ebenfalls aktualisiert werden, sonst zeigt
+        // der Tooltip nach einem Refresh weiterhin den alten Wert.
+        const double prevDayTotal = ShareCalculator::roundAway(v.volume * v.prevDayDiff);
+        // Farbe richtet sich nach dem TOTAL, nicht nach der reinen Kursbewegung
+        // (Nessies Vorgabe 02.08.2026, siehe populatePortfolioTables()).
+        const QColor prevDayColor = perfColor(prevDayTotal);
+        // Vier Nachkommastellen NUR im Tooltip, siehe populatePortfolioTables().
+        const QString tooltipVolumeStr = locale.toString(v.volume, 'f', 4);
+        // Pro-Stück-Wert nach eigenem Vorzeichen eingefärbt, siehe
+        // populatePortfolioTables().
+        const QString coloredDiffStr =
+            formatSignedMoneyMaybeColored(v.prevDayDiff, perfColor(v.prevDayDiff));
+        const QString prevDayTotalTooltip =
+            tr("<div style=\"white-space:nowrap;\">Gesamtänderung Aktie:<br>"
+               "%1 Stk. × %2 = %3</div>")
+                .arg(tooltipVolumeStr, coloredDiffStr,
+                     formatSignedMoneyMaybeColored(prevDayTotal, prevDayColor));
+
         // Update Depotwert row
         if (const int fr = findRow(m_finalValueTable); fr >= 0) {
             using FC = FinalValueColumn;
@@ -2325,8 +2415,12 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
                        curPriceStr, neutral, prevPriceStr, neutral);
             setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::PrevDay),
                        prevDiffStr, perfColor(v.prevDayDiff), prevPctStr, perfColor(v.prevDayPct));
-            if (auto* it = m_finalValueTable->item(fr, static_cast<int>(FC::PrevDayChart)))
+            if (auto* it = m_finalValueTable->item(fr, static_cast<int>(FC::PrevDay)))
+                it->setToolTip(prevDayTotalTooltip);
+            if (auto* it = m_finalValueTable->item(fr, static_cast<int>(FC::PrevDayChart))) {
                 it->setIcon(devIcon(v.prevDayPct));
+                it->setToolTip(prevDayTotalTooltip);
+            }
             setTwoLine(m_finalValueTable, fr, static_cast<int>(FC::Performance),
                        profitFinalStr, perfColor(v.profitLossFinal),
                        profitFinalPctStr, perfColor(v.profitLossPctFinal));
@@ -2352,8 +2446,12 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
                        curPriceStr, neutral, prevPriceStr, neutral);
             setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::PrevDay),
                        prevDiffStr, perfColor(v.prevDayDiff), prevPctStr, perfColor(v.prevDayPct));
-            if (auto* it = m_marketValueTable->item(mr, static_cast<int>(MC::PrevDayChart)))
+            if (auto* it = m_marketValueTable->item(mr, static_cast<int>(MC::PrevDay)))
+                it->setToolTip(prevDayTotalTooltip);
+            if (auto* it = m_marketValueTable->item(mr, static_cast<int>(MC::PrevDayChart))) {
                 it->setIcon(devIcon(v.prevDayPct));
+                it->setToolTip(prevDayTotalTooltip);
+            }
             setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::Performance),
                        profitStr, perfColor(v.profitLoss), profitPctStr, perfColor(v.profitLossPct));
             setTwoLine(m_marketValueTable, mr, static_cast<int>(MC::PurchaseMarketValue),
@@ -2643,11 +2741,19 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
     m_finalValueFooter->setRowHeight(2, 34);
 
     // Separate totals for the Kosten / Dividenden cell (2-line, middle row).
-    double tBrokerage = 0.0, tDividend = 0.0;
+    // Feature 02.08.2026: Gesamtänderung Vortag über das ganze Portfolio —
+    // Summe der bereits pro Aktie gerundeten Einzelwerte (nicht: Summe der
+    // Rohwerte, dann einmal gerundet), damit die Portfolio-Summe exakt der
+    // Summe der einzelnen Grid-Tooltips entspricht.
+    double tBrokerage = 0.0, tDividend = 0.0, tPrevDayTotal = 0.0;
     for (const ShareValues& v : shareValues) {
-        tBrokerage += v.totalBrokerage;
-        tDividend  += v.totalDividend;
+        tBrokerage    += v.totalBrokerage;
+        tDividend     += v.totalDividend;
+        tPrevDayTotal += ShareCalculator::roundAway(v.volume * v.prevDayDiff);
     }
+    const QString footerPrevDayTooltip =
+        tr("<div style=\"white-space:nowrap;\">Gesamtänderung Portfolio: %1</div>")
+            .arg(formatSignedMoneyMaybeColored(tPrevDayTotal, perfColor(tPrevDayTotal)));
 
     using FC = FinalValueColumn;
     // Merge Preis + (Chart-)Icon + Vortag so the row label is right-aligned up
@@ -2660,6 +2766,10 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
     // Row 0 — Einzahlung (gesamt): single-line (current Depotstand is row 2).
     m_finalValueFooter->setItem(0, static_cast<int>(FC::Price),
         makeTextItem(tr("Einzahlung (gesamt)"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    // Tooltip auf den Span-Anker (Price) gesetzt — der Span deckt
+    // Preis/Chart-Icon/Vortag ab (setSpan oben), Hovern über die
+    // Vortag-Spalte des Footers zeigt daher denselben Tooltip.
+    m_finalValueFooter->item(0, static_cast<int>(FC::Price))->setToolTip(footerPrevDayTooltip);
     m_finalValueFooter->setItem(0, static_cast<int>(FC::PurchaseFinalValue),
         makeFooterItem(locale.toString(tPurchase, 'f', 2) + QStringLiteral(" €"), neutral,
                        QString(), muted));
@@ -2671,6 +2781,7 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
     // Kosten / Dividenden column, plus the complete-development icon.
     m_finalValueFooter->setItem(1, static_cast<int>(FC::Price),
         makeTextItem(tr("Entwicklung (gesamt)"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    m_finalValueFooter->item(1, static_cast<int>(FC::Price))->setToolTip(footerPrevDayTooltip);
     // "Kosten / Dividenden (ges.)" label, two-line to match its value:
     // Kosten (top) / Dividenden (bottom), both full neutral (no dimming).
     m_finalValueFooter->setSpan(1, static_cast<int>(FC::Icon), 1, 4);
@@ -2700,6 +2811,7 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
     // Row 2 — Aktueller Depotstand: single-line.
     m_finalValueFooter->setItem(2, static_cast<int>(FC::Price),
         makeTextItem(tr("Aktueller Depotstand"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    m_finalValueFooter->item(2, static_cast<int>(FC::Price))->setToolTip(footerPrevDayTooltip);
     m_finalValueFooter->setItem(2, static_cast<int>(FC::PurchaseFinalValue),
         makeFooterItem(locale.toString(tCurValue, 'f', 2) + QStringLiteral(" €"), neutral,
                        QString(), muted));
@@ -2741,6 +2853,10 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
     // Marktwert total is shown in row 2 "Aktueller Depotstand").
     m_marketValueFooter->setItem(0, static_cast<int>(MC::Icon),
         makeTextItem(tr("Einzahlung (gesamt)"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    // tPrevDayTotal/footerPrevDayTooltip oben beim Depotwert-Footer berechnet —
+    // Wert ist brokerageunabhängig (Anteile x Vortagsdiff) und daher für
+    // beide Footer identisch, keine zweite Berechnung nötig.
+    m_marketValueFooter->item(0, static_cast<int>(MC::Icon))->setToolTip(footerPrevDayTooltip);
     m_marketValueFooter->setItem(0, static_cast<int>(MC::PurchaseMarketValue),
         makeFooterItem(locale.toString(mPurchase, 'f', 2) + QStringLiteral(" €"), neutral,
                        QString(), muted));
@@ -2751,6 +2867,7 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
     // Row 1 — Entwicklung (gesamt)
     m_marketValueFooter->setItem(1, static_cast<int>(MC::Icon),
         makeTextItem(tr("Entwicklung (gesamt)"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    m_marketValueFooter->item(1, static_cast<int>(MC::Icon))->setToolTip(footerPrevDayTooltip);
     m_marketValueFooter->setItem(1, static_cast<int>(MC::Performance),
         makeFooterItem(locale.toString(mProfit, 'f', 2) + QStringLiteral(" €"),
                        perfColor(mProfit),
@@ -2771,6 +2888,7 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
     // Row 2 — Aktueller Depotstand (= marketValue gesamt)
     m_marketValueFooter->setItem(2, static_cast<int>(MC::Icon),
         makeTextItem(tr("Aktueller Depotstand"), neutral, Qt::AlignRight | Qt::AlignVCenter));
+    m_marketValueFooter->item(2, static_cast<int>(MC::Icon))->setToolTip(footerPrevDayTooltip);
     m_marketValueFooter->setItem(2, static_cast<int>(MC::PurchaseMarketValue),
         makeFooterItem(locale.toString(mMarketValue, 'f', 2) + QStringLiteral(" €"), neutral,
                        QString(), muted));

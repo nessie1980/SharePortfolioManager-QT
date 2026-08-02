@@ -3099,6 +3099,124 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 
 ## Erledigt / Archiv
 
+### Vortag-Spalte + Piktogramm-Spalte: Tooltip mit Gesamtänderung (Feature, 02.08.2026)
+
+Beim Hovern über die "Vortag"-Spalte **und** die Entwicklungs-Pfeil-Icon-
+Spalte direkt davor (`PrevDayChart`) im Portfolio-Grid (Depotwert- **und**
+Marktwert-Tab) zeigt ein Tooltip die Gesamtänderung der Position statt der
+reinen Pro-Aktie-Kursänderung — also `aktuell gehaltene Anteile ×
+Kurswert-Entw. (prevDayDiff)`, gerundet mit `ShareCalculator::roundAway()`.
+Dieselbe Formel verwendet bereits `PresenterShareDetails::buildVortagBox()`
+für die "Vortag"-Box in `ShareDetailsForm` — hier direkt über
+`ShareCalculator::roundAway()` aufgerufen (kein Grund für die dortige
+DB-freie Kopie, da `MainWindow` `ShareCalculator.cpp` ohnehin bereits linkt).
+
+**Finales Layout (Grid):**
+
+```
+Gesamtänderung Aktie:
+40,0000 Stk. × +12,30 € = +492,00 €
+```
+
+- Zeile 1 ist reine Beschriftung ohne Wert.
+- Zeile 2 ist der Rechenweg. Anteile-Anzahl mit **vier** statt zwei
+  Nachkommastellen (`tooltipVolumeStr`, nur im Tooltip — die "Anteile"-Spalte
+  selbst zeigt weiterhin zwei Nachkommastellen über `volumeStr`), damit die
+  von Auge nachvollzogene Multiplikation exakt zum Ergebnis passt.
+- Pro-Stück-Wert (`+12,30 €`) **und** Gesamtergebnis (`+492,00 €`) sind
+  jeweils nach ihrem **eigenen** Vorzeichen eingefärbt (grün/rot), unabhängig
+  voneinander — z. B. kann der Kurs gefallen sein (Pro-Stück-Wert rot),
+  während 0 Anteile gehalten werden (Gesamtergebnis schwarz/neutral).
+- Bei exakt 0 (weder Kursbewegung noch Positionswert) wird **kein**
+  Vorzeichen und **keine** Farbe angezeigt — reiner schwarzer Text
+  (`"0,00 €"`, nicht `"+0,00 €"`).
+- Zeile 2 steckt in einem `<div style="white-space:nowrap;">…</div>`, damit
+  sie bei keiner Tooltip-Breite umbricht.
+
+**Finales Layout (Footer, einzeilig):**
+
+```
+Gesamtänderung Portfolio: +492,00 €
+```
+
+Nur Beschriftung + farbig eingefärbter Wert in einer Zeile, ohne Rechenweg —
+der Footer summiert über mehrere Aktien mit unterschiedlichem
+Anteile/Kurswert-Entw., ein einzelner "Anteile × Entw."-Ausdruck wäre hier
+irreführend. Wert ist die Summe aller Einzel-Gesamtänderungen des Portfolios
+(Summe der bereits pro Aktie gerundeten Werte, nicht: Summe der Rohwerte und
+einmal am Ende gerundet, damit die Portfolio-Summe exakt der Summe der
+einzelnen Grid-Tooltips entspricht). Da der Wert brokerageunabhängig ist, ist
+er für Depotwert- und Marktwert-Footer identisch — nur einmal in
+`updatePortfolioFooters()` berechnet, für beide wiederverwendet.
+
+**Drei neue private `MainWindow`-Hilfsmethoden:**
+
+- `formatSignedMoney(value)` — Vorzeichen + `QLocale`-Format; "+" nur bei
+  `value > 0.0`, nie bei 0 (negative Werte tragen ihr "-" bereits über
+  `QLocale::toString()`).
+- `colorizeToolTip(text, color)` — kapselt ein `<span
+  style="color:...">`-Tag. `QToolTip` unterstützt einen Rich-Text-Teilsatz
+  (Qt erkennt das über `Qt::mightBeRichText()` automatisch an HTML-Tags).
+- `formatSignedMoneyMaybeColored(value, color)` — kombiniert beide: bei
+  `qFuzzyIsNull(value)` bewusst **reiner Text ohne Farb-Span**, sonst
+  `colorizeToolTip(formatSignedMoney(value), color)`. Der reine Text bei 0
+  ist kein kosmetisches Detail, sondern ein Bugfix: ein Farb-Span mit
+  `palette().color(QPalette::Text)` (der `MainWindow`-Palette, die
+  `perfColor()` für den Neutral-Fall liefert) rendert in `QToolTip`
+  sichtbar gräulich statt sattem Schwarz, da `QToolTip` intern eine eigene,
+  unabhängige Palette (`QPalette::ToolTipText`) verwendet — reiner Text ohne
+  Span übernimmt automatisch die korrekte Tooltip-Standardfarbe, identisch
+  zum ungefärbten Rest der Zeile (Label, "Stk. ×", "=").
+
+**Farb-Eingaben:** Gesamtergebnis → `perfColor(prevDayTotal)` (nicht
+`perfColor(v.prevDayDiff)`) — bei 0 gehaltenen Anteilen ODER unverändertem
+Kurs ist `prevDayTotal` 0 und damit neutral, auch wenn der jeweils andere
+Faktor ungleich 0 ist. Pro-Stück-Wert → `perfColor(v.prevDayDiff)`, unabhängig
+vom Gesamtergebnis. Betrifft ausschließlich die Tooltip-Farben; die
+Grid-Zelle "Vortag" selbst (`prevDiffStr`/`prevPctStr`, `makeTwoLine(...)`)
+bleibt unverändert nach der reinen Kursbewegung eingefärbt, da sie die
+Kursentwicklung an sich zeigt, nicht den Positionswert.
+
+**Gesetzt an folgenden Stellen** (die Vortag- und PrevDayChart-Spalten werden
+an mehreren Stellen befüllt):
+
+- `populatePortfolioTables()` — beim initialen Tabellenaufbau, auf
+  `prevDayItemF`/`prevChartItemF` (Depotwert) und `prevDayItemM`/
+  `prevChartItemM` (Marktwert). Da `v.volume`/`v.prevDayDiff` unabhängig vom
+  Brokerage und damit für beide Tabs identisch sind, wird der Tooltip-Text
+  nur einmal pro Aktie berechnet und für beide Tabs wiederverwendet.
+- `onMarketValuesUpdated()` — beim Einzel-Refresh einer Aktie. `setTwoLine()`
+  aktualisiert nur Text-/Farb-Rollen, nicht den Tooltip; dieser wird daher
+  zusätzlich per `item->setToolTip()` auf `FC::PrevDay`/`MC::PrevDay` **und**
+  `FC::PrevDayChart`/`MC::PrevDayChart` gesetzt — sonst zeigt der Tooltip nach
+  einem Refresh weiterhin den alten Wert.
+- `updatePortfolioFooters()` — Footer hat keine eigene Vortag-Zelle (Preis +
+  Chart-Icon + Vortag sind im Depotwert-Footer per `setSpan()` zu einem
+  rechtsbündigen Zeilen-Label verschmolzen, im Marktwert-Footer sogar
+  Icon..Vortag als ganzer Zeilen-Label-Span, siehe "Footer-Tabelle
+  (Summenzeilen)" oben). Tooltip wird daher auf den jeweiligen Span-Anker
+  gesetzt (`FC::Price` bei allen drei Zeilen im Depotwert-Footer, `MC::Icon`
+  bei allen drei Zeilen im Marktwert-Footer) — Hovern über eine beliebige
+  Stelle des gemergten Labels (inkl. der visuellen Vortag- und
+  PrevDayChart-Spalte) zeigt so denselben Tooltip. `refreshPortfolioFooters()`
+  (nach jedem Einzel-Refresh aufgerufen, siehe `onRefreshShareFinished()`)
+  berechnet die komplette `ShareValues`-Liste neu und ruft
+  `updatePortfolioFooters()` — der Footer-Tooltip bleibt dadurch ohne
+  weitere Änderung auch nach einem Einzel-Refresh korrekt.
+
+@note **Multiplikationszeichen "×" statt "*":** In einer Zwischen-Vorgabe
+wurde ein ASCII-"*" genannt, die App verwendet aber durchgängig "×" (u. a. in
+`ShareDetailsForm`s Vortag-Box, dieselbe Formel) — als "×" beibehalten für
+Konsistenz mit dem Rest der App.
+
+@note **Iterationshistorie:** Das Feature durchlief mehrere Rückmeldungsrunden
+(Rechenzeile ergänzt, dann Layout korrigiert, dann Farblogik zweimal
+angepasst — zuerst nur Gesamtergebnis farbig, dann doch wieder beide Werte
+unabhängig voneinander farbig, dazu der Grau-statt-Schwarz-Bugfix bei 0). Der
+obige Abschnitt beschreibt ausschließlich den finalen, bestätigten Stand
+("So lassen wir es", 02.08.2026) — Zwischenstände sind nicht mehr separat
+dokumentiert.
+
 ### test_onPortfolioRowRightClicked_validGuid_popupCenteredAndNarrowerThanMainWindow — CI-only-Fehlschlag behoben (Bugfix, 02.08.2026)
 
 Reproduzierbar und deterministisch nur im CI-Lauf fehlgeschlagen

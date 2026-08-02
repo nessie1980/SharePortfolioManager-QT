@@ -2028,6 +2028,40 @@ frage zu prüfen — nämlich schlicht: läuft `refreshPortfolioFooters()`
 Footer-Text vor/nach Refresh auf Änderung/Gleichheit statt auf einen
 bestimmten Zahlenwert.
 
+### Vortag-Tooltip (Gesamtänderung) — erledigt (02.08.2026)
+
+Feature (siehe ARCHITECTURE.md, "Vortag-Spalte + Piktogramm-Spalte: Tooltip
+mit Gesamtänderung"): Hovern über die "Vortag"-Spalte **und** über die
+Entwicklungs-Pfeil-Icon-Spalte davor (`PrevDayChart`) zeigt einen
+zweizeiligen Tooltip — Zeile 1 nur die Beschriftung "Gesamtänderung Aktie:",
+Zeile 2 der Rechenweg (`Anteile × Kurswert-Entw. = Ergebnis`, Anteile mit 4
+statt 2 Nachkommastellen). Pro-Stück-Wert **und** Gesamtergebnis sind jeweils
+**unabhängig voneinander** nach ihrem eigenen Vorzeichen eingefärbt
+(grün/rot; HTML-`<span>` via `colorizeToolTip()`). Bei exakt 0 wird weder
+Farbe noch führendes "+" angezeigt (`formatSignedMoney()` zeigt "+" nur bei
+`value > 0.0`; `formatSignedMoneyMaybeColored()` lässt bei
+`qFuzzyIsNull(value)` den Farb-Span ganz weg, sonst rendert `QToolTip`
+aufgrund seiner eigenen `ToolTipText`-Palette sichtbar grau statt schwarz).
+Zeile 2 steckt in einem `white-space:nowrap`-`<div>`, damit sie nicht
+umbricht. Gesetzt in `populatePortfolioTables()`, `onMarketValuesUpdated()`
+und (als Portfolio-Gesamtsumme, einzeilig — Beschriftung + farbiger Wert in
+einer Zeile, ohne Rechenweg) `updatePortfolioFooters()`.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_populatePortfolioTables_prevDayTooltip_showsVolumeTimesDiff` | Aktie mit 40 Stk., Kurs +12,30 € zum Vortag | `item(row, PrevDay)->toolTip()` **und** `item(row, PrevDayChart)->toolTip()` sind byte-für-byte identisch zum vollständig konstruierten erwarteten HTML-String (Beschriftung, 4-Nachkommastellen-Anteile, beide Werte grün eingefärbt, Ergebnis 492,00 €) — in beiden Tabellen (Depotwert + Marktwert) |
+| `test_populatePortfolioTables_prevDayTooltip_colorsIndependently` | Aktie mit `prevDayDiff = +10,00 €`, aber ohne jeden Kauf (`volume == 0`, Gesamtergebnis daher 0) | Pro-Stück-Wert trägt den grünen Hex-Farbcode aus `AppSettings::instance().logColorAt(5)`, das Gesamtergebnis dagegen `"0,00 €"` ganz ohne Farb-Span und ohne "+" — exakter `QCOMPARE()` gegen den vollständigen erwarteten Tooltip-String, belegt die Unabhängigkeit beider Farben |
+| `test_populatePortfolioTables_prevDayTooltip_neutralWhenPriceUnchanged` | Aktie mit 20 Stk., aber `curPrice == prevDayPrice` (`prevDayDiff == 0`) | Beide Werte (Pro-Stück **und** Gesamtergebnis) erscheinen als `"0,00 €"` ohne "+" und ohne `color:`-Span, exakter `QCOMPARE()` |
+| `test_onRefreshShare_prevDayTooltip_updatesAfterRefresh_viaFakeNetwork` | Aktie startet flach (0,00 €/0,00 €), Einzel-Refresh liefert `prevDayDiff = +30,00 €` (10 Stk. → +300,00 €) | Tooltip vor und nach dem Refresh je exakt gegen den erwarteten HTML-String geprüft (`QCOMPARE`) — Rechenweg, beide Farben **und** die `PrevDayChart`-Icon-Spalte ändern sich korrekt, nicht nur die Text-/Farb-Rollen der Zelle |
+| `test_updatePortfolioFooters_prevDayTooltip_sumsAllShares` | Zwei Aktien (+50,00 € / −10,00 €, Summe +40,00 €) | Footer-Tooltip (Span-Anker `FC::Price` im Depotwert-, `MC::Icon` im Marktwert-Footer, alle drei Zeilen je Footer) exakt `"Gesamtänderung Portfolio: <farbig +40,00 €>"`, einzeilig — Summe der pro Aktie gerundeten Einzelwerte |
+
+@note Alle fünf Tests nutzen bewusst runde, FIFO-/Brokerage-freie Testwerte
+und prüfen daher per exaktem `QCOMPARE()` gegen den vollständig
+konstruierten erwarteten HTML-Tooltip-String, statt nur auf einzelne
+Text-Fragmente zu prüfen (anders als z. B. die Footer-Summen-Tests unter
+"Footer-Update bei Refresh" oben, die aus Komplexitätsgründen bewusst nur auf
+Änderung statt auf einen bestimmten Zahlenwert prüfen).
+
 ### Portfolio-Label "Letzte Aktualisierung" — erledigt (21.07.2026)
 
 `updatePortfolioLabel(entryCount, formatLastPortfolioUpdate())` wird an

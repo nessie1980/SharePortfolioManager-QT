@@ -1169,6 +1169,267 @@ private slots:
         QCOMPARE(fakeNam.requestCount(), 1);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // MainWindow — "Vortag"-Tooltip: Gesamtänderung (Feature 02.08.2026)
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // Tooltip auf FC::PrevDay/MC::PrevDay UND FC::PrevDayChart/MC::PrevDayChart
+    // (Entwicklungs-Pfeil-Icon-Spalte davor) zeigt "Anteile × Kurswert-Entw. =
+    // Gesamtergebnis" statt der reinen Pro-Aktie-Kursänderung. Pro-Stück-Wert
+    // und Gesamtergebnis färben sich UNABHÄNGIG voneinander nach ihrem
+    // jeweils eigenen Vorzeichen; bei exakt 0 weder Farbe noch führendes "+"
+    // (siehe ARCHITECTURE.md, "Vortag-Spalte + Piktogramm-Spalte: Tooltip mit
+    // Gesamtänderung", für die vollständige Herleitung inkl. des
+    // Grau-statt-Schwarz-Bugfixes). Die erwarteten Tooltip-Strings unten
+    // spiegeln exakt das HTML-Format aus MainWindow::colorizeToolTip()/
+    // formatSignedMoneyMaybeColored() — bewusst als volle QCOMPARE()-Strings
+    // statt nur contains()-Fragmente, da alle Testwerte bewusst rund gewählt
+    // sind (keine Rundungs-/FIFO-Komplexität wie bei den Footer-Summen-Tests).
+
+    void test_populatePortfolioTables_prevDayTooltip_showsVolumeTimesDiff()
+    {
+        // Bugfix: ":memory:" funktioniert hier NICHT — MainWindow::initialize()
+        // prüft QFileInfo::exists(portfolioPath), was für ":memory:" immer
+        // false liefert, wodurch populatePortfolioTables() beim Konstruieren
+        // übersprungen wird (die Tabelle bliebe leer). Echte Datei-DB nötig,
+        // analog zu seedDepotwertPortfolio() und den übrigen Tests hier.
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/TooltipCalc.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        // 40 Stk. gehalten, Kurs +12,30 € zum Vortag → Gesamtänderung
+        // 40 × 12,30 = 492,00 €.
+        ShareObject share(QStringLiteral("g-tooltip-calc"), QStringLiteral("TC01"),
+                          QStringLiteral("DE000TC00001"), QStringLiteral("TooltipCalc AG"));
+        share.setCurPrice(112.30);
+        share.setPrevDayPrice(100.00);
+        ShareRepository().insert(share);
+        insertTestBuy(QStringLiteral("g-tooltip-calc"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 40.0, 100.0);
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl  = findFinalTable(window, 1);
+        QTableWidget* marketTbl = findMarketTable(window, 1);
+        if (!finalTbl)  QFAIL("Depotwert-Datentabelle nicht gefunden");
+        if (!marketTbl) QFAIL("Marktwert-Datentabelle nicht gefunden");
+
+        const int finalRow  = rowForGuid(finalTbl,  QStringLiteral("g-tooltip-calc"));
+        const int marketRow = rowForGuid(marketTbl, QStringLiteral("g-tooltip-calc"));
+        QVERIFY(finalRow  >= 0);
+        QVERIFY(marketRow >= 0);
+
+        using FC = MainWindow::FinalValueColumn;
+        using MC = MainWindow::MarketValueColumn;
+
+        const QString finalPrevDayTip  = finalTbl->item(finalRow,  static_cast<int>(FC::PrevDay))->toolTip();
+        const QString finalChartTip    = finalTbl->item(finalRow,  static_cast<int>(FC::PrevDayChart))->toolTip();
+        const QString marketPrevDayTip = marketTbl->item(marketRow, static_cast<int>(MC::PrevDay))->toolTip();
+        const QString marketChartTip   = marketTbl->item(marketRow, static_cast<int>(MC::PrevDayChart))->toolTip();
+
+        const QLocale locale;
+        const QString volumeStr = locale.toString(40.0, 'f', 4);           // "40,0000"
+        const QString diffStr   = locale.toString(12.30, 'f', 2) + QStringLiteral(" €");  // "12,30 €"
+        const QString totalStr  = locale.toString(492.0, 'f', 2) + QStringLiteral(" €");  // "492,00 €"
+        const QString greenHex  = AppSettings::instance().logColorAt(5).name();
+
+        const QString coloredDiff  =
+            QStringLiteral("<span style=\"color:%1;\">+%2</span>").arg(greenHex, diffStr);
+        const QString coloredTotal =
+            QStringLiteral("<span style=\"color:%1;\">+%2</span>").arg(greenHex, totalStr);
+        const QString expectedTooltip =
+            QStringLiteral("<div style=\"white-space:nowrap;\">Gesamtänderung Aktie:<br>"
+                           "%1 Stk. × %2 = %3</div>")
+                .arg(volumeStr, coloredDiff, coloredTotal);
+
+        QCOMPARE(finalPrevDayTip, expectedTooltip);
+        // PrevDayChart-Icon-Spalte trägt denselben Tooltip wie PrevDay selbst.
+        QCOMPARE(finalChartTip, expectedTooltip);
+        // Identisch in der Marktwert-Tabelle (Anteile/Vortagsdiff sind
+        // brokerageunabhängig, siehe MainWindow::populatePortfolioTables()).
+        QCOMPARE(marketPrevDayTip, expectedTooltip);
+        QCOMPARE(marketChartTip, expectedTooltip);
+    }
+
+    void test_populatePortfolioTables_prevDayTooltip_colorsIndependently()
+    {
+        // ":memory:" ungeeignet, siehe Kommentar im vorigen Test.
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/TooltipIndep.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        // Kurs bewegt sich (+10,00 €), aber KEIN Kauf hinterlegt → volume
+        // bleibt 0 → Gesamtergebnis ist 0, obwohl sich der Kurs bewegt hat.
+        // Prüft, dass Pro-Stück-Wert und Gesamtergebnis UNABHÄNGIG voneinander
+        // eingefärbt werden (nicht "beide oder keiner").
+        ShareObject share(QStringLiteral("g-tooltip-indep"), QStringLiteral("TI01"),
+                          QStringLiteral("DE000TI00001"), QStringLiteral("TooltipIndep AG"));
+        share.setCurPrice(110.0);
+        share.setPrevDayPrice(100.0);
+        ShareRepository().insert(share);
+        // bewusst KEIN insertTestBuy() — volume bleibt 0
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        const int finalRow = rowForGuid(finalTbl, QStringLiteral("g-tooltip-indep"));
+        QVERIFY(finalRow >= 0);
+
+        using FC = MainWindow::FinalValueColumn;
+        const QString tip = finalTbl->item(finalRow, static_cast<int>(FC::PrevDay))->toolTip();
+
+        const QLocale locale;
+        const QString diffStr  = locale.toString(10.0, 'f', 2) + QStringLiteral(" €"); // "10,00 €"
+        const QString zeroStr  = locale.toString(0.0, 'f', 2) + QStringLiteral(" €");  // "0,00 €"
+        const QString volumeStr = locale.toString(0.0, 'f', 4);                        // "0,0000"
+        const QString greenHex = AppSettings::instance().logColorAt(5).name();
+
+        const QString coloredDiff =
+            QStringLiteral("<span style=\"color:%1;\">+%2</span>").arg(greenHex, diffStr);
+        // Gesamtergebnis ist exakt 0 → reiner Text, weder Farb-Span noch "+".
+        const QString expectedTooltip =
+            QStringLiteral("<div style=\"white-space:nowrap;\">Gesamtänderung Aktie:<br>"
+                           "%1 Stk. × %2 = %3</div>")
+                .arg(volumeStr, coloredDiff, zeroStr);
+
+        QCOMPARE(tip, expectedTooltip);
+    }
+
+    void test_populatePortfolioTables_prevDayTooltip_neutralWhenPriceUnchanged()
+    {
+        // ":memory:" ungeeignet, siehe Kommentar im ersten Test dieser Gruppe.
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/TooltipFlat.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        // Kurs unverändert zum Vortag (curPrice == prevDayPrice) → sowohl
+        // Pro-Stück-Wert als auch Gesamtergebnis sind 0, unabhängig von der
+        // gehaltenen Stückzahl (hier 20, bewusst > 0 gewählt).
+        ShareObject share(QStringLiteral("g-tooltip-flat"), QStringLiteral("TF01"),
+                          QStringLiteral("DE000TF00001"), QStringLiteral("TooltipFlat AG"));
+        share.setCurPrice(50.0);
+        share.setPrevDayPrice(50.0);
+        ShareRepository().insert(share);
+        insertTestBuy(QStringLiteral("g-tooltip-flat"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 20.0, 50.0);
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        MainWindow window;
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        const int finalRow = rowForGuid(finalTbl, QStringLiteral("g-tooltip-flat"));
+        QVERIFY(finalRow >= 0);
+
+        using FC = MainWindow::FinalValueColumn;
+        const QString tip = finalTbl->item(finalRow, static_cast<int>(FC::PrevDay))->toolTip();
+
+        const QLocale locale;
+        const QString volumeStr = locale.toString(20.0, 'f', 4);                      // "20,0000"
+        const QString zeroStr   = locale.toString(0.0, 'f', 2) + QStringLiteral(" €"); // "0,00 €"
+        const QString expectedTooltip =
+            QStringLiteral("<div style=\"white-space:nowrap;\">Gesamtänderung Aktie:<br>"
+                           "%1 Stk. × %2 = %2</div>")
+                .arg(volumeStr, zeroStr);
+
+        QCOMPARE(tip, expectedTooltip);
+        QVERIFY2(!tip.contains(QStringLiteral("color:")), qPrintable(tip));
+        QVERIFY2(!tip.contains(QStringLiteral("+0,00")), qPrintable(tip));
+    }
+
+    void test_onRefreshShare_prevDayTooltip_updatesAfterRefresh_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshTooltip.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        // Startet flach (curPrice == prevDayPrice == 50) → Tooltip zeigt
+        // initial 0,00 €/0,00 € (10 Stk. gehalten, aber keine Kursbewegung).
+        ShareObject share(QStringLiteral("g-tooltip-refresh"), QStringLiteral("TR01"),
+                          QStringLiteral("DE000TR00001"), QStringLiteral("TooltipRefresh AG"));
+        share.setCurPrice(50.0);
+        share.setPrevDayPrice(50.0);
+        share.setUpdateType(ShareUpdateType::MarketPrice);
+        share.setMarketPriceParsingType(ShareParsingType::ApiOnVista);
+        share.setMarketPriceUrl(QStringLiteral("https://example.com/onvista/tooltip-refresh"));
+        share.setMarketPriceEncoding(QStringLiteral("UTF-8"));
+        ShareRepository().insert(share);
+        insertTestBuy(QStringLiteral("g-tooltip-refresh"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 10.0, 100.0);
+
+        // Vortagesschlusskurs für den Refresh — onMarketValuesUpdated() liest
+        // prevDay aus daily_values, nicht aus dem Share-Feld.
+        DailyValuesRepository dvRepo;
+        dvRepo.upsert(DailyValuesObject(QStringLiteral("g-tooltip-refresh"),
+                                        QDate::currentDate().addDays(-1),
+                                        100.0, 100.0, 100.0, 100.0, 1000.0));
+
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        // +30 vs. dem seedeten Vortagesschlusskurs 100.0 → 10 Stk. × 30 = 300.
+        fakeNam.setResponse(QUrl(QStringLiteral("https://example.com/onvista/tooltip-refresh")),
+                            onVistaRealTimeJson(130.0));
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        const int finalRow = rowForGuid(finalTbl, QStringLiteral("g-tooltip-refresh"));
+        QVERIFY(finalRow >= 0);
+
+        using FC = MainWindow::FinalValueColumn;
+        const QLocale locale;
+        const QString volumeStr = locale.toString(10.0, 'f', 4); // "10,0000"
+        const QString zeroStr   = locale.toString(0.0, 'f', 2) + QStringLiteral(" €");
+
+        const QString expectedBefore =
+            QStringLiteral("<div style=\"white-space:nowrap;\">Gesamtänderung Aktie:<br>"
+                           "%1 Stk. × %2 = %2</div>")
+                .arg(volumeStr, zeroStr);
+
+        const QString before = finalTbl->item(finalRow, static_cast<int>(FC::PrevDay))->toolTip();
+        QCOMPARE(before, expectedBefore);
+
+        finalTbl->setCurrentCell(finalRow, 0);
+        QAction* actionRefresh = findActionByStatusTip(window,
+            QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+        QVERIFY(actionRefresh);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                 "Einzel-Refresh hat nicht beendet (finaliseRefresh() nicht erreicht).");
+
+        const QString diffStr  = locale.toString(30.0, 'f', 2) + QStringLiteral(" €");  // "30,00 €"
+        const QString totalStr = locale.toString(300.0, 'f', 2) + QStringLiteral(" €"); // "300,00 €"
+        const QString greenHex = AppSettings::instance().logColorAt(5).name();
+        const QString coloredDiff  =
+            QStringLiteral("<span style=\"color:%1;\">+%2</span>").arg(greenHex, diffStr);
+        const QString coloredTotal =
+            QStringLiteral("<span style=\"color:%1;\">+%2</span>").arg(greenHex, totalStr);
+        const QString expectedAfter =
+            QStringLiteral("<div style=\"white-space:nowrap;\">Gesamtänderung Aktie:<br>"
+                           "%1 Stk. × %2 = %3</div>")
+                .arg(volumeStr, coloredDiff, coloredTotal);
+
+        const QString after      = finalTbl->item(finalRow, static_cast<int>(FC::PrevDay))->toolTip();
+        const QString afterChart = finalTbl->item(finalRow, static_cast<int>(FC::PrevDayChart))->toolTip();
+
+        QCOMPARE(after, expectedAfter);
+        // PrevDayChart-Icon-Spalte muss beim Einzel-Refresh ebenfalls
+        // aktualisiert werden (analog zum Icon-Regressionstest oben) — nicht
+        // nur beim initialen Tabellenaufbau.
+        QCOMPARE(afterChart, expectedAfter);
+    }
+
     void test_onRefreshShare_busyGuard_selectionDuringRefreshDoesNotReenableActions()
     {
         const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshBusy.db");
@@ -1766,6 +2027,77 @@ private slots:
         // refreshPortfolioFooters() when m_errorOccurred is set — the footer
         // must be byte-for-byte unchanged.
         QCOMPARE(finalFooterDepotstand(footer), before);
+    }
+
+    void test_updatePortfolioFooters_prevDayTooltip_sumsAllShares()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/FooterTooltipSum.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        // Aktie A: 10 Stk., Kurs +5,00 € → Gesamtänderung +50,00 €.
+        ShareObject shareA(QStringLiteral("g-footer-tip-a"), QStringLiteral("FA01"),
+                           QStringLiteral("DE000FA00001"), QStringLiteral("FooterTipA AG"));
+        shareA.setCurPrice(105.0);
+        shareA.setPrevDayPrice(100.0);
+        ShareRepository().insert(shareA);
+        insertTestBuy(QStringLiteral("g-footer-tip-a"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 10.0, 100.0);
+
+        // Aktie B: 4 Stk., Kurs -2,50 € → Gesamtänderung -10,00 €.
+        ShareObject shareB(QStringLiteral("g-footer-tip-b"), QStringLiteral("FB01"),
+                           QStringLiteral("DE000FB00001"), QStringLiteral("FooterTipB AG"));
+        shareB.setCurPrice(47.5);
+        shareB.setPrevDayPrice(50.0);
+        ShareRepository().insert(shareB);
+        insertTestBuy(QStringLiteral("g-footer-tip-b"), QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 4.0, 50.0);
+
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        MainWindow window;
+        QApplication::processEvents();
+
+        // Summe: +50,00 € + (-10,00 €) = +40,00 €. Bewusst runde Werte ohne
+        // FIFO-/Brokerage-Komplexität, damit ein exakter QCOMPARE() sinnvoll
+        // ist (anders als bei den bestehenden Footer-Summen-Tests, die aus
+        // gutem Grund nur auf Änderung statt auf einen bestimmten Zahlenwert
+        // prüfen — siehe "Footer-Update bei Refresh" in TESTING.md).
+        QTableWidget* finalFooter  = findFinalTable(window, 3);  // 2 Aktien ≠ 3 → eindeutig
+        QTableWidget* marketFooter = findMarketTable(window, 3); // 2 Aktien ≠ 3 → eindeutig
+        if (!finalFooter)  QFAIL("Depotwert-Footer nicht gefunden");
+        if (!marketFooter) QFAIL("Marktwert-Footer nicht gefunden");
+
+        using FC = MainWindow::FinalValueColumn;
+        using MC = MainWindow::MarketValueColumn;
+
+        const QLocale locale;
+        const QString sumStr   = locale.toString(40.0, 'f', 2) + QStringLiteral(" €"); // "40,00 €"
+        const QString greenHex = AppSettings::instance().logColorAt(5).name();
+        const QString coloredSum =
+            QStringLiteral("<span style=\"color:%1;\">+%2</span>").arg(greenHex, sumStr);
+        const QString expectedTooltip =
+            QStringLiteral("<div style=\"white-space:nowrap;\">Gesamtänderung Portfolio: %1</div>")
+                .arg(coloredSum);
+
+        // Span-Anker im Depotwert-Footer ist FC::Price (Preis + Chart-Icon +
+        // Vortag sind per setSpan() zu einem Zeilen-Label verschmolzen) — alle
+        // drei Zeilen (Einzahlung/Entwicklung/Depotstand) tragen denselben
+        // Tooltip, siehe MainWindow::updatePortfolioFooters().
+        for (int row = 0; row < 3; ++row) {
+            const QString tip =
+                finalFooter->item(row, static_cast<int>(FC::Price))->toolTip();
+            QCOMPARE(tip, expectedTooltip);
+        }
+
+        // Span-Anker im Marktwert-Footer ist MC::Icon (Icon..Vortag als ganzer
+        // Zeilen-Label-Span) — Wert ist brokerageunabhängig und daher identisch
+        // zum Depotwert-Footer.
+        for (int row = 0; row < 3; ++row) {
+            const QString tip =
+                marketFooter->item(row, static_cast<int>(MC::Icon))->toolTip();
+            QCOMPARE(tip, expectedTooltip);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────

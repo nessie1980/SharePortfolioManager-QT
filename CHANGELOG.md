@@ -6,6 +6,18 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.5.0] - 2026-08-02
+
+### Added
+
+- Tooltip beim Hovern über die "Vortag"-Spalte und die davorliegende
+  Entwicklungs-Pfeil-Icon-Spalte zeigt die Gesamtänderung der Position
+  (Anteile × Kurswert-Entw.) statt der reinen Pro-Aktie-Kursänderung, inkl.
+  Rechenweg und unabhängig eingefärbtem Pro-Stück-/Gesamtwert. Der Footer
+  zeigt zusätzlich die Gesamtänderung des kompletten Portfolios. Siehe
+  `docs/architecture/ARCHITECTURE.md`, "Vortag-Spalte + Piktogramm-Spalte:
+  Tooltip mit Gesamtänderung".
+
 ## [1.4.2] - 2026-08-02
 
 ### Fixed
