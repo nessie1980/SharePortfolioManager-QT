@@ -6,6 +6,19 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.4.2] - 2026-08-02
+
+### Fixed
+
+- Im Aktien-Chart (ShareDetailsForm-Tab und Rechtsklick-`ChartPopup`) zeigte
+  der Hover-Tooltip der Kauf-/Verkauf-Markerlinien sowie der beiden
+  Stück-Serien ("Anteile"/"Gehandelte Anteile") die Stückzahl auf ganze
+  Stück gerundet an, obwohl Käufe/Verkäufe bis zu 4 Nachkommastellen haben
+  können. `ViewChart::onReferenceLineHovered()` und `ViewChart::
+  onSeriesHovered()` formatieren die Stückzahl jetzt mit 4 statt 0
+  Nachkommastellen, konsistent zur restlichen Anwendung. Siehe
+  `docs/architecture/ARCHITECTURE.md`, "ChartForm-Details".
+
 ## [1.4.1] - 2026-08-01
 
 ### Fixed
@@ -127,6 +140,7 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   `docs/architecture/ARCHITECTURE.md`, "settings.ini nicht persistent im
   AppImage".
 
+[1.4.2]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.2.0...v1.3.0

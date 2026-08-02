@@ -1577,7 +1577,8 @@ Serie getroffen wurde, daher ein Connect pro Serie statt eines gemeinsamen.
 Serie), `point.y()` der Wert am nächstgelegenen Datenpunkt — Qt Charts liefert
 hier immer den nächsten tatsächlichen Datenpunkt, keine interpolierte
 Mausposition. Preis-Serien werden mit "€" und 2 Nachkommastellen formatiert,
-die beiden Stück-Serien (`HeldVolume`/`TradedVolume`) ohne Nachkommastellen —
+die beiden Stück-Serien (`HeldVolume`/`TradedVolume`) mit 4 Nachkommastellen
+(bis 02.08.2026 ohne Nachkommastellen, siehe Bugfix-Hinweis unten) —
 `QToolTip::showText(QCursor::pos(), ...)` bei `state == true`,
 `QToolTip::hideText()` bei `state == false` (Maus verlässt die Linie).
 
@@ -1636,6 +1637,39 @@ mit Datum, Preis **und** Stückzahl) ersetzt.
 (`ChartReferenceLineKind::Buy`/`Sale`, fürs Tooltip-Label), `price` und
 `volume` — für das reine Zeichnen der Linie selbst weiterhin nur `date` und
 `color` relevant, die Linie geht immer über die volle Preis-Achsen-Höhe.
+
+@note **Bugfix Stückzahl-Rundung im Tooltip (ergänzt 02.08.2026, Nessies
+Rückmeldung anhand eines Screenshots — "1 Stk." statt der tatsächlichen
+Bruchstückzahl):** Sowohl `onReferenceLineHovered()` (Kauf-/Verkauf-
+Markerlinien-Tooltip) als auch `onSeriesHovered()` für die Stück-Serien
+(`HeldVolume`/`TradedVolume`) formatierten die Stückzahl mit
+`QLocale().toString(value, 'f', 0)` — eine bewusste Vereinfachung der ersten
+Iteration (siehe oben), die aber Käufe/Verkäufe mit Nachkommastellen (im
+restlichen Projekt durchgängig auf 4 Nachkommastellen normiert, siehe
+`QDoubleValidator`-Eingabefelder und `formatVolume()` in den Kauf-/Verkaufs-/
+Dividenden-Formularen sowie `ViewShareEdit::setCurrentVolume()`) auf ganze
+Stück rundete. Beide Stellen formatieren die Stückzahl jetzt konsistent mit
+`'f', 4` statt `'f', 0`. Die Min/Max-Zahlenformatierung in der Legende-Box
+(`PresenterChart`, weiterhin 0 Nachkommastellen für Anteile-Min/Max) ist
+davon nicht betroffen — das bleibt eine separate, bewusst offene
+Vereinfachung.
+
+Da `tst_chartform.cpp` bewusst nur `PresenterChart` über ein Fake-View/
+Fake-Model-Paar testet (kein echtes `ViewChart`/`QChartView`, siehe oben),
+kann die Tooltip-Formatierung dort nicht abgedeckt werden. Stattdessen sind
+`onSeriesHovered()` und `onReferenceLineHovered()` seit diesem Bugfix als
+`private slots:` deklariert (`ViewChart.h`) — eine reine Testbarkeits-
+Maßnahme ohne Verhaltensänderung (die Verbindung selbst läuft weiterhin über
+eine Lambda in `setChartData()`/`setReferenceLines()`). Dadurch kann
+`tst_mainwindow.cpp` beide Handler direkt per `QMetaObject::invokeMethod()`
+aufrufen (gleiches Muster wie `selectShareRow`/`onRefreshShare`) und den
+resultierenden `QToolTip::text()` prüfen, ohne ein reales Maus-Hover über
+die im headless Testlauf nicht verlässlich vermessbare Chart-Zeichenfläche
+zu simulieren. Regressionstests:
+`test_onReferenceLineHovered_fractionalVolume_showsFourDecimals`,
+`test_onSeriesHovered_heldVolumeSeries_fractionalValue_showsFourDecimals`
+(beide `tst_mainwindow.cpp`, über eine direkt konstruierte `ChartPopup`-
+Instanz).
 
 Bewusste Vereinfachungen dieser ersten Iteration (auf Wunsch bei
 Bedarf später verfeinerbar):

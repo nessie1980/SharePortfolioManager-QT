@@ -1109,8 +1109,24 @@ eine echte Emission mit korrekt gesetztem `sender()` auslöst.
 | `test_onPortfolioRowRightClicked_emptyGuid_doesNotCrash` | Zeile mit geleerter GUID (Qt::UserRole), Signal auf die reale Zeilenposition (`visualItemRect(item).center()`) emittiert | Kein Absturz, kein Popup |
 | `test_chartPopup_validShare_constructsWithChartChild` (erweitert 31.07.2026 um die Überschriften-Prüfung) | `ChartPopup` direkt konstruiert (kein `show()`/`showAt()`) | `findChild<ViewChart*>("ViewChart")` nicht null; dessen `findChild<QGroupBox*>("selektionBox")` ist `isHidden() == true` (Compact-Modus, siehe ARCHITECTURE.md); `findChild<QLabel*>("chartPopupHeader")` enthält den übergebenen Aktiennamen |
 | `test_onPortfolioRowRightClicked_validGuid_popupCenteredAndNarrowerThanMainWindow` (ergänzt 31.07.2026, überarbeitet nach mehreren Rückmeldungen — zuletzt "horizontal zentriert ... Hauptfensterbreite − 50px, also auf jeder Seite 25px schmäler"; **Bugfix 02.08.2026**, siehe ARCHITECTURE.md) | Echter Rechtsklick (`customContextMenuRequested`) auf eine gültige Zeile — `MainWindow` wird dafür bewusst relativ zur verfügbaren Bildschirmgeometrie dimensioniert/positioniert (`QGuiApplication::primaryScreen()->availableGeometry()`), nicht fest auf 900×600. Das reicht auf einem schmalen Bildschirm (< Fenster-Mindestbreite 900px + 50px, z. B. der 800px breite CI-Offscreen-Runner) aber nicht aus: `MainWindow` kann wegen `setMinimumSize(900, 600)` nicht darunter schrumpfen, das Popup (`window.width() − 50`) wird dadurch breiter als der verfügbare Bildschirm — eine exakte Zentrierung ist dann unmöglich. Der Test berechnet deshalb dieselbe `avail`-Geometrie wie `ChartPopup::showAt()` und unterscheidet explizit beide Fälle, statt die komplette Klemm-Formel zu duplizieren | `ChartPopup` wird über `QApplication::topLevelWidgets()` gefunden (kein Kind-Widget von `MainWindow`, da ownerlos erzeugt); `width() == window.width() - 50`; passt das Popup auf den verfügbaren Bildschirm (`popup->width() <= avail.width()`, jeder reale Desktop): Popup-Mittelpunkt (`x() + width()/2`) == Hauptfenster-Mittelpunkt in globalen Koordinaten; passt es nicht (z. B. schmaler CI-Runner): `popup->x() == avail.left()` (Linksklemmung) — Regressionstest für `MainWindow::onPortfolioRowRightClicked()`'s Breiten-/Positionsberechnung vor `showAt()` |
+| `test_onReferenceLineHovered_fractionalVolume_showsFourDecimals` (**Bugfix 02.08.2026**, siehe ARCHITECTURE.md) | `ChartPopup` direkt konstruiert, `ViewChart`-Kindwidget per `findChild()` geholt, `onReferenceLineHovered()` (seit diesem Bugfix `private slots:`) per `QMetaObject::invokeMethod()` direkt mit einer `ChartReferenceLine` aufgerufen (`volume = 1.5`, bewusst eine Bruchstückzahl — genau der Fall aus Nessies Screenshot) | `QToolTip::text()` enthält `"1,5000 Stk."`, nicht mehr `"1 Stk."` (0 Nachkommastellen) |
+| `test_onSeriesHovered_heldVolumeSeries_fractionalValue_showsFourDecimals` (**Bugfix 02.08.2026**, siehe ARCHITECTURE.md) | Gleiches Vorgehen, `onSeriesHovered()` mit `SeriesKind::HeldVolume` und `QPointF(0.0, 12.3456)` aufgerufen | `QToolTip::text()` enthält `"12,3456"` |
 
-@note **Spurious-Leave-Fix in `ChartPopup::leaveEvent()` (ergänzt 31.07.2026,
+@note **Warum diese beiden Tests in `tst_mainwindow.cpp` statt in
+`tst_chartform.cpp` (ergänzt 02.08.2026):** `tst_chartform.cpp` testet
+bewusst ausschließlich `PresenterChart` über ein Fake-View/Fake-Model-Paar
+(kein echtes `ViewChart`/`QChartView`, siehe dortiger Datei-Header-Kommentar)
+— die Tooltip-Formatierung sitzt aber ausschließlich in der echten
+`ViewChart`-Klasse. `onSeriesHovered()`/`onReferenceLineHovered()` sind
+deshalb seit diesem Bugfix als `private slots:` deklariert (`ViewChart.h`,
+reine Testbarkeits-Maßnahme, kein Verhaltensunterschied — die Verbindung
+selbst läuft weiterhin über eine Lambda in `setChartData()`/
+`setReferenceLines()`), damit sie hier per `QMetaObject::invokeMethod()`
+direkt aufgerufen werden können, statt ein reales Maus-Hover über die im
+headless Testlauf nicht verlässlich vermessbare Chart-Zeichenfläche zu
+simulieren.
+
+
 Nessies Rückmeldung "Dialog geht zu, auch wenn die Maus noch auf dem Dialog
 ist" — siehe ARCHITECTURE.md, "ChartPopup"):** Bewusst **nicht** durch einen
 automatisierten Test abgedeckt. Der Fix prüft `QCursor::pos()` gegen die

@@ -26,6 +26,7 @@
 #include <QProcess>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QToolTip>
 
 #include "Version.h" // von CMake generiert, siehe app/Version.h.in — tests/forms/CMakeLists.txt
                      // ergänzt dafür ${CMAKE_BINARY_DIR}/app in target_include_directories(tst_mainwindow)
@@ -4495,6 +4496,78 @@ private slots:
         auto* header = popup.findChild<QLabel*>(QStringLiteral("chartPopupHeader"));
         if (!header) QFAIL("chartPopupHeader nicht gefunden");
         QVERIFY(header->text().contains(QStringLiteral("Test AG")));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ViewChart — Stückzahl-Formatierung im Hover-Tooltip (Bugfix
+    // 02.08.2026, Nessies Rückmeldung anhand eines Screenshots: der Tooltip
+    // einer Kauf-Markerlinie zeigte "1 Stk." statt der tatsächlichen
+    // Bruchstückzahl, da onReferenceLineHovered()/onSeriesHovered() die
+    // Stückzahl mit 0 statt 4 Nachkommastellen formatierten — siehe
+    // ARCHITECTURE.md, "ChartForm-Details"). Beide Handler sind seit diesem
+    // Bugfix `private slots:` (siehe ViewChart.h) — reine Testbarkeits-
+    // Maßnahme, damit hier per QMetaObject::invokeMethod() direkt geprüft
+    // werden kann (gleiches Muster wie bei selectShareRow/onRefreshShare
+    // oben), statt ein echtes Maus-Hover über die im headless Testlauf
+    // nicht verlässlich vermessbare Chart-Zeichenfläche zu simulieren.
+    // Direkter Aufruf statt über ein echtes QLineSeries::hovered()-Signal,
+    // da die intern gezeichneten Serien (m_referenceLineSeries bzw. die per
+    // setChartData() erzeugten Daten-Serien) private sind.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_onReferenceLineHovered_fractionalVolume_showsFourDecimals()
+    {
+        const QString shareGuid = insertTestShare();
+        ChartPopup popup(shareGuid, QStringLiteral("Test AG"));
+
+        auto* chart = popup.findChild<ViewChart*>(QStringLiteral("ViewChart"));
+        if (!chart) QFAIL("ViewChart-Kindwidget nicht gefunden");
+
+        ChartReferenceLine line;
+        line.date   = QDate(2026, 7, 15);
+        line.color  = QColor(Qt::blue);
+        line.kind   = ChartReferenceLineKind::Buy;
+        line.price  = 238.60;
+        line.volume = 1.5; // bewusst eine Bruchstückzahl — genau der Fall aus Nessies Screenshot
+
+        QMetaObject::invokeMethod(chart, "onReferenceLineHovered", Qt::DirectConnection,
+                                   Q_ARG(ChartReferenceLine, line), Q_ARG(bool, true));
+
+        // "1,5000 Stk." statt der alten "1 Stk." — deutsches Locale, siehe main().
+        const QString expected = QLocale().toString(line.volume, 'f', 4) + QStringLiteral(" Stk.");
+        QVERIFY2(QToolTip::text().contains(expected),
+                 qPrintable(QStringLiteral("Tooltip-Text: '%1', erwartet enthält: '%2'")
+                            .arg(QToolTip::text(), expected)));
+
+        // Aufräumen — QToolTip::hideText() über state == false, damit der
+        // Tooltip nicht über den Test hinaus stehen bleibt.
+        QMetaObject::invokeMethod(chart, "onReferenceLineHovered", Qt::DirectConnection,
+                                   Q_ARG(ChartReferenceLine, line), Q_ARG(bool, false));
+    }
+
+    void test_onSeriesHovered_heldVolumeSeries_fractionalValue_showsFourDecimals()
+    {
+        const QString shareGuid = insertTestShare();
+        ChartPopup popup(shareGuid, QStringLiteral("Test AG"));
+
+        auto* chart = popup.findChild<ViewChart*>(QStringLiteral("ViewChart"));
+        if (!chart) QFAIL("ViewChart-Kindwidget nicht gefunden");
+
+        const double fractionalVolume = 12.3456;
+        const QPointF point(0.0, fractionalVolume); // x (Datum) hier irrelevant für diesen Test
+
+        QMetaObject::invokeMethod(chart, "onSeriesHovered", Qt::DirectConnection,
+                                   Q_ARG(SeriesKind, SeriesKind::HeldVolume),
+                                   Q_ARG(QPointF, point), Q_ARG(bool, true));
+
+        const QString expected = QLocale().toString(fractionalVolume, 'f', 4);
+        QVERIFY2(QToolTip::text().contains(expected),
+                 qPrintable(QStringLiteral("Tooltip-Text: '%1', erwartet enthält: '%2'")
+                            .arg(QToolTip::text(), expected)));
+
+        QMetaObject::invokeMethod(chart, "onSeriesHovered", Qt::DirectConnection,
+                                   Q_ARG(SeriesKind, SeriesKind::HeldVolume),
+                                   Q_ARG(QPointF, point), Q_ARG(bool, false));
     }
 
     // Regressionstest für Nessies Rückmeldungen (31.07.2026): das Popup soll

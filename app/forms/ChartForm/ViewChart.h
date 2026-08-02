@@ -125,11 +125,32 @@ private:
     void rebuildAxes(const QList<ChartSeriesData>& series);
 
     /**
+     * @brief Gemeinsame Wheel-Logik für m_countSpin und m_chartView-Viewport
+     * (siehe eventFilter()) — rechnet das Wheel-Delta in "Rasten" um (gleiche
+     * Formel wie Qt intern in QAbstractSpinBox::wheelEvent()) und wendet sie
+     * per stepBy() auf m_countSpin an. Löst dadurch automatisch dessen
+     * bestehende valueChanged()-Verbindung zu m_presenter.onControlsChanged()
+     * aus — kein separater Refresh-Aufruf nötig.
+     * Rad nach oben (positives angleDelta().y()) = Anzahl erhöhen (Nessies
+     * Vorgabe 12.07.2026).
+     */
+    void applyWheelStep(QWheelEvent* event);
+
+private slots:
+    /**
      * @brief Shows/hides a QToolTip with "{Serie}\n{Datum}: {Wert}" when the
      * mouse hovers a QLineSeries — ported from the C# reference, which shows
      * the same info via native chart tooltips. Connected once per series in
      * setChartData() (QLineSeries::hovered), since Qt Charts has no
      * chart-wide hover signal that also identifies which series was hit.
+     * Als `private slots:` deklariert (ergänzt 02.08.2026, reine
+     * Testbarkeits-Maßnahme, kein Verhaltensunterschied — die Verbindung
+     * selbst läuft weiterhin über eine Lambda in setChartData()): erlaubt
+     * tst_mainwindow.cpp, die Tooltip-Formatierung direkt per
+     * `QMetaObject::invokeMethod()` zu prüfen (gleiches Muster wie bei
+     * `selectShareRow`/`onRefreshShare`), ohne ein echtes Maus-Hover über
+     * die im headless Testlauf nicht verlässlich vermessbare
+     * Chart-Zeichenfläche simulieren zu müssen.
      * @param kind   Which series was hovered (for the label + unit).
      * @param point  Nearest data point to the cursor, in axis coordinates
      *               (x = msecsSinceEpoch, y = the plotted value).
@@ -144,23 +165,15 @@ private:
      * die Daten-Serien. Eigener Handler statt Wiederverwendung von
      * onSeriesHovered(), da Markerlinien kein SeriesKind haben und Datum/
      * Preis/Stückzahl bereits in der ChartReferenceLine stecken (keine
-     * Rückrechnung aus den Achsen-Koordinaten nötig).
+     * Rückrechnung aus den Achsen-Koordinaten nötig). Als `private slots:`
+     * deklariert seit 02.08.2026 — siehe Testbarkeits-Hinweis bei
+     * onSeriesHovered() oben.
      * @param line   Die gehoverte Markerlinie (Wertkopie, siehe setReferenceLines()).
      * @param state  true = entering hover, false = leaving it.
      */
     void onReferenceLineHovered(const ChartReferenceLine& line, bool state);
 
-    /**
-     * @brief Gemeinsame Wheel-Logik für m_countSpin und m_chartView-Viewport
-     * (siehe eventFilter()) — rechnet das Wheel-Delta in "Rasten" um (gleiche
-     * Formel wie Qt intern in QAbstractSpinBox::wheelEvent()) und wendet sie
-     * per stepBy() auf m_countSpin an. Löst dadurch automatisch dessen
-     * bestehende valueChanged()-Verbindung zu m_presenter.onControlsChanged()
-     * aus — kein separater Refresh-Aufruf nötig.
-     * Rad nach oben (positives angleDelta().y()) = Anzahl erhöhen (Nessies
-     * Vorgabe 12.07.2026).
-     */
-    void applyWheelStep(QWheelEvent* event);
+private:
 
     // ── MVP wiring ────────────────────────────────────────────────────────
     ModelChart     m_model;

@@ -599,7 +599,7 @@ void ViewChart::onSeriesHovered(SeriesKind kind, const QPointF& point, bool stat
     const QString dateStr = date.toString(QStringLiteral("dd.MM.yyyy"));
 
     const QString valueStr = isVolumeSeriesKind(kind)
-        ? QLocale().toString(point.y(), 'f', 0)
+        ? QLocale().toString(point.y(), 'f', 4)
         : QLocale().toString(point.y(), 'f', 2) + QStringLiteral("€");
 
     const QString text = QStringLiteral("%1\n%2: %3")
@@ -620,7 +620,7 @@ void ViewChart::onReferenceLineHovered(const ChartReferenceLine& line, bool stat
     const QString label = (line.kind == ChartReferenceLineKind::Buy) ? tr("Kauf") : tr("Verkauf");
     const QString dateStr  = line.date.toString(QStringLiteral("dd.MM.yyyy"));
     const QString priceStr = QLocale().toString(line.price, 'f', 2) + QStringLiteral("€");
-    const QString volumeStr = QLocale().toString(line.volume, 'f', 0);
+    const QString volumeStr = QLocale().toString(line.volume, 'f', 4);
 
     const QString text = QStringLiteral("%1\n%2: %3\n%4 Stk.")
         .arg(label, dateStr, priceStr, volumeStr);
