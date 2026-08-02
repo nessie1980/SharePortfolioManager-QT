@@ -3065,6 +3065,43 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 
 ## Erledigt / Archiv
 
+### test_onPortfolioRowRightClicked_validGuid_popupCenteredAndNarrowerThanMainWindow — CI-only-Fehlschlag behoben (Bugfix, 02.08.2026)
+
+Reproduzierbar und deterministisch nur im CI-Lauf fehlgeschlagen
+(`popupCenterX=425` vs. `mainWindowCenterX=462`, identisch über mehrere
+Läufe), in QtCreator lokal immer grün. Ursachenklärung per temporärem
+Diagnose-Commit (Geometrie-/Screen-Ausgabe im Test): Der CI-Runner nutzt die
+`offscreen`-QPA-Plattform mit einer virtuellen Bildschirmgröße von nur
+800×800px. Der Test passt die Fenstergröße zwar bewusst an die verfügbare
+Bildschirmgeometrie an (`screenGeom.width() − 100`, hier also 700px), kann
+`MainWindow` damit aber nicht unter dessen harte
+`setMinimumSize(900, 600)` (siehe `initialize()`) schrumpfen — das Fenster
+bleibt bei 900px Breite, obwohl der Bildschirm nur 800px breit ist. Die
+Popup-Breite (`window.width() − 50` = 850px, siehe
+`onPortfolioRowRightClicked()`) übersteigt dadurch die gesamte verfügbare
+Bildschirmbreite — eine exakte Zentrierung ist in diesem Fall mathematisch
+unmöglich. `ChartPopup::showAt()`s Bildschirmrand-Klemmung (siehe dort)
+verhält sich dabei korrekt und deterministisch: sie resolved auf den linken
+Bildschirmrand (`x = avail.left()`) — genau das beobachtete, reproduzierbare
+Verhalten. Kein Bug in `ChartPopup::showAt()` oder
+`onPortfolioRowRightClicked()`, sondern eine Testannahme
+("Fenster/Bildschirm sind immer breit genug für eine unklemmbare
+Zentrierung"), die auf jedem realen Desktop (> 950px Breite) zutrifft, aber
+nicht auf dem 800px schmalen CI-Runner.
+
+Der Test berechnet jetzt dieselbe `avail`-Geometrie wie
+`ChartPopup::showAt()` und unterscheidet explizit zwei Bildschirmgrößen-
+Regime: Passt das Popup auf den verfügbaren Bildschirm, bleibt die
+ursprüngliche, exakte Zentrierungs-Prüfung unverändert aktiv (deckt jeden
+realen Desktop ab). Passt es nicht (Popup breiter als `avail`), wird
+stattdessen die dafür einzig korrekte, deterministische Konsequenz geprüft:
+Linksklemmung an `avail.left()`. Bewusst **nicht** die komplette
+Klemm-Formel aus `showAt()` im Test dupliziert (das würde nur gegen sich
+selbst prüfen und Klemm-Logik-Bugs nicht mehr erkennen) — nur der
+Fallunterscheidung (`popup->width() <= avail.width()`) bedient sich der
+Test, die eigentliche erwartete Position bleibt in beiden Fällen unabhängig
+hergeleitet.
+
 ### Fenstertitel: Versionsnummer statt redundantem Dateinamen (Bugfix + Feature, 01.08.2026)
 
 Auf Nessies Vorgabe: Der Fenstertitel zeigte bei geöffnetem Portfolio
