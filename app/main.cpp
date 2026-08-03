@@ -3,12 +3,15 @@
 #include <QApplication>
 #include <QLocale>
 #include <QTranslator>
+#include <QMessageBox>
 #include <QDebug>
 
 #include "AppStartup.h"
 #include "Version.h"
 #include "config/AppSettings.h"
 #include "core/Database.h"
+#include "core/SingleInstanceGuard.h"
+#include "IconProvider.h"
 #include "forms/MainForm/MainWindow.h"
 
 int main(int argc, char* argv[])
@@ -46,6 +49,36 @@ int main(int argc, char* argv[])
     // dort auf Nessies Wunsch dem persönlichen Handle vorgezogen worden.
     app.setOrganizationName(QStringLiteral("BT"));
 
+    // Feature (03.08.2026): Titelleiste/Taskleiste zeigten bislang das
+    // generische Qt-Standardsymbol statt eines eigenen App-Icons — fiel im
+    // Zuge des Tray-Icon-Features auf ("Minimieren wahlweise in Taskleiste
+    // oder Tray"), als für den Tray ohnehin ein mehrstufiges App-Icon nötig
+    // wurde (IconProvider::appIcon(), siehe dort). setWindowIcon() auf
+    // QApplication statt auf MainWindow, damit auch Dialoge (z. B. unter
+    // manchen Linux-Fenstermanagern) dasselbe Icon erben.
+    app.setWindowIcon(IconProvider::appIcon());
+
+    // ── Single instance ──────────────────────────────────────────────────
+    // Feature (03.08.2026): "Die Anwendung darf nur einmal gestartet
+    // werden". Muss vor AppStartup::loadSettings()/openDatabase() laufen,
+    // damit eine zweite gestartete Instanz die Portfolio-SQLite-Datei gar
+    // nicht erst parallel öffnet (Datenintegrität) — siehe
+    // ARCHITECTURE.md, "Die Anwendung darf nur einmal gestartet werden".
+    SingleInstanceGuard singleInstanceGuard(
+        SingleInstanceGuard::buildServerName(app.organizationName(),
+                                              app.applicationName()));
+    if (!singleInstanceGuard.tryAcquire()) {
+        // tryAcquire() hat der bereits laufenden Instanz schon ein
+        // Aktivierungssignal geschickt (siehe deren Verbindung zu
+        // MainWindow::restoreFromTray() weiter unten) — hier nur noch der
+        // kurze Hinweis für den Benutzer dieser zweiten Instanz, dann
+        // sofort beenden, ohne Settings/DB/MainWindow anzurühren.
+        QMessageBox::information(nullptr, QObject::tr("Bereits gestartet"),
+            QObject::tr("Share Portfolio Manager läuft bereits.\n"
+                        "Das geöffnete Fenster wurde in den Vordergrund geholt."));
+        return 0;
+    }
+
     // ── Load settings ──────────────────────────────────────────────────────
     // Must happen before anything else so all components get their config.
     // loadSettings() (statt AppSettings::instance().load() direkt) persistiert
@@ -64,6 +97,8 @@ int main(int argc, char* argv[])
 
     // ── Launch main window ─────────────────────────────────────────────────
     MainWindow mainWindow;
+    QObject::connect(&singleInstanceGuard, &SingleInstanceGuard::activationRequested,
+                      &mainWindow, &MainWindow::restoreFromTray);
     mainWindow.show();
 
     const int returnCode = app.exec();

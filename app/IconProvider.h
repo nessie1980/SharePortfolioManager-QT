@@ -138,6 +138,30 @@ public:
      */
     static QString iconPath(IconName name, const QString& setName = {});
 
+    /**
+     * @brief Returns a multi-resolution QIcon of the application's own icon.
+     *
+     * Feature 03.08.2026 ("Minimieren wahlweise in Taskleiste oder Tray"):
+     * combines all four PNG resolutions under the dedicated `/icons/app`
+     * qrc prefix (`app_icon_16/32/48/256.png`) into a single QIcon via
+     * `QIcon::addFile()`, so Qt can pick whichever resolution best matches
+     * where the icon is actually rendered — the system tray
+     * (`MainWindow::setupTrayIcon()`) and the window/taskbar icon
+     * (`QApplication::setWindowIcon()` in `main.cpp`) — instead of
+     * stretching a single fixed-size pixmap.
+     *
+     * Deliberately kept separate from the `IconName` enum/icon-set
+     * mechanism above: that machinery switches between alternative
+     * *styles* of the same icon (icon sets, via `setIconSet()`), whereas
+     * this is multiple *resolutions* of the one, fixed application
+     * identity — unaffected by the active icon set.
+     *
+     * `app_icon.ico` is intentionally excluded here — that file is
+     * Windows-installer-only material for Inno Setup, not a Qt resource.
+     * @return QIcon containing all available application-icon resolutions.
+     */
+    static QIcon appIcon();
+
 private:
     /**
      * @brief Maps an IconName to its filename (without path prefix).

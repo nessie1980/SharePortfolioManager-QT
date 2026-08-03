@@ -6,6 +6,30 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.6.0] - 2026-08-03
+
+### Added
+
+- Neue Option "Beim Minimieren in den Infobereich (Tray) legen" (Einstellungen
+  → &Tray..., `TraySettingsForm`, Standard: aus): ist sie aktiviert, wird das
+  Hauptfenster beim Minimieren nicht mehr in die Taskleiste, sondern
+  vollständig versteckt und über ein Symbol im Infobereich wieder erreichbar
+  (einfacher Klick auf das Symbol oder "Anzeigen" im Kontextmenü stellt das
+  Fenster wieder her). Steht auf dem System kein Infobereich zur Verfügung,
+  bleibt das bisherige Minimieren-Verhalten unverändert. Siehe
+  `docs/architecture/ARCHITECTURE.md`, "Minimieren wahlweise in Taskleiste
+  oder Tray".
+- Neues, mehrstufiges Anwendungs-Icon (`IconProvider::appIcon()`,
+  16/32/48/256px) — verwendet für das Tray-Icon selbst sowie neu für
+  Fenster-/Taskleisten-Titel (`QApplication::setWindowIcon()` in
+  `main.cpp`), die zuvor nur das generische Qt-Standardsymbol zeigten.
+- Die Anwendung lässt sich nur noch einmal gleichzeitig starten
+  (`SingleInstanceGuard`, `app/core/`): ein zweiter Startversuch holt die
+  bereits laufende Instanz in den Vordergrund (auch aus dem Tray) und zeigt
+  in der zweiten, sich sofort wieder beendenden Instanz einen kurzen
+  Hinweis. Siehe `docs/architecture/ARCHITECTURE.md`, "Die Anwendung darf
+  nur einmal gestartet werden".
+
 ## [1.5.0] - 2026-08-02
 
 ### Added

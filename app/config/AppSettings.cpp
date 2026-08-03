@@ -99,6 +99,9 @@ void AppSettings::load(const QString& path)
     // Leer bleibt leer, solange kein Root konfiguriert wurde — MainWindow
     // erkennt daran den Erstlauf und zeigt DocumentsSettingsForm zwingend an.
     m_documentsRootPath = settings.value(QStringLiteral("Documents/RootPath"), m_documentsRootPath).toString();
+
+    // ── Tray ─────────────────────────────────────────────────────────────
+    m_trayOnMinimizeEnabled = settings.value(QStringLiteral("Tray/OnMinimizeEnabled"), m_trayOnMinimizeEnabled).toBool();
 }
 
 void AppSettings::save()
@@ -151,6 +154,9 @@ void AppSettings::save()
 
     // ── Documents ────────────────────────────────────────────────────────
     settings.setValue(QStringLiteral("Documents/RootPath"), m_documentsRootPath);
+
+    // ── Tray ─────────────────────────────────────────────────────────────
+    settings.setValue(QStringLiteral("Tray/OnMinimizeEnabled"), m_trayOnMinimizeEnabled);
 }
 
 // ── Setters ───────────────────────────────────────────────────────────────────
@@ -288,6 +294,12 @@ void AppSettings::setBackupDirectory(const QString& value)
 void AppSettings::setDocumentsRootPath(const QString& value)
 {
     m_documentsRootPath = value;
+    save();
+}
+
+void AppSettings::setTrayOnMinimizeEnabled(bool value)
+{
+    m_trayOnMinimizeEnabled = value;
     save();
 }
 

@@ -3099,6 +3099,140 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 
 ## Erledigt / Archiv
 
+### Die Anwendung darf nur einmal gestartet werden (Feature, 03.08.2026)
+
+Ergänzung zum Tray-Feature (siehe direkt darunter) — ein zweiter Start soll
+nicht dieselbe Portfolio-SQLite-Datei parallel öffnen (Datenintegrität),
+sondern stattdessen die bereits laufende Instanz in den Vordergrund holen.
+
+Neue Klasse `SingleInstanceGuard` (`app/core/`, analog `Database`/
+`DocumentRootMigrator` dort):
+
+- **Sperrmechanismus:** `QLockFile` statt des klassischen
+  `QSharedMemory`-Tricks — erkennt einen verwaisten Lock nach einem Absturz
+  der vorherigen Instanz automatisch selbst (prüft, ob die im Lock
+  gespeicherte PID noch existiert) und verwirft ihn, ohne dass manuelles
+  Aufräumen nötig wäre. Die Lock-Datei liegt im selben
+  `QStandardPaths::AppConfigLocation`-Verzeichnis wie `settings.ini`
+  (`AppStartup::settingsPath()`) — aus demselben Grund stabil über
+  AppImage/Windows-Installer/portable Builds hinweg (siehe "settings.ini
+  nicht persistent im AppImage").
+- **Benachrichtigung der laufenden Instanz:** `QLocalServer`/
+  `QLocalSocket` — eine zweite gestartete Instanz, die den Lock bereits
+  belegt vorfindet, verbindet sich kurz zum lokalen Server der ersten
+  Instanz und schickt ein "Aktivieren"-Signal (`activationRequested()`),
+  bevor sie sich selbst beendet.
+- `SingleInstanceGuard::buildServerName(organizationName, applicationName)`
+  — `public static`, reine String-Logik (Org-/App-Name → Bezeichner für
+  Lock-Datei und `QLocalServer`-Name), bewusst von `tryAcquire()` getrennt
+  und direkt testbar, gleiches Testbarkeits-Prinzip wie
+  `buildDailyValuesUrl()`. `tryAcquire()`/`activationRequested()` selbst
+  (echtes `QLockFile` + `QLocalServer`/`QLocalSocket` über mehrere echte
+  Prozesse) bleiben bewusst ungetestet — kein sauberer Weg, das
+  deterministisch in einem einzelnen QTest-Lauf zu simulieren, analog zu
+  anderen bereits akzeptierten Testlücken bei echten
+  System-Interaktionen (`QDialog::exec()`, echte `QSoundEffect`-Wiedergabe).
+
+**Ablauf in `main.cpp`:** direkt nach `app.setWindowIcon(...)`, noch VOR
+`AppStartup::loadSettings()`/`openDatabase()`, damit eine zweite Instanz die
+Datenbank gar nicht erst berührt. Bei belegtem Lock zeigt `main()` einen
+kurzen `QMessageBox::information()`-Hinweis ("läuft bereits") und beendet
+sich sofort mit `return 0` (Nessies Vorgabe 03.08.2026: Kombination aus
+"laufende Instanz nach vorne holen" **und** "kurzer Hinweis in der zweiten
+Instanz", nicht nur eines von beidem).
+
+**Wiederverwendung von `MainWindow::restoreFromTray()`:** statt neuen Code
+fürs "nach-vorne-Holen" zu schreiben, wurde die bestehende
+`restoreFromTray()`-Methode (bisher nur für den Tray-Wiederherstellen-Pfad
+gedacht) von `private` auf `public` gestellt und `SingleInstanceGuard::
+activationRequested()` direkt in `main.cpp` daran verbunden — sie
+funktioniert unverändert korrekt, egal ob das Fenster gerade im Tray
+versteckt, nur minimiert oder einfach von anderen Fenstern verdeckt ist
+(`m_trayIcon->hide()` darin ist ein No-op, wenn kein Tray-Icon sichtbar
+war).
+
+### Minimieren wahlweise in Taskleiste oder Tray (Feature, 03.08.2026)
+
+Neue Option `AppSettings::trayOnMinimizeEnabled()` (Standard: **aus**, opt-in
+— bestehende Installationen verhalten sich nach dem Update unverändert),
+konfigurierbar über einen neuen Dialog `TraySettingsForm` (Einstellungen →
+"&Tray...", gleiches leichtgewichtige Einzel-`QDialog`-Muster wie
+`BackupSettingsForm`/`SoundSettingsForm` — keine eigene
+IView/IModel/Presenter-Trias nötig, da reine Einstellungsmaske ohne
+eigenständige Fachlogik).
+
+Ist die Option aktiv **und** ein Infobereich auf dem System verfügbar
+(`QSystemTrayIcon::isSystemTrayAvailable()`), versteckt `MainWindow` sich
+beim Minimieren vollständig statt in der Taskleiste zu erscheinen, und zeigt
+stattdessen ein Symbol im Infobereich (`m_trayIcon`, siehe
+`IconProvider::appIcon()` weiter unten für das verwendete Icon). Ein
+einfacher Klick auf das Symbol (`QSystemTrayIcon::Trigger`) oder "Anzeigen"
+im Kontextmenü (`m_actionTrayShow`, Icon: `IconProvider::ShowWindow`) stellt
+das Fenster wieder her; das Kontextmenü enthält zusätzlich die bereits
+vorhandene `m_actionQuit`. Bewusst **nicht** umgesetzt: Schließen per
+X-Button bleibt unverändert "Beenden" — das war nicht Teil dieses Features
+(Nessies Entscheidung 03.08.2026).
+
+**Umsetzung:**
+
+- `MainWindow::setupTrayIcon()` — erstellt `m_trayIcon` inkl. Kontextmenü nur
+  einmal beim Start, no-op falls kein Tray verfügbar ist (u. a. manche
+  Linux-Desktopumgebungen sowie headless/offscreen CI — dort bleibt
+  `m_trayIcon == nullptr`, das Feature ist dann automatisch komplett
+  inaktiv). Das Icon selbst ist nur sichtbar, während das Fenster tatsächlich
+  ins Tray versteckt ist — nicht dauerhaft ab dem Programmstart.
+- `MainWindow::changeEvent()` (neu überschrieben) reagiert auf
+  `QEvent::WindowStateChange` in Kombination mit `isMinimized()`. Das
+  eigentliche `hide()`/Tray-Icon-`show()` läuft verzögert über
+  `QTimer::singleShot(0, ...)` statt direkt im Event-Handler — gleiches
+  Muster wie an anderer Stelle in dieser Klasse für Operationen, die erst
+  nach dem laufenden Event-Durchlauf sicher ausgeführt werden können, da ein
+  direktes `hide()` sich auf manchen Plattformen mit dem noch nicht
+  abgeschlossenen Fensterzustandswechsel des Fenstermanagers überschneiden
+  kann.
+- Die reine Entscheidungslogik ist als **`public static`**
+  `MainWindow::shouldMinimizeToTray(bool settingEnabled, bool
+  trayIconAvailable)` ausgelagert (gleiches Testbarkeits-Prinzip wie
+  `buildDailyValuesUrl()`/`resolveShareGuidForDocument()`) — direkt testbar
+  ohne echtes `QSystemTrayIcon` und unabhängig davon, ob in der
+  Test-/CI-Umgebung tatsächlich ein Infobereich verfügbar ist.
+- `MainWindow::restoreFromTray()` — versteckt `m_trayIcon` wieder und holt
+  das Fenster per `showNormal()` + `raise()` + `activateWindow()` zurück;
+  verbunden sowohl mit dem Einfachklick auf das Tray-Icon als auch mit
+  `m_actionTrayShow`.
+
+**Bugfix (03.08.2026, noch am selben Tag, Nessies Rückmeldung):** Die erste
+Fassung verwendete für `m_trayIcon` selbst ebenfalls
+`IconProvider::ShowWindow` (`show_window_24.png`, ein einzelnes 24px-
+Pixmap) — das passte als Kontextmenü-Icon (normale `QIcon`-Menü-Größe), sah
+als eigentliches, von `QSystemTrayIcon` gerendertes Tray-Icon aber "komisch"
+aus: das System skaliert ein einzelnes festes Pixmap auf seine eigene,
+meist andere Tray-Zielgröße (z. B. 16px unter Windows), was verzerrt/
+unscharf wirkt. Zudem war das Motiv (ein "Fenster anzeigen"-Symbol)
+ohnehin nicht als Anwendungslogo gedacht.
+
+Es existierten bereits vier PNG-Auflösungen eines eigenen App-Icons
+(`app_icon_16/32/48/256.png`) auf der Festplatte, aber ohne
+`resources.qrc`-Eintrag. Behoben durch:
+
+- `resources.qrc`: neuer `<qresource prefix="/icons/app">`-Block mit den
+  vier PNGs (`app_icon.ico` bewusst ausgenommen — reines
+  Windows-Installer-Material für Inno Setup, kein Qt-Ressourcen-Icon).
+- `IconProvider::appIcon()` (neu, `public static`): kombiniert alle vier
+  Auflösungen per `QIcon::addFile()` zu einem mehrstufigen `QIcon`, aus dem
+  Qt automatisch die zur jeweiligen Zielgröße passende Auflösung wählt.
+  Bewusst getrennt vom `IconName`-Enum/Icon-Set-Mechanismus (der schaltet
+  zwischen *Stilen* desselben Icons um, hier geht es um *Auflösungsstufen*
+  derselben, festen App-Identität, unabhängig vom aktiven Icon-Set).
+- `MainWindow::setupTrayIcon()` verwendet jetzt `IconProvider::appIcon()`
+  für `m_trayIcon` selbst; das Kontextmenü-Icon bei "Anzeigen"
+  (`m_actionTrayShow`) bleibt unverändert bei `IconProvider::ShowWindow`,
+  passte dort laut Nessie bereits.
+- `main.cpp`: `QApplication::setWindowIcon(IconProvider::appIcon())`
+  ergänzt (statt nur auf `MainWindow`, damit auch Dialoge dasselbe Icon
+  erben) — Titelleiste/Taskleiste zeigten zuvor nur das generische
+  Qt-Standardsymbol, fiel im selben Zuge auf.
+
 ### Vortag-Spalte + Piktogramm-Spalte: Tooltip mit Gesamtänderung (Feature, 02.08.2026)
 
 Beim Hovern über die "Vortag"-Spalte **und** die Entwicklungs-Pfeil-Icon-

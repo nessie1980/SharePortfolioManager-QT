@@ -3,6 +3,7 @@
 #include "IconProvider.h"
 
 #include <QPixmap>
+#include <QSize>
 #include <QDebug>
 
 // ── Static member ─────────────────────────────────────────────────────────────
@@ -129,4 +130,16 @@ QIcon IconProvider::icon(IconName name)
 
     qWarning() << "[IconProvider] Icon not found:" << fileName(name);
     return QIcon();
+}
+
+// ── appIcon ───────────────────────────────────────────────────────────────────
+
+QIcon IconProvider::appIcon()
+{
+    QIcon icon;
+    icon.addFile(QStringLiteral(":/icons/app/app_icon_16.png"),  QSize(16, 16));
+    icon.addFile(QStringLiteral(":/icons/app/app_icon_32.png"),  QSize(32, 32));
+    icon.addFile(QStringLiteral(":/icons/app/app_icon_48.png"),  QSize(48, 48));
+    icon.addFile(QStringLiteral(":/icons/app/app_icon_256.png"), QSize(256, 256));
+    return icon;
 }

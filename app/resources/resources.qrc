@@ -57,6 +57,12 @@
         <file alias="search_ok_24.png">icons/search_ok_24.png</file>
         <file alias="show_window_24.png">icons/show_window_24.png</file>
     </qresource>
+    <qresource prefix="/icons/app">
+        <file alias="app_icon_16.png">icons/app/app_icon_16.png</file>
+        <file alias="app_icon_32.png">icons/app/app_icon_32.png</file>
+        <file alias="app_icon_48.png">icons/app/app_icon_48.png</file>
+        <file alias="app_icon_256.png">icons/app/app_icon_256.png</file>
+    </qresource>
     <qresource prefix="/sounds">
         <file>sounds/Error.wav</file>
         <file>sounds/UpdateFinished.wav</file>

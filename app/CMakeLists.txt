@@ -35,6 +35,8 @@ set(APP_SOURCES
     repositories/DailyValuesRepository.cpp
     core/DocumentRootMigrator.h
     core/DocumentRootMigrator.cpp
+    core/SingleInstanceGuard.h
+    core/SingleInstanceGuard.cpp
 
     # ── Configuration ──────────────────────────────────────────────────────
     config/AppSettings.h
@@ -153,6 +155,8 @@ set(APP_SOURCES
     forms/BackupSettingsForm/BackupSettingsForm.cpp
     forms/DocumentsSettingsForm/DocumentsSettingsForm.h
     forms/DocumentsSettingsForm/DocumentsSettingsForm.cpp
+    forms/TraySettingsForm/TraySettingsForm.h
+    forms/TraySettingsForm/TraySettingsForm.cpp
     forms/ApiSettingsForm/ApiSettingsForm.h
     forms/ApiSettingsForm/ApiSettingsForm.cpp
 

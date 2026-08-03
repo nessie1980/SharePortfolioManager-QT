@@ -253,6 +253,24 @@ public:
      */
     void setDocumentsRootPath(const QString& value);
 
+    // ── Tray ─────────────────────────────────────────────────────────────
+    /**
+     * @brief Returns whether minimizing the main window moves it to the
+     * system tray instead of the taskbar.
+     *
+     * Read by MainWindow::shouldMinimizeToTray() / MainWindow::changeEvent().
+     * Default is false (opt-in) so existing installations keep the previous
+     * minimize-to-taskbar behavior unchanged after an update.
+     * @return true if minimize-to-tray is enabled.
+     */
+    bool trayOnMinimizeEnabled() const { return m_trayOnMinimizeEnabled; }
+
+    /**
+     * @brief Enable or disable minimize-to-tray and save.
+     * @param value  true to minimize to the tray instead of the taskbar.
+     */
+    void setTrayOnMinimizeEnabled(bool value);
+
 private:
     explicit AppSettings(QObject* parent = nullptr);
 
@@ -327,4 +345,7 @@ private:
 
     // Documents
     QString m_documentsRootPath; // leer = noch nicht konfiguriert (Erstlauf)
+
+    // Tray
+    bool m_trayOnMinimizeEnabled = false; // opt-in, siehe trayOnMinimizeEnabled()
 };

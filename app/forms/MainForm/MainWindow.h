@@ -15,6 +15,7 @@
 #include <QLineEdit>
 #include <QSoundEffect>
 #include <QPoint>
+#include <QSystemTrayIcon>
 
 #include "../../config/WebSitesConfig.h"
 #include "../../config/DocumentsConfig.h"
@@ -172,7 +173,65 @@ public:
     static QString resolveShareGuidForDocument(const QString& pdfText,
                                                 const DocumentEntry& docEntry);
 
+    /**
+     * @brief Decide whether minimizing should hide the window into the tray.
+     *
+     * Feature 03.08.2026 ("Minimieren wahlweise in Taskleiste oder Tray"):
+     * pure decision function used by changeEvent() — declared `public static`
+     * (same rationale as buildDailyValuesUrl()/resolveShareGuidForDocument()
+     * above) so it is directly testable without constructing a real
+     * QSystemTrayIcon or MainWindow, and without depending on whether a tray
+     * is actually available in the test/CI environment.
+     *
+     * @param settingEnabled     AppSettings::trayOnMinimizeEnabled().
+     * @param trayIconAvailable  true if a QSystemTrayIcon was successfully
+     *                           created for this MainWindow (setupTrayIcon()
+     *                           only creates one when
+     *                           QSystemTrayIcon::isSystemTrayAvailable()).
+     * @return true if minimizing should hide the window and show the tray
+     *         icon instead of the normal taskbar minimize.
+     */
+    static bool shouldMinimizeToTray(bool settingEnabled, bool trayIconAvailable);
+
+    /**
+     * @brief Restore the main window to the foreground.
+     *
+     * Hides the tray icon again (no-op if it wasn't shown) and brings the
+     * window back via `showNormal()` + `raise()` + `activateWindow()`.
+     * Used for two independent purposes, both connected in `setupTrayIcon()`
+     * and `main.cpp` respectively:
+     * - the tray icon's own single-click activation / its "Anzeigen"
+     *   context-menu action (m_actionTrayShow) — reversing a
+     *   minimize-to-tray (Feature 03.08.2026, "Minimieren wahlweise in
+     *   Taskleiste oder Tray");
+     * - `SingleInstanceGuard::activationRequested()` — bringing this,
+     *   the already-running instance, to the foreground when a second
+     *   launch attempt is detected (Feature 03.08.2026, "Die Anwendung
+     *   darf nur einmal gestartet werden"), regardless of whether the
+     *   window is currently hidden in the tray, minimized, or simply
+     *   behind other windows.
+     *
+     * Public specifically for the second use case above — main.cpp
+     * connects to it directly without any MainWindow-internal trigger.
+     */
+    void restoreFromTray();
+
 protected:
+    /**
+     * @brief Intercepts the minimize state change to optionally route it to the tray.
+     *
+     * Feature 03.08.2026: when the window becomes minimized and
+     * shouldMinimizeToTray() returns true (AppSettings::trayOnMinimizeEnabled()
+     * is set and a tray icon is available), the window is hidden and the
+     * tray icon (m_trayIcon) is shown instead of the normal taskbar
+     * minimize — restoreFromTray() reverses this. The actual hide() is
+     * deferred via `QTimer::singleShot(0, ...)` rather than called directly
+     * from within changeEvent() — same idiom already used elsewhere in this
+     * class for post-event-loop deferred operations — to avoid interfering
+     * with the platform's own in-progress window-state transition.
+     */
+    void changeEvent(QEvent* event) override;
+
     /**
      * @brief Scopes drag&drop handling to m_documentCaptureGroup only.
      *
@@ -441,6 +500,18 @@ private:
     void setupCentralWidget();
     void setupStatusBar();
     void restoreWindowGeometry();
+
+    /**
+     * @brief Create the tray icon and its context menu, if a tray is available.
+     *
+     * Feature 03.08.2026: no-op (m_trayIcon stays nullptr) if
+     * `QSystemTrayIcon::isSystemTrayAvailable()` is false — e.g. some Linux
+     * desktop environments without a notification area, or headless/offscreen
+     * CI. The icon itself is only made visible while the window is actually
+     * hidden into the tray (see changeEvent()/restoreFromTray()), not shown
+     * permanently once created.
+     */
+    void setupTrayIcon();
 
     /**
      * @brief Start the parser(s) for a single share.
@@ -753,10 +824,15 @@ private:
     QAction* m_actionSound                = nullptr;
     QAction* m_actionBackup               = nullptr;
     QAction* m_actionDocuments            = nullptr;
+    QAction* m_actionTraySettings         = nullptr;
 
     // ── Actions — API Settings ────────────────────────────────────────────
     QAction* m_actionApiKeyYahoo          = nullptr;
 
     // ── Actions — Help ────────────────────────────────────────────────────
     QAction* m_actionAbout                = nullptr;
+
+    // ── Tray (Feature 03.08.2026) ─────────────────────────────────────────
+    QSystemTrayIcon* m_trayIcon           = nullptr; ///< nullptr wenn kein Tray verfügbar (isSystemTrayAvailable())
+    QAction*         m_actionTrayShow     = nullptr; ///< "Anzeigen" im Tray-Kontextmenü
 };

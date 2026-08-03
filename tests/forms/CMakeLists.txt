@@ -14,6 +14,8 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/forms/BackupSettingsForm/BackupSettingsForm.cpp
     ../../app/forms/DocumentsSettingsForm/DocumentsSettingsForm.h
     ../../app/forms/DocumentsSettingsForm/DocumentsSettingsForm.cpp
+    ../../app/forms/TraySettingsForm/TraySettingsForm.h
+    ../../app/forms/TraySettingsForm/TraySettingsForm.cpp
     ../../app/forms/AboutForm/AboutForm.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
@@ -387,6 +389,39 @@ target_link_libraries(tst_backupsettingsform
 )
 
 add_test(NAME tst_backupsettingsform COMMAND tst_backupsettingsform)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_traysettingsform — TraySettingsForm (einzelner QDialog, kein
+# IView/IModel/Presenter-Triple, analog LoggerSettingsForm/BackupSettingsForm/
+# SoundSettingsForm). Eigene Executable statt Erweiterung von
+# tst_mainwindow.cpp (03.08.2026, gleiche Begründung wie
+# tst_backupsettingsform) — braucht weder Datenbank noch MainWindow, daher nur
+# AppSettings + IconProvider als Compile-Abhängigkeiten.
+# ─────────────────────────────────────────────────────────────────────────────
+
+qt_add_executable(tst_traysettingsform tst_traysettingsform.cpp
+    ../../app/forms/TraySettingsForm/TraySettingsForm.h
+    ../../app/forms/TraySettingsForm/TraySettingsForm.cpp
+    ../../app/config/AppSettings.cpp
+    ../../app/IconProvider.cpp
+    ${FORM_TEST_RESOURCES}
+)
+
+target_include_directories(tst_traysettingsform
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/TraySettingsForm
+)
+
+set_target_properties(tst_traysettingsform PROPERTIES
+    AUTOMOC ON
+    AUTORCC ON
+)
+
+target_link_libraries(tst_traysettingsform
+    PRIVATE Qt6::Test Qt6::Widgets
+)
+
+add_test(NAME tst_traysettingsform COMMAND tst_traysettingsform)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # tst_sharedetailsform — PresenterShareDetails (Fake-View/Fake-Model, siehe

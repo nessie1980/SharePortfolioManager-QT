@@ -33,6 +33,7 @@ ctest --output-on-failure
 ./bin/tst_database
 ./bin/tst_appstartup
 ./bin/tst_iconprovider
+./bin/tst_singleinstanceguard
 ./bin/tst_websitesconfig
 ./bin/tst_documentsconfig
 ./bin/tst_sharecalculator
@@ -40,6 +41,7 @@ ctest --output-on-failure
 ./bin/tst_shareeditform
 ./bin/tst_buysform
 ./bin/tst_backupsettingsform
+./bin/tst_traysettingsform
 ./bin/tst_documentssettingsform
 ./bin/tst_xmlportfolioparser
 ./bin/tst_portfoliovalidator
@@ -203,10 +205,11 @@ Tabellen-Existenz, Indizes, Foreign Keys, Default-Werte, WAL-Modus und Transakti
 
 ---
 
-### tests/app/ — AppStartup + IconProvider Unit-Tests
+### tests/app/ — AppStartup + IconProvider + SingleInstanceGuard Unit-Tests
 
-Startverhalten der Applikation (fehlende DB, leerer Pfad, erstes Öffnen) und Icon-Verfügbarkeit
-aller definierten `IconProvider::IconName`-Werte — `tst_appstartup` und `tst_iconprovider`.
+Startverhalten der Applikation (fehlende DB, leerer Pfad, erstes Öffnen), Icon-Verfügbarkeit
+aller definierten `IconProvider::IconName`-Werte, sowie die Bezeichner-Logik der
+Single-Instance-Sperre — `tst_appstartup`, `tst_iconprovider` und `tst_singleinstanceguard`.
 
 @note `AppStartup::settingsPath()` liefert seit dem Bugfix vom 29.07.2026
 (siehe ARCHITECTURE.md, "settings.ini nicht persistent im AppImage") einen
@@ -243,6 +246,23 @@ returnsTrueAndPreservesValues` ruft `loadSettings()` zweimal auf denselben
 Pfad auf und ändert dazwischen `language` — der zweite Aufruf darf die schon
 vorhandene Datei nicht mit frischen Defaults überschreiben, was der Test über
 den erhalten gebliebenen Wert verifiziert.
+
+@note `SingleInstanceGuard::buildServerName()` (neu, Feature 03.08.2026, "Die
+Anwendung darf nur einmal gestartet werden") ist reine, seiteneffektfreie
+String-Logik ohne Datei-/Socket-I/O — deswegen `public static` und direkt
+testbar, gleiches Muster wie `MainWindow::buildDailyValuesUrl()`.
+`tryAcquire()`/`activationRequested()` selbst (echtes `QLockFile` +
+`QLocalServer`/`QLocalSocket` über mehrere Prozesse) bleiben bewusst
+ungetestet — kein sauberer Weg, zwei echte, unabhängige Prozessinstanzen
+deterministisch in einem einzelnen QTest-Lauf zu simulieren. Siehe
+ARCHITECTURE.md für Details.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_buildServerName_containsOrgAndAppName` | Org- und App-Name im Ergebnis | Beide Teilstrings sowie "SingleInstance" enthalten |
+| `test_buildServerName_differentAppNames_produceDifferentNames` | Zwei unterschiedliche App-Namen | Ergebnisse unterscheiden sich |
+| `test_buildServerName_sameInputs_areDeterministic` | Zweimaliger Aufruf mit identischen Argumenten | Identisches Ergebnis |
+| `test_buildServerName_containsNoSpaces` | Org-/App-Name mit Leerzeichen | Leerzeichen im Ergebnis durch `_` ersetzt |
 
 ---
 
@@ -904,6 +924,34 @@ Dateinamen-Vorschau:
 | `test_preview_updatesOnPrefixChange` | Vorschau reagiert live auf Präfix-Eingabe | Vorschautext beginnt mit neuem Präfix |
 | `test_preview_containsPortfolioPlaceholder` | Vorschau enthält erkennbaren Platzhalter | Text enthält `<Portfolioname>` |
 | `test_preview_emptyPrefixShowsDefaultInPreview` | Leeres Präfix-Feld → Vorschau zeigt Default | Vorschautext beginnt mit "Backup_" |
+
+---
+
+#### tst_traysettingsform — TraySettingsForm (neu, 03.08.2026)
+
+Executable: `tst_traysettingsform`
+Klasse unter Test: `TraySettingsForm`, sowie die Tray-Sektion von `AppSettings`
+
+@note Eigene Executable statt Erweiterung von `tst_mainwindow.cpp`, analog
+`tst_backupsettingsform` — braucht weder Datenbank noch `MainWindow`,
+Compile-Abhängigkeiten sind nur `AppSettings.cpp` und `IconProvider.cpp`.
+Die Checkbox trägt zu Testzwecken eine feste `objectName()`
+(`chkTrayOnMinimizeEnabled`), keine visuelle Auswirkung.
+
+@note `AppSettings` ist ein Singleton — `init()` setzt vor jedem Test
+`trayOnMinimizeEnabled` explizit auf `false` zurück, gleiches Muster wie in
+`tst_backupsettingsform`. Die Entscheidungslogik selbst
+(`MainWindow::shouldMinimizeToTray()`) wird nicht hier, sondern in
+`tst_mainwindow.cpp` getestet (siehe dort) — dieser Dialog testet nur
+Laden/Speichern/Abbrechen der Einstellung.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_loadSettings_disabled_checkboxUnchecked` | Dialog öffnet bei deaktivierter Option | Checkbox unchecked |
+| `test_loadSettings_enabled_checkboxChecked` | Dialog öffnet bei aktivierter Option | Checkbox checked |
+| `test_save_checkedThenSave_persistsEnabled` | Checkbox aktiviert + Speichern-Klick | `AppSettings::trayOnMinimizeEnabled()` = true |
+| `test_save_uncheckedThenSave_persistsDisabled` | Checkbox deaktiviert + Speichern-Klick | `AppSettings::trayOnMinimizeEnabled()` = false |
+| `test_cancel_doesNotPersistChange` | Checkbox geändert, dann Abbrechen-Klick | `AppSettings` unverändert |
 
 ---
 
@@ -2134,6 +2182,27 @@ betroffene Aktie nicht aktualisiert werden.
 
 Grid-Selektion folgt dem Refresh (Feature vom 05.07.2026) — vollständig
 umgesetzt und getestet (siehe "Grid-Selektions-Testplan vollständig" unten).
+
+### shouldMinimizeToTray() — erledigt (03.08.2026)
+
+Reine, seiteneffektfreie Entscheidungsfunktion ihrer zwei `bool`-Parameter —
+kein `QSystemTrayIcon`, keine `MainWindow`-Instanzzustände. Deswegen
+`public static` gemacht, gleiches Muster wie `buildDailyValuesUrl()`/
+`resolveShareGuidForDocument()`: direkt testbar ohne echtes Tray-Icon und
+unabhängig davon, ob in der Test-/CI-Umgebung tatsächlich ein Infobereich
+verfügbar ist (z. B. offscreen QPA in der CI meldet üblicherweise keinen
+verfügbaren Tray).
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_shouldMinimizeToTray_settingEnabledAndTrayAvailable_returnsTrue` | Option aktiv + Tray verfügbar | `true` |
+| `test_shouldMinimizeToTray_settingDisabled_returnsFalse` | Option inaktiv, Tray verfügbar | `false` |
+| `test_shouldMinimizeToTray_trayNotAvailable_returnsFalse` | Option aktiv, Tray nicht verfügbar | `false` |
+| `test_shouldMinimizeToTray_settingDisabledAndTrayNotAvailable_returnsFalse` | Option inaktiv, Tray nicht verfügbar | `false` |
+
+Die Dialog-Tests für `TraySettingsForm` selbst (Laden/Speichern/Abbrechen der
+Einstellung) laufen in `tst_traysettingsform` (eigene Executable, siehe dort).
+
 
 @note Korrektur (07.07.2026): Diese Datei behauptete bis dahin fälschlich,
 `selectShareRow()`/`selectFirstShareRow()` seien `private` (keine

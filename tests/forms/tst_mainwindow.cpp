@@ -1624,6 +1624,37 @@ private slots:
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // MainWindow::shouldMinimizeToTray() — Minimieren wahlweise in
+    // Taskleiste oder Tray (Feature 03.08.2026)
+    // ─────────────────────────────────────────────────────────────────────
+    //
+    // Pure decision function, testable directly without a real
+    // QSystemTrayIcon/MainWindow instance and independent of whether a tray
+    // is actually available in this CI/test environment — see
+    // MainWindow.h/.cpp for the full rationale (same pattern as
+    // buildDailyValuesUrl()/resolveShareGuidForDocument() above).
+
+    void test_shouldMinimizeToTray_settingEnabledAndTrayAvailable_returnsTrue()
+    {
+        QVERIFY(MainWindow::shouldMinimizeToTray(true, true));
+    }
+
+    void test_shouldMinimizeToTray_settingDisabled_returnsFalse()
+    {
+        QVERIFY(!MainWindow::shouldMinimizeToTray(false, true));
+    }
+
+    void test_shouldMinimizeToTray_trayNotAvailable_returnsFalse()
+    {
+        QVERIFY(!MainWindow::shouldMinimizeToTray(true, false));
+    }
+
+    void test_shouldMinimizeToTray_settingDisabledAndTrayNotAvailable_returnsFalse()
+    {
+        QVERIFY(!MainWindow::shouldMinimizeToTray(false, false));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // MainWindow — Grid-Selektion während "Alle aktualisieren" (07.07.2026)
     // ─────────────────────────────────────────────────────────────────────
     //

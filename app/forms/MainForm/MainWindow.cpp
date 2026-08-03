@@ -9,6 +9,7 @@
 #include "../SoundSettingsForm/SoundSettingsForm.h"
 #include "../BackupSettingsForm/BackupSettingsForm.h"
 #include "../DocumentsSettingsForm/DocumentsSettingsForm.h"
+#include "../TraySettingsForm/TraySettingsForm.h"
 #include "../ShareDetailsForm/ViewShareDetails.h"
 #include "../ChartForm/ChartPopup.h"
 #include "../AboutForm/AboutForm.h"
@@ -51,6 +52,8 @@
 #include <QMimeData>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QSystemTrayIcon>
+#include <QTimer>
 #include <algorithm>
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
 #include "../BackupProgressForm/BackupProgressDialog.h"
@@ -109,6 +112,7 @@ void MainWindow::initialize()
     setupCentralWidget();
     setupStatusBar();
     restoreWindowGeometry();
+    setupTrayIcon();
 
     // Show startup info in status message area
     addStatusMessage(tr("Anwendung gestartet."), MessageType::Info);
@@ -243,6 +247,15 @@ void MainWindow::setupActions()
         dialog.exec();
     });
 
+    // Feature 03.08.2026 ("Minimieren wahlweise in Taskleiste oder Tray"):
+    // wiederverwendet IconProvider::ShowWindow, siehe ARCHITECTURE.md.
+    m_actionTraySettings = new QAction(IconProvider::icon(IconProvider::ShowWindow),
+                                       tr("&Tray..."), this);
+    connect(m_actionTraySettings, &QAction::triggered, this, [this]() {
+        TraySettingsForm dialog(this);
+        dialog.exec();
+    });
+
     // ── API Settings ──────────────────────────────────────────────────────
     m_actionApiKeyYahoo = new QAction(IconProvider::icon(IconProvider::MenuKey),
                                       tr("&Yahoo Finance..."), this);
@@ -282,6 +295,7 @@ void MainWindow::setupMenuBar()
     settingsMenu->addAction(m_actionSound);
     settingsMenu->addAction(m_actionBackup);
     settingsMenu->addAction(m_actionDocuments);
+    settingsMenu->addAction(m_actionTraySettings);
 
     QMenu* apiMenu = menuBar()->addMenu(tr("&API-Einstellung"));
     apiMenu->addAction(m_actionApiKeyYahoo);
@@ -638,6 +652,92 @@ void MainWindow::restoreWindowGeometry()
         showMaximized();
 }
 
+// ── Tray (Feature 03.08.2026) ─────────────────────────────────────────────────
+//
+// "Minimieren wahlweise in Taskleiste oder Tray": AppSettings::trayOnMinimizeEnabled()
+// (Standard: aus) steuert, ob changeEvent() das Fenster beim Minimieren normal
+// in der Taskleiste belässt oder stattdessen versteckt und ein Tray-Icon zeigt.
+// Siehe ARCHITECTURE.md.
+
+void MainWindow::setupTrayIcon()
+{
+    // Manche Linux-Desktopumgebungen (und headless/offscreen CI) bieten
+    // keinen Infobereich an — in dem Fall bleibt m_trayIcon nullptr und
+    // shouldMinimizeToTray() liefert dank trayIconAvailable=false immer
+    // false, MainWindow verhält sich dann unverändert wie vor diesem Feature.
+    if (!QSystemTrayIcon::isSystemTrayAvailable())
+        return;
+
+    // Bugfix (03.08.2026, Nessies Rückmeldung): ursprünglich hier ebenfalls
+    // IconProvider::ShowWindow verwendet — das passt zwar als Kontextmenü-
+    // Icon (normale QIcon-Menü-Größe), sah als eigentliches Tray-Icon aber
+    // "komisch" aus, da QSystemTrayIcon das einzelne 24px-Pixmap auf die
+    // systemeigene (meist kleinere) Tray-Zielgröße strecken/stauchen muss.
+    // IconProvider::appIcon() liefert stattdessen ein mehrstufiges QIcon
+    // (16/32/48/256px) der tatsächlichen App-Identität — Qt wählt daraus
+    // automatisch die zur Tray-Zielgröße passende Auflösung.
+    m_trayIcon = new QSystemTrayIcon(IconProvider::appIcon(), this);
+    m_trayIcon->setToolTip(baseWindowTitle());
+
+    auto* trayMenu = new QMenu(this);
+    m_actionTrayShow = new QAction(IconProvider::icon(IconProvider::ShowWindow),
+                                   tr("&Anzeigen"), this);
+    connect(m_actionTrayShow, &QAction::triggered, this, &MainWindow::restoreFromTray);
+    trayMenu->addAction(m_actionTrayShow);
+    trayMenu->addSeparator();
+    trayMenu->addAction(m_actionQuit);
+    m_trayIcon->setContextMenu(trayMenu);
+
+    // Einfacher Klick (QSystemTrayIcon::Trigger) stellt das Fenster wieder
+    // her (Nessies Vorgabe 03.08.2026) — Doppelklick löst zusätzlich
+    // DoubleClick aus, was hier bewusst ignoriert wird: Trigger allein
+    // reicht bereits aus, ein zusätzlicher Handler dafür wäre redundant.
+    connect(m_trayIcon, &QSystemTrayIcon::activated, this,
+            [this](QSystemTrayIcon::ActivationReason reason) {
+                if (reason == QSystemTrayIcon::Trigger)
+                    restoreFromTray();
+            });
+}
+
+void MainWindow::restoreFromTray()
+{
+    if (m_trayIcon)
+        m_trayIcon->hide();
+    showNormal();
+    raise();
+    activateWindow();
+}
+
+bool MainWindow::shouldMinimizeToTray(bool settingEnabled, bool trayIconAvailable)
+{
+    return settingEnabled && trayIconAvailable;
+}
+
+void MainWindow::changeEvent(QEvent* event)
+{
+    QMainWindow::changeEvent(event);
+
+    if (event->type() != QEvent::WindowStateChange || !isMinimized())
+        return;
+
+    if (!shouldMinimizeToTray(AppSettings::instance().trayOnMinimizeEnabled(),
+                              m_trayIcon != nullptr))
+        return;
+
+    // QTimer::singleShot(0, ...) statt direktem hide()/show() hier im
+    // changeEvent()-Handler selbst — gleiches Muster wie andernorts in dieser
+    // Klasse für nach dem aktuellen Event-Durchlauf verzögerte Operationen
+    // (siehe ARCHITECTURE.md, Qt-Eigenheiten): hide() aus einem laufenden
+    // WindowStateChange-Event heraus überschneidet sich auf manchen
+    // Plattformen mit dem noch nicht abgeschlossenen Fensterzustandswechsel
+    // des Fenstermanagers selbst.
+    QTimer::singleShot(0, this, [this]() {
+        hide();
+        if (m_trayIcon)
+            m_trayIcon->show();
+    });
+}
+
 // ── Configuration loading ─────────────────────────────────────────────────────
 
 bool MainWindow::checkAndLoadConfigurations()
@@ -764,6 +864,7 @@ void MainWindow::disableAllControls()
     m_actionSound->setEnabled(false);
     m_actionBackup->setEnabled(false);
     m_actionDocuments->setEnabled(false);
+    m_actionTraySettings->setEnabled(false);
     m_actionApiKeyYahoo->setEnabled(false);
 
     // Disable portfolio tabs
