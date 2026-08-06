@@ -55,6 +55,8 @@ set(APP_SOURCES
     # ── Utils ──────────────────────────────────────────────────────────────
     utils/ShareCalculator.h
     utils/ShareCalculator.cpp
+    utils/PortfolioSeriesCalculator.h
+    utils/PortfolioSeriesCalculator.cpp
     utils/PdfTextExtractor.h
     utils/PdfTextExtractor.cpp
     utils/DocumentClassifier.h
@@ -145,6 +147,15 @@ set(APP_SOURCES
     forms/ChartForm/ViewChart.cpp
     forms/ChartForm/ChartPopup.h
     forms/ChartForm/ChartPopup.cpp
+    forms/PortfolioChartForm/PortfolioChartTypes.h
+    forms/PortfolioChartForm/IViewPortfolioChart.h
+    forms/PortfolioChartForm/IModelPortfolioChart.h
+    forms/PortfolioChartForm/ModelPortfolioChart.h
+    forms/PortfolioChartForm/ModelPortfolioChart.cpp
+    forms/PortfolioChartForm/PresenterPortfolioChart.h
+    forms/PortfolioChartForm/PresenterPortfolioChart.cpp
+    forms/PortfolioChartForm/ViewPortfolioChart.h
+    forms/PortfolioChartForm/ViewPortfolioChart.cpp
 
     # ── Forms – Settings ──────────────────────────────────────────────────
     forms/LoggerSettingsForm/LoggerSettingsForm.h

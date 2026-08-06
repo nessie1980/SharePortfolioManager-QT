@@ -6,6 +6,47 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.7.0] - 2026-08-06
+
+### Added
+
+- Neuer Tab "Depotwert-Chart" im Hauptfenster (zwischen "Kompletter
+  Depotwert" und "Kompletter Marktwert"): stellt die tatsächliche
+  Wertentwicklung des gesamten Portfolios über die Zeit dar. Die Linie
+  bewegt sich ausschliesslich durch Kursänderungen, Dividenden, realisierte
+  Verkaufsgewinne und Kosten — Ein- und Auszahlungen verschieben sie nicht,
+  ein Kauf über 5.000 Euro lässt sie also unverändert. Zeitraumsteuerung
+  (Start-Datum / Interval / Anzahl) und Mausrad-Zoom wie im Aktien-Chart,
+  Kurve abschnittsweise grün/rot nach Vorzeichen mit waagerechter
+  Null-Linie, Hover-Tooltip mit Datum sowie Entwicklung in Euro und Prozent.
+  Aktien ohne Tageswert-Historie werden ausgeschlossen und in einer
+  Warnzeile unter dem Chart benannt. Siehe
+  `docs/architecture/ARCHITECTURE.md`, "PortfolioChartForm-Details".
+- Neuer, datenbankfreier Rechenkern `PortfolioSeriesCalculator`
+  (`app/utils/`) mit eigenem Testziel `tst_portfolioseriescalculator`.
+- Diagnose-Export im Depotwert-Chart: der Knopf "Diagnose speichern…"
+  schreibt je Aktie die Anzahl geladener Datensätze und je Stichtag alle
+  Bestandteile der Berechnung als CSV.
+
+### Fixed
+
+- Depotwert-Chart: der Hover-Tooltip zeigte die Cursorposition statt des
+  Datenpunkts, weil `QLineSeries::hovered()` Achsenkoordinaten liefert. Bei
+  gleichem Datum erschienen dadurch je nach Zeigerhöhe unterschiedliche
+  Eurobeträge, und der Prozentwert blieb konstant bei 0,00 %. Der Tooltip
+  rastet jetzt auf den nächstgelegenen Datenpunkt ein.
+- Depotwert-Chart: Einträge ohne gültiges Datum wurden am ersten Stichtag
+  verbucht statt ignoriert, weil ein ungültiges `QDate` in Qt kleiner ist als
+  jedes gültige. Die Kurve zeigte dadurch Kosten Jahre vor dem ersten Kauf.
+  Solche Einträge fliessen jetzt nicht mehr ein und werden im Diagnose-Export
+  gezählt.
+- Depotwert-Chart: die Obergrenze für "Anzahl" richtet sich nach dem ersten
+  Kauf statt nach dem ältesten Tageswert — vor dem ersten Kauf gibt es kein
+  Portfolio, die Kurve läge dort zwangsläufig auf null.
+- Das Testziel `tst_sharecalculator` war in keiner `CMakeLists.txt`
+  eingetragen und wurde daher nie gebaut, obwohl `TESTING.md` es unter den
+  ausführbaren Tests aufführt. Nachgetragen in `tests/utils/CMakeLists.txt`.
+
 ## [1.6.0] - 2026-08-03
 
 ### Added

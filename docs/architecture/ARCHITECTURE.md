@@ -3025,7 +3025,336 @@ gemeinsamer Mechanismus mit `SPM_VERSION_STRING` vorgesehen, da eine
 Kopplung an die Applikationsversion fachlich falsch wäre — die Bibliotheken
 können sich unabhängig von der Applikation weiterentwickeln.
 
+## PortfolioChartForm-Details
+
+Der Depotwert-Chart (Feature 05.08.2026) stellt die tatsächliche
+Wertentwicklung des gesamten Portfolios über die Zeit dar. Er sitzt als
+eigener Tab im Hauptfenster, direkt hinter dem Depotwert-Grid.
+
+### Was die Kurve zeigt
+
+Es ist bewusst KEINE Vermögenskurve, sondern eine kumulierte Gewinn-/
+Verlustkurve. Sie startet bei null und bewegt sich ausschliesslich durch
+Dinge, die echten Wert schaffen oder vernichten: Kursänderungen, Dividenden,
+realisierte Verkaufsgewinne und Kosten. Ein- und Auszahlungen verschieben sie
+nicht — ein Nachkauf über 5.000 Euro lässt die Linie unverändert, weil
+Einzahlen kein Gewinn ist.
+
+Die Formel je Stichtag t, jeweils über alle Aktien summiert:
+
+Linie(t) = Bestandswert(t) + realisierter Gewinn(t) + Dividenden(t)
+           - Kosten(t) - Kaufwert der gehaltenen Anteile(t)
+
+| Term | Definition |
+|------|------------|
+| Bestandswert(t) | gehaltene Stück(t) x Schlusskurs(t) |
+| realisierter Gewinn(t) | Summe über Verkäufe bis t: (Verkaufswert - Steuer) - Kaufwert der verkauften Anteile |
+| Dividenden(t) | Summe der Netto-Dividenden bis t, also brutto abzüglich Steuern |
+| Kosten(t) | Summe aller Gebühren bis t, abzüglich Rabatt |
+| Kaufwert gehalten(t) | Summe über die noch gehaltenen Lots: Restmenge x Kaufkurs |
+
+@note **Steuern und Gebühren wirken an unterschiedlichen Stellen (Nessies
+Vorgabe 05.08.2026):** Steuern werden direkt am jeweiligen Zahlungsstrom
+abgezogen (Dividende brutto minus Steuern, Verkaufswert minus Steuer),
+Gebühren sammeln sich im Kosten-Term. Der Verkaufserlös darf deshalb die
+Verkaufsgebühr NICHT zusätzlich abziehen, sonst wäre sie doppelt gerechnet —
+`ModelPortfolioChart::loadPortfolioInput()` ignoriert die per JOIN
+mitgeladene Brokerage der Sale bewusst. Dividenden haben fachlich keine
+Gebühren, entsprechend kennt `DividendObject` auch kein Gebührenfeld.
+
+### Durchgerechnetes Referenzbeispiel
+
+Zwei Aktien, ein Teilverkauf, ein Rabatt. Aktie A: 10.01. Kauf 20 x 50 Euro,
+Gebühr 12, Rabatt 2; 10.03. Dividende brutto 30, Steuern 8; 10.04. Verkauf
+8 x 60 Euro, Gebühr 4, Steuer 15. Aktie B: 01.02. Kauf 5 x 200 Euro,
+Gebühr 8. Kurse A: 50 / 55 / 58 / 60 / 62, Kurse B: - / 200 / 190 / 195 / 210.
+
+| Stichtag | Bestandswert | + realis. Gewinn | + Div. | - Kosten | - Kaufwert gehalten | Linie |
+|----------|--------------|------------------|--------|----------|---------------------|-------|
+| 10.01. | 1.000,00 | 0,00 | 0,00 | 10,00 | 1.000,00 | -10,00 |
+| 01.02. | 2.100,00 | 0,00 | 0,00 | 18,00 | 2.000,00 | +82,00 |
+| 10.03. | 2.110,00 | 0,00 | 22,00 | 18,00 | 2.000,00 | +114,00 |
+| 10.04. | 1.695,00 | 65,00 | 22,00 | 22,00 | 1.600,00 | +160,00 |
+| 30.04. | 1.794,00 | 65,00 | 22,00 | 22,00 | 1.600,00 | +259,00 |
+
+Diese Zahlen sind als Regressionstest hinterlegt
+(`test_referenceScenario_twoSharesWithPartialSale` in
+`tests/utils/tst_portfolioseriescalculator.cpp`). Schlägt er fehl, hat sich
+die Formel geändert, nicht der Test.
+
+### FIFO
+
+Verkäufe werden intern FIFO abgespielt: was zuerst gekauft wurde, wird zuerst
+verkauft. Die gespeicherten `SaleBuyDetail`-Zuordnungen werden bewusst NICHT
+verwendet. Zwei Gründe: `buys.volume_sold` gibt nur den heutigen Stand her,
+für historische Stichtage muss die Zuordnung ohnehin durch Nachspielen der
+Verkäufe in Datumsreihenfolge rekonstruiert werden — und `ShareCalculator::
+compute()` warnt in seinem Kommentar ausdrücklich davor, sich auf
+`SaleBuyDetail` zu stützen, da diese Datensätze ohne ihre Brokerage-Anteile
+oder ganz leer gespeichert sein können.
+
+### Datumsraster, Kurs-Fortschreibung, Aktien ohne Historie
+
+Das Datumsraster ist die Vereinigungsmenge aller Kursdaten UND aller
+Transaktionsdaten im gewählten Fenster. Die Transaktionsdaten müssen mit
+hinein, weil sich die Linie auch an Kauf-, Verkaufs-, Dividenden- und
+Kostentagen ändert; fehlten sie, fehlten genau die Sprungstellen.
+
+Hat eine Aktie an einem Stichtag keinen eigenen Kurseintrag (Feiertag, andere
+Börse), gilt der letzte bekannte Schlusskurs davor. Ohne diese
+Vorwärts-Fortschreibung bräche die Portfoliosumme an einem solchen Tag
+künstlich ein.
+
+Eine Aktie ohne einen einzigen Eintrag in `daily_values` (Update-Typ "Nur
+Kurs" oder "Kein Update") kann zu keinem Stichtag bewertet werden. Sie wird
+vollständig ausgeschlossen — mit allen Käufen, Verkäufen, Dividenden und
+Kosten — und in einer Warnzeile unter dem Chart benannt. Würde nur ihr
+Bestandswert entfallen, ihr Kaufwert aber zählen, zeigte die Kurve einen
+Verlust, den es nicht gibt. Aus demselben Grund trägt eine Aktie an
+Stichtagen vor ihrem ersten Kursdatum nichts bei, auch wenn zu diesem
+Zeitpunkt bereits Käufe verbucht sind.
+
+### Ungültige Datumsangaben (Bugfix 06.08.2026)
+
+Einträge ohne gültiges Datum werden vollständig ignoriert und je Aktie
+gezählt. Hintergrund: ein ungültiges `QDate` ist in Qt KLEINER als jedes
+gültige — die Schleifen "solange Datum kleiner oder gleich Stichtag" hätten
+solche Einträge sonst allesamt am allerersten Stichtag verbucht. Im Feldtest
+an Nessies Portfolio zeigte die Kurve dadurch bereits 2004 einen Kostenblock
+von rund 1.000 Euro, obwohl der erste Kauf erst 2014 erfolgte. Entstehen
+können solche Einträge etwa durch ein leeres `datetime`-Feld oder ein nicht
+ISO-8601-konformes Datumsformat, das
+`QDateTime::fromString(..., Qt::ISODate)` nicht liest.
+
+### Obergrenze der Anzahl (korrigiert 06.08.2026)
+
+`IModelPortfolioChart::earliestRelevantDate()` liefert das Datum des ältesten
+KAUFS, nicht des ältesten Tageswerts. Die ursprüngliche Fassung übernahm die
+Logik aus `PresenterChart`, wo sie richtig ist: der Aktien-Chart zeigt den
+Kursverlauf einer Aktie, der auch vor dem ersten Kauf interessant ist. Beim
+Portfolio-Chart gibt es vor dem ersten Kauf dagegen schlicht kein Portfolio,
+die Kurve läge dort zwangsläufig auf null. Im Feldtest erlaubte die alte
+Grenze 23 Jahre, obwohl der erste Kauf erst nach gut elf Jahren erfolgte.
+Ersatzweise gilt weiterhin der älteste Tageswert, falls es noch gar keinen
+Kauf gibt.
+
+### Negative Kosten sind zulässig
+
+Im Diagnose-Export können einzelne Aktien einen negativen Kosten-Term
+aufweisen. Das ist kein Fehler: übersteigt der gewährte Rabatt die
+angefallenen Gebühren, ergibt `brokerageReduction()` einen negativen Betrag —
+etwa bei Fonds mit rabattiertem Ausgabeaufschlag und ohne weitere Gebühren.
+Der Betrag hebt die Kurve entsprechend leicht an. Von Nessie am 06.08.2026
+als gewollt bestätigt.
+
+### Diagnose-Export
+
+Der Knopf "Diagnose speichern…" im Zeitraum-Block schreibt eine CSV mit zwei
+Blöcken: je Aktie die Anzahl geladener Käufe, Verkäufe, Dividenden,
+Kosteneinträge und Tageswerte samt der ungültigen Datumsangaben sowie erstem
+Kauf und Kursspanne, und je Stichtag alle sechs Bestandteile der Formel plus
+Entwicklung in Euro und Prozent.
+
+Ein dritter Block schlüsselt jede Aktie an jedem Stichtag einzeln auf:
+gehaltene Stückzahl, verwendeter Schlusskurs, Bestandswert, Kaufwert
+gehalten, realisierter Gewinn, Dividenden und Kosten. Er entsteht nur, wenn
+`PortfolioSeriesCalculator::compute()` mit `withPerShareDetail` aufgerufen
+wird, da er Stichtage mal Aktien Zeilen erzeugt.
+
+Ergänzt 06.08.2026 bei der Fehlersuche an einem realen Portfolio: aus dem
+gezeichneten Chart allein liess sich nicht ablesen, welcher Term eine
+Auffälligkeit verursacht, und aus den Portfoliosummen nicht, welche Aktie.
+Der Text entsteht in `PresenterPortfolioChart::buildDiagnosticsCsv()`, die
+View fragt nur den Zielpfad ab und schreibt — Formatierung bleibt beim
+Presenter.
+
+@note Bei einer auffälligen Stelle im Kurvenverlauf lohnt es sich, den
+Zeitraum vorher eng um das fragliche Datum zu legen (etwa Interval "Tag",
+Anzahl 5) — dann bleibt der dritte Block überschaubar und die betroffene
+Aktie steht direkt nebeneinander in wenigen Zeilen.
+
+### Tooltip rastet auf Datenpunkte ein (Bugfix 06.08.2026)
+
+`QLineSeries::hovered()` liefert die CURSORPOSITION in Achsenkoordinaten,
+nicht den Datenpunkt unter dem Zeiger. Die erste Fassung zeigte `point.y()`
+direkt als Entwicklung an — im Feldtest ergaben sich dadurch bei ein und
+demselben Datum unterschiedliche Eurobeträge, je nachdem wie hoch der Zeiger
+über der flach verlaufenden Kurve stand. Aus demselben Grund schlug die Suche
+nach dem Prozentwert über die exakte X-Koordinate praktisch immer fehl und
+lieferte konstant 0,00 Prozent.
+
+`ViewPortfolioChart` hält deshalb die dargestellten Punkte samt ihrer
+X-Koordinaten vor und rastet im Tooltip über eine binäre Suche auf den
+nächstgelegenen echten Datenpunkt ein. Die interpolierten Nulldurchgänge
+stehen bewusst nicht in dieser Liste — sie sind keine Datenpunkte und haben
+keinen eigenen Prozentwert.
+
+### Prozentwert
+
+Der Nenner ist der kumulierte Kaufwert ALLER Käufe bis zum Stichtag, nicht
+nur der gehaltenen (Nessies Vorgabe 05.08.2026). Nach einem Komplettverkauf
+fällt der gehaltene Kaufwert auf null; mit ihm als Nenner spränge der
+Prozentwert auf 0 %, obwohl die Linie noch den realisierten Gewinn zeigt.
+Guard `> 0.0` vor der Division, gleiches Muster wie in `ShareCalculator`.
+
+### Bewusste Abweichung vom Depotwert-Footer
+
+Der Kosten-Term umfasst alle Brokerage-Einträge einer Aktie, also auch
+freistehende Kosteneinträge ohne Bezug zu einem Kauf oder Verkauf. Genau die
+fallen im Footer heraus: `ShareCalculator::compute()` berücksichtigt sie in
+`totalBrokerage`, nicht aber in `completePurchase` oder `salePayoutFinal`.
+Die Spalte "Komplette Entwicklung" ist dadurch um diesen Betrag zu hoch, der
+Chart rechnet an dieser Stelle korrekter. Von Nessie am 05.08.2026
+bestätigt: der Chart bleibt korrekt, der Footer-Fix folgt separat (siehe
+"Offene Punkte"), danach stimmen beide automatisch überein.
+
+### Aufbau
+
+Eigenes MVP-Tripel unter `app/forms/PortfolioChartForm/`, Aufbau analog
+`ChartForm`. `IntervalUnit` wird aus `ChartTypes.h` wiederverwendet statt neu
+definiert — die Zeitraumsteuerung ist in beiden Charts fachlich dieselbe.
+
+Der Rechenkern liegt bewusst ausserhalb der Form, in
+`app/utils/PortfolioSeriesCalculator`: `public static`, ohne Datenbank und
+ohne Widgets, alle Eingangsdaten als einfache Structs. Dieselbe Rolle, die
+`ShareCalculator` für das Grid hat. Gerundet wird über
+`ShareCalculator::roundAway()`, damit die Cent-Semantik projektweit identisch
+bleibt.
+
+`PresenterPortfolioChart` liest die Portfoliodaten einmalig in
+`loadAndDisplay()` und hält sie. Eine Änderung an Start-Datum, Interval oder
+Anzahl rechnet nur neu, ohne die Datenbank erneut zu lesen — bei vielen
+Aktien mit langer Historie ist das Laden der teure Teil. `reload()` verwirft
+den Cache.
+
+`ViewPortfolioChart` hat bewusst KEINE Legende: es wird genau eine Linie
+dargestellt, eine Farbzuordnung wäre inhaltsleer (Nessies Vorgabe
+05.08.2026). Rechts steht nur der Zeitraum-Block. Die Kurve wird an jedem
+Vorzeichenwechsel geteilt, der Schnittpunkt mit der Null-Linie linear
+interpoliert und in beide Abschnitte aufgenommen — sonst klaffte an der Achse
+eine Lücke. Die Y-Achse enthält immer die Null, auch wenn die Kurve sie nie
+kreuzt.
+
+### Anbindung im MainWindow
+
+`MainWindow` ist kein MVP-Tripel, sondern eine einzelne `QMainWindow`-Klasse;
+der Tab wird dort direkt eingehängt. Der Tab-Index ist über die Konstanten
+`kTabFinalValue` / `kTabPortfolioChart` / `kTabMarketValue` benannt, und die
+beiden vorher vorhandenen `currentIndex() == 0`-Abfragen laufen jetzt über
+`activePortfolioTable()`, das auf dem Chart-Tab `nullptr` liefert. Ohne diese
+Umstellung hätte der eingeschobene Tab die Zuordnung Index-zu-Tabelle
+verschoben.
+
+Die `ViewPortfolioChart`-Instanz entsteht erst beim ersten Betreten ihres
+Tabs (`ensurePortfolioChartUpToDate()`), da ihr Konstruktor das gesamte
+Portfolio samt Tageswert-Historie liest und zum Zeitpunkt von
+`setupCentralWidget()` noch gar kein Portfolio geöffnet ist. Bis dahin steht
+im Tab ein leerer Container. `populatePortfolioTables()` markiert die Daten
+über `invalidatePortfolioChart()` als veraltet; neu gerechnet wird beim
+nächsten Betreten, oder sofort, falls der Tab gerade vorn liegt.
+
+@note **Warum die Berechnung synchron läuft:** Während der Aggregation zeigt
+der Chart "Berechnung läuft…" (`showCalculating()`, dritte Seite des
+`QStackedWidget`). Die Rechnung selbst bleibt im GUI-Thread — sie ist schnell
+genug, und ein Worker-Thread würde die MVP-Verdrahtung ohne echten Gewinn
+verkomplizieren. Sollte sich das bei sehr grossen Portfolios ändern, ist der
+Rechenkern durch seine Datenbankfreiheit bereits threadfähig.
+
+---
+
 ## Offene Punkte
+
+### Aktiensplits werden nicht behandelt (wichtig, 06.08.2026)
+
+Die Anwendung kennt keine Aktiensplits. Solange nur der heutige Kurs
+betrachtet wird, fällt das nicht auf — sobald aber historische Kurse gegen
+historische Käufe gerechnet werden, bricht es auf.
+
+Im Feldtest zeigte der Depotwert-Chart zwei scheinbar unerklärliche Sprünge.
+Ursache war Alphabet Inc. Cl. A: Der Kauf vom 18.03.2020 ist mit einem Kurs
+NACH dem Split eingetragen (48,60 Euro), die Tageswerte jener Zeit sind aber
+nicht split-bereinigt und stehen bei rund 1.003 Euro. Zwischen dem Kauf und
+dem tatsächlichen Split am 18.07.2022 wurde die Position dadurch mit dem
+Zwanzigfachen bewertet; am Splittag endete das schlagartig, ohne dass eine
+Transaktion stattgefunden hätte.
+
+Eine Lösung bräuchte eine Split-Tabelle je Aktie (Datum und Verhältnis) und
+eine Umrechnung überall dort, wo historische Kurse gegen Transaktionen
+gerechnet werden. Betrifft Datenmodell, Parser, Grid und Chart gleichermassen
+und ist als eigenes Feature zu behandeln. Nessies Einschätzung 06.08.2026:
+schnellstmöglich umsetzen.
+
+@note Als Sofortmassnahme wurde der konkrete Fall behoben, indem die
+Tageswerte der betroffenen Aktie gelöscht und neu abgerufen wurden — die
+Quelle lieferte sie split-bereinigt. Als tragende Lösung taugt dieser Weg
+aber NICHT, und zwar aus einem Grund, der über die naheliegenden hinausgeht:
+er funktionierte nur, weil der Kauf bereits in Stück NACH dem Split erfasst
+war. Bei einem echten Split einer gehaltenen Position bucht die Bank ein
+Vielfaches an Stücken ein, während `buys.volume` die ursprüngliche Zahl
+behält; bereinigte Kurse allein liessen den Bestand dann auf einem
+Zwanzigstel stehen und den heutigen Depotwert entsprechend zu niedrig
+erscheinen. Kurshistorie UND Kaufdatensätze müssen gemeinsam angepasst
+werden. Hinzu kommen: die Quelle liefert nur begrenzte Historie (was sie
+nicht mehr hergibt, ist nach dem Löschen verloren), ein Split wird nirgends
+gemeldet und muss selbst bemerkt werden, Aktien mit Update-Typ "Nur Kurs"
+oder "Kein Update" haben gar keinen Abrufweg, und ob eine Quelle überhaupt
+bereinigt liefert, ist je Anbieter unterschiedlich.
+
+### Diagnose-Knopf hinter einen Debug-Modus legen (06.08.2026)
+
+Der Knopf "Diagnose speichern…" im Depotwert-Chart bleibt vorerst dauerhaft
+sichtbar, da sich der Export als nützlich erwiesen hat. Später sollte er über
+eine Einstellung ein- und ausblendbar sein, damit er im Normalbetrieb nicht
+im Weg steht.
+
+### Tageswert-Historie bei Bestand > 0 erzwingen (wichtig, 05.08.2026)
+
+Aktien mit Update-Typ "Nur Kurs" oder "Kein Update" haben keine
+Tageswert-Historie und fallen dadurch komplett aus dem Depotwert-Chart
+heraus. Solange Anteile im Bestand sind, sollte sich das Tageswert-Update
+deshalb gar nicht mehr abwählen lassen. Nessies Einschätzung: wichtig.
+Betrifft `ViewShareEdit` / `ViewShareAdd` (Auswahl des Update-Typs).
+
+### Zeitraum-Einstellungen des Charts persistieren (05.08.2026)
+
+Start-Datum, Interval und Anzahl des Depotwert-Charts werden bei jedem Start
+auf die Vorgabe zurückgesetzt (heute / Jahr / 1). Sinnvoll wäre, sie je Chart
+in `AppSettings` zu speichern.
+
+### Marktwert-Chart (05.08.2026)
+
+Das Gegenstück zum Depotwert-Chart, das nur reine Kursgewinne berücksichtigt
+(keine Dividenden, keine Kosten, keine Steuern). Bewusst zurückgestellt, bis
+der Depotwert-Chart im Alltag steht — die Formel dafür ist noch nicht
+abgestimmt. `ViewPortfolioChart` ist so gebaut, dass ein Modus-Flag analog zu
+`ViewShareDetails` nachgerüstet werden kann.
+
+### Vermögenskurve als zweite Darstellung (05.08.2026)
+
+Der Depotwert-Chart zeigt die reine Wertentwicklung; Ein- und Auszahlungen
+verschieben ihn nicht. Daneben wäre eine echte Vermögenskurve denkbar, die
+bei einem Kauf über 5.000 Euro auch um 5.000 Euro nach oben springt. Die
+Datenbasis ist dieselbe, nur die Aggregation unterscheidet sich —
+sinnvollerweise später als per Checkbox umschaltbare zweite Serie im selben
+Chart.
+
+### Footer-Lücke bei freistehenden Kosteneinträgen (Bug, 05.08.2026)
+
+`ShareCalculator::compute()` berücksichtigt freistehende Brokerage-Einträge
+(weder `buy_guid` noch `sale_guid` gesetzt, angelegt über die
+Kosten-Verwaltung) nur in `totalBrokerage`, nicht in `completePurchase` oder
+`salePayoutFinal`. Die Spalte "Komplette Entwicklung" ist dadurch um deren
+Betrag zu hoch — im Grid, im Footer und in `ShareDetailsForm`. Der
+Depotwert-Chart rechnet an dieser Stelle bereits korrekt und weicht deshalb
+bis zum Fix vom Footer ab (siehe "PortfolioChartForm-Details"). Nach dem Fix
+stimmen beide automatisch überein. Wird in einem eigenen Chat behandelt.
+
+### Verwaistes Verzeichnis tests/widgets entfernen (05.08.2026)
+
+`tests/widgets/` enthält `tst_overviewtabwidget.cpp`, hat aber keine
+`CMakeLists.txt` und wird von der Root-`CMakeLists.txt` nicht eingebunden.
+Dieselbe Datei liegt zusätzlich in `tests/forms/` und wird von dort gebaut —
+`tests/widgets/` ist also eine verwaiste Dublette und kann gelöscht werden.
 
 ### Manuelles Theme (Hell/Dunkel) erzwingbar machen (Backlog-Idee, nicht priorisiert, 24.07.2026)
 

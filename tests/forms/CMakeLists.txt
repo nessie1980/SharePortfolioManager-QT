@@ -58,6 +58,15 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/forms/ChartForm/ViewChart.cpp
     ../../app/forms/ChartForm/ChartPopup.h
     ../../app/forms/ChartForm/ChartPopup.cpp
+    ../../app/forms/PortfolioChartForm/PortfolioChartTypes.h
+    ../../app/forms/PortfolioChartForm/IViewPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/IModelPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/ModelPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/ModelPortfolioChart.cpp
+    ../../app/forms/PortfolioChartForm/PresenterPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/PresenterPortfolioChart.cpp
+    ../../app/forms/PortfolioChartForm/ViewPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/ViewPortfolioChart.cpp
     ../../app/forms/BuysForm/IViewBuyEdit.h
     ../../app/forms/BuysForm/IModelBuyEdit.h
     ../../app/forms/BuysForm/ModelBuyEdit.h
@@ -110,6 +119,7 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/core/DocumentRootMigrator.h
     ../../app/core/DocumentRootMigrator.cpp
     ../../app/utils/ShareCalculator.cpp
+    ../../app/utils/PortfolioSeriesCalculator.cpp
     ../../app/utils/PdfTextExtractor.h
     ../../app/utils/PdfTextExtractor.cpp
     ../../app/utils/DocumentClassifier.h
@@ -585,3 +595,47 @@ target_link_libraries(tst_documentssettingsform
 )
 
 add_test(NAME tst_documentssettingsform COMMAND tst_documentssettingsform)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_portfoliochartform — PresenterPortfolioChart (Fake-View/Fake-Model,
+# analog tst_chartform). Depotwert-Chart, Feature 05.08.2026.
+#
+# Anders als tst_chartform braucht dieses Ziel Qt6::Sql und die Database-
+# Bibliothek: der Presenter ruft PortfolioSeriesCalculator auf, der für die
+# Rundung ShareCalculator::roundAway() verwendet, und ShareCalculator.cpp
+# bindet die Repositories ein. Der Test selbst rührt keine Datenbank an — es
+# sind reine Link-Abhängigkeiten (siehe tests/utils/CMakeLists.txt).
+# ─────────────────────────────────────────────────────────────────────────────
+qt_add_executable(tst_portfoliochartform tst_portfoliochartform.cpp
+    ../../app/forms/PortfolioChartForm/PortfolioChartTypes.h
+    ../../app/forms/PortfolioChartForm/IViewPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/IModelPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/PresenterPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/PresenterPortfolioChart.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/BrokerageObject.cpp
+    ../../app/models/DividendObject.cpp
+    ../../app/repositories/BuyRepository.cpp
+    ../../app/repositories/SaleRepository.cpp
+    ../../app/repositories/BrokerageRepository.cpp
+    ../../app/repositories/DividendRepository.cpp
+    ../../app/utils/ShareCalculator.cpp
+    ../../app/utils/PortfolioSeriesCalculator.cpp
+)
+
+target_include_directories(tst_portfoliochartform
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/core
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/PortfolioChartForm
+)
+
+set_target_properties(tst_portfoliochartform PROPERTIES
+    AUTOMOC ON
+)
+
+target_link_libraries(tst_portfoliochartform
+    PRIVATE Qt6::Test Qt6::Core Qt6::Gui Qt6::Sql Database
+)
+
+add_test(NAME tst_portfoliochartform COMMAND tst_portfoliochartform)

@@ -37,8 +37,10 @@ ctest --output-on-failure
 ./bin/tst_websitesconfig
 ./bin/tst_documentsconfig
 ./bin/tst_sharecalculator
+./bin/tst_portfolioseriescalculator
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
+./bin/tst_portfoliochartform
 ./bin/tst_buysform
 ./bin/tst_backupsettingsform
 ./bin/tst_traysettingsform
@@ -1886,6 +1888,48 @@ TestBackupForm — createBackup via MainWindow:
 
 ---
 
+### PortfolioSeriesCalculator (tests/utils/tst_portfolioseriescalculator.cpp)
+
+Executable: `tst_portfolioseriescalculator`
+Klasse unter Test: `PortfolioSeriesCalculator` — der Rechenkern des
+Depotwert-Charts (Feature 05.08.2026).
+
+Anders als `tst_sharecalculator` braucht dieser Test **keine** Datenbank: der
+Rechenkern ist bewusst datenbankfrei, alle Eingangsdaten kommen als einfache
+Structs herein. Genau dafür wurde er aus dem Model herausgelöst. Die
+Repository- und Model-Quellen hängen nur als Link-Abhängigkeit mit dran, weil
+der Kern für die Rundung `ShareCalculator::roundAway()` verwendet und
+`ShareCalculator.cpp` die Repositories einbindet.
+
+Der zentrale Test ist `test_referenceScenario_twoSharesWithPartialSale` — das
+mit Nessie Schritt für Schritt durchgerechnete Zwei-Aktien-Beispiel, dessen
+Sollwerte er bestätigt hat (siehe ARCHITECTURE.md,
+"PortfolioChartForm-Details"). Schlägt er fehl, hat sich die Formel geändert,
+nicht der Test.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_buildDateGrid_unionOfPriceAndTransactionDates` | Datumsraster über zwei Aktien | Vereinigungsmenge, sortiert, duplikatfrei |
+| `test_buildDateGrid_includesTransactionDateWithoutPrice` | Kosteneintrag an einem Tag ohne Kurs | Der Tag wird trotzdem Rasterpunkt |
+| `test_buildDateGrid_respectsWindow` | Fensterbegrenzung | Nur Daten in [from, to] |
+| `test_closingPriceAt_forwardFillsLastKnownPrice` | Vorwärts-Fortschreibung | Letzter bekannter Kurs gilt weiter |
+| `test_closingPriceAt_zeroBeforeFirstEntry` | Vor dem ersten Kurs | 0,00 |
+| `test_forwardFill_gapDayDoesNotDentThePortfolioSum` | Aktie ohne Eintrag am Stichtag | Summe bricht nicht ein (150,00) |
+| `test_referenceScenario_twoSharesWithPartialSale` | Referenzbeispiel | -10 / +82 / +114 / +160 / +259 |
+| `test_referenceScenario_componentsOfLastPoint` | Bestandteile des letzten Punkts | Bestandswert 1794, realis. 65, Div 22, Kosten 22, gehalten 1600, gesamt 2000 |
+| `test_referenceScenario_percentUsesTotalPurchaseValue` | Prozent-Nenner | 259 / 2000 = 12,95 % |
+| `test_buyDoesNotMoveTheLine` | Nachkauf über 5.000 Euro | Linie unverändert (+100,00 nur aus dem Kursgewinn) |
+| `test_completeSale_lineStaysFlatAfterwards` | Komplettverkauf | -10 / +90 / +105 / +205 / +170 / +170; gehalten 0, gesamt 1000, 17,00 % |
+| `test_fifo_usesOldestLotFirst` | Zwei Lots zu 100 und 200 | Realis. 200,00 (FIFO), nicht 100,00 und kein Mittelwert |
+| `test_shareWithoutHistory_isExcludedAndReported` | Aktie ohne Tageswerte | Vollständig ausgeschlossen, Name gemeldet, ihre Kosten fliessen nicht ein |
+| `test_shareContributesNothingBeforeItsFirstPriceDate` | Kauf vor Historienbeginn | Kein Phantom-Verlust am linken Rand |
+| `test_emptyInput_yieldsEmptyResult` | Leeres Portfolio | Keine Punkte, keine Meldung |
+| `test_percentIsZeroWhenNothingWasEverBought` | Kaufwert 0 | Guard greift, 0,00 % statt Division durch null |
+| `test_unsortedInputIsSortedInternally` | Unsortierte Eingangslisten | Werden intern sortiert, FIFO bleibt korrekt |
+| `test_windowLimitsPointsButNotAccumulatedState` | Fenster ab März | Drei Punkte, aufgelaufener Zustand bleibt erhalten |
+
+---
+
 ### ShareCalculator (tests/utils/tst_sharecalculator.cpp)
 
 `ShareCalculator::compute()` ist eine reine Berechnungsfunktion ohne UI oder
@@ -2692,3 +2736,44 @@ haben kein öffentliches, testbares Zustands-API, siehe ARCHITECTURE.md,
 die Zeilenauswahl-/Signal-Ebene (Tabellen-Selektion, `rowActivatedWithDocument`-
 Payload), nicht die tatsächliche Panel-Anzeige. Bekannte, bewusste Lücke,
 identisch zur bereits bestehenden Einschränkung bei den Editier-Dialogen.
+
+---
+
+### PortfolioChartForm (tests/forms/tst_portfoliochartform.cpp)
+
+Executable: `tst_portfoliochartform`
+Klasse unter Test: `PresenterPortfolioChart`
+
+Fake-View/Fake-Model-Paar wie `tst_chartform` — keine echte Datenbank, kein
+`QWidget`, keine QtCharts-Instanziierung. Die eigentliche Rechenlogik ist in
+`tst_portfolioseriescalculator` abgedeckt; hier geht es um das Zusammenspiel:
+welche Setter der Presenter in welcher Reihenfolge bedient, wie er den
+Zeitraum umrechnet und wie er die Texte aufbaut. `FakeViewPortfolioChart`
+schreibt dafür zusätzlich die Aufrufreihenfolge in ein `callLog` mit.
+
+Wie in `tst_chartform` klemmt `setMaxIntervalCount()` im Fake bewusst **nicht**
+automatisch den Zählwert — anders als das echte `QSpinBox::setMaximum()`.
+Die presenter-seitige Begrenzung muss unabhängig davon greifen.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_loadAndDisplay_setsTodayAsDefaultStartDate` | Vorgabe-Start-Datum | `QDate::currentDate()` |
+| `test_loadAndDisplay_drawsCurveAndRangeInfo` | Erster Aufbau | Zwei Punkte (0,00 / 100,00), Kopfzeile mit Zeitraum und Entwicklung |
+| `test_loadAndDisplay_showsCalculatingBeforeChartData` | Reihenfolge | `showCalculating()` vor `setChartData()` |
+| `test_loadAndDisplay_noSharesAtAll_showsEmptyChart` | Leeres Portfolio | Hinweis statt Chart, keine Warnzeile |
+| `test_loadAndDisplay_onlySharesWithoutHistory_warnsAndShowsEmpty` | Nur Aktien ohne Historie | Hinweis plus Warnzeile mit Namen |
+| `test_warningNamesExcludedShares` | Gemischtes Portfolio | Nur die ausgeschlossene Aktie steht in der Warnzeile |
+| `test_warningIsClearedWhenAllSharesHaveHistory` | Alle Aktien mit Historie | Warnzeile leer |
+| `test_onControlsChanged_recomputesWithNarrowerWindow` | Fenster auf einen Tag | Hinweis statt Chart |
+| `test_reload_readsTheModelAgain` | `reload()` | Model wird ein zweites Mal gelesen |
+| `test_onControlsChanged_doesNotReadTheModelAgain` | Datencache | Model wird genau einmal gelesen |
+| `test_computeRangeStart_allUnits` | Zeitraumbeginn | Tag/Woche/Monat/Jahr rückwärts vom Start-Datum |
+| `test_computeRangeStart_countBelowOneIsTreatedAsOne` | Anzahl 0 | Wird als 1 behandelt |
+| `test_computeMaxIntervalCount_stopsAtOldestValue` | Obergrenze | 10 bei zehn Tagen Historie |
+| `test_computeMaxIntervalCount_withoutHistoryReturnsOne` | Keine Historie | 1 |
+| `test_computeMaxIntervalCount_oldestNotBeforeRangeEndReturnsOne` | Ältester Wert = Start-Datum | 1 |
+| `test_computeMaxIntervalCount_yearsAreCounted` | Interval Jahr | 3 bei drei Jahren Historie |
+| `test_buildWarningText_emptyForEmptyList` | Keine ausgeschlossenen Aktien | Leerer String |
+| `test_buildWarningText_joinsNames` | Mehrere Namen | Kommagetrennt |
+| `test_buildRangeInfo_withoutPointsShowsOnlyRange` | Ohne Punkte | Nur Zeitraum, kein Entwicklungsteil |
+| `test_buildRangeInfo_usesLastPoint` | Mit Punkten | Werte des letzten Punkts, lokalisiert formatiert |

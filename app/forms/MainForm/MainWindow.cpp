@@ -453,8 +453,25 @@ void MainWindow::setupCentralWidget()
     marketLayout->addWidget(m_marketValueTable, 1);
     marketLayout->addWidget(m_marketValueFooter, 0);
 
-    m_portfolioTabs->addTab(finalContainer,  tr("Kompletter Depotwert"));
-    m_portfolioTabs->addTab(marketContainer, tr("Kompletter Marktwert"));
+    // ── Depotwert-Chart-Tab ───────────────────────────────────────────────
+    // Zunächst nur ein leerer Container: die ViewPortfolioChart-Instanz
+    // entsteht erst beim ersten Betreten des Tabs (siehe
+    // ensurePortfolioChartUpToDate()), da ihr Konstruktor das gesamte
+    // Portfolio samt Tageswert-Historie liest. Zum Zeitpunkt von
+    // setupCentralWidget() ist ausserdem noch gar kein Portfolio geöffnet.
+    m_portfolioChartContainer = new QWidget();
+    auto* chartLayout = new QVBoxLayout(m_portfolioChartContainer);
+    chartLayout->setContentsMargins(0, 0, 0, 0);
+    chartLayout->setSpacing(0);
+
+    m_portfolioTabs->addTab(finalContainer,             tr("Kompletter Depotwert"));
+    m_portfolioTabs->addTab(m_portfolioChartContainer,  tr("Depotwert-Chart"));
+    m_portfolioTabs->addTab(marketContainer,            tr("Kompletter Marktwert"));
+
+    connect(m_portfolioTabs, &QTabWidget::currentChanged, this, [this](int index) {
+        if (index == kTabPortfolioChart)
+            ensurePortfolioChartUpToDate();
+    });
 
     // Install two-line delegates
     setupTableDelegates();
@@ -1077,6 +1094,10 @@ void MainWindow::onOpenPortfolio()
 void MainWindow::populatePortfolioTables()
 {
     clearPortfolioTables();
+
+    // Jeder Neuaufbau der Tabellen bedeutet geänderte Datenlage — der Chart
+    // rechnet beim nächsten Betreten seines Tabs neu.
+    invalidatePortfolioChart();
 
     ShareRepository shareRepo;
     const QList<ShareObject> shares = shareRepo.findAll();
@@ -2166,9 +2187,9 @@ void MainWindow::onRefreshShare()
         return;
 
     // Determine selected row in the active tab
-    QTableWidget* activeTable = (m_portfolioTabs->currentIndex() == 0)
-        ? m_finalValueTable
-        : m_marketValueTable;
+    QTableWidget* activeTable = activePortfolioTable();
+    if (!activeTable)
+        return; // Chart-Tab aktiv — dort gibt es keine Zeilenauswahl
 
     const QList<QTableWidgetItem*> selected = activeTable->selectedItems();
     if (selected.isEmpty())
@@ -2294,10 +2315,10 @@ void MainWindow::finaliseRefresh()
     m_actionAdd->setEnabled(true);
     m_actionRefreshAll->setEnabled(true);
 
-    // Re-enable Edit/Delete/Refresh only if a row is still selected
-    QTableWidget* active = (m_portfolioTabs->currentIndex() == 0)
-        ? m_finalValueTable : m_marketValueTable;
-    const bool hasSelection = !active->selectedItems().isEmpty();
+    // Re-enable Edit/Delete/Refresh only if a row is still selected. Auf dem
+    // Chart-Tab gibt es keine Auswahl, dort bleiben die drei Aktionen aus.
+    QTableWidget* active = activePortfolioTable();
+    const bool hasSelection = active && !active->selectedItems().isEmpty();
     m_actionEdit->setEnabled(hasSelection);
     m_actionDelete->setEnabled(hasSelection);
     m_actionRefresh->setEnabled(hasSelection);
@@ -3019,4 +3040,55 @@ void MainWindow::refreshPortfolioFooters()
     }
 
     updatePortfolioFooters(allValues);
+}
+
+// ── activePortfolioTable ──────────────────────────────────────────────────────
+
+QTableWidget* MainWindow::activePortfolioTable() const
+{
+    switch (m_portfolioTabs->currentIndex()) {
+    case kTabFinalValue:  return m_finalValueTable;
+    case kTabMarketValue: return m_marketValueTable;
+    default:              return nullptr; // Chart-Tab
+    }
+}
+
+// ── invalidatePortfolioChart ──────────────────────────────────────────────────
+
+void MainWindow::invalidatePortfolioChart()
+{
+    m_portfolioChartDirty = true;
+
+    // Liegt der Chart-Tab gerade vorn, sofort neu rechnen — sonst zeigte er
+    // bis zum nächsten Tabwechsel veraltete Zahlen.
+    if (m_portfolioTabs->currentIndex() == kTabPortfolioChart)
+        ensurePortfolioChartUpToDate();
+}
+
+// ── ensurePortfolioChartUpToDate ──────────────────────────────────────────────
+
+void MainWindow::ensurePortfolioChartUpToDate()
+{
+    if (!m_portfolioChartDirty && m_portfolioChart)
+        return;
+
+    if (!m_portfolioChart) {
+        // Erst hier erzeugen: der Konstruktor liest bereits das gesamte
+        // Portfolio (siehe ViewPortfolioChart), was zum Zeitpunkt von
+        // setupCentralWidget() noch gar nicht möglich wäre.
+        m_portfolioChart = new ViewPortfolioChart(m_portfolioChartContainer);
+        m_portfolioChartContainer->layout()->addWidget(m_portfolioChart);
+
+        connect(m_portfolioChart, &ViewPortfolioChart::titleInfoChanged,
+                this, [this](const QString& infoText) {
+                    // Zeitraum und Entwicklung wandern in den Tab-Tooltip —
+                    // der Tab-Text selbst soll seine Breite nicht ändern.
+                    m_portfolioTabs->setTabToolTip(kTabPortfolioChart, infoText);
+                });
+        m_portfolioTabs->setTabToolTip(kTabPortfolioChart, m_portfolioChart->rangeInfo());
+    } else {
+        m_portfolioChart->reload();
+    }
+
+    m_portfolioChartDirty = false;
 }

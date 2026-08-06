@@ -21,6 +21,7 @@
 #include "../../config/DocumentsConfig.h"
 #include "../ShareAddForm/ViewShareAdd.h"
 #include "../ShareEditForm/ViewShareEdit.h"
+#include "../PortfolioChartForm/ViewPortfolioChart.h"
 #include "../../models/ShareObject.h"
 #include "../../../libs/parser/src/Parser.h"
 #include "../../../libs/parser/src/DataTypes.h"
@@ -676,6 +677,37 @@ private:
     void refreshPortfolioFooters();
 
     /**
+     * @brief Liefert die Tabelle des aktuell sichtbaren Portfolio-Tabs.
+     *
+     * Seit dem Depotwert-Chart (05.08.2026) liegen die beiden Tabellen nicht
+     * mehr auf den Indizes 0 und 1: der Chart-Tab sitzt dazwischen. Statt an
+     * mehreren Stellen auf konkrete Indizes zu prüfen, kapselt dieser Helfer
+     * die Zuordnung an einer Stelle.
+     *
+     * @return Zeiger auf die Tabelle, oder nullptr auf dem Chart-Tab.
+     */
+    QTableWidget* activePortfolioTable() const;
+
+    /**
+     * @brief Erzeugt den Depotwert-Chart beim ersten Betreten seines Tabs
+     * bzw. lässt ihn neu rechnen, wenn seine Daten veraltet sind.
+     *
+     * Bewusst verzögert: die Aggregation über alle Aktien und deren gesamte
+     * Tageswert-Historie ist der teure Teil und soll nicht bei jedem
+     * Portfolio-Ladevorgang mitlaufen, sondern nur, wenn der Tab auch
+     * tatsächlich angesehen wird (Nessies Vorgabe 05.08.2026).
+     */
+    void ensurePortfolioChartUpToDate();
+
+    /**
+     * @brief Markiert die Chart-Daten als veraltet.
+     *
+     * Aufgerufen nach einer Kursaktualisierung und bei jedem Portfoliowechsel.
+     * Neu gerechnet wird erst beim nächsten Betreten des Tabs.
+     */
+    void invalidatePortfolioChart();
+
+    /**
      * @brief Install TwoLineDelegate on all two-line columns of both tables.
      *
      * Called once from setupCentralWidget() after the tables are created.
@@ -750,6 +782,16 @@ private:
     QTableWidget* m_marketValueTable      = nullptr; ///< "Kompletter Marktwert"
     QTableWidget* m_finalValueFooter      = nullptr; ///< Summary footer for Depotwert tab
     QTableWidget* m_marketValueFooter     = nullptr; ///< Summary footer for Marktwert tab
+
+    /** Tab-Indizes des Portfolio-Tabwidgets. Der Chart sitzt direkt hinter
+     *  dem Depotwert-Grid (Nessies Vorgabe 05.08.2026). */
+    static constexpr int kTabFinalValue     = 0;
+    static constexpr int kTabPortfolioChart = 1;
+    static constexpr int kTabMarketValue    = 2;
+
+    QWidget*            m_portfolioChartContainer = nullptr; ///< Platzhalter, siehe ensurePortfolioChartUpToDate()
+    ViewPortfolioChart* m_portfolioChart          = nullptr; ///< erst beim ersten Betreten erzeugt
+    bool                m_portfolioChartDirty     = true;    ///< siehe invalidatePortfolioChart()
 
     // ── Bottom panel — left ───────────────────────────────────────────────
     QGroupBox*    m_statusMessageGroup    = nullptr;
