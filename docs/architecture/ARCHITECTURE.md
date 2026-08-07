@@ -3380,6 +3380,55 @@ stimmen beide automatisch überein. Wird in einem eigenen Chat behandelt.
 Dieselbe Datei liegt zusätzlich in `tests/forms/` und wird von dort gebaut —
 `tests/widgets/` ist also eine verwaiste Dublette und kann gelöscht werden.
 
+### Übersetzung ist vollständig offen (07.08.2026)
+
+Die Oberfläche ist durchgängig deutsch. Alle Benutzertexte stehen zwar
+korrekt in `tr()` und werden von `qt_add_translations()` erfasst, aber
+übersetzt wurde bisher nichts: `translations/spm_de.ts` und
+`translations/spm_en.ts` sind unbearbeitet, `spm_en.ts` enthält also keine
+einzige englische Zeichenkette.
+
+Praktische Folge: ein Start mit englischem Systemgebietsschema zeigt trotzdem
+die deutschen Quelltexte, weil Qt bei fehlender Übersetzung auf den
+`tr()`-Ausgangstext zurückfällt. Es sieht damit nicht kaputt aus, sondern
+schlicht unübersetzt — der Zustand fällt beim Entwickeln deshalb nie auf.
+
+Zu klären wäre zuerst, ob Englisch überhaupt ein Ziel ist. Falls ja, kommen
+zwei Punkte hinzu, die heute nirgends geregelt sind: die Zahlen- und
+Datumsformatierung hängt an `QLocale::setDefault(QLocale::German)` in
+`main.cpp` und im Test-`main()` und müsste dann mitziehen (siehe auch
+"Konfigurierbare Locale für Zahlenformat"), und die `.ts`-Dateien müssten in
+den regulären Commit-Rhythmus aufgenommen werden, statt nur beim Bauen
+erzeugt zu werden.
+
+### Aktien ohne verfügbare Tageswert-Quelle dauerhaft ausnehmen (07.08.2026)
+
+Seit "Tageswert-Historie bei Bestand > 0 erzwingen" (siehe "Erledigt /
+Archiv") meldet `MainWindow::warnAboutSharesWithoutDailyValues()` bei jedem
+Start alle Aktien mit Bestand, die keine Tageswerte abrufen.
+
+Für ein Papier, zu dem es gar keine Tageswert-Quelle gibt — ein delistetes
+etwa, oder eines, das die konfigurierte Quelle schlicht nicht führt — ist
+diese Meldung nicht abstellbar, weil der Nutzer den beanstandeten Zustand
+nicht beheben kann. Der einzige Ausweg wäre der Verkauf.
+
+Wiederkehrende Meldungen, gegen die sich nichts tun lässt, werden
+erfahrungsgemäß pauschal weggeklickt. Damit verliert die Meldung ihre Wirkung
+auch für die Fälle, in denen sie berechtigt ist — das ist der eigentliche
+Schaden, nicht die Unbequemlichkeit.
+
+Lösungsrichtung: ein Kennzeichen an der Aktie ("keine Tageswert-Quelle
+verfügbar"), das sie aus der Meldung herausnimmt und zugleich als bewusste
+Entscheidung dokumentiert. Die Aktie bliebe weiterhin aus dem Depotwert-Chart
+ausgeschlossen — daran ändert das Kennzeichen nichts, es macht die Lücke nur
+gewollt statt versehentlich. Zu klären wäre, ob der Chart solche Positionen
+dann sichtbar ausweisen sollte, damit die Kurve nicht unbemerkt zu niedrig
+liegt.
+
+@note Noch nicht belegt, dass der Fall in einem realen Depot überhaupt
+auftritt (Nessie, 07.08.2026). Erst umsetzen, wenn er auftritt — vorher wäre
+es Aufwand für ein hypothetisches Problem.
+
 ### Manuelles Theme (Hell/Dunkel) erzwingbar machen (Backlog-Idee, nicht priorisiert, 24.07.2026)
 
 Im Zuge des Bugfixes "Log-Meldungsfarben theme-neutral" (siehe Erledigt/
