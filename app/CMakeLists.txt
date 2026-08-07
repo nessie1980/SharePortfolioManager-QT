@@ -55,6 +55,8 @@ set(APP_SOURCES
     # ── Utils ──────────────────────────────────────────────────────────────
     utils/ShareCalculator.h
     utils/ShareCalculator.cpp
+    # Header-only, bewusst ohne .cpp — Begründung im Dateikopf (06.08.2026).
+    utils/ShareUpdateRules.h
     utils/PortfolioSeriesCalculator.h
     utils/PortfolioSeriesCalculator.cpp
     utils/PdfTextExtractor.h

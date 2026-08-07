@@ -171,6 +171,24 @@ QGroupBox* ViewShareEdit::createGeneralGroup()
     updateLayout->addStretch(1);
     addRow(grid, row, tr("Update via Internet durchführen:"), updateWidget);
 
+    // Hinweiszeile unter den Radios — sichtbar nur, wenn Anteile im Bestand
+    // sind (06.08.2026, siehe setDailyValuesRequired()). Bewusst NICHT über
+    // addRow() eingehängt: der Helfer setzt jedem Feld kFieldHeight als feste
+    // Höhe, was den umbrechenden Text abschneiden würde.
+    m_updateHint = new QLabel;
+    m_updateHint->setObjectName(QStringLiteral("updateHint"));
+    m_updateHint->setWordWrap(true);
+    m_updateHint->setVisible(false);
+    {
+        // Gleiche Konvention wie die Warnzeile in ViewShareDetails: roter Text
+        // über die Palette statt per Stylesheet, damit die Farbe unabhängig
+        // vom Systemtheme greift.
+        QPalette hintPalette = m_updateHint->palette();
+        hintPalette.setColor(QPalette::WindowText, Qt::red);
+        m_updateHint->setPalette(hintPalette);
+    }
+    grid->addWidget(m_updateHint, row++, 1, 1, 2);
+
     // Details-Webseite
     m_detailsWebsite = new QLineEdit;
     m_detailsWebsite->setPlaceholderText(tr("https://…"));
@@ -444,6 +462,32 @@ void ViewShareEdit::setFirstBuyDate(const QString& dateStr)
 void ViewShareEdit::setCurrentVolume(double volume)
 {
     m_anteile->setText(QLocale().toString(volume, 'f', 4));
+}
+
+void ViewShareEdit::setDailyValuesRequired(bool required)
+{
+    // Feature 06.08.2026: Solange Anteile im Bestand sind, braucht die Aktie
+    // eine Tageswert-Historie — ohne sie fällt sie komplett aus dem
+    // Depotwert-Chart. "Markt-Preis" und "Keine" werden deshalb gesperrt.
+    //
+    // Eine bereits gespeicherte, jetzt unzulässige Auswahl bleibt sichtbar
+    // angehakt: Qt lässt einen deaktivierten QRadioButton weiterhin gesetzt
+    // darstellen. Der Dialog verändert also nichts von selbst, er macht nur
+    // sichtbar, was nicht mehr gilt — die eigentliche Blockade sitzt in
+    // PresenterShareEdit::onSave().
+    for (const int forbidden : { static_cast<int>(ShareUpdateType::MarketPrice),
+                                 static_cast<int>(ShareUpdateType::None) })
+    {
+        if (auto* rb = m_updateGroup->button(forbidden))
+            rb->setEnabled(!required);
+    }
+
+    m_updateHint->setText(required
+        ? tr("Anteile im Bestand: Tageswerte müssen abgerufen werden, "
+             "sonst fehlt der Aktie die Kurshistorie und sie wird aus dem "
+             "Depotwert-Chart ausgeschlossen.")
+        : QString());
+    m_updateHint->setVisible(required);
 }
 
 void ViewShareEdit::setTotalBuys(double value, int /*count*/)

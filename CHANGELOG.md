@@ -6,6 +6,42 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.8.0] - 2026-08-06
+
+### Added
+
+- Aktien mit Anteilen im Bestand müssen jetzt zwingend Tageswerte abrufen.
+  Im Dialog "Aktie editieren" lassen sich die Update-Typen "Markt-Preis" und
+  "Keine" nicht mehr wählen, solange Anteile gehalten werden; eine Hinweiszeile
+  nennt den Grund, und das aktive Umstellen auf einen unzulässigen Typ wird
+  abgewiesen. Ein bereits gespeicherter unzulässiger Typ blockiert dagegen
+  nicht das Speichern anderer Änderungen an derselben Aktie — sonst liesse
+  sich an einem delisteten Papier, für das es keine Tageswert-Quelle mehr
+  gibt, nicht einmal der Name korrigieren.
+  Hintergrund: Aktien ohne Tageswert-Historie lassen sich an keinem
+  vergangenen Stichtag bewerten und fallen vollständig aus dem Depotwert-Chart
+  heraus — die Kurve liess diese Positionen bisher stillschweigend weg. Die
+  Regel liegt im neuen, datenbankfreien Modul `ShareUpdateRules`
+  (`app/utils/`) mit eigenem Testziel `tst_shareupdaterules`. Siehe
+  `docs/architecture/ARCHITECTURE.md`, "Tageswert-Historie bei Bestand > 0
+  erzwingen".
+- Beim Programmstart weist eine Meldung auf Aktien hin, die trotz Bestand
+  keine Tageswerte abrufen — mit Name, WKN und aktuellem Update-Typ sowie der
+  Begründung, warum die Umstellung dringlich ist: die Datenquellen liefern nur
+  ein begrenztes Zeitfenster rückwirkend, die in der Zwischenzeit
+  ausgelaufenen Tage sind dauerhaft verloren. Betrifft Aktien, die vor dieser
+  Änderung angelegt wurden; die Meldung verschwindet von selbst, sobald die
+  Einstellung stimmt.
+
+### Changed
+
+- `PresenterShareAdd::onSave()` setzt den Update-Typ neu angelegter Aktien
+  explizit auf "Beide", statt sich auf den Vorgabewert von `ShareObject` zu
+  verlassen. Der Anlage-Dialog bietet keine Update-Typ-Auswahl an und erzwingt
+  ein Kaufvolumen grösser 0 — eine neue Aktie hat also immer Bestand und
+  braucht zwingend Tageswerte. Ohne die explizite Zuweisung würde eine spätere
+  Änderung des Vorgabewerts stillschweigend Aktien ohne Kurshistorie anlegen.
+
 ## [1.7.0] - 2026-08-06
 
 ### Added
@@ -217,6 +253,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   `docs/architecture/ARCHITECTURE.md`, "settings.ini nicht persistent im
   AppImage".
 
+[1.8.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.6.0...v1.7.0
+[1.6.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.3.0...v1.4.0

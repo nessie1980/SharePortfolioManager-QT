@@ -87,6 +87,11 @@ MainWindow::MainWindow(QNetworkAccessManager* networkManagerForTesting, QWidget*
               "Test-only constructor requires a non-null QNetworkAccessManager "
               "(e.g. a ParserTestUtils::FakeNetworkAccessManager). Use the "
               "MainWindow(QWidget*) constructor in production code.");
+
+    // 06.08.2026: Zweiter Unterschied zum Produktivkonstruktor. Modale
+    // Start-Meldungen bleiben hier aus, siehe m_showStartupWarnings.
+    m_showStartupWarnings = false;
+
     initialize();
 }
 
@@ -144,6 +149,17 @@ void MainWindow::initialize()
                          MessageType::Success);
         updateStatusBarPortfolio(portfolioPath);
         populatePortfolioTables();
+
+        // Hinweis auf Aktien ohne Tageswert-Historie (06.08.2026). Verzögert
+        // per singleShot(0), damit das Hauptfenster erst fertig gezeichnet
+        // ist — sonst erscheint der modale Dialog vor einem noch leeren
+        // Fenster und der Nutzer sieht seinen Kontext nicht (dieselbe
+        // Begründung wie beim Tray-Start weiter unten).
+        if (m_showStartupWarnings) {
+            QTimer::singleShot(0, this, [this]() {
+                warnAboutSharesWithoutDailyValues();
+            });
+        }
     }
 
     // Kein Root-Verzeichnis für Dokumente konfiguriert: Dialog wird angeboten
@@ -1148,10 +1164,25 @@ void MainWindow::populatePortfolioTables()
     QList<ShareValues> allValues;
     allValues.reserve(shareCount);
 
+    // Wird in der Schleife unten mitgefüllt, siehe
+    // warnAboutSharesWithoutDailyValues(). ShareValues::volume ist bereits der
+    // gehaltene Bestand (Käufe minus Verkäufe), es braucht also keine eigene
+    // Abfrage — nur diese eine Zuweisung je Aktie.
+    m_sharesMissingDailyValues.clear();
+
     for (const ShareObject& share : shares) {
         const ShareValues v = ShareCalculator::compute(
             share.guid(), share.curPrice(), share.prevDayPrice());
         allValues.append(v);
+
+        if (!ShareUpdateRules::isUpdateTypeAllowed(share.updateType(), v.volume)) {
+            m_sharesMissingDailyValues.append(
+                ShareUpdateRules::ShareState{ share.guid(),
+                                              share.wkn(),
+                                              share.name(),
+                                              share.updateType(),
+                                              v.volume });
+        }
 
         const QColor neutral = palette().color(QPalette::Text);
         QColor muted = neutral;
@@ -1395,6 +1426,70 @@ void MainWindow::populatePortfolioTables()
     m_actionEdit->setEnabled(false);
     m_actionDelete->setEnabled(false);
     m_actionRefresh->setEnabled(false);
+}
+
+// ── updateTypeLabel ───────────────────────────────────────────────────────────
+
+QString MainWindow::updateTypeLabel(ShareUpdateType type)
+{
+    switch (type) {
+    case ShareUpdateType::None:        return tr("Keine");
+    case ShareUpdateType::MarketPrice: return tr("Markt-Preis");
+    case ShareUpdateType::DailyValues: return tr("Tages-Werte");
+    case ShareUpdateType::Both:        return tr("Beide");
+    }
+    return tr("Unbekannt");
+}
+
+// ── buildDailyValuesWarningMessage ────────────────────────────────────────────
+
+QString MainWindow::buildDailyValuesWarningMessage(
+    const QList<ShareUpdateRules::ShareState>& shares)
+{
+    if (shares.isEmpty())
+        return QString();
+
+    QStringList lines;
+    lines.reserve(shares.size());
+    for (const ShareUpdateRules::ShareState& s : shares) {
+        lines.append(tr("• %1 (%2) — Update-Typ: %3")
+                     .arg(s.name, s.wkn, updateTypeLabel(s.updateType)));
+    }
+
+    return tr("Die folgenden Aktien haben Anteile im Bestand, rufen aber keine "
+              "Tageswerte ab:\n\n%1\n\n"
+              "Ohne Tageswert-Historie fehlt diesen Aktien die Kursvergangenheit. "
+              "Sie werden deshalb vollständig aus dem Depotwert-Chart "
+              "ausgeschlossen — der dort gezeigte Verlauf lässt diese Positionen "
+              "stillschweigend weg und ist damit unvollständig.\n\n"
+              "Bitte den Update-Typ dieser Aktien auf \"Beide\" oder "
+              "\"Tages-Werte\" umstellen (Aktie editieren) und anschließend eine "
+              "Aktualisierung durchführen. Je länger damit gewartet wird, desto "
+              "mehr Historie liefert die Quelle rückwirkend nicht mehr — die "
+              "fehlenden Tage sind dann dauerhaft verloren.")
+        .arg(lines.join(QStringLiteral("\n")));
+}
+
+// ── warnAboutSharesWithoutDailyValues ─────────────────────────────────────────
+
+void MainWindow::warnAboutSharesWithoutDailyValues()
+{
+    // Bewusst dünn gehalten: alles Prüfbare steckt in
+    // buildDailyValuesWarningMessage(). Was hier bleibt, ist nur noch das
+    // Öffnen des modalen Dialogs — und modale exec()-Pfade automatisiert
+    // dieses Projekt generell nicht (siehe openCaptureDialog()).
+    const QString message =
+        buildDailyValuesWarningMessage(m_sharesMissingDailyValues);
+    if (message.isEmpty())
+        return;
+
+    OwnMessageBox::information(this, tr("Tageswert-Historie fehlt"), message);
+
+    // Zusätzlich in den Meldungsbereich, damit der Hinweis nach dem Schließen
+    // des Dialogs nicht spurlos verschwindet.
+    addStatusMessage(tr("%n Aktie(n) mit Bestand rufen keine Tageswerte ab und fehlen "
+                        "im Depotwert-Chart.", nullptr, m_sharesMissingDailyValues.size()),
+                     MessageType::Warning);
 }
 
 void MainWindow::onSaveAsPortfolio()

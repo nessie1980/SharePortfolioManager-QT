@@ -43,7 +43,7 @@ spm-qt/
 │   ├── models/          # Domänenobjekte (ShareObject, BuyObject, ...)
 │   ├── repositories/    # Datenbankzugriff pro Entität
 │   ├── config/          # Konfigurationsklassen (AppSettings, WebSitesConfig, ...)
-│   ├── utils/           # Statische Hilfsklassen (ShareCalculator)
+│   ├── utils/           # Statische Hilfsklassen (ShareCalculator, ShareUpdateRules, ...)
 │   ├── forms/           # UI-Schicht — je Fenster ein MVP-Triad
 │   │   └── UiConstants.h   # Gemeinsame UI-Größenkonstanten (kFieldHeight, kButtonHeight)
 │   ├── AppStartup.h/.cpp   # Startup-Helfer (testbar, verwendet in main())
@@ -53,13 +53,22 @@ spm-qt/
 │   ├── architecture/    # Diese Dokumente
 │   └── doxygen/         # Doxygen-Konfiguration + Theme
 ├── translations/        # .ts-Quelldateien (spm_de.ts, spm_en.ts)
-└── tests/
+└── tests/              # Neun Verzeichnisse, alle direkt aus der Root-CMakeLists.txt
     ├── logger/          # Unit-Tests für Logger
-    ├── parser/          # Unit-Tests für Parser
-    ├── repositories/    # Unit-Tests für alle Repositories
+    ├── parser/          # Unit-Tests für Parser + FakeNetworkAccessManager
+    ├── repositories/    # Unit-Tests für alle sechs Repositories
     ├── database/        # Unit-Tests für Database
-    └── forms/           # Unit-Tests für Forms (MainWindow, ShareAddForm, ShareEditForm, BuysForm, SalesForm, DividendForm, BrokeragesForm, OwnMessageBox, BackupProgressForm, ShareDetailsForm)
+    ├── app/             # AppStartup, IconProvider, SingleInstanceGuard
+    ├── config/          # WebSitesConfig, DocumentsConfig
+    ├── utils/           # ShareCalculator, PortfolioSeriesCalculator, ShareUpdateRules, DocumentClassifier
+    ├── xml-importer/    # XmlPortfolioParser, PortfolioValidator, PortfolioImporter
+    └── forms/           # Unit-Tests für Forms (MainWindow, ShareAddForm, ShareEditForm, BuysForm, SalesForm, DividendForm, BrokeragesForm, OwnMessageBox, BackupProgressForm, ShareDetailsForm, ChartForm, PortfolioChartForm, OverviewTabWidget, BackupSettingsForm, TraySettingsForm, DocumentsSettingsForm)
 @endcode
+
+@note Nicht enthalten: `tests/widgets/`. Das Verzeichnis liegt im
+Repository, wird aber von keinem `add_subdirectory()` erfasst und ist damit
+tot — siehe "Offene Punkte", "Verwaistes Verzeichnis tests/widgets
+entfernen".
 
 ---
 
@@ -125,7 +134,23 @@ tst_shareeditform       ← ViewShareEdit + alle vier Sub-Form-Trios als Compile
 tst_backupsettingsform  ← BackupSettingsForm + AppSettings, IconProvider (kein DB-/MainWindow-Bezug)
 tst_sharedetailsform    ← PresenterShareDetails über Fake-View/Fake-Model (IViewShareDetails, IModelShareDetails) — keine DB, keine Qt-Widgets, kein ShareCalculator
 tst_chartform           ← PresenterChart über Fake-View/Fake-Model (IViewChart, IModelChart) — keine DB, keine Qt-Widgets, keine Qt-Charts-Instanziierung
+tst_shareupdaterules    ← nur Qt6::Test + ShareObject (Enums) — header-only Regelmodul, keine DB, keine Widgets, kein QApplication
+tst_documentclassifier  ← DocumentsConfig + DocumentClassifier, linkt Parser
+tst_sharecalculator     \
+tst_portfolioseriescalculator| ← alle Repositories + ShareCalculator, Database, Qt6::Sql
+tst_overviewtabwidget   ← OverviewTabWidget + ShareCalculator + alle Repositories
+tst_portfoliochartform  ← PortfolioChartForm-Trio + PortfolioSeriesCalculator + alle Repositories
+tst_documentssettingsform ← DocumentsSettingsForm + DocumentRootMigrator + AppSettings
+tst_traysettingsform    ← TraySettingsForm + AppSettings, IconProvider
+tst_appstartup / tst_iconprovider / tst_singleinstanceguard  ← AppStartup, IconProvider bzw. SingleInstanceGuard
+tst_websitesconfig / tst_documentsconfig  ← WebSitesConfig bzw. DocumentsConfig, linken Parser
+tst_xmlportfolioparser / tst_portfoliovalidator / tst_portfolioimporter  ← tools/xml-importer + Repositories
 @endcode
+
+@note Diese Aufstellung wurde am 06.08.2026 vollständig gegen alle neun
+`tests/`-Unterverzeichnisse abgeglichen und umfasst seither alle 31
+Testziele. Die vollständige Startbefehl-Liste steht in TESTING.md,
+"Einzelnen Test direkt starten".
 
 ---
 
@@ -2642,7 +2667,7 @@ Das ShareEditForm ist vollstaendig nach dem MVP-Pattern implementiert und wird u
 Button in der Toolbar geoeffnet.
 
 `IViewShareEdit` — Accessoren für alle editierbaren Felder, `loadShare()`,
-`setFirstBuyDate()`, `setCurrentVolume()`,
+`setFirstBuyDate()`, `setCurrentVolume()`, `setDailyValuesRequired()`,
 `setTotalBuys/Sales/ProfitLoss/Dividends/Brokerages()`, `showError()`, `acceptAndClose()`.
 
 `IModelShareEdit` — `loadShare()`, `saveShare()`, alle Aggregate, `currentVolume()`, `firstBuyDate()`.
@@ -2651,7 +2676,10 @@ Button in der Toolbar geoeffnet.
 
 `PresenterShareEdit` — Lädt Share + Aggregate im Konstruktor. Emittiert
 `openBuysRequested`, `openSalesRequested`, `openDividendsRequested`, `openBrokeragesRequested`.
-Slot `refreshSummary()` → `populateSummary()`.
+Slot `refreshSummary()` → `populateSummary()`. Entscheidet zusätzlich über die
+Sperre der Update-Typ-Auswahl (`setDailyValuesRequired()`) und blockiert in
+`validateInput()` das Speichern eines unzulässigen Update-Typs — siehe
+"Erledigt / Archiv", "Tageswert-Historie bei Bestand > 0 erzwingen".
 
 `ViewShareEdit` — Nimmt `DocumentsConfig*` (wird an `ViewBuyEdit` / `ViewSaleEdit`
 weitergereicht). Zwei GroupBox-Bereiche: Allgemein + Einnahmen/Ausgabe.
@@ -2681,6 +2709,10 @@ brokerFee, traderFee, reduction), `wknExists()`, `isinExists()`, `lastError()`.
 `ModelShareAdd` — Speichert Share + Buy + Brokerage in einer SQLite-Transaktion.
 
 `PresenterShareAdd` — Parse-Pipeline identisch zu `PresenterBuyEdit` (Referenzimplementierung).
+Setzt `ShareUpdateType::Both` in `onSave()` explizit; der Dialog hat keine
+Update-Typ-Auswahl, und eine neu angelegte Aktie hat wegen `volume() > 0` in
+`validateInput()` immer Bestand — siehe "Erledigt / Archiv",
+"Tageswert-Historie bei Bestand > 0 erzwingen".
 
 `ViewShareAdd` — Linkes Formular in `QScrollArea` (700px) + rechte PDF-Vorschau.
 Numerische Felder: `QLineEdit` mit `QDoubleValidator`.
@@ -3307,14 +3339,6 @@ sichtbar, da sich der Export als nützlich erwiesen hat. Später sollte er über
 eine Einstellung ein- und ausblendbar sein, damit er im Normalbetrieb nicht
 im Weg steht.
 
-### Tageswert-Historie bei Bestand > 0 erzwingen (wichtig, 05.08.2026)
-
-Aktien mit Update-Typ "Nur Kurs" oder "Kein Update" haben keine
-Tageswert-Historie und fallen dadurch komplett aus dem Depotwert-Chart
-heraus. Solange Anteile im Bestand sind, sollte sich das Tageswert-Update
-deshalb gar nicht mehr abwählen lassen. Nessies Einschätzung: wichtig.
-Betrifft `ViewShareEdit` / `ViewShareAdd` (Auswahl des Update-Typs).
-
 ### Zeitraum-Einstellungen des Charts persistieren (05.08.2026)
 
 Start-Datum, Interval und Anzahl des Depotwert-Charts werden bei jedem Start
@@ -3427,6 +3451,163 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 ---
 
 ## Erledigt / Archiv
+
+### Tageswert-Historie bei Bestand > 0 erzwingen (Feature, 06.08.2026)
+
+Aktien mit Update-Typ "Markt-Preis" oder "Keine" bauen keine
+Tageswert-Historie auf. Ohne diese Historie lassen sie sich an keinem
+vergangenen Stichtag bewerten und werden deshalb vollständig aus dem
+Depotwert-Chart ausgeschlossen (siehe "PortfolioChartForm-Details",
+"Datumsraster, Kurs-Fortschreibung, Aktien ohne Historie"). Solange Anteile
+im Bestand sind, ist diese Kombination kein Wunsch des Nutzers, sondern ein
+Datenproblem — der Chart zeigt dann eine Kurve, die diese Positionen
+stillschweigend weglässt.
+
+#### Die Regel liegt in einem eigenen Modul
+
+`app/utils/ShareUpdateRules.h` hält die Regel als einzige Quelle:
+
+| Funktion | Bedeutung |
+| -------- | --------- |
+| `requiresDailyValues(volume)` | Bestand vorhanden, Tageswerte also Pflicht |
+| `updateTypeIncludesDailyValues(type)` | `Both` oder `DailyValues` |
+| `isUpdateTypeAllowed(type, volume)` | Kombination aus beidem |
+| `sharesNeedingDailyValues(list)` | Filtert eine Aktienliste auf die Verstöße |
+
+Die Schwelle `kVolumeEpsilon = 1e-9` ist dieselbe wie in
+`ModelSaleEdit::loadAvailableBuys()`. Grund: der Bestand entsteht als Summe
+über `volume - volumeSold` aller Käufe und kann bei einer vollständig
+verkauften Position ein paar ULP neben 0 landen; ein `> 0.0` würde diese
+Aktien fälschlich als Bestand werten und eine Meldung auslösen, die sich
+nicht abstellen lässt.
+
+`ShareUpdateRules::ShareState` ist bewusst kein `ShareObject`: die Regel muss
+ohne Datenbank prüfbar bleiben, und der Bestand ist ohnehin bereits berechnet,
+wenn die Aufrufer sie brauchen.
+
+@note Das Modul ist header-only und damit eine bewusste Abweichung von den
+übrigen `utils/`-Modulen, die alle ihre `.h`/`.cpp`-Teilung haben. Es enthält
+nur eine Handvoll Vergleiche ohne Zustand. Ausschlaggebend war die Testseite:
+drei Testziele kompilieren `ViewShareEdit.cpp` und eines `MainWindow.cpp` —
+eine eigene Übersetzungseinheit müsste in jedes davon eingetragen werden, und
+ein vergessener Eintrag schlägt als Linkerfehler auf, nicht als etwas
+Aussagekräftiges. Die anderen `utils/`-Module behalten ihre Teilung, weil sie
+echtes Implementierungsgewicht tragen.
+
+#### ViewShareEdit: Auswahl gesperrt, Bestehendes nicht angetastet
+
+`IViewShareEdit::setDailyValuesRequired(bool)` (neu) deaktiviert die Radios
+"Markt-Preis" und "Keine" und blendet eine rote Hinweiszeile darunter ein.
+`PresenterShareEdit::loadAndPopulate()` ruft die Methode direkt nach
+`setCurrentVolume()` auf — die Entscheidung trifft also der Presenter, die
+View spiegelt sie nur. Der Aufruf muss NACH `loadShare()` liegen, weil
+`loadShare()` den gespeicherten Update-Typ anhakt.
+
+Bei Aktien, die vor dieser Umstellung angelegt wurden, kann eine jetzt
+unzulässige Auswahl gespeichert sein. Diese bleibt sichtbar angehakt (Qt
+stellt einen deaktivierten `QRadioButton` weiterhin gesetzt dar) — der Dialog
+schreibt nichts von selbst um. Bewusste Entscheidung: eine stille Korrektur
+gespeicherter Daten beim bloßen Öffnen eines Dialogs wäre für den Nutzer nicht
+nachvollziehbar. Die eigentliche Blockade sitzt stattdessen in
+`PresenterShareEdit::validateInput()`, das per `isUpdateTypeAllowed()` prüft
+und das Speichern mit einer erklärenden Meldung abbricht. Ohne diese zweite
+Prüfung käme der unzulässige Wert unverändert wieder in die Datenbank zurück.
+
+Geprüft wird dabei ausschliesslich die AKTIVE Änderung: der Presenter merkt
+sich in `m_loadedUpdateType`, was beim Öffnen aus der Datenbank kam, und
+lässt einen unveränderten Altbestandswert passieren.
+
+Diese Lockerung kam nachträglich hinzu (06.08.2026), nachdem beim Durchsehen
+ein Fall auffiel, den die strenge Variante in eine Sackgasse geführt hätte:
+eine Aktie, für die es gar keine Tageswert-Quelle gibt — ein delistetes
+Papier etwa, oder eines, das die Quelle schlicht nicht führt. An einer
+solchen Aktie liesse sich mit der strengen Prüfung überhaupt nichts mehr
+ändern, nicht einmal eine Namenskorrektur, und der einzige Ausweg wäre der
+Verkauf gewesen.
+
+Der Weg bleibt trotzdem eine Einbahnstrasse: "Beide" und "Tages-Werte" sind
+jederzeit wählbar, zurück auf "Markt-Preis" oder "Keine" kommt man bei
+Bestand nicht mehr — auch nicht von einem unzulässigen Altwert auf einen
+anderen unzulässigen Wert. Die Startmeldung nennt solche Aktien weiterhin,
+denn die Datenlücke besteht ja tatsächlich fort.
+
+#### ViewShareAdd hatte nie eine Auswahl
+
+Die ursprüngliche Notiz nannte `ViewShareAdd` als betroffen. Das war eine
+Fehlannahme: der Anlage-Dialog bietet gar keine Update-Typ-Auswahl an, weder
+in `IViewShareAdd` noch als Widget. `PresenterShareAdd::onSave()` rief
+`setUpdateType()` nie auf, die neue Aktie erhielt also den Vorgabewert
+`ShareUpdateType::Both` aus `ShareObject`. Faktisch war der Dialog damit schon
+korrekt — allerdings nur beiläufig.
+
+`onSave()` setzt den Wert jetzt explizit. `validateInput()` erzwingt dort
+bereits `volume() > 0`, eine neu angelegte Aktie hat also immer Bestand und
+braucht zwingend Tageswerte. Ohne die explizite Zeile würde eine spätere
+Änderung des Vorgabewerts in `ShareObject` stillschweigend Aktien ohne
+Kurshistorie anlegen.
+
+#### Startmeldung für den Altbestand
+
+Aktien, die vor dieser Umstellung angelegt wurden, erreicht die Sperre im
+Editier-Dialog nicht von selbst — ohne aktiven Hinweis bliebe der Fehlstand
+unbemerkt. `MainWindow::warnAboutSharesWithoutDailyValues()` zeigt deshalb
+einmal je Programmstart eine Meldung mit Name, WKN und aktuellem Update-Typ
+der betroffenen Aktien, dazu die Begründung und die Handlungsanweisung.
+
+Die Meldung nennt ausdrücklich, dass Wartezeit echter Datenverlust ist: die
+Quellen liefern nur ein begrenztes Zeitfenster rückwirkend, die in der
+Zwischenzeit ausgelaufenen Tage sind dauerhaft weg (dieselbe Einschränkung wie
+unter "Aktiensplits werden nicht behandelt" beschrieben). Kein "nicht mehr
+anzeigen"-Haken — die Meldung verschwindet von selbst, sobald die Einstellung
+stimmt. Zusätzlich geht eine Zeile in den Meldungsbereich, damit der Hinweis
+nach dem Schließen des Dialogs nicht spurlos verschwindet.
+
+Zwei Umsetzungsdetails:
+
+- Die Liste entsteht ohne zusätzliche Datenbankzugriffe in
+  `populatePortfolioTables()`. Diese Methode berechnet je Aktie ohnehin
+  `ShareValues`, und `ShareValues::volume` IST der gehaltene Bestand — es
+  bleibt eine Zuweisung je Aktie.
+- Der Aufruf läuft per `QTimer::singleShot(0, ...)` am Ende des
+  "Portfolio geladen"-Zweigs von `initialize()`. Ohne die Verzögerung
+  erschiene der modale Dialog vor dem fertig gezeichneten Hauptfenster, der
+  Nutzer sähe seinen Kontext also nicht (gleiche Begründung wie beim
+  Tray-Start).
+
+Die Beschriftungen in der Meldung sind wortgleich zu den Radiobuttons in
+`ViewShareEdit`, damit der Nutzer die genannte Einstellung dort direkt
+wiederfindet.
+
+Die Meldung erscheint nur im Produktivkonstruktor. Der bereits vorhandene
+Test-Konstruktor `MainWindow(QNetworkAccessManager*, QWidget*)` setzt
+`m_showStartupWarnings` auf `false` — das ist seit 06.08.2026 der zweite
+Unterschied zwischen den beiden Konstruktoren neben der Parser-Verdrahtung.
+
+Notwendig wurde das, weil zahlreiche Tests in `tst_mainwindow.cpp` Aktien mit
+Update-Typ `MarketPrice` samt Käufen anlegen — also genau den Fall, den die
+Meldung anprangert — und anschliessend `QApplication::processEvents()` rufen.
+Der verzögerte Aufruf würde dort feuern und den Test in `exec()` dauerhaft
+blockieren, im CI-Runner ebenso. Die Alternative, alle betroffenen Tests
+umzuschreiben, hätte deren Prüfgegenstand verwässert; die Alternative, den
+Dialog nicht-modal zu zeigen, hätte ein Fremdwidget als Kind des Hauptfensters
+hinterlassen, das die widgetsuchenden Testhelfer stört.
+
+Untestbar bleibt dadurch allerdings nur noch das Öffnen des Dialogs selbst.
+Der Textaufbau steckt in zwei `public static`-Helfern —
+`MainWindow::updateTypeLabel()` und
+`MainWindow::buildDailyValuesWarningMessage()` — nach derselben Konvention
+wie `buildDailyValuesUrl()` und `shouldMinimizeToTray()`.
+
+Ausschlaggebend war die Fehlerform: liefe der Textaufbau falsch, bliebe die
+Meldung leer oder nennte falsche Beschriftungen. Das Ausbleiben eines Dialogs
+sieht für den Nutzer aber genauso aus wie "alles in Ordnung" — ein solcher
+Fehler würde nie auffallen. Genau diese Klasse von Fehlern soll nicht hinter
+einem untestbaren `exec()` verschwinden.
+
+@note Der verbleibende Rest — Liste leer prüfen, Dialog öffnen — ist
+konsistent mit der bestehenden Projektkonvention, `exec()`-getriebene
+Dialogpfade nicht zu automatisieren (siehe `openCaptureDialog()` und die
+`onBrowseDocument()`-Methoden der fünf Editier-Dialoge).
 
 ### Die Anwendung darf nur einmal gestartet werden (Feature, 03.08.2026)
 

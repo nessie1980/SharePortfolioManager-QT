@@ -62,6 +62,25 @@ public:
     virtual void setCurrentVolume(double volume) = 0;
 
     /**
+     * @brief Restrict the update-type selection to the daily-value variants.
+     *
+     * Added 06.08.2026. When @c true, "Markt-Preis" and "Keine" are disabled
+     * and a hint explains why — a share still holding volume must build a
+     * daily-value history, otherwise it drops out of the portfolio value chart
+     * (see ShareUpdateRules and ARCHITECTURE.md, "Tageswert-Historie bei
+     * Bestand > 0 erzwingen").
+     *
+     * The decision itself belongs to the Presenter; the View only reflects it.
+     * An already stored selection stays visibly checked even when its radio
+     * button is disabled, so opening the dialog never silently rewrites what
+     * is in the database — the user has to pick a valid type themselves, and
+     * saving is blocked until they do.
+     *
+     * @param required  true if the share currently holds volume.
+     */
+    virtual void setDailyValuesRequired(bool required) = 0;
+
+    /**
      * @brief Display the total buy value (incl. brokerage, net of reduction).
      * @param value  Sum of buyValueBrokerageReduction across all buys.
      * @param count  Number of buy records.

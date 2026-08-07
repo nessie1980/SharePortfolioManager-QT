@@ -90,4 +90,16 @@ private:
     IViewShareEdit*  m_view  = nullptr;
     IModelShareEdit* m_model = nullptr;
     QString          m_shareGuid;
+
+    /**
+     * @brief Update-Typ, wie er beim Öffnen aus der Datenbank kam.
+     *
+     * Bezugspunkt für die Prüfung in validateInput() (06.08.2026): blockiert
+     * wird nur das aktive Setzen eines unzulässigen Werts, nicht das
+     * unveränderte Weiterreichen eines bereits gespeicherten. Sonst liesse
+     * sich an einer Aktie mit Bestand und Update-Typ "Keine" überhaupt nichts
+     * mehr ändern — nicht einmal eine Namenskorrektur —, obwohl es für sie
+     * womöglich gar keine Tageswert-Quelle gibt (delistetes Papier).
+     */
+    ShareUpdateType  m_loadedUpdateType = ShareUpdateType::Both;
 };

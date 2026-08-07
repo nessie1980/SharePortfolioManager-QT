@@ -86,6 +86,7 @@ public:
     void loadShare(const ShareObject& share)              override;
     void setFirstBuyDate(const QString& dateStr)          override;
     void setCurrentVolume(double volume)                  override;
+    void setDailyValuesRequired(bool required)            override;
     void setTotalBuys(double value, int count)            override;
     void setTotalSales(double value, int count)           override;
     void setTotalProfitLoss(double value, int count)      override;
@@ -134,6 +135,7 @@ private:
     QLineEdit*    m_einzahlung      = nullptr; ///< read-only, filled from totalBuyValue
     QLineEdit*    m_anteile         = nullptr; ///< read-only, filled from totalVolume
     QButtonGroup* m_updateGroup     = nullptr; ///< Beide / Markt-Preis / Tages-Werte / Keine
+    QLabel*       m_updateHint      = nullptr; ///< Hinweis unter den Radios, siehe setDailyValuesRequired()
     QLineEdit*    m_detailsWebsite  = nullptr;
     QLineEdit*    m_marketUrl       = nullptr;
     QComboBox*    m_marketParsing   = nullptr;

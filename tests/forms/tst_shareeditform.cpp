@@ -12,6 +12,8 @@
 #include <QDir>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QRadioButton>
+#include <QLabel>
 #include <QUuid>
 #include <QLocale>
 
@@ -79,6 +81,20 @@ private:
         s.setMarketPriceEncoding(QStringLiteral("en-US"));
         s.setShareType(ShareType::Etf);
         return s;
+    }
+
+    /**
+     * Find one of the four "Update via Internet"-Radiobuttons by its label.
+     * Die Radios haben bewusst keine objectName-Vergabe — sie entstehen in
+     * einer Schleife über eine Beschriftungstabelle in createGeneralGroup(),
+     * die Beschriftung ist dort der einzige stabile Bezug.
+     */
+    static QRadioButton* updateRadio(const ViewShareEdit& dlg, const QString& label)
+    {
+        for (auto* rb : dlg.findChildren<QRadioButton*>())
+            if (rb->text() == label)
+                return rb;
+        return nullptr;
     }
 
 private slots:
@@ -409,6 +425,114 @@ private slots:
         s.setDailyValuesParsingType(ShareParsingType::ApiOnVista);
         dlg.loadShare(s);
         QCOMPARE(dlg.dailyValuesApiKey(), QStringLiteral("onvista-test-key"));
+    }
+
+    // ── setDailyValuesRequired (Feature 06.08.2026) ───────────────────────────
+
+    void test_viewShareEdit_updateRadios_allPresentAndEnabledByDefault()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        // Ohne Käufe ist der Bestand 0 — der Presenter ruft
+        // setDailyValuesRequired(false) auf, alle vier bleiben wählbar.
+        for (const QString& label : { QStringLiteral("Beide"),
+                                      QStringLiteral("Markt-Preis"),
+                                      QStringLiteral("Tages-Werte"),
+                                      QStringLiteral("Keine") })
+        {
+            QRadioButton* rb = updateRadio(dlg, label);
+            QVERIFY2(rb, qPrintable(QStringLiteral("Radio fehlt: ") + label));
+            QVERIFY2(rb->isEnabled(), qPrintable(QStringLiteral("Radio gesperrt: ") + label));
+        }
+    }
+
+    void test_viewShareEdit_setDailyValuesRequired_disablesMarketPriceAndNone()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        dlg.setDailyValuesRequired(true);
+
+        QVERIFY(!updateRadio(dlg, QStringLiteral("Markt-Preis"))->isEnabled());
+        QVERIFY(!updateRadio(dlg, QStringLiteral("Keine"))->isEnabled());
+    }
+
+    void test_viewShareEdit_setDailyValuesRequired_keepsDailyVariantsSelectable()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        dlg.setDailyValuesRequired(true);
+
+        QVERIFY(updateRadio(dlg, QStringLiteral("Beide"))->isEnabled());
+        QVERIFY(updateRadio(dlg, QStringLiteral("Tages-Werte"))->isEnabled());
+    }
+
+    void test_viewShareEdit_setDailyValuesRequired_falseReEnablesAll()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        dlg.setDailyValuesRequired(true);
+        dlg.setDailyValuesRequired(false);
+
+        QVERIFY(updateRadio(dlg, QStringLiteral("Markt-Preis"))->isEnabled());
+        QVERIFY(updateRadio(dlg, QStringLiteral("Keine"))->isEnabled());
+    }
+
+    void test_viewShareEdit_setDailyValuesRequired_keepsStoredSelectionChecked()
+    {
+        // Kern der Altbestands-Entscheidung: eine gespeicherte, jetzt
+        // unzulässige Auswahl darf beim Öffnen NICHT still umgestellt werden.
+        // Der deaktivierte Radiobutton bleibt sichtbar angehakt, updateType()
+        // liefert weiterhin den gespeicherten Wert — blockiert wird erst beim
+        // Speichern, in PresenterShareEdit::validateInput().
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        ShareObject s = makeShare(guid);
+        s.setUpdateType(ShareUpdateType::None);
+        dlg.loadShare(s);
+        dlg.setDailyValuesRequired(true);
+
+        QRadioButton* none = updateRadio(dlg, QStringLiteral("Keine"));
+        QVERIFY(none->isChecked());
+        QVERIFY(!none->isEnabled());
+        QCOMPARE(dlg.updateType(), ShareUpdateType::None);
+    }
+
+    void test_viewShareEdit_updateHint_hiddenUntilRequired()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        auto* hint = dlg.findChild<QLabel*>(QStringLiteral("updateHint"));
+        QVERIFY(hint);
+        // isVisibleTo() statt isVisible(): der Dialog selbst wird im Test nie
+        // gezeigt, isVisible() wäre für jedes Kind false.
+        QVERIFY(!hint->isVisibleTo(&dlg));
+        QVERIFY(hint->text().isEmpty());
+    }
+
+    void test_viewShareEdit_updateHint_shownWhenRequired()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        dlg.setDailyValuesRequired(true);
+
+        auto* hint = dlg.findChild<QLabel*>(QStringLiteral("updateHint"));
+        QVERIFY(hint);
+        QVERIFY(hint->isVisibleTo(&dlg));
+        QVERIFY(!hint->text().isEmpty());
     }
 
     // ── refreshSummary ────────────────────────────────────────────────────────

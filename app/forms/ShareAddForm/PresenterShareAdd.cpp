@@ -221,6 +221,17 @@ void PresenterShareAdd::onSave()
                       m_view->name().trimmed(),
                       m_view->shareType());
     share.setAddDateTime(QDateTime::currentDateTime().toString(Qt::ISODate));
+
+    // 06.08.2026: Der Anlage-Dialog bietet keine Update-Typ-Auswahl an, und
+    // validateInput() erzwingt volume() > 0 — eine neu angelegte Aktie hat
+    // also immer Anteile im Bestand und braucht damit zwingend Tageswerte
+    // (siehe ShareUpdateRules). Bisher ergab sich das nur beiläufig aus dem
+    // Vorgabewert von ShareObject::m_updateType; hier bewusst explizit
+    // gesetzt, damit eine spätere Änderung dieses Vorgabewerts nicht
+    // stillschweigend Aktien ohne Kurshistorie anlegt, die dann aus dem
+    // Depotwert-Chart herausfallen.
+    share.setUpdateType(ShareUpdateType::Both);
+
     share.setDetailsWebSiteUrl(m_view->detailsWebsite().trimmed());
     share.setMarketPriceUrl(m_view->marketPriceUrl().trimmed());
     share.setMarketPriceParsingType(m_view->marketPriceParsingType());

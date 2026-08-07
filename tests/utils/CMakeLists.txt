@@ -87,3 +87,27 @@ target_link_libraries(tst_portfolioseriescalculator
 )
 
 add_test(NAME tst_portfolioseriescalculator COMMAND tst_portfolioseriescalculator)
+
+# ── ShareUpdateRules tests ─────────────────────────────────────────────────────
+# Regelmodul "Tageswert-Historie bei Bestand > 0 erzwingen" (Feature
+# 06.08.2026). ShareUpdateRules.h ist header-only und ohne Zustand — das Ziel
+# braucht daher nur ShareObject.cpp (wegen der Enum-Definitionen in
+# ShareObject.h) und weder Qt6::Sql noch die Database-Bibliothek. Bewusst der
+# schlankeste Testlauf im Projekt: die Regel wird an drei Stellen gebraucht
+# (ViewShareEdit, PresenterShareEdit, MainWindow) und muss deshalb losgelöst
+# von allen dreien prüfbar bleiben.
+qt_add_executable(tst_shareupdaterules tst_shareupdaterules.cpp
+    ../../app/models/ShareObject.cpp
+)
+
+target_include_directories(tst_shareupdaterules
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_shareupdaterules PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_shareupdaterules
+    PRIVATE Qt6::Test
+)
+
+add_test(NAME tst_shareupdaterules COMMAND tst_shareupdaterules)

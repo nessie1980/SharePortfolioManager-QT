@@ -36,11 +36,16 @@ ctest --output-on-failure
 ./bin/tst_singleinstanceguard
 ./bin/tst_websitesconfig
 ./bin/tst_documentsconfig
+./bin/tst_documentclassifier
 ./bin/tst_sharecalculator
 ./bin/tst_portfolioseriescalculator
+./bin/tst_shareupdaterules
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
+./bin/tst_sharedetailsform
+./bin/tst_chartform
 ./bin/tst_portfoliochartform
+./bin/tst_overviewtabwidget
 ./bin/tst_buysform
 ./bin/tst_backupsettingsform
 ./bin/tst_traysettingsform
@@ -49,6 +54,16 @@ ctest --output-on-failure
 ./bin/tst_portfoliovalidator
 ./bin/tst_portfolioimporter
 ```
+
+@note Diese Liste umfasst alle 31 Testziele des Projekts und wurde am
+06.08.2026 vollständig gegen die neun `add_subdirectory(tests/...)`-Aufrufe
+der Root-`CMakeLists.txt` und die darin definierten `qt_add_executable()`-Ziele
+abgeglichen — in beide Richtungen. Anlass war der Vorfall vom 05.08.2026, bei
+dem `tst_sharecalculator` hier aufgeführt war, aber in keiner
+`CMakeLists.txt` stand und deshalb nie gebaut wurde und nie mitlief. Wer ein
+Testziel hinzufügt, trägt es bitte auch hier nach; ein Eintrag ohne
+zugehöriges Ziel ist der gefährlichere der beiden Fehler, weil er Abdeckung
+vortäuscht, die es nicht gibt.
 
 ---
 
@@ -316,6 +331,40 @@ Editier-Dialoge, ebenfalls ungetestet aus demselben Grund). Ein Test müsste
 entweder einen echten `pdftotext`-Aufruf gegen eine mitgelieferte Test-PDF
 voraussetzen (Umgebungsabhängigkeit in CI) oder `QProcess` selbst mocken,
 was für einen so simplen Wrapper unverhältnismäßigen Aufwand bedeuten würde.
+
+#### tst_shareupdaterules — ShareUpdateRules (neu 06.08.2026)
+
+Executable: `tst_shareupdaterules`
+Klasse unter Test: `ShareUpdateRules` (app/utils/ShareUpdateRules.h)
+
+Der schlankeste Testlauf im Projekt: keine Datenbank, keine Widgets, kein
+`QApplication` (`QTEST_APPLESS_MAIN`), im CMake-Ziel nur `Qt6::Test` und
+`ShareObject.cpp` wegen der Enum-Definitionen. Genau darum liegt die Regel in
+einem eigenen Modul statt in einem der beiden Presenter — sie wird an drei
+Stellen gebraucht (`ViewShareEdit`, `PresenterShareEdit`, `MainWindow`) und
+muss losgelöst von allen dreien prüfbar bleiben. Siehe ARCHITECTURE.md,
+"Erledigt / Archiv", "Tageswert-Historie bei Bestand > 0 erzwingen".
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_requiresDailyValues_zeroVolume_false` | Bestand exakt 0 | `false` |
+| `test_requiresDailyValues_positiveVolume_true` | Bestand 1,0 und 0,0001 | `true` in beiden Fällen |
+| `test_requiresDailyValues_floatingPointNoise_false` | Bestand `1e-12` sowie exakt `kVolumeEpsilon` | `false` — Grenzfall `>`, nicht `>=` |
+| `test_requiresDailyValues_justAboveEpsilon_true` | Bestand `kVolumeEpsilon * 10` | `true` |
+| `test_requiresDailyValues_negativeVolume_false` | Negativer Bestand (mehr verkauft als gekauft) | `false` — darf keinesfalls als Bestand durchgehen |
+| `test_updateTypeIncludesDailyValues_allFourTypes` | Alle vier `ShareUpdateType`-Werte | `Both`/`DailyValues` = true, `MarketPrice`/`None` = false |
+| `test_isUpdateTypeAllowed_withHolding_onlyDailyVariants` | Bestand 12,5 gegen alle vier Typen | Nur `Both` und `DailyValues` zulässig |
+| `test_isUpdateTypeAllowed_withoutHolding_everythingAllowed` | Bestand 0 gegen alle vier Typen | Alle vier zulässig — ohne Bestand kostet die fehlende Historie nichts |
+| `test_isUpdateTypeAllowed_boundary_epsilonCountsAsNoHolding` | `None` bei `kVolumeEpsilon` bzw. dem Zehnfachen | Zulässig bzw. unzulässig |
+| `test_sharesNeedingDailyValues_emptyList_returnsEmpty` | Leere Eingabeliste | Leeres Ergebnis |
+| `test_sharesNeedingDailyValues_allCompliant_returnsEmpty` | Vier korrekte Aktien, darunter zwei verkaufte mit `None`/`MarketPrice` | Leeres Ergebnis |
+| `test_sharesNeedingDailyValues_mixed_returnsOnlyOffenders` | Vier Aktien, zwei davon Verstöße | Genau 2 Treffer, Eingangsreihenfolge erhalten |
+| `test_sharesNeedingDailyValues_keepsAllFields` | Ein Verstoß mit allen Feldern gesetzt | `guid`, `wkn`, `name`, `updateType`, `currentVolume` unverändert im Ergebnis |
+
+@note Die Reihenfolge wird bewusst mitgeprüft: die Startmeldung im
+`MainWindow` listet die Aktien in derselben Reihenfolge wie das Grid, weil
+`sharesNeedingDailyValues()` die Eingangsreihenfolge von
+`ShareRepository::findAll()` (nach Name sortiert) durchreicht.
 
 ---
 
@@ -643,6 +692,42 @@ PresenterShareEdit (via StubView + StubModel):
 | `test_presenterShareEdit_onEditSales_emitsSignal` | Pencil-Button Verkäufe → Signal | `openSalesRequested` emittiert |
 | `test_presenterShareEdit_onEditDividends_emitsSignal` | Pencil-Button Dividenden → Signal | `openDividendsRequested` emittiert |
 | `test_presenterShareEdit_onEditBrokerages_emitsSignal` | Pencil-Button Kosten → Signal | `openBrokeragesRequested` emittiert |
+| `test_presenterShareEdit_withHolding_requiresDailyValues` | Bestand 12,5 | `setDailyValuesRequired(true)` an die View gereicht |
+| `test_presenterShareEdit_withoutHolding_doesNotRequireDailyValues` | Bestand 0 | Aufruf findet statt, Argument `false` |
+| `test_presenterShareEdit_onSave_changingToForbiddenType_showsErrorAndDoesNotSave` | Aktiv von "Beide" auf "Keine", Bestand 10,0 | View nicht geschlossen, `saveShare()` NICHT erreicht, Fehlermeldung gesetzt |
+| `test_presenterShareEdit_onSave_marketPriceWithoutHolding_saves` | "Markt-Preis", Bestand 0 | Gespeichert und geschlossen — die Sperre greift nicht pauschal |
+| `test_presenterShareEdit_onSave_dailyValuesWithHolding_saves` | "Tages-Werte", Bestand 10,0 | Gespeichert und geschlossen |
+| `test_presenterShareEdit_onSave_unchangedLegacyType_stillSaves` | Gespeichert "Keine", unverändert gelassen, Bestand 10,0 | Gespeichert und geschlossen, keine Fehlermeldung |
+| `test_presenterShareEdit_onSave_legacyTypeChangedToOtherForbidden_blocked` | Gespeichert "Keine", gewählt "Markt-Preis", Bestand 10,0 | Abgewiesen — die Ausnahme gilt nur für den unveränderten Wert |
+
+Text der Start-Meldung (`MainWindow`, statische Helfer):
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_updateTypeLabel_allFourValues` | Alle vier `ShareUpdateType`-Werte | Beschriftungen wortgleich zu den Radios in `ViewShareEdit` |
+| `test_buildDailyValuesWarningMessage_emptyList_returnsEmpty` | Leere Liste | Leerer String — belegt den Frühausstieg, ohne Verstösse geht kein Dialog auf |
+| `test_buildDailyValuesWarningMessage_containsNameWknAndType` | Eine Aktie | Name, WKN und Update-Typ stehen im Text |
+| `test_buildDailyValuesWarningMessage_listsAllSharesInOrder` | Zwei Aktien | Beide genannt, Reihenfolge des Grids erhalten |
+| `test_buildDailyValuesWarningMessage_explainsConsequenceAndUrgency` | Eine Aktie | Text nennt "Depotwert-Chart" und "dauerhaft verloren" |
+
+@note Der letzte Test wirkt zunächst wie eine Prüfung auf Wortlaut, ist aber
+der eigentliche Zweck der Meldung: ohne die Folge (Ausschluss aus dem Chart)
+und ohne die Dringlichkeit (rückwirkend nicht mehr abrufbare Historie) wäre
+sie eine folgenlose Notiz, die der Nutzer wegklickt. Fiele einer der beiden
+Teile bei einer späteren Textänderung heraus, bliebe das sonst unbemerkt —
+eine Meldung erscheint ja weiterhin.
+
+@note Zwei Anpassungen an den Stubs waren dafür nötig (06.08.2026).
+`StubViewShareEdit::updateType()` lieferte fest `ShareUpdateType::None` und
+`StubModelShareEdit::currentVolume()` fest `10,0` — seit
+`PresenterShareEdit::validateInput()` beides gegeneinander prüft, ist diese
+Kombination unzulässig, und `test_presenterShareEdit_onSave_success_closesView`
+wäre am Validierungsfehler gescheitert statt am eigentlichen Prüfgegenstand.
+Beide Werte sind jetzt je Test setzbar, die Vorgabe des Update-Typs ist
+`Both`. Zusätzlich zeichnet `StubModelShareEdit::saveShare()` über
+`saveShareCalled` auf, ob es überhaupt erreicht wurde — nur so lässt sich
+belegen, dass die Validierung wirklich vorher abbricht und nicht bloss
+nachträglich eine Meldung anzeigt.
 
 ViewShareEdit: Tests wurden in `tst_shareeditform` ausgelagert — siehe Abschnitt unten.
 
@@ -864,6 +949,38 @@ ViewShareEdit:
 | `test_viewShareEdit_marketApiKey_setFromSettingsForYahoo` | Yahoo-Modus → Key aus AppSettings | `marketPriceApiKey()` = gesetzter Key |
 | `test_viewShareEdit_dailyApiKey_setFromSettingsForOnVista` | OnVista-Modus → Key aus AppSettings | `dailyValuesApiKey()` = gesetzter Key |
 | `test_viewShareEdit_refreshSummary_doesNotCrash` | `refreshSummary()` ohne Absturz | Kein Absturz |
+
+Update-Typ-Sperre bei Bestand (ergänzt 06.08.2026) — sieben Tests zu
+`setDailyValuesRequired()`. Die vier Radiobuttons haben bewusst keine
+`objectName`-Vergabe (sie entstehen in einer Schleife über eine
+Beschriftungstabelle in `createGeneralGroup()`), der Helfer `updateRadio()`
+sucht sie daher über `findChildren<QRadioButton*>()` anhand ihrer Beschriftung:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_viewShareEdit_updateRadios_allPresentAndEnabledByDefault` | Aktie ohne Käufe, Bestand also 0 | Alle vier Radios vorhanden und wählbar |
+| `test_viewShareEdit_setDailyValuesRequired_disablesMarketPriceAndNone` | `setDailyValuesRequired(true)` | "Markt-Preis" und "Keine" gesperrt |
+| `test_viewShareEdit_setDailyValuesRequired_keepsDailyVariantsSelectable` | Gleicher Aufruf | "Beide" und "Tages-Werte" bleiben wählbar |
+| `test_viewShareEdit_setDailyValuesRequired_falseReEnablesAll` | `true` gefolgt von `false` | Sperre wird vollständig zurückgenommen |
+| `test_viewShareEdit_setDailyValuesRequired_keepsStoredSelectionChecked` | Gespeichertes `None` geladen, danach Sperre gesetzt | Radio "Keine" bleibt angehakt und ist gesperrt, `updateType()` = `None` |
+| `test_viewShareEdit_updateHint_hiddenUntilRequired` | Frisch geöffneter Dialog | `updateHint` existiert, unsichtbar, Text leer |
+| `test_viewShareEdit_updateHint_shownWhenRequired` | Nach `setDailyValuesRequired(true)` | Sichtbar, Text nicht leer |
+
+@note **`isVisibleTo()` statt `isVisible()`:** Der Dialog wird in den Tests nie
+gezeigt — `isVisible()` wäre für jedes Kind-Widget `false`, unabhängig davon,
+ob `setVisible()` korrekt aufgerufen wurde. `isVisibleTo(&dlg)` prüft die
+Sichtbarkeit relativ zum Elternwidget und ist damit die einzige Variante, die
+hier überhaupt etwas aussagt.
+
+@note `test_..._keepsStoredSelectionChecked` ist der eigentliche
+Regressionstest der Altbestands-Entscheidung: eine gespeicherte, jetzt
+unzulässige Auswahl darf beim Öffnen NICHT still umgestellt werden (siehe
+ARCHITECTURE.md). Er scheitert also bewusst, sobald jemand die View dazu
+bringt, den Update-Typ selbstständig zu korrigieren. Die Gegenprobe — dass
+das Speichern eines solchen Werts blockiert wird — braucht ein Stub-Paar und
+liegt deshalb in `tst_mainwindow.cpp`, siehe dort
+`test_presenterShareEdit_onSave_forbiddenUpdateType_showsErrorAndDoesNotSave`.
+`tst_shareeditform` selbst arbeitet durchgehend gegen den echten Dialog.
 
 ---
 

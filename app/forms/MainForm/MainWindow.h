@@ -28,6 +28,7 @@
 #include "TwoLineDelegate.h"
 #include "CenterIconDelegate.h"
 #include "../../utils/ShareCalculator.h"
+#include "../../utils/ShareUpdateRules.h"
 #include "../../utils/PdfTextExtractor.h"
 
 #include <QList>
@@ -193,6 +194,38 @@ public:
      *         icon instead of the normal taskbar minimize.
      */
     static bool shouldMinimizeToTray(bool settingEnabled, bool trayIconAvailable);
+
+    /**
+     * @brief Beschriftung eines Update-Typs für Benutzertexte.
+     *
+     * Feature 06.08.2026. Wortgleich zu den Radiobuttons in ViewShareEdit,
+     * damit der Nutzer die in einer Meldung genannte Einstellung im Dialog
+     * direkt wiederfindet.
+     *
+     * @param type  Der Update-Typ.
+     * @return Die deutsche Beschriftung, bei unbekanntem Wert "Unbekannt".
+     */
+    static QString updateTypeLabel(ShareUpdateType type);
+
+    /**
+     * @brief Baut den Text der Start-Meldung über fehlende Tageswerte.
+     *
+     * Feature 06.08.2026. Als `public static` herausgezogen (gleiche
+     * Begründung wie bei buildDailyValuesUrl()/shouldMinimizeToTray() weiter
+     * oben) — der eigentliche Inhalt der Meldung ist damit gegen feste
+     * Eingaben prüfbar, ohne ein MainWindow zu bauen und ohne den modalen
+     * Dialog zu öffnen.
+     *
+     * Der Anlass war die Fehlerform: liefe der Textaufbau falsch, bliebe die
+     * Meldung leer oder nennte falsche Beschriftungen — und das Ausbleiben
+     * eines Dialogs sieht für den Nutzer genauso aus wie "alles in Ordnung".
+     * Ein solcher Fehler würde also nie auffallen.
+     *
+     * @param shares  Aktien mit Bestand, die keine Tageswerte abrufen.
+     * @return Fertiger Meldungstext, oder ein leerer String bei leerer Liste.
+     */
+    static QString buildDailyValuesWarningMessage(
+        const QList<ShareUpdateRules::ShareState>& shares);
 
     /**
      * @brief Restore the main window to the foreground.
@@ -492,6 +525,10 @@ private:
      * m_parserMarketValues/m_parserDailyValues are built with (decided in
      * each constructor's member initializer list, before this method runs).
      * No behavioral change versus the previous single-constructor version.
+     *
+     * @note Seit 06.08.2026 gibt es einen zweiten Unterschied: der
+     * Test-Konstruktor setzt m_showStartupWarnings auf false, damit beim
+     * Aufbau keine modalen Hinweis-Dialoge erscheinen.
      */
     void initialize();
 
@@ -656,6 +693,26 @@ private:
     void populatePortfolioTables();
 
     /**
+     * @brief Weist beim Start auf Aktien hin, die trotz Bestand keine
+     * Tageswerte abrufen.
+     *
+     * Feature 06.08.2026. Aktien mit Update-Typ "Markt-Preis" oder "Keine"
+     * bauen keine Tageswert-Historie auf und werden deshalb vollständig aus
+     * dem Depotwert-Chart ausgeschlossen — der dort gezeigte Verlauf lässt
+     * diese Positionen stillschweigend weg. Seit demselben Datum lässt sich
+     * die Einstellung in ViewShareEdit gar nicht mehr so wählen; für Aktien,
+     * die vor der Umstellung angelegt wurden, braucht es aber einen aktiven
+     * Hinweis, sonst bleibt der Fehlstand unbemerkt.
+     *
+     * Läuft einmal je Programmstart, nicht bei jedem Neuaufbau der Tabellen.
+     * Die Liste selbst entsteht ohne zusätzliche Datenbankzugriffe in
+     * populatePortfolioTables(), das den Bestand je Aktie ohnehin berechnet.
+     *
+     * @see m_sharesMissingDailyValues
+     */
+    void warnAboutSharesWithoutDailyValues();
+
+    /**
      * @brief Refresh the summary footer rows for both portfolio tabs.
      *
      * Called after populatePortfolioTables() and after any single-share
@@ -788,6 +845,33 @@ private:
     static constexpr int kTabFinalValue     = 0;
     static constexpr int kTabPortfolioChart = 1;
     static constexpr int kTabMarketValue    = 2;
+
+    /** Aktien mit Bestand > 0, die keine Tageswerte abrufen — bei jedem
+     *  populatePortfolioTables() neu gefüllt, ausgewertet von
+     *  warnAboutSharesWithoutDailyValues(). */
+    QList<ShareUpdateRules::ShareState> m_sharesMissingDailyValues;
+
+    /**
+     * @brief Dürfen beim Start modale Hinweis-Dialoge erscheinen?
+     *
+     * Nur der Produktivkonstruktor lässt sie zu; der Test-Konstruktor
+     * MainWindow(QNetworkAccessManager*, QWidget*) setzt das Flag auf false
+     * (06.08.2026).
+     *
+     * Grund: warnAboutSharesWithoutDailyValues() öffnet einen modalen
+     * OwnMessageBox per exec(). Zahlreiche Tests in tst_mainwindow.cpp legen
+     * Aktien mit Update-Typ MarketPrice samt Käufen an — also genau den Fall,
+     * den die Meldung anprangert — und rufen anschliessend
+     * QApplication::processEvents(). Der verzögerte Aufruf würde dort feuern
+     * und den Test in exec() dauerhaft blockieren, im CI-Runner ebenso.
+     *
+     * @note Damit bleibt die Meldung selbst untestbar. Das ist konsistent mit
+     * der bestehenden Projektkonvention, exec()-getriebene Dialogpfade nicht
+     * zu automatisieren (siehe openCaptureDialog()). Die Regel dahinter ist
+     * über tst_shareupdaterules abgedeckt, ihre Anwendung im Presenter über
+     * die PresenterShareEdit-Tests weiter unten in dieser Datei.
+     */
+    bool m_showStartupWarnings = true;
 
     QWidget*            m_portfolioChartContainer = nullptr; ///< Platzhalter, siehe ensurePortfolioChartUpToDate()
     ViewPortfolioChart* m_portfolioChart          = nullptr; ///< erst beim ersten Betreten erzeugt

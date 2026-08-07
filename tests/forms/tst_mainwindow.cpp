@@ -332,6 +332,23 @@ public:
     bool    setTotalBuysCalled = false;
     QString lastError;
 
+    // 06.08.2026 — Regel "Tageswerte bei Bestand > 0".
+    //
+    // updateTypeToReturn war vorher als ShareUpdateType::None fest verdrahtet.
+    // Das ging nur so lange gut, wie der Presenter den Update-Typ ungeprüft
+    // durchreichte: seit PresenterShareEdit::validateInput() ihn gegen den
+    // Bestand prüft, und StubModelShareEdit::currentVolume() 10,0 liefert,
+    // wäre "None" ein unzulässiger Wert — jeder onSave()-Test hier würde am
+    // Validierungsfehler scheitern statt am eigentlichen Prüfgegenstand.
+    // Vorgabe deshalb "Both" (zulässig); Tests, die den Sperrfall brauchen,
+    // setzen den Wert selbst.
+    ShareUpdateType updateTypeToReturn = ShareUpdateType::Both;
+
+    /// Zuletzt an setDailyValuesRequired() übergebener Wert.
+    bool dailyValuesRequired       = false;
+    /// Wurde setDailyValuesRequired() überhaupt aufgerufen?
+    bool dailyValuesRequiredCalled = false;
+
     QString   wkn()              const override { return QStringLiteral("840400"); }
     QString   isin()             const override { return QStringLiteral("DE0008404005"); }
     QString   name()             const override { return QStringLiteral("Test AG"); }
@@ -346,11 +363,13 @@ public:
     QString          dailyValuesUrl()         const override { return QString(); }
     ShareParsingType dailyValuesParsingType() const override { return ShareParsingType::Regex; }
     QString          dailyValuesApiKey()      const override { return QString(); }
-    ShareUpdateType  updateType()             const override { return ShareUpdateType::None; }
+    ShareUpdateType  updateType()             const override { return updateTypeToReturn; }
 
     void loadShare(const ShareObject&)   override { loadShareCalled = true; }
     void setFirstBuyDate(const QString&) override {}
     void setCurrentVolume(double)        override {}
+    void setDailyValuesRequired(bool required) override
+        { dailyValuesRequired = required; dailyValuesRequiredCalled = true; }
     void setTotalBuys(double, int)       override { setTotalBuysCalled = true; }
     void setTotalSales(double, int)      override {}
     void setTotalProfitLoss(double, int) override {}
@@ -366,8 +385,17 @@ public:
     ShareObject shareToReturn;
     bool        saveResult = true;
 
+    /// Gehaltener Bestand — je Test setzbar (06.08.2026). Vorgabe wie bisher
+    /// fest verdrahtet: 10,0, also "Anteile vorhanden".
+    double volumeToReturn = 10.0;
+
+    /// Wurde saveShare() erreicht? Belegt, dass eine Validierung wirklich
+    /// vorher abbricht statt nur eine Meldung nachzuschieben.
+    bool saveShareCalled = false;
+
     ShareObject loadShare(const QString&)     const override { return shareToReturn; }
-    bool        saveShare(const ShareObject&)       override { return saveResult; }
+    bool        saveShare(const ShareObject&)       override
+        { saveShareCalled = true; return saveResult; }
     double totalBuyValue(const QString&)      const override { return 1000.0; }
     int    buyCount(const QString&)           const override { return 2; }
     double totalSaleValue(const QString&)     const override { return 500.0; }
@@ -377,7 +405,7 @@ public:
     int    dividendCount(const QString&)      const override { return 3; }
     double totalBrokerageValue(const QString&)const override { return 30.0; }
     int    brokerageCount(const QString&)     const override { return 2; }
-    double currentVolume(const QString&)      const override { return 10.0; }
+    double currentVolume(const QString&)      const override { return volumeToReturn; }
     QString firstBuyDate(const QString&)      const override { return QStringLiteral("2020-01-01"); }
     QString lastError()                       const override { return QString(); }
 };
@@ -4634,6 +4662,230 @@ private slots:
         QSignalSpy spy(&p, &PresenterShareEdit::openBrokeragesRequested);
         p.onEditBrokerages();
         QCOMPARE(spy.count(), 1);
+    }
+
+    // ── Tageswerte bei Bestand > 0 (Feature 06.08.2026) ───────────────────
+    //
+    // Regelkern selbst: tests/utils/tst_shareupdaterules. Hier geht es
+    // ausschliesslich um die Verdrahtung im Presenter — dass die Regel
+    // überhaupt angewandt und ihr Ergebnis an die richtige Stelle gereicht
+    // wird. Siehe ARCHITECTURE.md, "Erledigt / Archiv",
+    // "Tageswert-Historie bei Bestand > 0 erzwingen".
+
+    void test_presenterShareEdit_withHolding_requiresDailyValues()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.volumeToReturn = 12.5;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        QVERIFY(view.dailyValuesRequiredCalled);
+        QVERIFY(view.dailyValuesRequired);
+    }
+
+    void test_presenterShareEdit_withoutHolding_doesNotRequireDailyValues()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.volumeToReturn = 0.0;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        // Der Aufruf muss trotzdem stattfinden — sonst bliebe eine zuvor
+        // gesetzte Sperre stehen, wenn der Dialog wiederverwendet wird.
+        QVERIFY(view.dailyValuesRequiredCalled);
+        QVERIFY(!view.dailyValuesRequired);
+    }
+
+    void test_presenterShareEdit_onSave_changingToForbiddenType_showsErrorAndDoesNotSave()
+    {
+        // Aktive Änderung von "Beide" (Vorgabe des Stub-Share) auf "Keine",
+        // während Anteile im Bestand sind. Die View sperrt den Radiobutton
+        // nur — verhindern muss es der Presenter.
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        view.updateTypeToReturn = ShareUpdateType::None;
+        model.volumeToReturn    = 10.0;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        p.onSave();
+
+        QVERIFY(!view.closedCalled);
+        QVERIFY(!model.saveShareCalled);
+        QVERIFY(!view.lastError.isEmpty());
+    }
+
+    void test_presenterShareEdit_onSave_marketPriceWithoutHolding_saves()
+    {
+        // Gegenprobe: ohne Bestand ist "Markt-Preis" zulässig — die Sperre
+        // darf nicht pauschal greifen.
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        view.updateTypeToReturn = ShareUpdateType::MarketPrice;
+        model.volumeToReturn    = 0.0;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        p.onSave();
+
+        QVERIFY(model.saveShareCalled);
+        QVERIFY(view.closedCalled);
+    }
+
+    void test_presenterShareEdit_onSave_dailyValuesWithHolding_saves()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        view.updateTypeToReturn = ShareUpdateType::DailyValues;
+        model.volumeToReturn    = 10.0;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        p.onSave();
+
+        QVERIFY(model.saveShareCalled);
+        QVERIFY(view.closedCalled);
+    }
+
+    void test_presenterShareEdit_onSave_unchangedLegacyType_stillSaves()
+    {
+        // Altbestand: "Keine" ist bereits gespeichert und wird NICHT geändert.
+        // Blockiert wird nur die aktive Änderung auf einen unzulässigen Wert —
+        // sonst liesse sich an dieser Aktie überhaupt nichts mehr bearbeiten,
+        // auch keine Namenskorrektur. Siehe ARCHITECTURE.md.
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        ShareObject share(QStringLiteral("guid-1"), QStringLiteral("TST"),
+                          QString(), QStringLiteral("Test AG"));
+        share.setUpdateType(ShareUpdateType::None);
+        model.shareToReturn     = share;
+        model.volumeToReturn    = 10.0;
+        view.updateTypeToReturn = ShareUpdateType::None;   // unverändert
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        p.onSave();
+
+        QVERIFY(model.saveShareCalled);
+        QVERIFY(view.closedCalled);
+        QVERIFY(view.lastError.isEmpty());
+    }
+
+    void test_presenterShareEdit_onSave_legacyTypeChangedToOtherForbidden_blocked()
+    {
+        // Gegenprobe zum Test darüber: gespeichert war "Keine", gewählt wird
+        // "Markt-Preis" — ebenfalls unzulässig. Das ist eine aktive Änderung
+        // und muss abgewiesen werden, obwohl der Ausgangswert auch schon
+        // unzulässig war. Die Ausnahme gilt nur für den unveränderten Wert.
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        ShareObject share(QStringLiteral("guid-1"), QStringLiteral("TST"),
+                          QString(), QStringLiteral("Test AG"));
+        share.setUpdateType(ShareUpdateType::None);
+        model.shareToReturn     = share;
+        model.volumeToReturn    = 10.0;
+        view.updateTypeToReturn = ShareUpdateType::MarketPrice;
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        p.onSave();
+
+        QVERIFY(!model.saveShareCalled);
+        QVERIFY(!view.closedCalled);
+        QVERIFY(!view.lastError.isEmpty());
+    }
+
+    // ── Text der Start-Meldung (Feature 06.08.2026) ───────────────────────
+    //
+    // buildDailyValuesWarningMessage() ist public static, damit genau dieser
+    // Teil ohne MainWindow und ohne modalen Dialog prüfbar bleibt — gleiche
+    // Konvention wie bei buildDailyValuesUrl()/shouldMinimizeToTray().
+
+    void test_updateTypeLabel_allFourValues()
+    {
+        QCOMPARE(MainWindow::updateTypeLabel(ShareUpdateType::None),
+                 QStringLiteral("Keine"));
+        QCOMPARE(MainWindow::updateTypeLabel(ShareUpdateType::MarketPrice),
+                 QStringLiteral("Markt-Preis"));
+        QCOMPARE(MainWindow::updateTypeLabel(ShareUpdateType::DailyValues),
+                 QStringLiteral("Tages-Werte"));
+        QCOMPARE(MainWindow::updateTypeLabel(ShareUpdateType::Both),
+                 QStringLiteral("Beide"));
+    }
+
+    void test_buildDailyValuesWarningMessage_emptyList_returnsEmpty()
+    {
+        // Belegt den Frühausstieg: ohne Verstösse darf kein Dialog aufgehen.
+        QVERIFY(MainWindow::buildDailyValuesWarningMessage({}).isEmpty());
+    }
+
+    void test_buildDailyValuesWarningMessage_containsNameWknAndType()
+    {
+        ShareUpdateRules::ShareState s;
+        s.wkn           = QStringLiteral("A14Y6H");
+        s.name          = QStringLiteral("Alphabet Inc.");
+        s.updateType    = ShareUpdateType::None;
+        s.currentVolume = 4.0;
+
+        const QString msg = MainWindow::buildDailyValuesWarningMessage({ s });
+
+        QVERIFY(msg.contains(QStringLiteral("Alphabet Inc.")));
+        QVERIFY(msg.contains(QStringLiteral("A14Y6H")));
+        QVERIFY(msg.contains(QStringLiteral("Keine")));
+    }
+
+    void test_buildDailyValuesWarningMessage_listsAllSharesInOrder()
+    {
+        ShareUpdateRules::ShareState a;
+        a.wkn = QStringLiteral("AAA111");
+        a.name = QStringLiteral("Erste AG");
+        a.updateType = ShareUpdateType::None;
+
+        ShareUpdateRules::ShareState b;
+        b.wkn = QStringLiteral("BBB222");
+        b.name = QStringLiteral("Zweite AG");
+        b.updateType = ShareUpdateType::MarketPrice;
+
+        const QString msg = MainWindow::buildDailyValuesWarningMessage({ a, b });
+
+        QVERIFY(msg.contains(QStringLiteral("Erste AG")));
+        QVERIFY(msg.contains(QStringLiteral("Zweite AG")));
+        QVERIFY(msg.contains(QStringLiteral("Markt-Preis")));
+        // Reihenfolge bleibt die des Grids.
+        QVERIFY(msg.indexOf(QStringLiteral("Erste AG"))
+                < msg.indexOf(QStringLiteral("Zweite AG")));
+    }
+
+    void test_buildDailyValuesWarningMessage_explainsConsequenceAndUrgency()
+    {
+        // Der eigentliche Zweck der Meldung: Begründung UND Dringlichkeit.
+        // Ohne beides bliebe sie eine folgenlose Notiz.
+        ShareUpdateRules::ShareState s;
+        s.wkn        = QStringLiteral("A14Y6H");
+        s.name       = QStringLiteral("Alphabet Inc.");
+        s.updateType = ShareUpdateType::None;
+
+        const QString msg = MainWindow::buildDailyValuesWarningMessage({ s });
+
+        QVERIFY(msg.contains(QStringLiteral("Depotwert-Chart")));
+        QVERIFY(msg.contains(QStringLiteral("dauerhaft verloren")));
     }
 
     // ── onDeleteShare ─────────────────────────────────────────────────────────
