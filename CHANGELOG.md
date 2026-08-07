@@ -6,6 +6,23 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.9.0] - 2026-08-07
+
+### Added
+
+- Datengrundlage für die Behandlung von Aktiensplits (Phase 1 von vier,
+  siehe `docs/architecture/ARCHITECTURE.md`, "Offene Punkte", "Aktiensplits
+  werden nicht behandelt"): neue Tabelle `share_splits` (Datum, Verhältnis
+  `ratio_new`/`ratio_old`, je Split gesetztes Kennzeichen, ob die
+  Kurshistorie vor diesem Datum bereits split-bereinigt vorliegt). Neues
+  Repository `ShareSplitRepository` sowie der zustandslose, datenbankfreie
+  Rechenkern `ShareSplitAdjuster` (`app/utils/`) zur Umrechnung zwischen der
+  in `buys`/`sales`/`daily_values` gespeicherten Beleg-Skala und der
+  heutigen, nach allen Splits gültigen Skala. Ohne sichtbare Auswirkung auf
+  die Anwendung — die Anwendung in `ShareCalculator`, den Chart-Modellen und
+  der FIFO-Verkaufszuteilung folgt in Phase 2. Neue Testziele
+  `tst_sharesplitrepository` und `tst_sharesplitadjuster`.
+
 ## [1.8.0] - 2026-08-06
 
 ### Added
@@ -253,6 +270,7 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   `docs/architecture/ARCHITECTURE.md`, "settings.ini nicht persistent im
   AppImage".
 
+[1.9.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.5.0...v1.6.0

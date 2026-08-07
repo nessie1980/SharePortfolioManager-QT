@@ -56,11 +56,11 @@ spm-qt/
 └── tests/              # Neun Verzeichnisse, alle direkt aus der Root-CMakeLists.txt
     ├── logger/          # Unit-Tests für Logger
     ├── parser/          # Unit-Tests für Parser + FakeNetworkAccessManager
-    ├── repositories/    # Unit-Tests für alle sechs Repositories
+    ├── repositories/    # Unit-Tests für alle sieben Repositories
     ├── database/        # Unit-Tests für Database
     ├── app/             # AppStartup, IconProvider, SingleInstanceGuard
     ├── config/          # WebSitesConfig, DocumentsConfig
-    ├── utils/           # ShareCalculator, PortfolioSeriesCalculator, ShareUpdateRules, DocumentClassifier
+    ├── utils/           # ShareCalculator, PortfolioSeriesCalculator, ShareUpdateRules, ShareSplitAdjuster, DocumentClassifier
     ├── xml-importer/    # XmlPortfolioParser, PortfolioValidator, PortfolioImporter
     └── forms/           # Unit-Tests für Forms (MainWindow, ShareAddForm, ShareEditForm, BuysForm, SalesForm, DividendForm, BrokeragesForm, OwnMessageBox, BackupProgressForm, ShareDetailsForm, ChartForm, PortfolioChartForm, OverviewTabWidget, BackupSettingsForm, TraySettingsForm, DocumentsSettingsForm)
 @endcode
@@ -126,7 +126,8 @@ tst_salerepository  |
 tst_dividendrepository| ← Database, Qt6::Sql
 tst_sharerepository |
 tst_brokeragerepository|
-tst_dailyvaluesrepository/
+tst_dailyvaluesrepository|
+tst_sharesplitrepository/
 tst_database            ← Database, Qt6::Sql
 tst_mainwindow          ← alle ShareEditForm-, ShareAddForm-, BuysForm- (Compile-Dep.), SalesForm-, DividendForm-, BrokeragesForm-, OwnMessageBox-, BackupProgressForm-Quelldateien + alle Repositories + ShareCalculator
 tst_buysform            ← BuysForm (ModelBuyEdit, PresenterBuyEdit, ViewBuyEdit) + BuyRepository, BrokerageRepository, ShareRepository
@@ -138,6 +139,7 @@ tst_shareupdaterules    ← nur Qt6::Test + ShareObject (Enums) — header-only 
 tst_documentclassifier  ← DocumentsConfig + DocumentClassifier, linkt Parser
 tst_sharecalculator     \
 tst_portfolioseriescalculator| ← alle Repositories + ShareCalculator, Database, Qt6::Sql
+tst_sharesplitadjuster  ← nur Qt6::Test + ShareSplitObject — zustandslos, datenbankfrei, kein QApplication
 tst_overviewtabwidget   ← OverviewTabWidget + ShareCalculator + alle Repositories
 tst_portfoliochartform  ← PortfolioChartForm-Trio + PortfolioSeriesCalculator + alle Repositories
 tst_documentssettingsform ← DocumentsSettingsForm + DocumentRootMigrator + AppSettings
@@ -148,9 +150,11 @@ tst_xmlportfolioparser / tst_portfoliovalidator / tst_portfolioimporter  ← too
 @endcode
 
 @note Diese Aufstellung wurde am 06.08.2026 vollständig gegen alle neun
-`tests/`-Unterverzeichnisse abgeglichen und umfasst seither alle 31
-Testziele. Die vollständige Startbefehl-Liste steht in TESTING.md,
-"Einzelnen Test direkt starten".
+`tests/`-Unterverzeichnisse abgeglichen und umfasste zu diesem Zeitpunkt alle
+31 Testziele; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
+(07.08.2026, Phase 1 der Aktiensplit-Behandlung) sind es 33. Die
+vollständige Startbefehl-Liste steht in TESTING.md, "Einzelnen Test direkt
+starten".
 
 ---
 
@@ -2750,7 +2754,9 @@ shares          ← Stammdaten je Aktie (GUID, WKN, ISIN, Name, ...)
   │   └── sale_buy_details  ← Beteiligte Käufe je Verkauf
   ├── brokerage         ← Gebühren (verknüpft mit buy oder sale)
   ├── dividends         ← Dividendenzahlungen
-  └── daily_values      ← Historische Kursdaten (OHLCV)
+  ├── daily_values      ← Historische Kursdaten (OHLCV)
+  └── share_splits      ← Aktiensplits (Datum, Verhältnis), siehe "ShareSplitObject /
+                           ShareSplitRepository / ShareSplitAdjuster" unten
 @endcode
 
 Alle Tabellen verwenden `TEXT`-GUIDs als Primärschlüssel. Foreign Keys aktiviert
@@ -2760,11 +2766,63 @@ Alle Tabellen verwenden `TEXT`-GUIDs als Primärschlüssel. Foreign Keys aktivie
 
 ## Repository-Schicht
 
-Alle 6 Repositories sind implementiert: `ShareRepository`, `BuyRepository`,
-`SaleRepository`, `DividendRepository`, `BrokerageRepository`, `DailyValuesRepository`.
+Alle 7 Repositories sind implementiert: `ShareRepository`, `BuyRepository`,
+`SaleRepository`, `DividendRepository`, `BrokerageRepository`, `DailyValuesRepository`,
+`ShareSplitRepository`.
 
 Verbindungsregel: Immer `QSqlDatabase::database(Database::connectionName())` —
 niemals `QSqlDatabase::database()` ohne Argument (gibt ungültige Default-Verbindung).
+
+### ShareSplitObject / ShareSplitRepository / ShareSplitAdjuster (Phase 1 der Aktiensplit-Behandlung, 07.08.2026)
+
+Grundlage für den offenen Punkt "Aktiensplits werden nicht behandelt" (siehe
+"Offene Punkte" unten). Reine Datenmodell- und Rechenschicht ohne jede
+sichtbare Änderung am laufenden Programm — die Anwendung in
+`ShareCalculator`, den Chart-Modellen und `ModelSaleEdit` folgt in Phase 2.
+
+`share_splits` (Schema siehe oben): eigene GUID je Split, wie bei
+`BuyObject`/`BrokerageObject` — nicht wie bei `DailyValuesObject` mit
+zusammengesetztem Primärschlüssel — plus `UNIQUE(share_guid, date)`, da zwei
+Splits derselben Aktie am selben Tag fachlich keinen Sinn ergeben.
+`ratio_new`/`ratio_old` bilden das Verhältnis ab (20:1-Split →
+`ratio_new=20, ratio_old=1`; Reverse-Split 1:10 → `ratio_new=1,
+ratio_old=10`). `prices_adjusted` ist je Split gesetzt (Nessies Entscheidung
+07.08.2026), nicht je Aktie — bei mehreren Splits derselben Aktie kann die
+Kurshistorie unterschiedlich weit bereinigt vorliegen, je nachdem wann und
+mit welchem Anbieter sie zuletzt abgerufen wurde.
+
+`ShareSplitObject::factor()` = `ratioNew / ratioOld`. `ShareSplitRepository`
+folgt exakt dem Muster von `BrokerageRepository`/`DailyValuesRepository`
+(`findByShare()` sortiert nach Datum aufsteigend, `insert()`/`update()`/
+`remove()`/`removeByShare()`, `lastError()`), ergänzt um `existsForDate()`
+als Vorgriff auf die künftige Split-Erfassungsmaske (Phase 3).
+
+`ShareSplitAdjuster` (`app/utils`, zustandslos, vollständig datenbankfrei —
+gleicher Stil wie `PortfolioSeriesCalculator`) ist die zentrale
+Umrechnungslogik:
+
+- `volumeFactor(splits, date)` — Produkt aller `factor()` von Splits mit
+  einem Datum ECHT NACH `date`. Gilt für Transaktionen (`buys`/`sales`), die
+  immer in der Beleg-Skala vorliegen.
+- `priceFactorForHistory(splits, date)` — dieselbe Kumulierung, aber nur über
+  Splits mit `pricesAdjusted() == false`. Ein bereits bereinigter Split zeigt
+  in der Kurshistorie keinen Sprung mehr und darf daher nicht zusätzlich
+  herausgerechnet werden.
+- `adjustedVolume()`, `adjustedTransactionPrice()`, `adjustedHistoryPrice()`
+  als dünne Hüllen um die beiden Faktor-Funktionen.
+
+@note **Grundinvariante:** `Stückzahl × Preis` bleibt über einen Split hinweg
+exakt gleich — ein Split schafft weder Gewinn noch Verlust, er zerlegt oder
+bündelt nur die Stückelung. Einzahlung, Kaufwert, Verkaufserlös, Gebühren,
+Steuern und Dividendensummen bleiben deshalb von einem Split gänzlich
+unberührt; nur Stückzahl und Kurs je Stück werden umgerechnet. Die
+Datenbank speichert dabei durchgehend die Beleg-Wahrheit (Nessies
+Entscheidung 07.08.2026) — `buys`/`sales`/`daily_values` werden bei einem
+erfassten Split NICHT physisch umgeschrieben, die Umrechnung passiert
+ausschliesslich zur Laufzeit. Editier-Dialoge zeigen deshalb künftig immer
+den Beleg mit einem Hinweis auf den Splittag ("Split 20:1 am 18.07.2022 —
+entspricht 100 Stück à 50,15 €"); Grid, Charts und Detailansicht zeigen
+bereinigt.
 
 ---
 
@@ -3296,7 +3354,7 @@ Rechenkern durch seine Datenbankfreiheit bereits threadfähig.
 
 ## Offene Punkte
 
-### Aktiensplits werden nicht behandelt (wichtig, 06.08.2026)
+### Aktiensplits werden nicht behandelt (wichtig, 06.08.2026, Umsetzung begonnen 07.08.2026)
 
 Die Anwendung kennt keine Aktiensplits. Solange nur der heutige Kurs
 betrachtet wird, fällt das nicht auf — sobald aber historische Kurse gegen
@@ -3331,6 +3389,54 @@ nicht mehr hergibt, ist nach dem Löschen verloren), ein Split wird nirgends
 gemeldet und muss selbst bemerkt werden, Aktien mit Update-Typ "Nur Kurs"
 oder "Kein Update" haben gar keinen Abrufweg, und ob eine Quelle überhaupt
 bereinigt liefert, ist je Anbieter unterschiedlich.
+
+**Entscheidungen 07.08.2026 (Nessie):**
+
+1. Die Datenbank behält durchgehend die Beleg-Wahrheit — keine physische
+   Umschreibung von `buys`/`sales`/`daily_values` bei einem erfassten
+   Split. Die Umrechnung auf heutige Stücke passiert ausschliesslich zur
+   Laufzeit über `ShareSplitAdjuster`, siehe "ShareSplitObject /
+   ShareSplitRepository / ShareSplitAdjuster" unter "Repository-Schicht".
+2. Editier-Dialoge zeigen immer den Beleg, mit einem Hinweis auf den
+   Splittag ("Split 20:1 am 18.07.2022 — entspricht 100 Stück à 50,15 €").
+   Grid, Charts und Detailansicht zeigen bereinigt.
+3. `prices_adjusted` wird je Split gespeichert, nicht je Aktie.
+4. Umfang: nur echte Splits und Reverse-Splits. Spin-offs und
+   Kapitalmaßnahmen mit Barkomponente sind fachlich etwas anderes (der Wert
+   ist dabei NICHT invariant) und ausdrücklich nicht Teil dieses Features —
+   siehe "Spin-offs und Kapitalmaßnahmen mit Barkomponente nicht
+   abgedeckt" unten.
+5. Bruchstücke aus Reverse-Splits (Barauszahlung von Spitzen durch die
+   Bank) werden nicht abgebildet — siehe "Bruchstücke bei Reverse-Splits
+   nicht abgedeckt" unten.
+
+**Phasenplan:**
+
+| Phase | Inhalt | Stand |
+| --- | --- | --- |
+| 1 | Schema (`share_splits`), `ShareSplitObject`, `ShareSplitRepository`, `ShareSplitAdjuster` + Tests. Keine sichtbare Änderung. | ✅ umgesetzt 07.08.2026 |
+| 2 | Anwendung in `ShareCalculator`, `ModelPortfolioChart`/`ModelChart` und der FIFO-Verkaufszuteilung (`ModelSaleEdit::addSale()`/`removeSale()` — `buys.volume_sold` liegt in der Beleg-Skala, die Verkaufsmenge kommt in heutiger Skala herein, siehe "SalesForm-Details"). Feldtest mit dem Alphabet-Fall. | offen |
+| 3 | `ShareSplitsForm` (fünfter Stift-Button in `ViewShareEdit`, analog Käufe/Verkäufe/Dividenden/Kosten) + Split-Hinweis in den Anzeigen | offen |
+| 4 | Automatische Nachprüfung des `prices_adjusted`-Zustands nach jedem Tageswert-Abruf (Kurssprung um den Splittag vergleichen) + Startmeldung bei Widerspruch, analog `warnAboutSharesWithoutDailyValues()` | offen |
+
+### Spin-offs und Kapitalmaßnahmen mit Barkomponente nicht abgedeckt (07.08.2026)
+
+Bewusst aus "Aktiensplits werden nicht behandelt" ausgeklammert (Nessies
+Entscheidung 07.08.2026, Punkt 4 dort): Spin-offs (ein Teil der Position
+wird zu einer neuen, eigenständigen Aktie) und Kapitalmaßnahmen mit
+Barkomponente sind fachlich keine reine Stückelungsänderung — anders als
+beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
+Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
+Feature, falls der Fall in einem realen Depot auftritt.
+
+### Bruchstücke bei Reverse-Splits nicht abgedeckt (07.08.2026)
+
+Bewusst aus "Aktiensplits werden nicht behandelt" ausgeklammert (Nessies
+Entscheidung 07.08.2026, Punkt 5 dort): bei einem Reverse-Split zahlt die
+Bank Bruchstücke (Spitzen, die sich nicht glatt zusammenlegen lassen) bar
+aus. `ShareSplitAdjuster` bildet nur die glatte Umrechnung ab; eine solche
+Barkomponente lässt sich mit dem aktuellen Modell nicht abbilden. Eigenes
+Feature, falls der Fall in einem realen Depot auftritt.
 
 ### Diagnose-Knopf hinter einen Debug-Modus legen (06.08.2026)
 

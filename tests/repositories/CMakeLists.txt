@@ -113,3 +113,26 @@ target_link_libraries(tst_dailyvaluesrepository
 set_target_properties(tst_dailyvaluesrepository PROPERTIES AUTOMOC ON)
 
 add_test(NAME tst_dailyvaluesrepository COMMAND tst_dailyvaluesrepository)
+
+# ── ShareSplitRepository tests ────────────────────────────────────────────────
+# Grundlage für die Aktiensplit-Behandlung, Phase 1 (siehe ARCHITECTURE.md,
+# "Offene Punkte", "Aktiensplits werden nicht behandelt"). Gleiches Muster
+# wie tst_dailyvaluesrepository/tst_brokeragerepository — eigene GUID je
+# Zeile statt zusammengesetztem Schlüssel, daher kein Unterschied im
+# CMake-Zuschnitt.
+qt_add_executable(tst_sharesplitrepository tst_sharesplitrepository.cpp
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/ShareSplitRepository.cpp
+)
+
+target_include_directories(tst_sharesplitrepository
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+target_link_libraries(tst_sharesplitrepository
+    PRIVATE Qt6::Test Qt6::Sql Database
+)
+
+set_target_properties(tst_sharesplitrepository PROPERTIES AUTOMOC ON)
+
+add_test(NAME tst_sharesplitrepository COMMAND tst_sharesplitrepository)

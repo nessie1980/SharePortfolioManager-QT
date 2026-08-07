@@ -213,12 +213,34 @@ bool Database::createSchema()
             PRIMARY KEY (share_guid, date)
         ))",
 
+        // ── share_splits ─────────────────────────────────────────────────
+        // Grundlage für die Aktiensplit-Behandlung (ARCHITECTURE.md, "Offene
+        // Punkte", "Aktiensplits werden nicht behandelt"). Eigene GUID je
+        // Split (wie buys/brokerage, nicht wie daily_values' zusammengesetzter
+        // Primärschlüssel) plus UNIQUE(share_guid, date), da zwei Splits
+        // derselben Aktie am selben Tag fachlich keinen Sinn ergeben.
+        // prices_adjusted ist bewusst je Split gesetzt, nicht je Aktie — bei
+        // mehreren Splits kann die Kurshistorie unterschiedlich weit
+        // bereinigt sein.
+        R"(
+        CREATE TABLE IF NOT EXISTS share_splits (
+            guid            TEXT    PRIMARY KEY,
+            share_guid      TEXT    NOT NULL REFERENCES shares(guid) ON DELETE CASCADE,
+            date            TEXT    NOT NULL,
+            ratio_new       REAL    NOT NULL CHECK(ratio_new > 0),
+            ratio_old       REAL    NOT NULL CHECK(ratio_old > 0),
+            prices_adjusted INTEGER DEFAULT 0,
+            comment         TEXT,
+            UNIQUE(share_guid, date)
+        ))",
+
         // ── Indexes ───────────────────────────────────────────────────────
         "CREATE INDEX IF NOT EXISTS idx_buys_share     ON buys(share_guid)",
         "CREATE INDEX IF NOT EXISTS idx_buys_datetime  ON buys(datetime)",
         "CREATE INDEX IF NOT EXISTS idx_sales_share    ON sales(share_guid)",
         "CREATE INDEX IF NOT EXISTS idx_dividends_share ON dividends(share_guid)",
         "CREATE INDEX IF NOT EXISTS idx_daily_date     ON daily_values(date)",
+        "CREATE INDEX IF NOT EXISTS idx_splits_share   ON share_splits(share_guid)",
     };
 
     beginTransaction();

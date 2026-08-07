@@ -30,6 +30,7 @@ ctest --output-on-failure
 ./bin/tst_sharerepository
 ./bin/tst_brokeragerepository
 ./bin/tst_dailyvaluesrepository
+./bin/tst_sharesplitrepository
 ./bin/tst_database
 ./bin/tst_appstartup
 ./bin/tst_iconprovider
@@ -39,6 +40,7 @@ ctest --output-on-failure
 ./bin/tst_documentclassifier
 ./bin/tst_sharecalculator
 ./bin/tst_portfolioseriescalculator
+./bin/tst_sharesplitadjuster
 ./bin/tst_shareupdaterules
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
@@ -55,15 +57,18 @@ ctest --output-on-failure
 ./bin/tst_portfolioimporter
 ```
 
-@note Diese Liste umfasst alle 31 Testziele des Projekts und wurde am
-06.08.2026 vollständig gegen die neun `add_subdirectory(tests/...)`-Aufrufe
-der Root-`CMakeLists.txt` und die darin definierten `qt_add_executable()`-Ziele
-abgeglichen — in beide Richtungen. Anlass war der Vorfall vom 05.08.2026, bei
-dem `tst_sharecalculator` hier aufgeführt war, aber in keiner
-`CMakeLists.txt` stand und deshalb nie gebaut wurde und nie mitlief. Wer ein
-Testziel hinzufügt, trägt es bitte auch hier nach; ein Eintrag ohne
-zugehöriges Ziel ist der gefährlichere der beiden Fehler, weil er Abdeckung
-vortäuscht, die es nicht gibt.
+@note Diese Liste wurde am 06.08.2026 vollständig gegen die neun
+`add_subdirectory(tests/...)`-Aufrufe der Root-`CMakeLists.txt` und die
+darin definierten `qt_add_executable()`-Ziele abgeglichen — in beide
+Richtungen — und umfasste zu diesem Zeitpunkt alle 31 Testziele des
+Projekts; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
+(07.08.2026, Phase 1 der Aktiensplit-Behandlung) sind es 33. Anlass für den
+ursprünglichen Abgleich war der Vorfall vom 05.08.2026, bei dem
+`tst_sharecalculator` hier aufgeführt war, aber in keiner `CMakeLists.txt`
+stand und deshalb nie gebaut wurde und nie mitlief. Wer ein Testziel
+hinzufügt, trägt es bitte auch hier nach; ein Eintrag ohne zugehöriges Ziel
+ist der gefährlichere der beiden Fehler, weil er Abdeckung vortäuscht, die
+es nicht gibt.
 
 ---
 
@@ -159,8 +164,8 @@ Refresh-Flow-Test-Implementierung ist, nicht dieser Vorstufe.
 gelinkt (verhindert MOC-Konflikte).
 
 Die Repository-Tests decken `BuyRepository`, `SaleRepository`, `DividendRepository`,
-`ShareRepository`, `BrokerageRepository` und `DailyValuesRepository` ab — CRUD-Operationen,
-Filterung, Sortierung und Transaktionsverhalten je Repository.
+`ShareRepository`, `BrokerageRepository`, `DailyValuesRepository` und `ShareSplitRepository`
+ab — CRUD-Operationen, Filterung, Sortierung und Transaktionsverhalten je Repository.
 
 @note **Bugfix: `brokerage` fehlte in `tst_salerepository::init()` (16.07.2026,
 siehe ARCHITECTURE.md "SalesForm-Details"):** `test_updateBrokerageGuid` legt
@@ -213,6 +218,23 @@ Gegenstück zu `test_latestDate` — `DailyValuesRepository::earliestDate()` (`M
 liefert bei leerer Tabelle eine ungültige `QDate`, sonst das älteste Datum unabhängig von
 der Einfügereihenfolge. Grundlage für die Anzahl-Kappung im Chart-Tab, siehe
 `tst_chartform.cpp` unten und ARCHITECTURE.md, "ChartForm-Details".
+
+`ShareSplitRepository`-Tests (tst_sharesplitrepository.cpp, neu 07.08.2026, Phase 1
+der Aktiensplit-Behandlung, siehe ARCHITECTURE.md "Offene Punkte"): CRUD plus die
+beiden Besonderheiten des Schemas — eigene GUID je Zeile (anders als bei
+`DailyValuesRepository`) und `UNIQUE(share_guid, date)`.
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_insert_andFindByShare_returnsSplit` | Grundfall: einfügen, laden, alle Felder korrekt |
+| `test_findByShare_orderedByDateAscending` | Zwei Splits → aufsteigend nach Datum |
+| `test_findByShare_noSplits_returnsEmpty` | Aktie ohne Splits → leere Liste |
+| `test_findByGuid_found` / `test_findByGuid_notFound_returnsInvalid` | Einzelabruf per GUID |
+| `test_existsForDate_true` / `test_existsForDate_false` | Vorgriff auf die künftige Erfassungsmaske (Phase 3) |
+| `test_insert_duplicateDate_fails` | `UNIQUE(share_guid, date)` — zweiter Split am selben Tag scheitert |
+| `test_update_changesFields` | Datum, `prices_adjusted` und Kommentar änderbar |
+| `test_remove_deletesSplit` / `test_removeByShare_deletesAllSplitsOfShare` | Löschpfade |
+| `test_deletingShare_cascadesToSplits` | `ON DELETE CASCADE` über `share_guid` — läuft bewusst als letzter Test, da er die Test-Aktie löscht und danach neu anlegt |
 
 ---
 
@@ -2120,6 +2142,43 @@ nur indirekt über `completeProfitLossMarket`/`completeCurValueMarket`, die
 denselben `saleProfitLossMarket`-Rohwert anders verrechnen. Vorbestehende
 Lücke, keine Regression durch diese Iteration, aber jetzt mit höherer
 praktischer Relevanz.
+
+---
+
+### ShareSplitAdjuster (tests/utils/tst_sharesplitadjuster.cpp)
+
+Executable: `tst_sharesplitadjuster`
+Klasse unter Test: `ShareSplitAdjuster` — der Rechenkern der Aktiensplit-
+Behandlung, Phase 1 (siehe ARCHITECTURE.md, "Offene Punkte", "Aktiensplits
+werden nicht behandelt").
+
+Anders als `tst_sharecalculator` braucht dieser Test **keine** Datenbank:
+`ShareSplitAdjuster` ist bewusst zustandslos und datenbankfrei, alle
+Eingangsdaten kommen als `QList<ShareSplitObject>` herein — gleicher Ansatz
+wie `PortfolioSeriesCalculator`. Die Fixture-Werte spiegeln den Alphabet-
+Fall aus der Architektur-Doku: ein Kauf von 5 Stück zu 1.003,00 € am
+18.03.2020, 20:1-Split zum Ex-Tag 18.07.2022.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_volumeFactor_noSplits_returnsOne` | Keine Splits | Faktor 1,0 |
+| `test_volumeFactor_splitAfterDate_applies` | Split nach dem Stichtag | Faktor 20,0 |
+| `test_volumeFactor_splitOnOrBeforeDate_doesNotApply` | Split am/vor dem Stichtag | Faktor bleibt 1,0 — der Beleg des Splittags selbst liegt fachlich vor dem Split |
+| `test_volumeFactor_multipleSplits_cumulate` | Zwei Splits (4:1, dann 20:1), Stichtag vor beiden | Faktor 80,0 (kumuliert) |
+| `test_volumeFactor_dateBetweenTwoSplits_onlyLaterApplies` | Stichtag zwischen den beiden Splits | Faktor 20,0, nicht 80,0 |
+| `test_volumeFactor_reverseSplit_isFractional` | Reverse-Split 1:10 | Faktor 0,1 |
+| `test_volumeFactor_unsortedInput_stillCumulatesCorrectly` | Splits in beliebiger Reihenfolge übergeben | Ergebnis unverändert (80,0) |
+| `test_volumeFactor_dateAfterAllSplits_returnsOne` | Stichtag nach allen Splits | Faktor 1,0 |
+| `test_priceFactorForHistory_unadjustedSplit_applies` | `pricesAdjusted = false` | Faktor 20,0 |
+| `test_priceFactorForHistory_adjustedSplit_doesNotApply` | `pricesAdjusted = true` | Faktor 1,0 — Gegenstück zum Alphabet-Fall |
+| `test_priceFactorForHistory_mixedSplits_onlyUnadjustedCumulate` | Ein bereinigter + ein unbereinigter Split | Nur der unbereinigte trägt bei (20,0, nicht 80,0) |
+| `test_adjustedVolume_scalesUp` | 5 Stück, Faktor 20 | 100,0 |
+| `test_adjustedTransactionPrice_scalesDown` | Alphabet-Fall: 1.003,00 € Beleg-Kurs | 50,15 € |
+| `test_adjustedTransactionPrice_valueInvariant` | Stückzahl × Preis vor/nach Umrechnung | Exakt gleich (Algebra-Invariante) |
+| `test_adjustedTransactionPrice_noSplits_isUnchanged` | Keine Splits | Preis unverändert |
+| `test_adjustedHistoryPrice_unadjustedHistory_isScaledDown` | Alphabet-Fall, Tageswert | 1.003,00 € → 50,15 € |
+| `test_adjustedHistoryPrice_alreadyAdjustedHistory_isUnchanged` | Bereits bereinigte Historie | Kurs unverändert |
+| `test_dateAfterSplit_pricesAndVolumesUnchanged` | Stichtag nach dem Split | Stückzahl und beide Preis-Umrechnungen unverändert |
 
 ---
 

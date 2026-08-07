@@ -19,6 +19,8 @@ set(APP_SOURCES
     models/BrokerageObject.cpp
     models/DailyValuesObject.h
     models/DailyValuesObject.cpp
+    models/ShareSplitObject.h
+    models/ShareSplitObject.cpp
 
     # ── Repositories ──────────────────────────────────────────────────────
     repositories/ShareRepository.h
@@ -33,6 +35,8 @@ set(APP_SOURCES
     repositories/BrokerageRepository.cpp
     repositories/DailyValuesRepository.h
     repositories/DailyValuesRepository.cpp
+    repositories/ShareSplitRepository.h
+    repositories/ShareSplitRepository.cpp
     core/DocumentRootMigrator.h
     core/DocumentRootMigrator.cpp
     core/SingleInstanceGuard.h
@@ -59,6 +63,8 @@ set(APP_SOURCES
     utils/ShareUpdateRules.h
     utils/PortfolioSeriesCalculator.h
     utils/PortfolioSeriesCalculator.cpp
+    utils/ShareSplitAdjuster.h
+    utils/ShareSplitAdjuster.cpp
     utils/PdfTextExtractor.h
     utils/PdfTextExtractor.cpp
     utils/DocumentClassifier.h

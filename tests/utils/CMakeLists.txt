@@ -111,3 +111,26 @@ target_link_libraries(tst_shareupdaterules
 )
 
 add_test(NAME tst_shareupdaterules COMMAND tst_shareupdaterules)
+
+# ── ShareSplitAdjuster tests ────────────────────────────────────────────────────
+# Rechenkern der Aktiensplit-Behandlung, Phase 1 (siehe ARCHITECTURE.md,
+# "Offene Punkte", "Aktiensplits werden nicht behandelt"). Zustandslos und
+# datenbankfrei — ShareSplitObject ist ein reines POCO, daher genügt dessen
+# .cpp, ohne Repository- oder Database-Abhängigkeit (gleiche Begründung wie
+# bei tst_shareupdaterules oben).
+qt_add_executable(tst_sharesplitadjuster tst_sharesplitadjuster.cpp
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/utils/ShareSplitAdjuster.cpp
+)
+
+target_include_directories(tst_sharesplitadjuster
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_sharesplitadjuster PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_sharesplitadjuster
+    PRIVATE Qt6::Test
+)
+
+add_test(NAME tst_sharesplitadjuster COMMAND tst_sharesplitadjuster)
