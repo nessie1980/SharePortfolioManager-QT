@@ -1,9 +1,15 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 //
-// Testet ausschliesslich PresenterPortfolioChart über ein Fake-View/
-// Fake-Model-Paar, analog zu tst_chartform.cpp — keine echte Datenbank, kein
-// QWidget, keine QtCharts-Instanziierung.
+// Zwei Testklassen in einer Executable:
+//
+// - TestPortfolioChartForm testet PresenterPortfolioChart über ein Fake-View/
+//   Fake-Model-Paar, analog zu tst_chartform.cpp — keine echte Datenbank.
+// - TestModelPortfolioChart (07.08.2026, Phase 2a der Aktiensplit-Behandlung)
+//   testet ModelPortfolioChart gegen eine In-Memory-SQLite-Datenbank.
+//
+// Kein QWidget, keine QtCharts-Instanziierung — main() kommt deshalb mit
+// QCoreApplication aus. Die ist aber zwingend, siehe Begründung dort.
 //
 // Die eigentliche Rechenlogik liegt in PortfolioSeriesCalculator und ist dort
 // eigenständig getestet (tests/utils/tst_portfolioseriescalculator.cpp). Hier
@@ -12,6 +18,7 @@
 // aufbaut.
 
 #include <QtTest>
+#include <QCoreApplication>
 #include <QUuid>
 
 #include "../../app/forms/PortfolioChartForm/PresenterPortfolioChart.h"
@@ -633,6 +640,23 @@ private slots:
 
 int main(int argc, char* argv[])
 {
+    // 08.08.2026 (Bugfix): OHNE QCoreApplication verweigert
+    // QSqlDatabase::addDatabase() die Arbeit — es warnt nur
+    // ("QSqlDatabase requires a QCoreApplication") und liefert ein ungültiges
+    // QSqlDatabase zurück. Das anschliessende open() dereferenziert dessen
+    // Null-Zeiger, was einen SIGSEGV statt eines Testfehlers ergibt.
+    //
+    // Der Fehler blieb bis hierher unbemerkt, weil TestPortfolioChartForm
+    // ausschliesslich mit Fake-View und Fake-Model arbeitet und Qt SQL nie
+    // anfasst. Erst TestModelPortfolioChart (ergänzt 07.08.2026 mit Phase 2a
+    // der Aktiensplit-Behandlung) öffnet eine echte Datenbank — die
+    // QCoreApplication hätte damals mitkommen müssen.
+    //
+    // QCoreApplication genügt: diese Datei instanziiert bewusst keine Widgets
+    // und keine QtCharts-Objekte (siehe Dateikopf), und das CMake-Ziel linkt
+    // dementsprechend kein Qt6::Widgets.
+    QCoreApplication app(argc, argv);
+
     int result = 0;
     {
         TestPortfolioChartForm t;
