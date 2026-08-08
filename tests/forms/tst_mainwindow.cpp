@@ -78,6 +78,8 @@
 #include "../../app/forms/ShareEditForm/IModelShareEdit.h"
 #include "../../app/forms/ShareEditForm/ModelShareEdit.h"
 #include "../../app/forms/ShareEditForm/PresenterShareEdit.h"
+#include "../../app/models/ShareSplitObject.h"
+#include "../../app/repositories/ShareSplitRepository.h"
 #include <QDateEdit>
 #include <QTimeEdit>
 #include <QProgressBar>
@@ -193,6 +195,7 @@ public:
     // Configurable return values
     QList<SaleObject>  sales;
     QList<BuyObject>   availableBuys;
+    QList<ShareSplitObject> splits;
     BrokerageObject    brokerage;
     bool               addResult    = true;
     bool               updateResult = true;
@@ -202,9 +205,16 @@ public:
     QString            errorMsg;
 
     // Captured calls
-    bool addSaleCalled    = false;
-    bool updateSaleCalled = false;
-    bool removeSaleCalled = false;
+    bool       addSaleCalled    = false;
+    bool       updateSaleCalled = false;
+    bool       removeSaleCalled = false;
+    SaleObject lastAddedSale;
+    SaleObject lastUpdatedSale;
+    // Von loadAvailableBuysForDepotExcludingSale() zuletzt übergebene GUID —
+    // Aktiensplit-Behandlung, Phase 2c, 07.08.2026 (ARCHITECTURE.md "Offene
+    // Punkte"). mutable, weil die Methode selbst const ist (Interface-Vorgabe).
+    mutable bool    excludingSaleCalled = false;
+    mutable QString lastExcludeSaleGuid;
 
     QList<SaleObject>  loadSales(const QString&)             const override { return sales; }
     ShareObject        loadShare(const QString&)             const override { return ShareObject{}; }
@@ -212,11 +222,21 @@ public:
     QList<BuyObject>   loadAllBuys(const QString&)           const override { return availableBuys; }
     QList<BuyObject>   loadAvailableBuysForDepot(const QString&,
                                                   const QString&) const override { return availableBuys; }
+    QList<BuyObject>   loadAvailableBuysForDepotExcludingSale(
+        const QString&, const QString&, const QString& excludeSaleGuid) const override
+    {
+        excludingSaleCalled = true;
+        lastExcludeSaleGuid = excludeSaleGuid;
+        return availableBuys;
+    }
+    QList<ShareSplitObject> loadSplits(const QString&) const override { return splits; }
     BrokerageObject    loadBrokerage(const QString&)         const override { return brokerage; }
     BrokerageObject    loadBrokerageForBuy(const QString&)   const override { return brokerage; }
 
-    bool addSale(const SaleObject&)         override { addSaleCalled    = true; return addResult;    }
-    bool updateSale(const SaleObject&)      override { updateSaleCalled = true; return updateResult; }
+    bool addSale(const SaleObject& sale)
+        override { addSaleCalled    = true; lastAddedSale   = sale; return addResult;    }
+    bool updateSale(const SaleObject& sale)
+        override { updateSaleCalled = true; lastUpdatedSale = sale; return updateResult; }
     bool removeSale(const QString&)         override { removeSaleCalled = true; return removeResult; }
 
     bool orderNumberExists(const QString&, const QString&, const QString&) const override
@@ -247,6 +267,7 @@ public:
     QString m_docPath;
     QString m_dateTime        = QStringLiteral("2024-06-15T10:00:00");
     bool    m_missingFields   = false;
+    QList<ShareSplitObject> m_splits;
 
     // Captured calls
     bool    populateOverviewCalled   = false;
@@ -258,6 +279,8 @@ public:
     bool    showOverviewTabCalled    = false;
     QString lastError;
     bool    closed                   = false;
+    double  lastKaufwert             = 0.0;
+    double  lastGewinnVerlust        = 0.0;
 
     // IViewSaleEdit — read
     QString dateTime()        const override { return m_dateTime;        }
@@ -279,10 +302,11 @@ public:
     void clearForm()                               override { clearFormCalled = true; }
     void populateAvailableBuys(const QList<BuyObject>&) override {}
     void setAllBuys(const QList<BuyObject>&)       override {}
+    void setSplits(const QList<ShareSplitObject>& splits) override { m_splits = splits; }
 
     void setSaleValue(double)                      override {}
-    void setKaufwert(double)                       override {}
-    void setGewinnVerlust(double)                  override {}
+    void setKaufwert(double value)                  override { lastKaufwert      = value; }
+    void setGewinnVerlust(double value)             override { lastGewinnVerlust = value; }
     void setGesGebuehren(double)                   override {}
     void setTaxSum(double)                         override {}
     void setAuszahlung(double)                     override {}
@@ -6058,6 +6082,100 @@ private slots:
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // ModelSaleEdit — loadAvailableBuysForDepotExcludingSale() / loadSplits()
+    // Aktiensplit-Behandlung, Phase 2c (07.08.2026, siehe ARCHITECTURE.md
+    // "Offene Punkte", "Aktiensplits werden nicht behandelt").
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_modelSaleEdit_loadAvailableBuysForDepotExcludingSale_creditsBackPartialBuy()
+    {
+        // Kauf mit 20 Stück, ein Verkauf von 8 Stück daraus -> 12 verfügbar.
+        // Beim Bearbeiten GENAU dieses Verkaufs muss die "verfügbar"-Liste
+        // die 8 Stück virtuell zurückbuchen, also wieder 20 zeigen.
+        const QString shareGuid = insertTestShare();
+        const BuyObject buy = insertTestBuy(shareGuid, QStringLiteral("depot1"),
+            QStringLiteral("2024-01-10T09:00:00"), 20.0, 100.0);
+
+        ModelSaleEdit model;
+        const SaleObject sale(
+            QStringLiteral("sale-1"), shareGuid, QStringLiteral("depot1"),
+            QStringLiteral("ord-1"), QStringLiteral("2024-06-01T10:00:00"),
+            8.0, 150.0,
+            { SaleBuyDetail(buy.guid(), buy.dateTime(), 8.0, buy.price()) });
+        QVERIFY(model.addSale(sale));
+
+        const QList<BuyObject> normal =
+            model.loadAvailableBuysForDepot(shareGuid, QStringLiteral("depot1"));
+        QCOMPARE(normal.size(), 1);
+        QCOMPARE(normal.first().volume() - normal.first().volumeSold(), 12.0);
+
+        const QList<BuyObject> excluding =
+            model.loadAvailableBuysForDepotExcludingSale(
+                shareGuid, QStringLiteral("depot1"), QStringLiteral("sale-1"));
+        QCOMPARE(excluding.size(), 1);
+        QCOMPARE(excluding.first().volume() - excluding.first().volumeSold(), 20.0);
+    }
+
+    void test_modelSaleEdit_loadAvailableBuysForDepotExcludingSale_restoresFullyConsumedBuy()
+    {
+        // Kauf mit 5 Stück, VOLLSTÄNDIG durch einen einzigen Verkauf
+        // aufgebraucht -> taucht in der normalen "verfügbar"-Liste NICHT
+        // auf. Beim Bearbeiten dieses Verkaufs muss er mit der vollen Menge
+        // zurückgebucht wieder erscheinen — sonst würde die FIFO-
+        // Neuberechnung diesen Kauf fälschlich ignorieren.
+        const QString shareGuid = insertTestShare();
+        const BuyObject buy = insertTestBuy(shareGuid, QStringLiteral("depot1"),
+            QStringLiteral("2024-01-10T09:00:00"), 5.0, 100.0);
+
+        ModelSaleEdit model;
+        const SaleObject sale(
+            QStringLiteral("sale-full"), shareGuid, QStringLiteral("depot1"),
+            QStringLiteral("ord-full"), QStringLiteral("2024-06-01T10:00:00"),
+            5.0, 150.0,
+            { SaleBuyDetail(buy.guid(), buy.dateTime(), 5.0, buy.price()) });
+        QVERIFY(model.addSale(sale));
+
+        QVERIFY(model.loadAvailableBuysForDepot(shareGuid, QStringLiteral("depot1")).isEmpty());
+
+        const QList<BuyObject> excluding =
+            model.loadAvailableBuysForDepotExcludingSale(
+                shareGuid, QStringLiteral("depot1"), QStringLiteral("sale-full"));
+        QCOMPARE(excluding.size(), 1);
+        QCOMPARE(excluding.first().guid(), buy.guid());
+        QCOMPARE(excluding.first().volume() - excluding.first().volumeSold(), 5.0);
+    }
+
+    void test_modelSaleEdit_loadAvailableBuysForDepotExcludingSale_emptyGuid_behavesLikeNormal()
+    {
+        const QString shareGuid = insertTestShare();
+        insertTestBuy(shareGuid, QStringLiteral("depot1"),
+            QStringLiteral("2024-01-10T09:00:00"), 20.0, 100.0);
+
+        ModelSaleEdit model;
+        const QList<BuyObject> normal =
+            model.loadAvailableBuysForDepot(shareGuid, QStringLiteral("depot1"));
+        const QList<BuyObject> excluding =
+            model.loadAvailableBuysForDepotExcludingSale(
+                shareGuid, QStringLiteral("depot1"), QString());
+
+        QCOMPARE(excluding.size(), normal.size());
+        QCOMPARE(excluding.first().volume(), normal.first().volume());
+    }
+
+    void test_modelSaleEdit_loadSplits_returnsInsertedSplit()
+    {
+        const QString shareGuid = insertTestShare();
+        ShareSplitRepository splitRepo;
+        QVERIFY(splitRepo.insert(ShareSplitObject(
+            QStringLiteral("split-1"), shareGuid, QDate(2022, 7, 18), 20.0, 1.0)));
+
+        ModelSaleEdit model;
+        const QList<ShareSplitObject> splits = model.loadSplits(shareGuid);
+        QCOMPARE(splits.size(), 1);
+        QCOMPARE(splits.first().guid(), QStringLiteral("split-1"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // PresenterSaleEdit — via StubView + StubModel
     // ─────────────────────────────────────────────────────────────────────
 
@@ -6239,6 +6357,109 @@ private slots:
 
         QVERIFY(model.updateSaleCalled);
         QVERIFY(!model.addSaleCalled);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Aktiensplit-Behandlung, Phase 2c (07.08.2026, siehe ARCHITECTURE.md
+    // "Offene Punkte") — FIFO-Zuteilung wird beim Bearbeiten des jüngsten
+    // Verkaufs jetzt immer neu berechnet, statt die gespeicherten
+    // SaleBuyDetails unverändert zu übernehmen.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_presenterSaleEdit_onSave_latestSale_recomputesFifoAllocation()
+    {
+        // Der gespeicherte Verkauf zeigt absichtlich auf einen Kauf, der in
+        // den aktuell verfügbaren Käufen unten NICHT vorkommt — nur wenn
+        // onSave() die Zuteilung wirklich neu berechnet (statt die
+        // veraltete zu übernehmen), zeigt das gespeicherte Ergebnis auf den
+        // frischen Kauf.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+
+        const QList<SaleBuyDetail> staleDetails = {
+            SaleBuyDetail(QStringLiteral("stale-buy"),
+                         QStringLiteral("2023-01-01T10:00:00"), 10.0, 999.0)
+        };
+        const SaleObject s(QStringLiteral("s1"), QStringLiteral("share-1"),
+                           QStringLiteral("depot1"), QStringLiteral("ord-s1"),
+                           QStringLiteral("2024-06-15T10:00:00"),
+                           10.0, 150.0, staleDetails);
+        model.sales = { s };
+        model.availableBuys = {
+            BuyObject(QStringLiteral("fresh-buy"), QStringLiteral("share-1"),
+                     QStringLiteral("depot1"), QString(),
+                     QStringLiteral("2024-01-01T10:00:00"), 20.0, 0.0, 100.0)
+        };
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onRowSelected(QStringLiteral("s1"));
+        view.m_volume = 5.0;   // Verkaufsmenge im Formular geändert
+
+        p.onSave();
+
+        QVERIFY(model.updateSaleCalled);
+        QCOMPARE(model.lastUpdatedSale.saleBuyDetails().size(), 1);
+        QCOMPARE(model.lastUpdatedSale.saleBuyDetails().first().buyGuid(),
+                 QStringLiteral("fresh-buy"));
+        QCOMPARE(model.lastUpdatedSale.saleBuyDetails().first().volume(), 5.0);
+    }
+
+    void test_presenterSaleEdit_onSave_latestSale_usesExcludingSaleVariant()
+    {
+        // onSave() muss beim Bearbeiten des jüngsten Verkaufs
+        // loadAvailableBuysForDepotExcludingSale() mit GENAU dessen GUID
+        // aufrufen (Rückbuchung der eigenen, bereits gebuchten Anteile).
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        const SaleObject s = makeSale(QStringLiteral("s1"),
+                                      QStringLiteral("share-1"), 2024);
+        model.sales = { s };
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onRowSelected(QStringLiteral("s1"));
+        model.excludingSaleCalled = false;
+
+        p.onSave();
+
+        QVERIFY(model.excludingSaleCalled);
+        QCOMPARE(model.lastExcludeSaleGuid, QStringLiteral("s1"));
+    }
+
+    void test_presenterSaleEdit_onSave_newSale_doesNotUseExcludingSaleVariant()
+    {
+        // Ein neuer Verkauf hat keinen bestehenden Verkauf, dessen Anteile
+        // zurückgebucht werden müssten.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onSave();
+
+        QVERIFY(!model.excludingSaleCalled);
+    }
+
+    void test_presenterSaleEdit_onRowSelected_latestSale_livePreviewMatchesFifo()
+    {
+        // refreshDerivedValues() muss beim Bearbeiten des jüngsten
+        // Verkaufs live neu rechnen (nicht mehr die gespeicherten Werte
+        // zeigen), sonst weicht die Vorschau während der Eingabe von dem
+        // ab, was onSave() tatsächlich berechnet.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        const SaleObject s = makeSale(QStringLiteral("s1"),
+                                      QStringLiteral("share-1"), 2024);
+        model.sales = { s };
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                     QStringLiteral("depot1"), QString(),
+                     QStringLiteral("2024-01-01T10:00:00"), 20.0, 0.0, 100.0)
+        };
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onRowSelected(QStringLiteral("s1"));
+
+        // view.m_volume ist per Default 10.0 -> Kaufwert = 10 x 100,00 € = 1.000,00 €
+        QVERIFY(qAbs(view.lastKaufwert - 1000.0) < 1e-6);
     }
 
     void test_presenterSaleEdit_onSave_nonLatestSale_callsUpdateSaleDocOnly()

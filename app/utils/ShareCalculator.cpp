@@ -4,9 +4,12 @@
 #include "../repositories/SaleRepository.h"
 #include "../repositories/DividendRepository.h"
 #include "../repositories/BrokerageRepository.h"
+#include "../repositories/ShareSplitRepository.h"
 #include "../models/BuyObject.h"
 #include "../models/SaleObject.h"
 #include "../models/BrokerageObject.h"
+#include "../models/ShareSplitObject.h"
+#include "ShareSplitAdjuster.h"
 
 #include <QList>
 #include <QHash>
@@ -34,10 +37,11 @@ ShareValues ShareCalculator::compute(const QString& guid,
     v.curPrice     = curPrice;
     v.prevDayPrice = prevDayPrice;
 
-    BuyRepository       buyRepo;
-    SaleRepository      saleRepo;
-    DividendRepository  divRepo;
-    BrokerageRepository brokerageRepo;
+    BuyRepository        buyRepo;
+    SaleRepository       saleRepo;
+    DividendRepository   divRepo;
+    BrokerageRepository  brokerageRepo;
+    ShareSplitRepository splitRepo;
 
     // -- Previous day ------------------------------------------------------
     v.prevDayDiff = curPrice - prevDayPrice;
@@ -45,9 +49,10 @@ ShareValues ShareCalculator::compute(const QString& guid,
                     ? (v.prevDayDiff / prevDayPrice * 100.0)
                     : 0.0;
 
-    // -- Load all buys and sales -------------------------------------------
-    const QList<BuyObject>  buys  = buyRepo.findByShare(guid);
-    const QList<SaleObject> sales = saleRepo.findByShare(guid);
+    // -- Load all buys, sales and splits ------------------------------------
+    const QList<BuyObject>         buys   = buyRepo.findByShare(guid);
+    const QList<SaleObject>        sales  = saleRepo.findByShare(guid);
+    const QList<ShareSplitObject>  splits = splitRepo.findByShare(guid);
 
     // -- Held cost basis (current columns) ---------------------------------
     //
@@ -55,6 +60,21 @@ ShareValues ShareCalculator::compute(const QString& guid,
     // omits brokerage; the Depotwert basis includes it. Reduction (Rabatt) is
     // included in both. Brokerage/reduction are attributed proportionally to
     // the still-held fraction of each buy.
+    //
+    // Split-Umrechnung (Phase 2, 07.08.2026, siehe ShareSplitAdjuster.h):
+    // buy.volume()/buy.volumeSold()/buy.price() liegen in der Beleg-Skala des
+    // Kaufs vor (unverändert seit dem Kaufdatum) und werden hier auf die
+    // heutige, nach allen bekannten Splits gültige Skala umgerechnet, BEVOR
+    // irgendetwas berechnet wird — curPrice ist bereits heutige Skala (Live-
+    // Kurs), curValue braucht also einen ebenso umgerechneten Bestand.
+    // volume und volumeSold werden mit demselben, vom Kaufdatum abhängigen
+    // Faktor skaliert, wodurch der Anteil remVol/volume unverändert bleibt
+    // und die bestehende Pro-Lot-Zuordnung von Brokerage/Rabatt exakt
+    // erhalten bleibt. Brokerage und Rabatt sind reine Geldbeträge und werden
+    // NICHT skaliert — ein Split verändert weder Gewinn noch Kosten. Ohne
+    // Splits liefert ShareSplitAdjuster überall den Faktor 1.0 (Division/
+    // Multiplikation mit 1.0 ist bitgenau), das Ergebnis ist also identisch
+    // zum bisherigen Verhalten.
 
     double purchaseValueMarket = 0.0; // held basis, no brokerage, no reduction
     double purchaseValueFinal  = 0.0; // held basis, with brokerage
@@ -67,11 +87,18 @@ ShareValues ShareCalculator::compute(const QString& guid,
         const double buyBrokerage = brk.brokerage();   // 0 if none linked
         const double buyReduction = brk.reduction();
 
-        const double remVol  = buy.volume() - buy.volumeSold();
-        const double frac    = (buy.volume() > 0.0) ? remVol / buy.volume() : 0.0;
+        const double adjVolume     = ShareSplitAdjuster::adjustedVolume(
+            buy.volume(), splits, buy.date());
+        const double adjVolumeSold = ShareSplitAdjuster::adjustedVolume(
+            buy.volumeSold(), splits, buy.date());
+        const double adjPrice      = ShareSplitAdjuster::adjustedTransactionPrice(
+            buy.price(), splits, buy.date());
+
+        const double remVol  = adjVolume - adjVolumeSold;
+        const double frac    = (adjVolume > 0.0) ? remVol / adjVolume : 0.0;
 
         // Complete (Kpl.) Einzahlung: full buy, with brokerage - reduction
-        const double fullBuyValue = roundAway(buy.volume() * buy.price());
+        const double fullBuyValue = roundAway(adjVolume * adjPrice);
         completePurchase       += fullBuyValue + buyBrokerage - buyReduction;
         // Marktwert: no brokerage AND no reduction — Rabatt is a discount on
         // brokerage costs, so it belongs together with "Kosten" and is
@@ -81,7 +108,7 @@ ShareValues ShareCalculator::compute(const QString& guid,
         completePurchaseMarket += fullBuyValue;
 
         if (remVol > 0.0) {
-            const double heldBuyValue  = roundAway(remVol * buy.price());
+            const double heldBuyValue  = roundAway(remVol * adjPrice);
             const double heldBrokerage = roundAway(buyBrokerage * frac);
             const double heldReduction = roundAway(buyReduction * frac);
 
@@ -109,7 +136,14 @@ ShareValues ShareCalculator::compute(const QString& guid,
     double salePayoutMarket = 0.0;
 
     for (const SaleObject& sale : sales) {
-        const double saleValue = roundAway(sale.volume() * sale.salePrice());
+        // Dieselbe Split-Umrechnung wie bei den Käufen, bezogen auf das
+        // Verkaufsdatum — siehe Kommentar oben. sale.brokerage()/reduction()/
+        // taxSum() sind Geldbeträge und bleiben unskaliert.
+        const double adjVolume = ShareSplitAdjuster::adjustedVolume(
+            sale.volume(), splits, sale.date());
+        const double adjPrice  = ShareSplitAdjuster::adjustedTransactionPrice(
+            sale.salePrice(), splits, sale.date());
+        const double saleValue = roundAway(adjVolume * adjPrice);
 
         salePayoutFinal += roundAway(saleValue
                                      - sale.brokerage()

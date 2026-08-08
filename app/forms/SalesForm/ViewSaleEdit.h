@@ -97,6 +97,7 @@ public:
     void clearForm()                                                     override;
     void populateAvailableBuys(const QList<BuyObject>& buys)            override;
     void setAllBuys(const QList<BuyObject>& buys)                       override;
+    void setSplits(const QList<ShareSplitObject>& splits)               override;
 
     void setSaleValue(double value)     override;
     void setKaufwert(double value)      override;
@@ -183,7 +184,9 @@ private:
     // ── Available buys + loaded sale (for Details dialog) ────────────────
     QList<BuyObject>  m_availableBuys;  ///< Käufe mit verbleibendem Volumen (für FIFO-Vorschau)
     QList<BuyObject>  m_allBuys;        ///< Alle Käufe inkl. vollständig verkaufter (für Dok.-Lookup)
+    QList<ShareSplitObject> m_splits;   ///< Splits der Aktie (Phase 2c, 07.08.2026)
     SaleObject        m_loadedSale;   ///< Cached when loadSale() is called; invalid in new-mode.
+    bool              m_isLastSale = false; ///< Aus setButtonStates() — steuert die FIFO-Neuberechnung in onShowDetails()
 
     // ── Action buttons ────────────────────────────────────────────────────
     QPushButton* m_btnAdd    = nullptr;

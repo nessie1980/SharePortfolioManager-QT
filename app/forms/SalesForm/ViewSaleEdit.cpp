@@ -2,6 +2,8 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "ViewSaleEdit.h"
 #include "PresenterSaleEdit.h"
+#include "../../utils/SaleFifoAllocator.h"
+#include "../../utils/ShareSplitAdjuster.h"
 #include "ModelSaleEdit.h"
 #include "../../IconProvider.h"
 #include "../../config/AppSettings.h"
@@ -637,6 +639,11 @@ void ViewSaleEdit::setAllBuys(const QList<BuyObject>& buys)
     m_allBuys = buys;
 }
 
+void ViewSaleEdit::setSplits(const QList<ShareSplitObject>& splits)
+{
+    m_splits = splits;
+}
+
 void ViewSaleEdit::setSaleValue(double value)
 {
     m_saleValue->setText(formatMoney(value));
@@ -1019,6 +1026,12 @@ void ViewSaleEdit::openPdfPreview(const QString& pdfPath)
 
 void ViewSaleEdit::setButtonStates(bool canRemove, bool isLastSale, bool isEdit)
 {
+    // Für onShowDetails(): steuert dort, ob die FIFO-Zuteilung neu berechnet
+    // (jüngster Verkauf, editierbar) oder die gespeicherte Zuteilung gezeigt
+    // wird (älterer, nicht editierbarer Verkauf). Siehe ARCHITECTURE.md,
+    // "Offene Punkte", "Aktiensplits werden nicht behandelt", Phase 2c.
+    m_isLastSale = isLastSale;
+
     m_btnRemove->setEnabled(canRemove);
 
     if (isEdit) {
@@ -1121,18 +1134,40 @@ void ViewSaleEdit::onShowDetails()
 
     QList<DetailRow> rows;
     const bool isEditMode = m_loadedSale.isValid();
+    // Der jüngste Verkauf bleibt bis zum Speichern voll editierbar — die
+    // Details-Vorschau muss deshalb live neu rechnen, sonst weicht sie vom
+    // tatsächlichen Ergebnis von onSave() ab (Aktiensplit-Behandlung,
+    // Phase 2c, 07.08.2026: onSave() berechnet die FIFO-Zuteilung beim
+    // Bearbeiten jetzt ebenfalls neu, siehe ARCHITECTURE.md "Offene
+    // Punkte"). Nur ältere, nicht editierbare Verkäufe zeigen weiterhin die
+    // gespeicherte Zuteilung.
+    const bool useLiveFifo = !isEditMode || m_isLastSale;
 
-    if (isEditMode && !m_loadedSale.saleBuyDetails().isEmpty()) {
+    // Anzeige durchgängig auf heutiger (split-bereinigter) Skala — diese
+    // Ansicht ist eine berechnete Übersicht über ggf. mehrere Lots, keine
+    // Beleg-Abschrift, und nur so bleiben Summen über mehrere Lots hinweg
+    // sinnvoll, auch wenn ein Split zwischen zwei Lots liegt.
+    if (isEditMode && !useLiveFifo) {
+        const QDate   saleDate       = QDateTime::fromString(m_loadedSale.dateTime(), Qt::ISODate).date();
+        const double  loadedSalePrice = m_loadedSale.salePrice();
+        const double  todaySalePrice  = ShareSplitAdjuster::adjustedTransactionPrice(
+            loadedSalePrice, m_splits, saleDate);
+
         for (const SaleBuyDetail& d : m_loadedSale.saleBuyDetails()) {
+            const QDate buyDate = QDateTime::fromString(d.dateTime(), Qt::ISODate).date();
+            const double todayVolume = ShareSplitAdjuster::adjustedVolume(
+                d.volume(), m_splits, buyDate);
+            const double todayBuyPrice = ShareSplitAdjuster::adjustedTransactionPrice(
+                d.buyPrice(), m_splits, buyDate);
+
             DetailRow r;
-            const QDate date = QDateTime::fromString(d.dateTime(), Qt::ISODate).date();
-            r.date       = QLocale().toString(date, QLocale::ShortFormat);
-            r.volume     = d.volume();
-            r.buyPrice   = d.buyPrice();
-            r.fees       = d.brokeragePart();
-            r.reduction  = d.reductionPart();
-            r.buyValue   = d.volume() * d.buyPrice();
-            r.saleValue  = d.volume() * m_loadedSale.salePrice();
+            r.date       = QLocale().toString(buyDate, QLocale::ShortFormat);
+            r.volume     = todayVolume;
+            r.buyPrice   = todayBuyPrice;
+            r.fees       = d.brokeragePart();   // Geldbetrag, unskaliert
+            r.reduction  = d.reductionPart();   // Geldbetrag, unskaliert
+            r.buyValue   = todayVolume * todayBuyPrice;
+            r.saleValue  = todayVolume * todaySalePrice;
             r.profitLoss = r.saleValue - r.buyValue;
             // Dokument: BuyObject per GUID aus m_allBuys nachschlagen (inkl. vollst. verkaufter Käufe)
             const QString guid = d.buyGuid();
@@ -1143,24 +1178,33 @@ void ViewSaleEdit::onShowDetails()
         }
     } else {
         const double curSalePrice = salePrice();
-        double remaining = volume();
-        for (const BuyObject& b : std::as_const(m_availableBuys)) {
-            if (remaining <= 1e-9) break;
-            const double avail = b.volume() - b.volumeSold();
-            if (avail <= 1e-9) continue;
-            const double take = qMin(avail, remaining);
+        const QDate  saleDate     = QDateTime::fromString(dateTime(), Qt::ISODate).date();
+        const double todaySalePrice = ShareSplitAdjuster::adjustedTransactionPrice(
+            curSalePrice, m_splits, saleDate);
+
+        for (const FifoAllocationRow& row :
+             SaleFifoAllocator::allocate(volume(), saleDate, m_availableBuys, m_splits)) {
+            const BuyObject* matchedBuy = nullptr;
+            for (const BuyObject& b : std::as_const(m_availableBuys)) {
+                if (b.guid() == row.buyGuid) { matchedBuy = &b; break; }
+            }
+            const QDate buyDate = matchedBuy ? matchedBuy->date() : saleDate;
+            const double todayVolume = ShareSplitAdjuster::adjustedVolume(
+                row.volume, m_splits, buyDate);
+            const double todayBuyPrice = ShareSplitAdjuster::adjustedTransactionPrice(
+                row.buyPrice, m_splits, buyDate);
+
             DetailRow r;
-            r.date       = b.dateAsStr();
-            r.volume     = take;
-            r.buyPrice   = b.price();
+            r.date       = matchedBuy ? matchedBuy->dateAsStr() : QString();
+            r.volume     = todayVolume;
+            r.buyPrice   = todayBuyPrice;
             r.fees       = 0.0;
             r.reduction  = 0.0;
-            r.buyValue   = take * b.price();
-            r.saleValue  = take * curSalePrice;
+            r.buyValue   = todayVolume * todayBuyPrice;
+            r.saleValue  = todayVolume * todaySalePrice;
             r.profitLoss = r.saleValue - r.buyValue;
-            r.document   = b.document();
+            r.document   = matchedBuy ? matchedBuy->document() : QString();
             rows.append(r);
-            remaining -= take;
         }
     }
 

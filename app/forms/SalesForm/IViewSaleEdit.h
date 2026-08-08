@@ -5,6 +5,7 @@
 #include "../../models/SaleObject.h"
 #include "../../models/BuyObject.h"
 #include "../../models/BrokerageObject.h"
+#include "../../models/ShareSplitObject.h"
 
 #include <QList>
 #include <QString>
@@ -44,6 +45,14 @@ public:
 
     /** Replace the full buy list shown in the buy-allocation widget. */
     virtual void setAllBuys(const QList<BuyObject>& buys) = 0;
+
+    /**
+     * @brief Replace the share's splits, used for split-aware FIFO display
+     * in onShowDetails() (Aktiensplit-Behandlung, Phase 2c, 07.08.2026).
+     * Set once by the Presenter's constructor — splits practically never
+     * change during a dialog session, same pattern as setAllBuys().
+     */
+    virtual void setSplits(const QList<ShareSplitObject>& splits) = 0;
 
     // ── Derived value display ─────────────────────────────────────────────
     virtual void setSaleValue(double value)        = 0;

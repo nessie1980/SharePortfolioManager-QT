@@ -118,7 +118,15 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/repositories/DailyValuesRepository.cpp
     ../../app/core/DocumentRootMigrator.h
     ../../app/core/DocumentRootMigrator.cpp
+    ../../app/models/ShareSplitObject.h
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/ShareSplitRepository.h
+    ../../app/repositories/ShareSplitRepository.cpp
     ../../app/utils/ShareCalculator.cpp
+    ../../app/utils/ShareSplitAdjuster.h
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/SaleFifoAllocator.h
+    ../../app/utils/SaleFifoAllocator.cpp
     ../../app/utils/PortfolioSeriesCalculator.cpp
     ../../app/utils/PdfTextExtractor.h
     ../../app/utils/PdfTextExtractor.cpp
@@ -323,6 +331,14 @@ qt_add_executable(tst_shareeditform tst_shareeditform.cpp
     ../../app/repositories/DividendRepository.cpp
     ../../app/repositories/BrokerageRepository.cpp
     ../../app/repositories/DailyValuesRepository.cpp
+    ../../app/models/ShareSplitObject.h
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/ShareSplitRepository.h
+    ../../app/repositories/ShareSplitRepository.cpp
+    ../../app/utils/ShareSplitAdjuster.h
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/SaleFifoAllocator.h
+    ../../app/utils/SaleFifoAllocator.cpp
     ../../app/utils/PdfTextExtractor.h
     ../../app/utils/PdfTextExtractor.cpp
     ../../app/utils/DocumentClassifier.h
@@ -489,6 +505,19 @@ add_test(NAME tst_sharedetailsform COMMAND tst_sharedetailsform)
 # SaleObject werden nicht gebraucht, da FakeModelChart::latestBuy()/
 # latestSale() direkt ChartReferenceInfo zurückgeben, ohne echte Buy-/
 # SaleObject-Instanzen.
+#
+# Bewusst OHNE Datenbanktests für ModelChart selbst (Aktiensplit-Behandlung,
+# Phase 2b, 07.08.2026, siehe ARCHITECTURE.md "Offene Punkte"): eine
+# DB-gestützte Prüfung von ModelChart::loadDailyValues()/heldVolumeSeries()/
+# etc. würde Qt6::Sql, Database und sämtliche Repositories neu in dieses
+# bewusst schlanke, DB-freie Ziel hineinziehen. Die Split-Umrechnung selbst
+# nutzt ausschliesslich bereits unabhängig getestete ShareSplitAdjuster-
+# Funktionen (siehe tst_sharesplitadjuster.cpp) nach demselben, in
+# ModelPortfolioChart bereits DB-getesteten Muster (siehe
+# TestModelPortfolioChart in tst_portfoliochartform.cpp). Eine eigene
+# DB-gestützte ModelChart-Testabdeckung wäre ein sinnvoller eigener
+# Testziel-Zuschnitt (analog tst_sharecalculator), aber ein separater
+# Schritt, keine Voraussetzung für diese Phase.
 # ─────────────────────────────────────────────────────────────────────────────
 
 qt_add_executable(tst_chartform tst_chartform.cpp
@@ -603,8 +632,16 @@ add_test(NAME tst_documentssettingsform COMMAND tst_documentssettingsform)
 # Anders als tst_chartform braucht dieses Ziel Qt6::Sql und die Database-
 # Bibliothek: der Presenter ruft PortfolioSeriesCalculator auf, der für die
 # Rundung ShareCalculator::roundAway() verwendet, und ShareCalculator.cpp
-# bindet die Repositories ein. Der Test selbst rührt keine Datenbank an — es
-# sind reine Link-Abhängigkeiten (siehe tests/utils/CMakeLists.txt).
+# bindet die Repositories ein — seit Phase 2 der Aktiensplit-Behandlung
+# (07.08.2026, siehe ARCHITECTURE.md "Offene Punkte") zusätzlich
+# ShareSplitRepository/ShareSplitObject/ShareSplitAdjuster. TestPortfolio-
+# ChartForm selbst rührt keine Datenbank an (reine Fake-basierte Presenter-
+# Tests) — seit Phase 2b (07.08.2026) läuft in derselben Datei zusätzlich
+# TestModelPortfolioChart gegen eine echte In-Memory-SQLite-Datenbank, um
+# ModelPortfolioChart::loadPortfolioInput() direkt zu prüfen; daher auch
+# ModelPortfolioChart.cpp selbst sowie ShareObject/ShareRepository und
+# DailyValuesObject/DailyValuesRepository als Quellen (vorher nicht nötig, da
+# TestPortfolioChartForm ausschliesslich über FakeModelPortfolioChart lief).
 # ─────────────────────────────────────────────────────────────────────────────
 qt_add_executable(tst_portfoliochartform tst_portfoliochartform.cpp
     ../../app/forms/PortfolioChartForm/PortfolioChartTypes.h
@@ -612,15 +649,27 @@ qt_add_executable(tst_portfoliochartform tst_portfoliochartform.cpp
     ../../app/forms/PortfolioChartForm/IModelPortfolioChart.h
     ../../app/forms/PortfolioChartForm/PresenterPortfolioChart.h
     ../../app/forms/PortfolioChartForm/PresenterPortfolioChart.cpp
+    ../../app/forms/PortfolioChartForm/ModelPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/ModelPortfolioChart.cpp
+    ../../app/models/ShareObject.cpp
     ../../app/models/BuyObject.cpp
     ../../app/models/SaleObject.cpp
     ../../app/models/BrokerageObject.cpp
     ../../app/models/DividendObject.cpp
+    ../../app/models/DailyValuesObject.cpp
+    ../../app/repositories/ShareRepository.cpp
     ../../app/repositories/BuyRepository.cpp
     ../../app/repositories/SaleRepository.cpp
     ../../app/repositories/BrokerageRepository.cpp
     ../../app/repositories/DividendRepository.cpp
+    ../../app/repositories/DailyValuesRepository.cpp
+    ../../app/models/ShareSplitObject.h
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/ShareSplitRepository.h
+    ../../app/repositories/ShareSplitRepository.cpp
     ../../app/utils/ShareCalculator.cpp
+    ../../app/utils/ShareSplitAdjuster.h
+    ../../app/utils/ShareSplitAdjuster.cpp
     ../../app/utils/PortfolioSeriesCalculator.cpp
 )
 

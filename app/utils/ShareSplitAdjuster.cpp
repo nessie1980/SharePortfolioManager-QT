@@ -58,3 +58,12 @@ double ShareSplitAdjuster::adjustedHistoryPrice(double price,
     const double factor = priceFactorForHistory(splits, date);
     return (factor > 0.0) ? (price / factor) : price;
 }
+
+// -- belegVolume ---------------------------------------------------------------
+
+double ShareSplitAdjuster::belegVolume(double volumeToday, const QList<ShareSplitObject>& splits,
+                                       const QDate& date)
+{
+    const double factor = volumeFactor(splits, date);
+    return (factor > 0.0) ? (volumeToday / factor) : volumeToday;
+}

@@ -41,6 +41,7 @@ ctest --output-on-failure
 ./bin/tst_sharecalculator
 ./bin/tst_portfolioseriescalculator
 ./bin/tst_sharesplitadjuster
+./bin/tst_salefifoallocator
 ./bin/tst_shareupdaterules
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
@@ -62,7 +63,8 @@ ctest --output-on-failure
 darin definierten `qt_add_executable()`-Ziele abgeglichen — in beide
 Richtungen — und umfasste zu diesem Zeitpunkt alle 31 Testziele des
 Projekts; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
-(07.08.2026, Phase 1 der Aktiensplit-Behandlung) sind es 33. Anlass für den
+(07.08.2026, Phase 1 der Aktiensplit-Behandlung) waren es 33, seit
+`tst_salefifoallocator` (07.08.2026, Phase 2c) sind es 34. Anlass für den
 ursprünglichen Abgleich war der Vorfall vom 05.08.2026, bei dem
 `tst_sharecalculator` hier aufgeführt war, aber in keiner `CMakeLists.txt`
 stand und deshalb nie gebaut wurde und nie mitlief. Wer ein Testziel
@@ -1481,10 +1483,20 @@ die jeweiligen Interfaces ohne echte UI oder Datenbank.
 `StubModelSaleEdit` implementiert alle Methoden von `IModelSaleEdit` inkl.
 `loadAllBuys()` (gibt `availableBuys` zurück) und `loadBrokerageForBuy()`
 (gibt `brokerage` zurück) — beide delegieren auf die konfigurierbaren
-Stub-Member ohne DB-Zugriff.
+Stub-Member ohne DB-Zugriff. Seit Phase 2c der Aktiensplit-Behandlung
+(07.08.2026) zusätzlich `loadAvailableBuysForDepotExcludingSale()` (gibt
+ebenfalls `availableBuys` zurück, erfasst aber zusätzlich Aufruf und
+übergebene GUID in `excludingSaleCalled`/`lastExcludeSaleGuid` — mutable,
+da die Methode selbst `const` ist) und `loadSplits()` (gibt `splits`
+zurück). `addSale()`/`updateSale()` erfassen das übergebene `SaleObject`
+zusätzlich in `lastAddedSale`/`lastUpdatedSale`, damit Tests die tatsächlich
+berechneten `SaleBuyDetails` prüfen können.
 
 `StubViewSaleEdit` implementiert `setAllBuys()` als No-op — der Aufruf
 durch den Presenter im Konstruktor wird damit ohne Seiteneffekt absorbiert.
+`setSplits()` speichert die übergebenen Splits in `m_splits`. `setKaufwert()`/
+`setGewinnVerlust()` erfassen den zuletzt übergebenen Wert in
+`lastKaufwert`/`lastGewinnVerlust` (Phase 2c, für Tests der Live-FIFO-Vorschau).
 
 ---
 
@@ -1508,6 +1520,10 @@ ModelSaleEdit (Datenbanktests):
 | `test_modelSaleEdit_loadSales_orderedByDate` | Verkäufe nach Datum aufsteigend | `dateTime[0]` < `dateTime[1]` |
 | `test_modelSaleEdit_loadAllBuys_includesSoldOut` | `loadAllBuys()` gibt auch vollst. verkaufte Käufe zurück | Alle Käufe inkl. `volumeSold == volume` enthalten |
 | `test_modelSaleEdit_loadBrokerageForBuy_returnsBrokerage` | `loadBrokerageForBuy()` gibt das Brokerage des Kaufs zurück | `brokerageGuid` korrekt |
+| `test_modelSaleEdit_loadAvailableBuysForDepotExcludingSale_creditsBackPartialBuy` | Phase 2c, 07.08.2026: Kauf mit 20 Stück, 8 davon durch den zu bearbeitenden Verkauf verkauft | normal: 12 verfügbar; mit Ausschluss: wieder 20 |
+| `test_modelSaleEdit_loadAvailableBuysForDepotExcludingSale_restoresFullyConsumedBuy` | Kauf durch GENAU diesen Verkauf vollständig aufgebraucht (fehlt in der normalen Liste) | mit Ausschluss: Kauf erscheint wieder, volle Menge verfügbar |
+| `test_modelSaleEdit_loadAvailableBuysForDepotExcludingSale_emptyGuid_behavesLikeNormal` | Leere `excludeSaleGuid` | Ergebnis identisch zu `loadAvailableBuysForDepot()` |
+| `test_modelSaleEdit_loadSplits_returnsInsertedSplit` | `loadSplits()` liest über `ShareSplitRepository` | Eingefügter Split wird zurückgegeben |
 
 @note `test_modelSaleEdit_loadAllBuys_includesSoldOut` und
 `test_modelSaleEdit_loadBrokerageForBuy_returnsBrokerage` sind dokumentiert
@@ -1532,6 +1548,10 @@ PresenterSaleEdit (via StubView + StubModel):
 | `test_presenterSaleEdit_onSave_newSale_jumpsToOverviewTab` | Neuer Verkauf → Übersicht-Tab | `showOverviewTab()` aufgerufen |
 | `test_presenterSaleEdit_onSave_missingFields_showsError` | Pflichtfelder fehlen → Fehler | `view.lastError` nicht leer, kein `addSale` |
 | `test_presenterSaleEdit_onSave_latestSale_callsUpdateSale` | Jüngster Verkauf edit → `updateSale()` | `model.updateSaleCalled` = true |
+| `test_presenterSaleEdit_onSave_latestSale_recomputesFifoAllocation` | Phase 2c, 07.08.2026: gespeicherte `SaleBuyDetails` zeigen absichtlich auf einen nicht mehr verfügbaren Kauf, Verkaufsmenge im Formular geändert | `model.lastUpdatedSale.saleBuyDetails()` zeigt auf den frisch berechneten, tatsächlich verfügbaren Kauf |
+| `test_presenterSaleEdit_onSave_latestSale_usesExcludingSaleVariant` | `onSave()` muss beim Bearbeiten `loadAvailableBuysForDepotExcludingSale()` mit der GUID des bearbeiteten Verkaufs aufrufen | `model.excludingSaleCalled` = true, `lastExcludeSaleGuid` korrekt |
+| `test_presenterSaleEdit_onSave_newSale_doesNotUseExcludingSaleVariant` | Neuer Verkauf hat nichts zurückzubuchen | `model.excludingSaleCalled` = false |
+| `test_presenterSaleEdit_onRowSelected_latestSale_livePreviewMatchesFifo` | Live-Vorschau (`refreshDerivedValues()`) muss beim jüngsten Verkauf dieselbe FIFO-Zuteilung zeigen wie `onSave()` später tatsächlich berechnet | `view.lastKaufwert` = Anteile × Kaufkurs des zugeteilten Kaufs |
 | `test_presenterSaleEdit_onSave_nonLatestSale_callsUpdateSaleDocOnly` | Älterer Verkauf → `updateSale()` (nur Dokument) | `model.updateSaleCalled` = true, kein `addSale` |
 | `test_presenterSaleEdit_onSave_nonLatestSale_jumpsToOverviewTab` | Älterer Verkauf gespeichert → Übersicht-Tab | `showOverviewTab()` aufgerufen |
 | `test_presenterSaleEdit_onSave_nonLatestSale_emitsDataChanged` | Älterer Verkauf gespeichert → Signal | `dataChanged` emittiert |
@@ -1642,9 +1662,14 @@ zum bereits abgedeckten `populateOverview`-Muster
 `test_viewSaleEdit_populateOverview_docDashWhenNoPath`). Neue Tests wuerden
 keinen zusaetzlichen Mehrwert bringen.
 
-Der Dokumentpfad-Lookup im Edit-Modus verwendet `m_allBuys` (alle Kaeufe inkl.
-vollstaendig verkaufter) — befuellt durch `setAllBuys()` im Presenter-Konstruktor.
-Dadurch koennen auch Kaeufe mit `volumeSold == volume` korrekt nachgeschlagen werden.
+Der Dokumentpfad-Lookup für ältere, nicht editierbare Verkäufe verwendet
+`m_allBuys` (alle Käufe inkl. vollständig verkaufter) — befüllt durch
+`setAllBuys()` im Presenter-Konstruktor. Dadurch können auch Käufe mit
+`volumeSold == volume` korrekt nachgeschlagen werden. Für neue Verkäufe und
+für das Bearbeiten des jüngsten Verkaufs (seit Phase 2c der
+Aktiensplit-Behandlung, 07.08.2026, siehe ARCHITECTURE.md "SalesForm-
+Details") läuft der Lookup stattdessen über `m_availableBuys`, befüllt über
+`loadAvailableBuysForDepotExcludingSale()`.
 
 ---
 
@@ -2097,6 +2122,17 @@ Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
 | `test_depotwert_saleProfitLossFinal_matchesRealizedWhenFullySold` | Wie `test_marktwert_fullySold` (gleiche Fixture) | `saleProfitLossFinal == completeProfitLossMarket` (Algebra-Invariante, held = 0), `salePayoutFinal` (1292,00) |
 | `test_marktwert_noSales` | keine Verkäufe | reine unrealisierte Entwicklung, `Kpl. Marktwert == curValue` |
 | `test_prevDay_diffAndPct` | Vortagswerte | `prevDayDiff`, `prevDayPct` |
+| `test_split_heldVolumeAndCurValueUseTodayScale` | Aktiensplit Phase 2a, 07.08.2026: Kauf vor einem 20:1-Split (Alphabet-Fixture, 5 Stück à 1.003,00 €), keine Verkäufe | `volume` (100,0), `curValue`/`purchaseValue` (5.015,00), `profitLoss` (0,00) |
+| `test_split_reverseSplit_scalesDownHeldVolume` | Reverse-Split 1:10 (100 Stück à 5,00 € → 10 Stück à 50,00 €) | `volume` (10,0), `curValue`/`purchaseValue` (500,00) |
+| `test_split_realizedAndHeldValuesUseTodayScale` | Kauf vor dem Split (teilverkauft in Beleg-Skala), Verkauf danach — Bestands- **und** realisierte Seite in einer split-übergreifenden Position | `volume` (60,0), `curValue` (3.300,00), `purchaseValue` (3.000,00), `profitLoss` (300,00), `saleProfitLoss` (400,00), `completePurchaseMarket` (5.000,00), `completeProfitLossMarket` (700,00), `completeCurValueMarket` (5.700,00) |
+| `test_split_brokerageStaysUnscaled` | Brokerage ist ein Geldbetrag, nicht stückbezogen — nur die Pro-Lot-Fraktion nutzt die split-bereinigten Stückzahlen | `purchaseValueFinal` (3.012,00 = heldBuyValue 3.000,00 + heldBrokerage round(20,00×0,6)=12,00) |
+
+@note **Rückwärtskompatibilität:** Alle Tests oberhalb dieser Zeile legen
+keine Splits an und decken damit ab, dass `ShareCalculator::compute()` ohne
+gespeicherte Splits bitgenau dasselbe Ergebnis liefert wie vor der
+Split-Umrechnung (Faktor 1,0 überall, Division/Multiplikation mit 1,0 ist in
+IEEE 754 exakt) — kein einziger bestehender Test musste für Phase 2a
+angepasst werden.
 
 `TwoLineDelegate` und `CenterIconDelegate` sind Header-only ohne `Q_OBJECT` —
 kein eigenständiger Test nötig.
@@ -2179,6 +2215,35 @@ Fall aus der Architektur-Doku: ein Kauf von 5 Stück zu 1.003,00 € am
 | `test_adjustedHistoryPrice_unadjustedHistory_isScaledDown` | Alphabet-Fall, Tageswert | 1.003,00 € → 50,15 € |
 | `test_adjustedHistoryPrice_alreadyAdjustedHistory_isUnchanged` | Bereits bereinigte Historie | Kurs unverändert |
 | `test_dateAfterSplit_pricesAndVolumesUnchanged` | Stichtag nach dem Split | Stückzahl und beide Preis-Umrechnungen unverändert |
+
+---
+
+### SaleFifoAllocator (tests/utils/tst_salefifoallocator.cpp)
+
+Executable: `tst_salefifoallocator`
+Klasse unter Test: `SaleFifoAllocator` — die gemeinsame, split-bewusste
+FIFO-Verkaufszuteilung, Phase 2c der Aktiensplit-Behandlung (07.08.2026,
+siehe ARCHITECTURE.md "Offene Punkte"). Ersetzt die vormals dreifach
+duplizierte FIFO-Schleife in `PresenterSaleEdit`/`ViewSaleEdit`.
+
+Wie `tst_sharesplitadjuster` zustandslos und datenbankfrei — `BuyObject.cpp`
+wird nur wegen dessen Konstruktor gebraucht. Die split-übergreifenden
+Fixture-Werte sind gegen eine unabhängige Python-Simulation der
+Zuteilungslogik gegengerechnet.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_allocate_singleBuy_fullyCovers` | Ein Kauf deckt die Verkaufsmenge vollständig | 1 Zeile, Volumen = Verkaufsmenge |
+| `test_allocate_multipleBuys_fifoOrder` | Zwei Käufe, älterer zuerst voll, Rest vom jüngeren | 2 Zeilen, `10,0` dann `5,0` |
+| `test_allocate_insufficientVolume_stopsWhenExhausted` | Weniger verfügbar als nachgefragt | 1 Zeile, Rest bleibt offen (unverändertes Altverhalten) |
+| `test_allocate_fullyConsumedBuy_isSkipped` | Ein Kauf mit `volumeSold == volume` | Wird übersprungen, nur der offene Kauf erscheint |
+| `test_allocate_zeroSaleVolume_returnsEmpty` | Verkaufsmenge 0 | Leeres Ergebnis |
+| `test_allocate_emptyAvailableBuys_returnsEmpty` | Keine verfügbaren Käufe | Leeres Ergebnis |
+| `test_allocate_splitBetweenBuyAndSale_scalesToBuysBelegSkala` | Kauf vor, Verkauf nach einem 20:1-Split | Zugeteiltes Volumen in der Beleg-Skala des Kaufs (2,0 statt 40,0) |
+| `test_allocate_splitBetweenBuyAndSale_valueInvariant` | Derselbe Fall | Euro-Wert (Volumen × Kaufkurs) bleibt exakt 2.000,00 € |
+| `test_allocate_reverseSplitBetweenBuyAndSale` | Reverse-Split 1:10 zwischen Kauf und Verkauf | Zugeteiltes Volumen 90,0 (Beleg-Skala) |
+| `test_allocate_multipleBuysAcrossSplitBoundary` | Ein Kauf vor, einer nach demselben Split | Beide Zeilen korrekt in ihrer jeweils eigenen Beleg-Skala |
+| `test_allocate_noSplits_matchesLegacyBehavior` | Ohne Splits | Bitgenau wie die ursprüngliche, unskalierte FIFO-Schleife |
 
 ---
 
@@ -2953,3 +3018,25 @@ Die presenter-seitige Begrenzung muss unabhängig davon greifen.
 | `test_buildWarningText_joinsNames` | Mehrere Namen | Kommagetrennt |
 | `test_buildRangeInfo_withoutPointsShowsOnlyRange` | Ohne Punkte | Nur Zeitraum, kein Entwicklungsteil |
 | `test_buildRangeInfo_usesLastPoint` | Mit Punkten | Werte des letzten Punkts, lokalisiert formatiert |
+
+---
+
+### ModelPortfolioChart (tests/forms/tst_portfoliochartform.cpp, Klasse TestModelPortfolioChart)
+
+Executable weiterhin `tst_portfoliochartform` — Aktiensplit-Behandlung,
+Phase 2b (07.08.2026, siehe ARCHITECTURE.md "Offene Punkte"). Anders als
+`TestPortfolioChartForm` oben läuft diese Klasse gegen eine echte
+In-Memory-SQLite-Datenbank; die Datei hat deshalb seit dieser Phase einen
+eigenen, mehrklassigen `main()` (Muster wie `tst_mainwindow.cpp`) statt
+`QTEST_MAIN`. Geprüft wird, dass `ModelPortfolioChart::loadPortfolioInput()`
+Splits beim Laden tatsächlich anwendet — die Rechenlogik selbst ist bereits
+eigenständig in `tst_portfolioseriescalculator.cpp` und
+`tst_sharesplitadjuster.cpp` getestet.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_loadPortfolioInput_noSplits_matchesRawValues` | Keine Splits | Kauf und Tageswert unverändert |
+| `test_loadPortfolioInput_split_scalesBuyAndPriceToTodayScale` | Alphabet-Fixture: Kauf und Tageswert vor einem 20:1-Split, beide unbereinigt gespeichert | Beide landen auf derselben heutigen Skala (100 Stück à 50,15 €) |
+| `test_loadPortfolioInput_split_saleAfterSplitStaysInTodayScale` | Verkauf nach dem Split | Werte unverändert, keine weitere Umrechnung nötig |
+| `test_loadPortfolioInput_split_costsStayUnscaled` | Brokerage-Kosten trotz Split | Betrag bleibt exakt 9,90 € |
+| `test_loadPortfolioInput_reverseSplit_scalesDown` | Reverse-Split 1:10 | 100 Stück à 5,00 € → 10 Stück à 50,00 € |

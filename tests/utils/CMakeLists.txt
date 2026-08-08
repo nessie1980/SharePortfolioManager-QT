@@ -25,20 +25,24 @@ add_test(NAME tst_documentclassifier COMMAND tst_documentclassifier)
 # nie gebaut und lief nie mit, obwohl TESTING.md ihn unter den ausführbaren
 # Tests auffuehrt. Aufgefallen beim Anlegen von tst_portfolioseriescalculator.
 #
-# ShareCalculator::compute() liest Käufe, Verkäufe, Brokerage und Dividenden
-# frisch aus den Repositories, daher braucht das Ziel die Repository- und
-# Model-Quellen sowie die Database-Bibliothek. Der Test selbst arbeitet gegen
-# eine In-Memory-SQLite-Datenbank.
+# ShareCalculator::compute() liest Käufe, Verkäufe, Brokerage, Dividenden und
+# (seit Phase 2 der Aktiensplit-Behandlung, 07.08.2026) Splits frisch aus den
+# Repositories, daher braucht das Ziel die Repository- und Model-Quellen
+# sowie die Database-Bibliothek. Der Test selbst arbeitet gegen eine
+# In-Memory-SQLite-Datenbank.
 qt_add_executable(tst_sharecalculator tst_sharecalculator.cpp
     ../../app/models/BuyObject.cpp
     ../../app/models/SaleObject.cpp
     ../../app/models/BrokerageObject.cpp
     ../../app/models/DividendObject.cpp
+    ../../app/models/ShareSplitObject.cpp
     ../../app/repositories/BuyRepository.cpp
     ../../app/repositories/SaleRepository.cpp
     ../../app/repositories/BrokerageRepository.cpp
     ../../app/repositories/DividendRepository.cpp
+    ../../app/repositories/ShareSplitRepository.cpp
     ../../app/utils/ShareCalculator.cpp
+    ../../app/utils/ShareSplitAdjuster.cpp
 )
 
 target_include_directories(tst_sharecalculator
@@ -59,19 +63,24 @@ add_test(NAME tst_sharecalculator COMMAND tst_sharecalculator)
 # datenbankfrei — alle Eingangsdaten kommen als einfache Structs herein. Die
 # Repository- und Model-Quellen hängen nur deshalb mit dran, weil
 # PortfolioSeriesCalculator für die Rundung ShareCalculator::roundAway()
-# verwendet und ShareCalculator.cpp die Repositories einbindet. Das ist
-# bewusst so: eine zweite Rundungsimplementierung wäre die schlechtere
-# Alternative, weil die Cent-Semantik projektweit identisch bleiben muss.
+# verwendet und ShareCalculator.cpp die Repositories einbindet — seit Phase 2
+# der Aktiensplit-Behandlung (07.08.2026) zusätzlich ShareSplitRepository/
+# ShareSplitObject/ShareSplitAdjuster. Das ist bewusst so: eine zweite
+# Rundungsimplementierung wäre die schlechtere Alternative, weil die
+# Cent-Semantik projektweit identisch bleiben muss.
 qt_add_executable(tst_portfolioseriescalculator tst_portfolioseriescalculator.cpp
     ../../app/models/BuyObject.cpp
     ../../app/models/SaleObject.cpp
     ../../app/models/BrokerageObject.cpp
     ../../app/models/DividendObject.cpp
+    ../../app/models/ShareSplitObject.cpp
     ../../app/repositories/BuyRepository.cpp
     ../../app/repositories/SaleRepository.cpp
     ../../app/repositories/BrokerageRepository.cpp
     ../../app/repositories/DividendRepository.cpp
+    ../../app/repositories/ShareSplitRepository.cpp
     ../../app/utils/ShareCalculator.cpp
+    ../../app/utils/ShareSplitAdjuster.cpp
     ../../app/utils/PortfolioSeriesCalculator.cpp
 )
 
@@ -134,3 +143,29 @@ target_link_libraries(tst_sharesplitadjuster
 )
 
 add_test(NAME tst_sharesplitadjuster COMMAND tst_sharesplitadjuster)
+
+# ── SaleFifoAllocator tests ──────────────────────────────────────────────────────
+# Split-bewusste FIFO-Verkaufszuteilung, Phase 2c der Aktiensplit-Behandlung
+# (07.08.2026, siehe ARCHITECTURE.md "Offene Punkte"). Ersetzt die vormals
+# dreifach duplizierte FIFO-Schleife in PresenterSaleEdit/ViewSaleEdit.
+# Zustandslos und datenbankfrei, gleiche Begründung wie bei
+# tst_sharesplitadjuster oben — BuyObject.cpp wird nur wegen dessen
+# Konstruktor gebraucht, keine Repository- oder Database-Abhängigkeit.
+qt_add_executable(tst_salefifoallocator tst_salefifoallocator.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/SaleFifoAllocator.cpp
+)
+
+target_include_directories(tst_salefifoallocator
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_salefifoallocator PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_salefifoallocator
+    PRIVATE Qt6::Test
+)
+
+add_test(NAME tst_salefifoallocator COMMAND tst_salefifoallocator)

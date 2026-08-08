@@ -7,6 +7,7 @@
 #include "../../repositories/BuyRepository.h"
 #include "../../repositories/BrokerageRepository.h"
 #include "../../repositories/ShareRepository.h"
+#include "../../repositories/ShareSplitRepository.h"
 
 /**
  * @brief Concrete model for the "Verkäufe" dialog.
@@ -30,6 +31,13 @@ public:
     QList<BuyObject>   loadAvailableBuysForDepot(const QString& shareGuid,
                                                  const QString& depotNumber) const;
 
+    QList<BuyObject>   loadAvailableBuysForDepotExcludingSale(
+        const QString& shareGuid,
+        const QString& depotNumber,
+        const QString& excludeSaleGuid) const override;
+
+    QList<ShareSplitObject> loadSplits(const QString& shareGuid) const override;
+
     bool addSale(const SaleObject& sale)       override;
     bool updateSale(const SaleObject& sale)    override;
     bool removeSale(const QString& saleGuid)   override;
@@ -44,9 +52,10 @@ public:
     QString lastError() const override { return m_lastError; }
 
 private:
-    SaleRepository      m_saleRepo;
-    BuyRepository       m_buyRepo;
-    BrokerageRepository m_brokerageRepo;
-    ShareRepository     m_shareRepo;
-    mutable QString     m_lastError;
+    SaleRepository       m_saleRepo;
+    BuyRepository        m_buyRepo;
+    BrokerageRepository  m_brokerageRepo;
+    ShareRepository      m_shareRepo;
+    ShareSplitRepository m_splitRepo;
+    mutable QString      m_lastError;
 };

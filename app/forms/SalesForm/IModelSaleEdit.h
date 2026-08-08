@@ -6,6 +6,7 @@
 #include "../../models/BuyObject.h"
 #include "../../models/BrokerageObject.h"
 #include "../../models/ShareObject.h"
+#include "../../models/ShareSplitObject.h"
 
 #include <QList>
 #include <QString>
@@ -40,6 +41,31 @@ public:
      */
     virtual QList<BuyObject>   loadAvailableBuysForDepot(const QString& shareGuid,
                                                          const QString& depotNumber) const = 0;
+
+    /**
+     * @brief Wie loadAvailableBuysForDepot(), aber die Anteile eines bereits
+     * gespeicherten Verkaufs werden vorher virtuell zurückgebucht.
+     *
+     * Für die FIFO-Neuberechnung beim Bearbeiten des jüngsten Verkaufs
+     * (Aktiensplit-Behandlung, Phase 2c, 07.08.2026, siehe ARCHITECTURE.md
+     * "Offene Punkte") — buy.volumeSold() spiegelt in der Datenbank bis zum
+     * tatsächlichen Speichern noch den ALTEN Verkauf wider; ohne die
+     * Rückbuchung würde ein bearbeiteter Verkauf gegen einen künstlich
+     * verkleinerten verfügbaren Bestand FIFO-zugeteilt.
+     *
+     * @param shareGuid       GUID der Aktie.
+     * @param depotNumber     Depotfilter, leer = kein Filter.
+     * @param excludeSaleGuid GUID des zu bearbeitenden Verkaufs. Leer =
+     *        keine Rückbuchung (Verhalten identisch zu
+     *        loadAvailableBuysForDepot()).
+     */
+    virtual QList<BuyObject>   loadAvailableBuysForDepotExcludingSale(
+        const QString& shareGuid,
+        const QString& depotNumber,
+        const QString& excludeSaleGuid) const = 0;
+
+    /** Load all splits for a share, ordered by date ascending. */
+    virtual QList<ShareSplitObject> loadSplits(const QString& shareGuid) const = 0;
 
     /** Load the brokerage linked to a specific sale. */
     virtual BrokerageObject    loadBrokerage(const QString& saleGuid) const = 0;

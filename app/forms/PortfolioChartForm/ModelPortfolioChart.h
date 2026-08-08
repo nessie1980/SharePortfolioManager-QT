@@ -10,6 +10,7 @@
 #include "../../repositories/DividendRepository.h"
 #include "../../repositories/BrokerageRepository.h"
 #include "../../repositories/DailyValuesRepository.h"
+#include "../../repositories/ShareSplitRepository.h"
 
 /**
  * @brief Produktionsimplementierung von IModelPortfolioChart, gestützt auf die
@@ -31,4 +32,5 @@ private:
     DividendRepository    m_dividendRepo;
     BrokerageRepository   m_brokerageRepo;
     DailyValuesRepository m_dailyValuesRepo;
+    ShareSplitRepository  m_splitRepo;
 };

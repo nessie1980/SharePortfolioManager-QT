@@ -6,6 +6,7 @@
 #include "IModelSaleEdit.h"
 #include "../../config/DocumentsConfig.h"
 #include "../../utils/PdfTextExtractor.h"
+#include "../../utils/SaleFifoAllocator.h"
 #include "../../libs/parser/src/Parser.h"
 
 #include <QObject>

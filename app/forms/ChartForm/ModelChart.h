@@ -7,6 +7,7 @@
 #include "../../repositories/DailyValuesRepository.h"
 #include "../../repositories/BuyRepository.h"
 #include "../../repositories/SaleRepository.h"
+#include "../../repositories/ShareSplitRepository.h"
 
 /**
  * @brief Production implementation of IModelChart, backed by the SQLite
@@ -40,4 +41,5 @@ private:
     DailyValuesRepository m_dailyValuesRepo;
     BuyRepository         m_buyRepo;
     SaleRepository        m_saleRepo;
+    ShareSplitRepository  m_splitRepo;
 };

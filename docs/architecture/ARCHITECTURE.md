@@ -140,8 +140,9 @@ tst_documentclassifier  ← DocumentsConfig + DocumentClassifier, linkt Parser
 tst_sharecalculator     \
 tst_portfolioseriescalculator| ← alle Repositories + ShareCalculator, Database, Qt6::Sql
 tst_sharesplitadjuster  ← nur Qt6::Test + ShareSplitObject — zustandslos, datenbankfrei, kein QApplication
-tst_overviewtabwidget   ← OverviewTabWidget + ShareCalculator + alle Repositories
-tst_portfoliochartform  ← PortfolioChartForm-Trio + PortfolioSeriesCalculator + alle Repositories
+tst_salefifoallocator   ← nur Qt6::Test + BuyObject, ShareSplitObject — zustandslos, datenbankfrei, kein QApplication
+tst_overviewtabwidget   ← nur OverviewTabWidget, keine DB, kein ShareCalculator (korrigiert 07.08.2026)
+tst_portfoliochartform  ← PortfolioChartForm-Trio + ModelPortfolioChart + PortfolioSeriesCalculator + alle Repositories (zwei Testklassen seit Phase 2b, 07.08.2026 — TestPortfolioChartForm + TestModelPortfolioChart, eigener main() statt QTEST_MAIN)
 tst_documentssettingsform ← DocumentsSettingsForm + DocumentRootMigrator + AppSettings
 tst_traysettingsform    ← TraySettingsForm + AppSettings, IconProvider
 tst_appstartup / tst_iconprovider / tst_singleinstanceguard  ← AppStartup, IconProvider bzw. SingleInstanceGuard
@@ -152,9 +153,9 @@ tst_xmlportfolioparser / tst_portfoliovalidator / tst_portfolioimporter  ← too
 @note Diese Aufstellung wurde am 06.08.2026 vollständig gegen alle neun
 `tests/`-Unterverzeichnisse abgeglichen und umfasste zu diesem Zeitpunkt alle
 31 Testziele; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
-(07.08.2026, Phase 1 der Aktiensplit-Behandlung) sind es 33. Die
-vollständige Startbefehl-Liste steht in TESTING.md, "Einzelnen Test direkt
-starten".
+(07.08.2026, Phase 1 der Aktiensplit-Behandlung) waren es 33, seit
+`tst_salefifoallocator` (07.08.2026, Phase 2c) sind es 34. Die vollständige
+Startbefehl-Liste steht in TESTING.md, "Einzelnen Test direkt starten".
 
 ---
 
@@ -596,8 +597,16 @@ Verkaufs-Übersicht) + rechte PDF-Vorschau. Feste Größe 1300 × 820 px.
   verfügbare Käufe ältester → jüngster Kauf (ISO-8601-lexikographische Sortierung via
   `BuyRepository::findByShare` ORDER BY datetime ASC).
 - Depotauswahl-Wechsel → `onDepotNumberEdited()` → `populateAvailableBuys()` neu laden.
-- Beim Laden eines bestehenden Verkaufs: Depot des Verkaufs → `loadAvailableBuysForDepot` mit diesem Depot.
-- Neuer Verkauf: automatische FIFO-Zuteilung beim Speichern über Depot-gefilterte Käufe.
+- Beim Laden eines bestehenden Verkaufs: Depot des Verkaufs → `loadAvailableBuysForDepot` mit
+  diesem Depot — bzw. `loadAvailableBuysForDepotExcludingSale` mit diesem Depot UND der GUID
+  des geladenen Verkaufs (siehe unten).
+- Neuer Verkauf ODER Bearbeitung des jüngsten Verkaufs: FIFO-Zuteilung über `SaleFifoAllocator`
+  (Phase 2c der Aktiensplit-Behandlung, 07.08.2026) — wird bei jedem Speichern frisch berechnet,
+  auch beim Bearbeiten (Bugfix 07.08.2026: vorher übernahm der Edit-Zweig unverändert die
+  gespeicherten `SaleBuyDetails`, selbst bei geänderter Verkaufsmenge). Die Ausgangsliste kommt
+  beim Bearbeiten über `loadAvailableBuysForDepotExcludingSale()`, die die eigenen, bereits
+  gebuchten Anteile des Verkaufs zunächst virtuell zurückbucht (siehe "SaleFifoAllocator und die
+  FIFO-Verkaufszuteilung" oben).
 - Details-Button (neben "Gekaufter Kaufwert"): immer aktiv (Neu-Modus, Edit-Modus, älterer Verkauf).
   Öffnet `onShowDetails()` — einen modalen Read-only-Dialog mit zwei GroupBoxen.
 
@@ -609,13 +618,18 @@ Anteile, Kaufsumme (= totBuyVal), Kosten, Rabatt und Gesamt (= totBuyVal + totFe
 (Dok.-Zelle im Footer leer). Spaltenbreiten per `sectionResized` synchronisiert
 (initiale Übertragung per `QTimer::singleShot(0)` nach erstem Layout-Durchlauf).
 
-Spaltenwerte pro Zeile:
+Spaltenwerte pro Zeile (seit Phase 2c, 07.08.2026, durchgängig auf heutiger/
+split-bereinigter Skala — dieser Dialog ist eine berechnete Übersicht über
+ggf. mehrere Lots, keine Beleg-Abschrift; nur so bleiben Summen über mehrere
+Lots hinweg sinnvoll, auch wenn ein Split zwischen zwei Lots liegt):
 
 | Spalte | Wert |
 | ------ | ------ |
-| Kaufsumme | `volume × buyPrice` (= `buyValue`) |
-| Kosten | anteilige Brokerage des Kaufs (`brokeragePart`) |
-| Gesamt | `buyValue + fees - reduction` |
+| Anteile | `ShareSplitAdjuster::adjustedVolume(...)` des zugeteilten Anteils |
+| Kaufkurs | `ShareSplitAdjuster::adjustedTransactionPrice(...)` des Kaufkurses |
+| Kaufsumme | Anteile × Kaufkurs (beide bereits heutige Skala) |
+| Kosten | anteilige Brokerage des Kaufs (`brokeragePart`) — Geldbetrag, unskaliert |
+| Gesamt | Kaufsumme + Kosten − Rabatt |
 
 Dok.-Spalte: zeigt das Icon des Kauf-Dokuments (PDF/Word/Excel, identische
 Icon-Logik wie Jahres-Tab der Verkaufsübersicht). Kein Dokument → `"-"`.
@@ -628,12 +642,12 @@ Dokument-Pfad-Lookup:
 
 | Modus | Quelle |
 | ------ | ------ |
-| Edit | `SaleBuyDetail::buyGuid()` → Suche in `m_allBuys` → `BuyObject::document()` |
-| Vorschau | `BuyObject::document()` direkt aus `m_availableBuys` |
+| Älterer, nicht editierbarer Verkauf | `SaleBuyDetail::buyGuid()` → Suche in `m_allBuys` → `BuyObject::document()` |
+| Neuer Verkauf / Bearbeitung des jüngsten Verkaufs | `FifoAllocationRow::buyGuid` → Suche in `m_availableBuys` → `BuyObject::document()` |
 
-Im Edit-Modus wird `m_allBuys` verwendet (nicht `m_availableBuys`), da beim ersten
-Verkauf ein Kauf vollständig verbraucht sein kann (`volumeSold == volume`) und
-damit nicht mehr in `m_availableBuys` erscheint.
+Im ersten Fall wird `m_allBuys` verwendet (nicht `m_availableBuys`), da ein
+Kauf vollständig verbraucht sein kann (`volumeSold == volume`) und damit
+nicht mehr in `m_availableBuys` erscheint.
 
 GroupBox "Übersicht Gewinn/Verlust-Rechnung" — einzeilige Kästchen-Anzeige
 mit je einem normalen Label (Bezeichner) und einem fetten Label (Zahlenwert):
@@ -651,15 +665,18 @@ Berechnung:
 Das G/V-Kästchen erhält einen farbigen Hintergrund (grün = Gewinn, rot = Verlust);
 Bezeichner-Label und Wert-Label sind beide in der entsprechenden Farbe eingefärbt.
 
-Zwei Modi des Dialogs:
+Zwei Modi des Dialogs (seit Phase 2c, 07.08.2026, um den jüngsten Verkauf
+erweitert — vorher war "Edit" gleichbedeutend mit "ein Verkauf ist geladen",
+jetzt zusätzlich davon abhängig, ob dieser Verkauf noch editierbar ist):
 
 | Modus | Bedingung | Datenquelle |
 | ------ | ------ | ------ |
-| Edit | `m_loadedSale.isValid()` | gespeicherte `SaleBuyDetails` aus gecachtem `SaleObject` — exakte DB-Daten |
-| Vorschau | `m_loadedSale` ungültig | Live-FIFO-Berechnung aus `m_availableBuys` |
+| Gespeichert | `m_loadedSale.isValid() && !m_isLastSale` (älterer, gesperrter Verkauf) | gespeicherte `SaleBuyDetails` aus gecachtem `SaleObject` — exakte DB-Daten |
+| Live-FIFO | kein Verkauf geladen ODER `m_isLastSale` (neuer Verkauf bzw. jüngster, editierbarer Verkauf) | `SaleFifoAllocator::allocate()` über `m_availableBuys` |
 
 `m_loadedSale` (privates `SaleObject`-Member in `ViewSaleEdit`) wird in `loadSale()` gesetzt
-und in `clearForm()` auf einen leeren Standardwert zurückgesetzt.
+und in `clearForm()` auf einen leeren Standardwert zurückgesetzt. `m_isLastSale` wird in
+`setButtonStates()` mitgeführt (Presenter übergibt es dort ohnehin für die Feld-Sperrung).
 
 #### Edit-Modi:
 
@@ -2773,12 +2790,18 @@ Alle 7 Repositories sind implementiert: `ShareRepository`, `BuyRepository`,
 Verbindungsregel: Immer `QSqlDatabase::database(Database::connectionName())` —
 niemals `QSqlDatabase::database()` ohne Argument (gibt ungültige Default-Verbindung).
 
-### ShareSplitObject / ShareSplitRepository / ShareSplitAdjuster (Phase 1 der Aktiensplit-Behandlung, 07.08.2026)
+### ShareSplitObject / ShareSplitRepository / ShareSplitAdjuster (Aktiensplit-Behandlung, Phase 1: 07.08.2026, Phase 2a/2b/2c: 07.08.2026)
 
 Grundlage für den offenen Punkt "Aktiensplits werden nicht behandelt" (siehe
-"Offene Punkte" unten). Reine Datenmodell- und Rechenschicht ohne jede
-sichtbare Änderung am laufenden Programm — die Anwendung in
-`ShareCalculator`, den Chart-Modellen und `ModelSaleEdit` folgt in Phase 2.
+"Offene Punkte" unten). Phase 1 legte reines Datenmodell und Rechenkern ohne
+jede sichtbare Änderung an; Phase 2a wendet den Rechenkern in
+`ShareCalculator` an (siehe eigenen Absatz unten), Phase 2b in den
+Chart-Modellen `ModelPortfolioChart`/`ModelChart` (ebenfalls eigener Absatz
+unten), Phase 2c in der FIFO-Verkaufszuteilung (`SaleFifoAllocator`,
+ebenfalls eigener Absatz unten) — damit ist die Umrechnung an allen Stellen
+angewendet, an denen Käufe, Verkäufe oder Tageswerte in Berechnungen
+einfliessen. Offen bleiben nur noch Phase 3 (Erfassungsmaske für Splits)
+und Phase 4 (automatische Nachprüfung des `prices_adjusted`-Zustands).
 
 `share_splits` (Schema siehe oben): eigene GUID je Split, wie bei
 `BuyObject`/`BrokerageObject` — nicht wie bei `DailyValuesObject` mit
@@ -2823,6 +2846,132 @@ ausschliesslich zur Laufzeit. Editier-Dialoge zeigen deshalb künftig immer
 den Beleg mit einem Hinweis auf den Splittag ("Split 20:1 am 18.07.2022 —
 entspricht 100 Stück à 50,15 €"); Grid, Charts und Detailansicht zeigen
 bereinigt.
+
+#### Anwendung in ShareCalculator (Phase 2a, 07.08.2026)
+
+`ShareCalculator::compute()` lädt die Splits der Aktie zusätzlich über ein
+eigenes `ShareSplitRepository`-Member und rechnet `volume`, `volumeSold` und
+`price` jedes Kaufs bzw. jedes Verkaufs vor jeder weiteren Berechnung über
+`ShareSplitAdjuster` auf die heutige Skala um — `curPrice`/`prevDayPrice`
+sind bereits heutige Skala (Live-Kurs), `curValue` braucht also einen ebenso
+umgerechneten Bestand. `volume` und `volumeSold` eines Kaufs werden mit
+demselben, vom Kaufdatum abhängigen Faktor skaliert, wodurch der Anteil
+`remVol/volume` — und damit die bestehende Pro-Lot-Zuordnung von
+Brokerage/Rabatt aus "SalesForm-Details"/"BuysForm-Details" — unverändert
+bleibt. Brokerage, Rabatt und Steuern sind reine Geldbeträge und werden
+nicht skaliert.
+
+Ohne gespeicherte Splits liefert `ShareSplitAdjuster` überall den Faktor
+1,0; Division/Multiplikation mit 1,0 ist in IEEE 754 bitgenau, das Verhalten
+ist für alle bestehenden Portfolios also exakt identisch zum Stand vor
+dieser Änderung — bestätigt durch die vollständig unveränderten
+Bestandstests in `tst_sharecalculator.cpp`.
+
+#### Anwendung in ModelPortfolioChart / ModelChart (Phase 2b, 07.08.2026)
+
+Beide Modelle bekommen ein eigenes `ShareSplitRepository`-Member, exakt wie
+`ShareCalculator` in Phase 2a. Die Umrechnung passiert ausschliesslich
+innerhalb der Modelle — an `IModelChart`/`IModelPortfolioChart` ändert sich
+nichts, der Presenter erwartet ohnehin fertige, korrekte Werte und weiss
+nichts von Splits. `PortfolioSeriesCalculator` bleibt dadurch vollständig
+unangetastet: er bekommt bereits split-bereinigte `PortfolioBuyEvent`/
+`PortfolioSaleEvent`/`PortfolioPriceEvent`-Werte herein und bleibt so
+zustandslos und split-unbewusst, wie er ohnehin schon dokumentiert ist
+("Das Laden übernimmt ModelPortfolioChart").
+
+`ModelPortfolioChart::loadPortfolioInput()`: pro Aktie werden die Splits
+einmal geladen, dann `PortfolioBuyEvent`/`PortfolioSaleEvent` über
+`ShareSplitAdjuster::adjustedVolume()`/`adjustedTransactionPrice()`
+umgerechnet (Datum = jeweiliges Kauf-/Verkaufsdatum) und
+`PortfolioPriceEvent` über `adjustedHistoryPrice()`. Dividenden
+(`payoutWithTaxes`) und Kosten (`brokerageReduction`) sind Geldbeträge und
+bleiben unangetastet.
+
+`ModelChart`: `heldVolumeSeries()` rechnet jeden Kauf/Verkauf vor der
+Summierung um — sonst genau der ursprüngliche Alphabet-Bug (Bestand springt
+am Splittag). `latestBuy()`/`latestSale()` und `buysInRange()`/
+`salesInRange()` rechnen den Kaufpreis (und bei den Range-Varianten auch die
+im Hover-Tooltip gezeigte Stückzahl) um. `loadDailyValues()` gibt für jeden
+Tageswert ein neu konstruiertes `DailyValuesObject` mit über
+`adjustedHistoryPrice()` umgerechneten OHLC-Werten zurück.
+
+@note **Randentscheidung zum Handelsvolumen:** `daily_values.volume`
+("Gehandelte Anteile", eigene Chart-Serie) wird mit demselben
+`priceFactorForHistory`-Faktor umgerechnet wie die Kurse — Annahme:
+Handelsvolumen kommt vom selben Datenfeed wie die Kurse und hat denselben
+Bereinigungszustand. Es gibt dafür kein eigenes `prices_adjusted`-Flag.
+Ohne diese Umrechnung stünde am Splittag ein Sprung im Volumen-Chart, der
+optisch genau das Symptom wäre, das diese Funktion beheben soll.
+
+Ohne gespeicherte Splits ist das Verhalten beider Modelle bitgenau identisch
+zum Stand vor dieser Änderung (Faktor 1,0 überall).
+
+**Testabdeckung bewusst asymmetrisch:** `ModelPortfolioChart` hat eine neue
+Testklasse `TestModelPortfolioChart` in `tst_portfoliochartform.cpp`
+bekommen, die gegen eine echte In-Memory-SQLite-Datenbank läuft (die
+Link-Abhängigkeiten für Qt6::Sql/Database waren dort ohnehin schon vorhanden,
+siehe "Build-Struktur"). Für `ModelChart` wurde bewusst darauf verzichtet:
+`tst_chartform` ist als DB-freies Ziel angelegt (nur Fakes, kein Qt6::Sql,
+keine Database-Bibliothek), und eine echte DB-Testabdeckung hätte diese
+Trennung für das gesamte Ziel aufgehoben. Die Split-Umrechnung in
+`ModelChart` nutzt ausschliesslich dieselben, bereits unabhängig getesteten
+`ShareSplitAdjuster`-Funktionen nach demselben, in `ModelPortfolioChart`
+bereits DB-getesteten Muster — eine eigene DB-Testabdeckung für `ModelChart`
+wäre ein sinnvoller eigener Testziel-Zuschnitt (analog `tst_sharecalculator`),
+aber ein separater Schritt.
+
+#### SaleFifoAllocator und die FIFO-Verkaufszuteilung (Phase 2c, 07.08.2026)
+
+`app/utils/SaleFifoAllocator.h` — zustandslos, vollständig datenbankfrei,
+gleicher Stil wie `ShareSplitAdjuster`/`PortfolioSeriesCalculator`. Ersetzt
+die vormals dreifach duplizierte FIFO-Zuteilungsschleife in
+`PresenterSaleEdit::onSave()`, `PresenterSaleEdit::refreshDerivedValues()`
+(Live-Vorschau) und `ViewSaleEdit::onShowDetails()` (Details-Dialog).
+
+`SaleFifoAllocator::allocate(saleVolume, saleDate, availableBuysOldestFirst,
+splits)` rechnet Verkaufsmenge und jede Kauf-Restmenge intern über
+`ShareSplitAdjuster::adjustedVolume()` auf die heutige Skala um (die
+gemeinsame Vergleichsbasis, unabhängig davon, wie viele Splits zwischen
+Kauf- und Verkaufsdatum liegen), und rechnet das je Kauf zugeteilte Stück
+über die neue Umkehrfunktion `ShareSplitAdjuster::belegVolume()` wieder
+zurück auf DESSEN EIGENE Beleg-Skala. `FifoAllocationRow.volume` liegt damit
+konsequent in der Beleg-Skala des referenzierten Kaufs — passt direkt zu
+`buyPrice` (`buy.price()`, unverändert) und `ModelSaleEdit::addSale()`/
+`updateSale()`/`removeSale()` können dadurch **unverändert** bleiben
+(`buy.volumeSold() += detail.volume()` bzw. `-=` rechnet weiterhin richtig,
+egal ob ein Split zwischen Kauf und Verkauf liegt).
+
+Zwei neue `IModelSaleEdit`-Methoden versorgen die Zuteilung mit ihren
+Eingaben:
+
+- `loadSplits(shareGuid)` — reiner Passthrough zu `ShareSplitRepository`.
+- `loadAvailableBuysForDepotExcludingSale(shareGuid, depotNumber,
+  excludeSaleGuid)` — wie `loadAvailableBuysForDepot()`, bucht aber die
+  Anteile von `excludeSaleGuid` vorher virtuell zurück. Notwendig, weil
+  `buy.volumeSold()` in der Datenbank bis zum tatsächlichen Speichern noch
+  den ALTEN Verkauf widerspiegelt — ohne die Rückbuchung würde eine
+  FIFO-Neuberechnung beim Bearbeiten gegen einen künstlich verkleinerten
+  Bestand rechnen. Ein Kauf, den der bearbeitete Verkauf bereits
+  vollständig aufgebraucht hat und der deshalb NICHT in der
+  "verfügbar"-Liste steht, wird mit der zurückgebuchten Restmenge wieder
+  aufgenommen — sonst würde er bei der Neuzuteilung fälschlich fehlen.
+
+@note **Bugfix mit erledigt (Nessies Entscheidung 07.08.2026):**
+`PresenterSaleEdit::onSave()` übernahm beim Bearbeiten des jüngsten
+Verkaufs bisher unverändert die gespeicherten `SaleBuyDetails`, selbst wenn
+sich die Verkaufsmenge im Formular geändert hatte — ein von Splits
+unabhängiger, vorbestehender Bug. Die FIFO-Zuteilung wird jetzt in jedem
+Fall frisch berechnet (`onSave()`, `refreshDerivedValues()` als Live-
+Vorschau, `ViewSaleEdit::onShowDetails()`), sobald der bearbeitete Verkauf
+der jüngste ist. Für ältere, nicht editierbare Verkäufe bleibt es bei der
+gespeicherten Zuteilung, da deren Felder ohnehin gesperrt sind.
+
+`ViewSaleEdit::onShowDetails()` zeigt seither durchgängig auf heutiger
+(split-bereinigter) Skala an — dieser Dialog ist eine berechnete Übersicht
+über ggf. mehrere Lots, keine Beleg-Abschrift, und nur so bleiben Summen
+über mehrere Lots hinweg sinnvoll, auch wenn ein Split zwischen zwei Lots
+liegt. `IViewSaleEdit::setSplits()` versorgt die View einmalig (im
+Presenter-Konstruktor, analog `setAllBuys()`) mit den Splits der Aktie.
 
 ---
 
@@ -3415,7 +3564,9 @@ bereinigt liefert, ist je Anbieter unterschiedlich.
 | Phase | Inhalt | Stand |
 | --- | --- | --- |
 | 1 | Schema (`share_splits`), `ShareSplitObject`, `ShareSplitRepository`, `ShareSplitAdjuster` + Tests. Keine sichtbare Änderung. | ✅ umgesetzt 07.08.2026 |
-| 2 | Anwendung in `ShareCalculator`, `ModelPortfolioChart`/`ModelChart` und der FIFO-Verkaufszuteilung (`ModelSaleEdit::addSale()`/`removeSale()` — `buys.volume_sold` liegt in der Beleg-Skala, die Verkaufsmenge kommt in heutiger Skala herein, siehe "SalesForm-Details"). Feldtest mit dem Alphabet-Fall. | offen |
+| 2a | Anwendung in `ShareCalculator` — Grid, Footer und `ShareDetailsForm` rechnen jetzt split-bereinigt. | ✅ umgesetzt 07.08.2026 |
+| 2b | Anwendung in `ModelPortfolioChart`/`ModelChart` — Depotwert- und Aktien-Chart rechnen jetzt beide split-bereinigt. | ✅ umgesetzt 07.08.2026 |
+| 2c | FIFO-Verkaufszuteilung (`PresenterSaleEdit`/`ModelSaleEdit`). Neue gemeinsame Klasse `SaleFifoAllocator` ersetzt die vormals dreifach duplizierte Zuteilungslogik; Edit-Zweig berechnet FIFO beim Bearbeiten des jüngsten Verkaufs jetzt neu, statt gespeicherte `SaleBuyDetails` unverändert zu übernehmen. | ✅ umgesetzt 07.08.2026 |
 | 3 | `ShareSplitsForm` (fünfter Stift-Button in `ViewShareEdit`, analog Käufe/Verkäufe/Dividenden/Kosten) + Split-Hinweis in den Anzeigen | offen |
 | 4 | Automatische Nachprüfung des `prices_adjusted`-Zustands nach jedem Tageswert-Abruf (Kurssprung um den Splittag vergleichen) + Startmeldung bei Widerspruch, analog `warnAboutSharesWithoutDailyValues()` | offen |
 

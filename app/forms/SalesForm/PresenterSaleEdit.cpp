@@ -29,6 +29,9 @@ PresenterSaleEdit::PresenterSaleEdit(IViewSaleEdit*   view,
     m_view->populateAvailableBuys(m_model->loadAvailableBuys(shareGuid));
     // All buys (incl. fully sold) for document lookup in the Details dialog
     m_view->setAllBuys(m_model->loadAllBuys(shareGuid));
+    // Splits der Aktie — einmalig, siehe IViewSaleEdit::setSplits() (Phase 2c
+    // der Aktiensplit-Behandlung, 07.08.2026, ARCHITECTURE.md "Offene Punkte").
+    m_view->setSplits(m_model->loadSplits(shareGuid));
 
     reloadOverview();
     m_view->clearForm();
@@ -73,38 +76,32 @@ void PresenterSaleEdit::onSave()
         ? m_currentSaleGuid
         : QUuid::createUuid().toString(QUuid::WithoutBraces);
 
-    // Reconstruct SaleBuyDetails from existing sale (edit) or empty (new)
-    // For new sales the buy details are built from the available buys displayed
-    // in the Details dialog — for now we create a single auto-assigned detail
-    // from the oldest available buy(s) in FIFO order.
+    // FIFO-Zuteilung immer frisch berechnen — sowohl für neue Verkäufe als
+    // auch beim vollständigen Bearbeiten des jüngsten Verkaufs (07.08.2026,
+    // Nessies Entscheidung: die vorherige Fassung übernahm beim Bearbeiten
+    // unverändert die gespeicherten SaleBuyDetails, auch wenn sich die
+    // Verkaufsmenge im Formular geändert hatte — siehe ARCHITECTURE.md,
+    // "Offene Punkte", "Aktiensplits werden nicht behandelt", Phase 2c).
+    // An dieser Stelle ist isEdit nur dann true, wenn zugleich m_isLastSale
+    // gilt — der nicht-jüngste Zweig oben hat bereits per return verlassen.
+    //
+    // Beim Bearbeiten müssen die vom BISHERIGEN Verkauf beanspruchten
+    // Anteile zunächst virtuell zurückgebucht werden: buy.volumeSold() in
+    // der DB spiegelt bis zum tatsächlichen Speichern noch den alten
+    // Verkauf wider, siehe loadAvailableBuysForDepotExcludingSale().
+    const QList<BuyObject> available = isEdit
+        ? m_model->loadAvailableBuysForDepotExcludingSale(
+              m_shareGuid, m_view->depotNumber(), m_currentSaleGuid)
+        : m_model->loadAvailableBuysForDepot(m_shareGuid, m_view->depotNumber());
+
+    const QDate saleDate = QDateTime::fromString(m_view->dateTime(), Qt::ISODate).date();
+    const QList<ShareSplitObject> splits = m_model->loadSplits(m_shareGuid);
+
     QList<SaleBuyDetail> buyDetails;
-    if (isEdit) {
-        // Preserve existing buy details (only document/brokerage changed)
-        for (const SaleObject& s : std::as_const(m_sales)) {
-            if (s.guid() == m_currentSaleGuid) {
-                buyDetails = s.saleBuyDetails();
-                break;
-            }
-        }
-    } else {
-        // Auto-assign FIFO: distribute sold volume across available buys
-        // from the same depot, oldest first.
-        double remaining = m_view->volume();
-        const QList<BuyObject> available =
-            m_model->loadAvailableBuysForDepot(m_shareGuid,
-                                               m_view->depotNumber());
-        for (const BuyObject& b : available) {
-            if (remaining <= 1e-9) break;
-            const double avail = b.volume() - b.volumeSold();
-            if (avail <= 1e-9) continue;
-            const double take = qMin(avail, remaining);
-            buyDetails.append(SaleBuyDetail(
-                b.guid(),
-                b.dateTime(),
-                take,
-                b.price()));
-            remaining -= take;
-        }
+    for (const FifoAllocationRow& row :
+         SaleFifoAllocator::allocate(m_view->volume(), saleDate, available, splits)) {
+        buyDetails.append(SaleBuyDetail(row.buyGuid, row.buyDateTime,
+                                        row.volume, row.buyPrice));
     }
 
     const SaleObject sale(
@@ -198,10 +195,16 @@ void PresenterSaleEdit::onRowSelected(const QString& saleGuid)
             m_isLastSale = isLatestSale(saleGuid);
             const bool canRemove = m_isLastSale;
             m_view->loadSale(s);
-            // Refresh available buys for this sale's depot
+            // Refresh available buys for this sale's depot — mit
+            // zurückgebuchten eigenen Anteilen, siehe
+            // loadAvailableBuysForDepotExcludingSale() (Phase 2c). Für einen
+            // nicht-jüngsten Verkauf bleibt das Ergebnis ungenutzt (die
+            // Details-Vorschau zeigt dort die gespeicherte Zuteilung), daher
+            // hier bewusst unbedingt aufgerufen statt nach isLastSale
+            // verzweigt.
             m_view->populateAvailableBuys(
-                m_model->loadAvailableBuysForDepot(m_shareGuid,
-                                                   s.depotNumber()));
+                m_model->loadAvailableBuysForDepotExcludingSale(
+                    m_shareGuid, s.depotNumber(), saleGuid));
             if (!s.document().isEmpty())
                 m_view->openPdfPreview(s.document());
             else
@@ -255,9 +258,14 @@ void PresenterSaleEdit::onDepotNumberEdited()
     }
     // Refresh the buy list whenever the depot selection changes so the
     // Details dialog and FIFO calculation always use the right buys.
+    // Beim Bearbeiten eines Verkaufs (m_currentSaleGuid gesetzt) dessen
+    // eigene, bereits gebuchte Anteile zurückbuchen — Phase 2c, siehe
+    // onRowSelected() oben.
     m_view->populateAvailableBuys(
-        m_model->loadAvailableBuysForDepot(m_shareGuid,
-                                           m_view->depotNumber()));
+        m_currentSaleGuid.isEmpty()
+            ? m_model->loadAvailableBuysForDepot(m_shareGuid, m_view->depotNumber())
+            : m_model->loadAvailableBuysForDepotExcludingSale(
+                  m_shareGuid, m_view->depotNumber(), m_currentSaleGuid));
     refreshDerivedValues();
 }
 
@@ -572,8 +580,9 @@ void PresenterSaleEdit::refreshDerivedValues()
     double kaufwert  = 0.0;
     double gewinnVerlust = 0.0;
     {
-        // Edit-Modus: gespeicherte Werte aus dem SaleObject verwenden
-        if (!m_currentSaleGuid.isEmpty()) {
+        if (!m_currentSaleGuid.isEmpty() && !m_isLastSale) {
+            // Älterer, nicht editierbarer Verkauf: gespeicherte Werte aus
+            // dem SaleObject anzeigen (Felder sind ohnehin gesperrt).
             for (const SaleObject& s : std::as_const(m_sales)) {
                 if (s.guid() == m_currentSaleGuid) {
                     kaufwert     = s.buyValue();                      // Anzeige: ohne Kaufbrokerage
@@ -582,18 +591,21 @@ void PresenterSaleEdit::refreshDerivedValues()
                 }
             }
         } else {
-            // New-Modus: FIFO-Vorschau aus depot-gefilterten Käufen
-            double remaining = vol;
-            const QList<BuyObject> available =
-                m_model->loadAvailableBuysForDepot(m_shareGuid,
-                                                   m_view->depotNumber());
-            for (const BuyObject& b : available) {
-                if (remaining <= 1e-9) break;
-                const double avail = b.volume() - b.volumeSold();
-                if (avail <= 1e-9) continue;
-                const double take = qMin(avail, remaining);
-                kaufwert  += take * b.price();
-                remaining -= take;
+            // Neuer Verkauf ODER Bearbeitung des jüngsten Verkaufs: live
+            // FIFO-Vorschau, split-bewusst (Phase 2c, 07.08.2026, siehe
+            // SaleFifoAllocator.h). Muss mit onSave() übereinstimmen, sonst
+            // zeigt die Vorschau während der Eingabe einen anderen Wert als
+            // das, was beim Speichern tatsächlich berechnet wird.
+            const QDate saleDate = QDateTime::fromString(m_view->dateTime(), Qt::ISODate).date();
+            const QList<ShareSplitObject> splits = m_model->loadSplits(m_shareGuid);
+            const QList<BuyObject> available = m_currentSaleGuid.isEmpty()
+                ? m_model->loadAvailableBuysForDepot(m_shareGuid, m_view->depotNumber())
+                : m_model->loadAvailableBuysForDepotExcludingSale(
+                      m_shareGuid, m_view->depotNumber(), m_currentSaleGuid);
+
+            for (const FifoAllocationRow& row :
+                 SaleFifoAllocator::allocate(vol, saleDate, available, splits)) {
+                kaufwert += row.volume * row.buyPrice;
             }
             // G/V-Vorschau: Verkaufsgebühren und Steuern abziehen
             // (Kaufbrokerage ist in der Vorschau nicht verfügbar)

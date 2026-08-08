@@ -65,6 +65,8 @@ set(APP_SOURCES
     utils/PortfolioSeriesCalculator.cpp
     utils/ShareSplitAdjuster.h
     utils/ShareSplitAdjuster.cpp
+    utils/SaleFifoAllocator.h
+    utils/SaleFifoAllocator.cpp
     utils/PdfTextExtractor.h
     utils/PdfTextExtractor.cpp
     utils/DocumentClassifier.h

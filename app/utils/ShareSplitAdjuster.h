@@ -100,4 +100,23 @@ public:
      */
     static double adjustedHistoryPrice(double price, const QList<ShareSplitObject>& splits,
                                        const QDate& date);
+
+    /**
+     * @brief Kehrt adjustedVolume() um: heutige Stückzahl zurück auf die
+     * Beleg-Skala des Datensatzes mit Datum @p date.
+     *
+     * Für die FIFO-Verkaufszuteilung (`SaleFifoAllocator`): das dort auf
+     * heutiger Skala ermittelte Zuteilungsvolumen muss auf die Beleg-Skala
+     * DES JEWEILS REFERENZIERTEN KAUFS zurückgerechnet werden, damit es zu
+     * dessen Kaufpreis passt und `ModelSaleEdit` weiterhin unverändert
+     * `buy.volumeSold() += detail.volume()` rechnen kann.
+     *
+     * @param volumeToday  Stückzahl in heutiger Skala.
+     * @param splits       Alle Splits der betroffenen Aktie.
+     * @param date         Datum des Datensatzes, auf dessen Beleg-Skala
+     *        zurückgerechnet werden soll.
+     * @return Stückzahl in der Beleg-Skala von @p date.
+     */
+    static double belegVolume(double volumeToday, const QList<ShareSplitObject>& splits,
+                              const QDate& date);
 };

@@ -114,11 +114,22 @@ struct ShareValues
 /**
  * @brief Computes aggregated financial values for a single share.
  *
- * Stateless: every call reads buys, sales, brokerage and dividends fresh from
- * the repositories and returns a fully populated ShareValues. No running
- * balances, no sentinel guards. The proportional brokerage / reduction of a
- * partly-sold buy is reconstructed here from the buy's linked brokerage record,
- * independent of any values stored on SaleBuyDetail.
+ * Stateless: every call reads buys, sales, brokerage, dividends and splits
+ * fresh from the repositories and returns a fully populated ShareValues. No
+ * running balances, no sentinel guards. The proportional brokerage /
+ * reduction of a partly-sold buy is reconstructed here from the buy's linked
+ * brokerage record, independent of any values stored on SaleBuyDetail.
+ *
+ * @note **Split-Umrechnung (Phase 2 der Aktiensplit-Behandlung, 07.08.2026,
+ * siehe ARCHITECTURE.md "Offene Punkte"):** `buys`/`sales` liegen in der
+ * Beleg-Skala des jeweiligen Transaktionsdatums vor. Vor jeder Berechnung
+ * werden Stückzahl und Preis je Transaktion über `ShareSplitAdjuster` auf
+ * die heutige, nach allen bekannten Splits gültige Skala umgerechnet —
+ * `curPrice`/`prevDayPrice` sind bereits heutige Skala (Live-Kurs). Ohne
+ * gespeicherte Splits liefert `ShareSplitAdjuster` überall den Faktor 1.0,
+ * das Verhalten ist dann bitgenau identisch zum Stand vor dieser Änderung.
+ * Brokerage, Rabatt und Steuern sind reine Geldbeträge und werden nicht
+ * skaliert.
  */
 class ShareCalculator
 {

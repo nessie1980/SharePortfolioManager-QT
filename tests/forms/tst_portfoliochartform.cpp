@@ -12,8 +12,23 @@
 // aufbaut.
 
 #include <QtTest>
+#include <QUuid>
 
 #include "../../app/forms/PortfolioChartForm/PresenterPortfolioChart.h"
+#include "../../app/forms/PortfolioChartForm/ModelPortfolioChart.h"
+#include "../../app/core/Database.h"
+#include "../../app/models/ShareObject.h"
+#include "../../app/models/BuyObject.h"
+#include "../../app/models/SaleObject.h"
+#include "../../app/models/BrokerageObject.h"
+#include "../../app/models/DailyValuesObject.h"
+#include "../../app/models/ShareSplitObject.h"
+#include "../../app/repositories/ShareRepository.h"
+#include "../../app/repositories/BuyRepository.h"
+#include "../../app/repositories/SaleRepository.h"
+#include "../../app/repositories/BrokerageRepository.h"
+#include "../../app/repositories/DailyValuesRepository.h"
+#include "../../app/repositories/ShareSplitRepository.h"
 
 // ── Fake View ──────────────────────────────────────────────────────────────
 
@@ -433,5 +448,201 @@ private slots:
     }
 };
 
-QTEST_MAIN(TestPortfolioChartForm)
+// ─────────────────────────────────────────────────────────────────────────────
+// ModelPortfolioChart — Datenbanktests (Aktiensplit-Behandlung, Phase 2b,
+// 07.08.2026, siehe ARCHITECTURE.md "Offene Punkte"). Anders als
+// TestPortfolioChartForm oben läuft diese Klasse gegen eine echte
+// In-Memory-SQLite-Datenbank — sie prüft, dass ModelPortfolioChart Splits
+// beim Laden tatsächlich anwendet, nicht die Rechenlogik selbst (die ist in
+// tst_portfolioseriescalculator.cpp und tst_sharesplitadjuster.cpp
+// eigenständig getestet).
+// ─────────────────────────────────────────────────────────────────────────────
+
+class TestModelPortfolioChart : public QObject
+{
+    Q_OBJECT
+
+private:
+    QString newGuid() const { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
+
+    QString insertTestShare() const
+    {
+        ShareRepository repo;
+        const QString guid = newGuid();
+        repo.insert(ShareObject(guid, QStringLiteral("TST01"), QString(),
+                                QStringLiteral("Test AG")));
+        return guid;
+    }
+
+private slots:
+
+    void initTestCase()
+    {
+        QVERIFY(Database::instance().open(":memory:"));
+    }
+
+    void cleanupTestCase()
+    {
+        Database::instance().close();
+    }
+
+    void init()
+    {
+        Database::instance().execute(QStringLiteral("DELETE FROM sale_buy_details"));
+        Database::instance().execute(QStringLiteral("DELETE FROM buys"));
+        Database::instance().execute(QStringLiteral("DELETE FROM sales"));
+        Database::instance().execute(QStringLiteral("DELETE FROM brokerage"));
+        Database::instance().execute(QStringLiteral("DELETE FROM dividends"));
+        Database::instance().execute(QStringLiteral("DELETE FROM daily_values"));
+        Database::instance().execute(QStringLiteral("DELETE FROM share_splits"));
+        Database::instance().execute(QStringLiteral("DELETE FROM shares"));
+    }
+
+    void test_loadPortfolioInput_noSplits_matchesRawValues()
+    {
+        const QString shareGuid = insertTestShare();
+
+        BuyRepository buyRepo;
+        buyRepo.insert(BuyObject(QStringLiteral("buy-1"), shareGuid, QString(),
+                                 QStringLiteral("ord-1"),
+                                 QStringLiteral("2024-01-01T10:00:00"), 10.0, 0.0, 100.0));
+
+        DailyValuesRepository dvRepo;
+        dvRepo.upsert(DailyValuesObject(shareGuid, QDate(2024, 1, 1),
+                                        100.0, 100.0, 101.0, 99.0, 5000.0));
+
+        ModelPortfolioChart model;
+        const QList<PortfolioShareSeriesInput> input = model.loadPortfolioInput();
+
+        QCOMPARE(input.size(), 1);
+        QCOMPARE(input.first().buys.size(), 1);
+        QCOMPARE(input.first().buys.first().volume, 10.0);
+        QCOMPARE(input.first().buys.first().price,  100.0);
+        QCOMPARE(input.first().prices.size(), 1);
+        QCOMPARE(input.first().prices.first().closingPrice, 100.0);
+    }
+
+    void test_loadPortfolioInput_split_scalesBuyAndPriceToTodayScale()
+    {
+        // Alphabet-Fixture aus ARCHITECTURE.md: Kauf vor dem Split (5 Stück
+        // à 1.003,00 €), Tageswert am selben Tag, unbereinigt gespeichert
+        // (wie die reale Quelle es vor dem Split lieferte). Nach der
+        // Umrechnung müssen Kauf UND Tageswert auf derselben, heutigen
+        // Skala liegen (100 Stück à 50,15 €) — genau der Fall, der im
+        // Feldtest den Depotwert-Chart-Sprung verursacht hat.
+        const QString shareGuid = insertTestShare();
+
+        BuyRepository buyRepo;
+        buyRepo.insert(BuyObject(QStringLiteral("buy-1"), shareGuid, QString(),
+                                 QStringLiteral("ord-1"),
+                                 QStringLiteral("2020-03-18T10:00:00"), 5.0, 0.0, 1003.0));
+
+        ShareSplitRepository splitRepo;
+        splitRepo.insert(ShareSplitObject(QStringLiteral("split-1"), shareGuid,
+                                          QDate(2022, 7, 18), 20.0, 1.0));
+
+        DailyValuesRepository dvRepo;
+        dvRepo.upsert(DailyValuesObject(shareGuid, QDate(2020, 3, 18),
+                                        1003.0, 1003.0, 1010.0, 995.0, 100.0));
+
+        ModelPortfolioChart model;
+        const QList<PortfolioShareSeriesInput> input = model.loadPortfolioInput();
+
+        QCOMPARE(input.size(), 1);
+        const PortfolioShareSeriesInput& share = input.first();
+        QCOMPARE(share.buys.size(), 1);
+        QVERIFY(qAbs(share.buys.first().volume - 100.0)  < 1e-6);
+        QVERIFY(qAbs(share.buys.first().price  -  50.15) < 1e-6);
+        QCOMPARE(share.prices.size(), 1);
+        QVERIFY(qAbs(share.prices.first().closingPrice - 50.15) < 1e-6);
+    }
+
+    void test_loadPortfolioInput_split_saleAfterSplitStaysInTodayScale()
+    {
+        // Verkauf liegt NACH dem Split -> keine weitere Umrechnung nötig,
+        // die Werte müssen unverändert durchgereicht werden.
+        const QString shareGuid = insertTestShare();
+
+        SaleRepository saleRepo;
+        saleRepo.insert(SaleObject(QStringLiteral("sale-1"), shareGuid, QString(),
+                                   QStringLiteral("ord-s1"),
+                                   QStringLiteral("2023-01-01T10:00:00"),
+                                   40.0, 60.0, {}));
+
+        ShareSplitRepository splitRepo;
+        splitRepo.insert(ShareSplitObject(QStringLiteral("split-1"), shareGuid,
+                                          QDate(2022, 7, 18), 20.0, 1.0));
+
+        ModelPortfolioChart model;
+        const QList<PortfolioShareSeriesInput> input = model.loadPortfolioInput();
+
+        QCOMPARE(input.size(), 1);
+        QCOMPARE(input.first().sales.size(), 1);
+        QVERIFY(qAbs(input.first().sales.first().volume - 40.0) < 1e-6);
+        QVERIFY(qAbs(input.first().sales.first().price  - 60.0) < 1e-6);
+    }
+
+    void test_loadPortfolioInput_split_costsStayUnscaled()
+    {
+        // Geldbeträge (Brokerage) dürfen NICHT mit dem Split-Faktor
+        // skaliert werden — ein Split verändert weder Gewinn noch Kosten.
+        const QString shareGuid = insertTestShare();
+
+        BuyRepository buyRepo;
+        const BuyObject buy(QStringLiteral("buy-1"), shareGuid, QString(),
+                            QStringLiteral("ord-1"),
+                            QStringLiteral("2020-01-01T10:00:00"), 5.0, 0.0, 1000.0);
+        buyRepo.insert(buy);
+
+        BrokerageRepository brokRepo;
+        brokRepo.insert(BrokerageObject(QStringLiteral("brok-1"), shareGuid, buy.guid(),
+                                        QString(), buy.dateTime(), 9.90, 0.0, 0.0, 0.0));
+
+        ShareSplitRepository splitRepo;
+        splitRepo.insert(ShareSplitObject(QStringLiteral("split-1"), shareGuid,
+                                          QDate(2021, 1, 1), 20.0, 1.0));
+
+        ModelPortfolioChart model;
+        const QList<PortfolioShareSeriesInput> input = model.loadPortfolioInput();
+
+        QCOMPARE(input.first().costs.size(), 1);
+        QVERIFY(qAbs(input.first().costs.first().amount - 9.90) < 1e-6);
+    }
+
+    void test_loadPortfolioInput_reverseSplit_scalesDown()
+    {
+        const QString shareGuid = insertTestShare();
+
+        BuyRepository buyRepo;
+        buyRepo.insert(BuyObject(QStringLiteral("buy-1"), shareGuid, QString(),
+                                 QStringLiteral("ord-1"),
+                                 QStringLiteral("2020-01-01T10:00:00"), 100.0, 0.0, 5.0));
+
+        ShareSplitRepository splitRepo;
+        splitRepo.insert(ShareSplitObject(QStringLiteral("split-1"), shareGuid,
+                                          QDate(2021, 1, 1), 1.0, 10.0)); // Reverse-Split 1:10
+
+        ModelPortfolioChart model;
+        const QList<PortfolioShareSeriesInput> input = model.loadPortfolioInput();
+
+        QCOMPARE(input.first().buys.size(), 1);
+        QVERIFY(qAbs(input.first().buys.first().volume - 10.0) < 1e-6);
+        QVERIFY(qAbs(input.first().buys.first().price  - 50.0) < 1e-6);
+    }
+};
+
+int main(int argc, char* argv[])
+{
+    int result = 0;
+    {
+        TestPortfolioChartForm t;
+        result |= QTest::qExec(&t, argc, argv);
+    }
+    {
+        TestModelPortfolioChart t;
+        result |= QTest::qExec(&t, argc, argv);
+    }
+    return result;
+}
+
 #include "tst_portfoliochartform.moc"

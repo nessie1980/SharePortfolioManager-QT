@@ -7,6 +7,7 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QUuid>
+#include <algorithm>
 
 // ── loadSales ─────────────────────────────────────────────────────────────────
 
@@ -63,6 +64,61 @@ QList<BuyObject> ModelSaleEdit::loadAvailableBuysForDepot(const QString& shareGu
             filtered.append(b);
     }
     return filtered;
+}
+
+// ── loadAvailableBuysForDepotExcludingSale ────────────────────────────────────
+// Wie loadAvailableBuysForDepot(), aber die Anteile von excludeSaleGuid werden
+// zuerst virtuell zurückgebucht — siehe Doku in IModelSaleEdit.h. Ein Kauf, den
+// dieser Verkauf vollständig aufgebraucht hat und der deshalb NICHT in der
+// "verfügbar"-Liste steht, wird mit der zurückgebuchten Restmenge wieder
+// aufgenommen (sonst würde er bei der Neuzuteilung fälschlich fehlen).
+
+QList<BuyObject> ModelSaleEdit::loadAvailableBuysForDepotExcludingSale(
+    const QString& shareGuid, const QString& depotNumber,
+    const QString& excludeSaleGuid) const
+{
+    QList<BuyObject> buys = loadAvailableBuysForDepot(shareGuid, depotNumber);
+    if (excludeSaleGuid.isEmpty())
+        return buys;
+
+    const SaleObject existing = m_saleRepo.findByGuid(excludeSaleGuid);
+    if (!existing.isValid())
+        return buys;
+
+    const QString depot = depotNumber.trimmed();
+
+    for (const SaleBuyDetail& detail : existing.saleBuyDetails()) {
+        bool found = false;
+        for (BuyObject& b : buys) {
+            if (b.guid() == detail.buyGuid()) {
+                b.setVolumeSold(qMax(0.0, b.volumeSold() - detail.volume()));
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            BuyObject buy = m_buyRepo.findByGuid(detail.buyGuid());
+            if (buy.isValid()
+                && (depot.isEmpty() || buy.depotNumber().trimmed() == depot)) {
+                buy.setVolumeSold(qMax(0.0, buy.volumeSold() - detail.volume()));
+                buys.append(buy);
+            }
+        }
+    }
+
+    // Wieder nach Datum sortieren (FIFO) — ein neu angehängter, zuvor
+    // komplett verkaufter Kauf kann die Reihenfolge stören.
+    std::sort(buys.begin(), buys.end(), [](const BuyObject& a, const BuyObject& b) {
+        return a.dateTime() < b.dateTime();
+    });
+    return buys;
+}
+
+// ── loadSplits ─────────────────────────────────────────────────────────────────
+
+QList<ShareSplitObject> ModelSaleEdit::loadSplits(const QString& shareGuid) const
+{
+    return m_splitRepo.findByShare(shareGuid);
 }
 
 // ── loadBrokerage ─────────────────────────────────────────────────────────────

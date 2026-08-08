@@ -29,9 +29,11 @@
 #include "../../app/models/BuyObject.h"
 #include "../../app/models/SaleObject.h"
 #include "../../app/models/BrokerageObject.h"
+#include "../../app/models/ShareSplitObject.h"
 #include "../../app/repositories/BuyRepository.h"
 #include "../../app/repositories/SaleRepository.h"
 #include "../../app/repositories/BrokerageRepository.h"
+#include "../../app/repositories/ShareSplitRepository.h"
 #include "../../app/utils/ShareCalculator.h"
 
 // Compare two monetary doubles to within a tiny tolerance. Avoids the
@@ -52,21 +54,25 @@ private:
 
     // Insert a buy and (if non-zero) its linked brokerage record.
     // Returns the buy's guid so it can be referenced by SaleBuyDetails.
+    // dateTime defaults to the pre-existing hardcoded fixture date so all
+    // tests written before split-awareness (07.08.2026) remain unaffected —
+    // only the new split tests below pass an explicit, earlier/later date.
     QString addBuy(double volume, double volumeSold, double price,
-                   double brokerage, double reduction)
+                   double brokerage, double reduction,
+                   const QString& dateTime = QStringLiteral("2024-01-01T10:00:00"))
     {
         BuyRepository       buyRepo;
         BrokerageRepository brokRepo;
 
         const QString buyGuid = newGuid();
         buyRepo.insert(BuyObject(buyGuid, k_shareGuid, QString(), newGuid(),
-                                 QStringLiteral("2024-01-01T10:00:00"),
+                                 dateTime,
                                  volume, volumeSold, price));
 
         if (brokerage != 0.0 || reduction != 0.0) {
             // brokerage() == provision + brokerFee + traderFee
             brokRepo.insert(BrokerageObject(newGuid(), k_shareGuid, buyGuid, QString(),
-                                            QStringLiteral("2024-01-01T10:00:00"),
+                                            dateTime,
                                             brokerage, 0.0, 0.0, reduction));
         }
         return buyGuid;
@@ -74,8 +80,10 @@ private:
 
     // Insert a sale with its linked brokerage record (the sale's brokerage and
     // reduction are loaded via JOIN on brokerage_guid) and optional details.
+    // dateTime defaults as in addBuy() above.
     void addSale(double volume, double salePrice, double brokerage,
-                 double reduction, double tax, const QList<SaleBuyDetail>& details)
+                 double reduction, double tax, const QList<SaleBuyDetail>& details,
+                 const QString& dateTime = QStringLiteral("2024-06-01T10:00:00"))
     {
         SaleRepository      saleRepo;
         BrokerageRepository brokRepo;
@@ -86,16 +94,26 @@ private:
         // sale_guid stays empty: the sale references this record via
         // brokerage_guid, which is what findByShare JOINs on.
         brokRepo.insert(BrokerageObject(brokGuid, k_shareGuid, QString(), QString(),
-                                        QStringLiteral("2024-06-01T10:00:00"),
+                                        dateTime,
                                         brokerage, 0.0, 0.0, reduction));
 
         saleRepo.insert(SaleObject(saleGuid, k_shareGuid, QString(), newGuid(),
-                                   QStringLiteral("2024-06-01T10:00:00"),
+                                   dateTime,
                                    volume, salePrice, details,
                                    tax, 0.0, 0.0,        // taxAtSource / capitalGains / solidarity
                                    brokGuid,             // brokerageGuid -> JOIN source
                                    0.0, 0.0, 0.0,        // provision/fees (ignored on insert)
                                    0.0));                // reduction (ignored on insert; from brokerage)
+    }
+
+    // Insert a split for the test share (Phase 2 der Aktiensplit-Behandlung,
+    // 07.08.2026, siehe ARCHITECTURE.md "Offene Punkte").
+    void addSplit(const QDate& date, double ratioNew, double ratioOld,
+                  bool pricesAdjusted = false)
+    {
+        ShareSplitRepository splitRepo;
+        splitRepo.insert(ShareSplitObject(newGuid(), k_shareGuid, date,
+                                          ratioNew, ratioOld, pricesAdjusted));
     }
 
     // Insert a dividend. payout = rate * volume (no FX), net = payout - tax.
@@ -140,6 +158,7 @@ private slots:
         Database::instance().execute(QStringLiteral("DELETE FROM brokerage"));
         Database::instance().execute(QStringLiteral("DELETE FROM buys"));
         Database::instance().execute(QStringLiteral("DELETE FROM dividends"));
+        Database::instance().execute(QStringLiteral("DELETE FROM share_splits"));
     }
 
     // ── roundAway ─────────────────────────────────────────────────────────
@@ -375,6 +394,89 @@ private slots:
 
         CMP_MONEY(v.prevDayDiff, 5.0);
         QVERIFY(qAbs(v.prevDayPct - (5.0 / 120.0 * 100.0)) < 1e-6);
+    }
+
+    // ── Aktiensplit-Behandlung, Phase 2 (07.08.2026, siehe ARCHITECTURE.md
+    // "Offene Punkte") ──────────────────────────────────────────────────
+    //
+    // Fixture angelehnt an den Alphabet-Fall aus der Architektur-Doku: ein
+    // Kauf vom 18.03.2020 zu 1.003,00 € (Beleg, vor dem 20:1-Split am
+    // 18.07.2022) entspricht danach 20 Mal so vielen Stücken zu einem
+    // Zwanzigstel des Preises — der Wert bleibt exakt gleich.
+
+    void test_split_heldVolumeAndCurValueUseTodayScale()
+    {
+        // Reiner Bestandsfall, keine Verkäufe: 5 Stück à 1.003,00 € vor
+        // einem 20:1-Split entsprechen 100 Stück à 50,15 €.
+        addBuy(5.0, 0.0, 1003.0, 0.0, 0.0, QStringLiteral("2020-03-18T10:00:00"));
+        addSplit(QDate(2022, 7, 18), 20.0, 1.0);
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 50.15, 50.15);
+
+        CMP_MONEY(v.volume,        100.0);
+        CMP_MONEY(v.curValue,      5015.00);
+        CMP_MONEY(v.purchaseValue, 5015.00); // gleicher Kurs -> keine Entwicklung
+        CMP_MONEY(v.profitLoss,    0.0);
+    }
+
+    void test_split_reverseSplit_scalesDownHeldVolume()
+    {
+        // Reverse-Split 1:10: 100 Stück à 5,00 € vor dem Split entsprechen
+        // 10 Stück à 50,00 € danach.
+        addBuy(100.0, 0.0, 5.0, 0.0, 0.0, QStringLiteral("2020-01-01T10:00:00"));
+        addSplit(QDate(2021, 1, 1), 1.0, 10.0);
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 50.0, 50.0);
+
+        CMP_MONEY(v.volume,        10.0);
+        CMP_MONEY(v.curValue,      500.0);
+        CMP_MONEY(v.purchaseValue, 500.0);
+    }
+
+    // Kauf vor dem Split (5 Stück à 1.000 €, davon 2 Stück Beleg-Skala
+    // verkauft -> 40 von 100 heutigen Stücken), Verkauf nach dem Split
+    // (40 Stück à 60,00 €). Deckt sowohl die Bestands- als auch die
+    // realisierte Seite in einer split-übergreifenden Position ab.
+    //   adjVolume(Kauf) = 100, adjVolumeSold = 40, adjPreis = 50,00 €
+    //   remVol = 60, frac = 0,6
+    //   fullBuyValue = 5.000,00 ; heldBuyValue = 3.000,00
+    //   curValue = 60 * 55,00 = 3.300,00
+    //   Verkauf (nach dem Split, keine weitere Umrechnung nötig):
+    //     saleValue = 40 * 60,00 = 2.400,00
+    //   soldCost = 5.000,00 - 3.000,00 = 2.000,00
+    //   realisierter G/V = 2.400,00 - 2.000,00 = 400,00
+    void test_split_realizedAndHeldValuesUseTodayScale()
+    {
+        addBuy(5.0, 2.0, 1000.0, 0.0, 0.0, QStringLiteral("2020-01-01T10:00:00"));
+        addSplit(QDate(2021, 1, 1), 20.0, 1.0);
+        addSale(40.0, 60.0, 0.0, 0.0, 0.0, {}, QStringLiteral("2022-01-01T10:00:00"));
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 55.0, 55.0);
+
+        CMP_MONEY(v.volume,                   60.0);
+        CMP_MONEY(v.curValue,                 3300.00);
+        CMP_MONEY(v.purchaseValue,            3000.00);
+        CMP_MONEY(v.profitLoss,               300.00);
+        CMP_MONEY(v.saleProfitLoss,           400.00);
+        CMP_MONEY(v.completePurchaseMarket,   5000.00);
+        CMP_MONEY(v.completeProfitLossMarket, 700.00);
+        CMP_MONEY(v.completeCurValueMarket,   5700.00);
+    }
+
+    // Brokerage ist ein reiner Geldbetrag und bleibt unskaliert — nur die
+    // Pro-Lot-Zuordnung (frac) verwendet die split-bereinigten Stückzahlen.
+    // Kauf: 5 Stück à 1.000 €, Brokerage 20,00 €, 2 Stück (Beleg-Skala)
+    // verkauft -> 60 % gehalten (40/100 verkauft, 60/100 gehalten).
+    //   heldBrokerage = round(20,00 * 0,6) = 12,00
+    //   purchaseValueFinal = heldBuyValue(3.000,00) + 12,00 - 0 = 3.012,00
+    void test_split_brokerageStaysUnscaled()
+    {
+        addBuy(5.0, 2.0, 1000.0, 20.0, 0.0, QStringLiteral("2020-01-01T10:00:00"));
+        addSplit(QDate(2021, 1, 1), 20.0, 1.0);
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 55.0, 55.0);
+
+        CMP_MONEY(v.purchaseValueFinal, 3012.00);
     }
 };
 

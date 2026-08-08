@@ -6,6 +6,53 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.11.0] - 2026-08-08
+
+### Added
+
+- Aktiensplit-Behandlung, Phase 2c: neue, gemeinsame Klasse
+  `SaleFifoAllocator` (`app/utils/`) ersetzt die zuvor dreifach duplizierte
+  FIFO-Verkaufszuteilung in `PresenterSaleEdit::onSave()`,
+  `refreshDerivedValues()` (Live-Vorschau) und `ViewSaleEdit::onShowDetails()`
+  (Details-Dialog). Rechnet Verkaufsmenge und Kauf-Restmengen intern auf die
+  heutige Skala um und liefert das zugeteilte Stück je Kauf in dessen
+  eigener Beleg-Skala zurück — `ModelSaleEdit::addSale()`/`updateSale()`/
+  `removeSale()` bleiben dadurch unverändert. Zwei neue
+  `IModelSaleEdit`-Methoden (`loadSplits()`,
+  `loadAvailableBuysForDepotExcludingSale()`) versorgen die Zuteilung.
+  `ViewSaleEdit::onShowDetails()` zeigt seither durchgängig auf heutiger
+  (split-bereinigter) Skala.
+
+### Fixed
+
+- `PresenterSaleEdit::onSave()` übernahm beim Bearbeiten des jüngsten
+  Verkaufs bisher unverändert die gespeicherten `SaleBuyDetails`, selbst
+  wenn sich die Verkaufsmenge im Formular geändert hatte — ein von Splits
+  unabhängiger, vorbestehender Bug. Die FIFO-Zuteilung wird jetzt in jedem
+  Fall frisch berechnet, sobald der bearbeitete Verkauf der jüngste ist;
+  Live-Vorschau und tatsächliches Speichern laufen dadurch nicht mehr
+  auseinander.
+
+## [1.10.0] - 2026-08-07
+
+### Added
+
+- Aktiensplit-Behandlung, Phase 2a: `ShareCalculator::compute()` wendet den
+  in Phase 1 angelegten Rechenkern (`ShareSplitAdjuster`) jetzt tatsächlich
+  an. Käufe und Verkäufe werden vor jeder Berechnung von ihrer jeweiligen
+  Beleg-Skala auf die heutige, nach allen bekannten Splits gültige Skala
+  umgerechnet — betrifft Bestand, Depotwert-Grid, Footer-Summen und
+  `ShareDetailsForm` gleichermassen. Brokerage, Rabatt und Steuern sind
+  Geldbeträge und bleiben unskaliert. Ohne gespeicherte Splits ist das
+  Ergebnis bitgenau identisch zum bisherigen Verhalten — bestätigt durch die
+  vollständig unveränderten Bestandstests. Vier neue Tests in
+  `tst_sharecalculator.cpp`, angelehnt an den Alphabet-Feldfall aus
+  ARCHITECTURE.md.
+  Noch nicht angepasst: die Chart-Modelle (`ModelPortfolioChart`/
+  `ModelChart`) und die FIFO-Verkaufszuteilung (`ModelSaleEdit`) — siehe
+  `docs/architecture/ARCHITECTURE.md`, "Offene Punkte", "Aktiensplits werden
+  nicht behandelt".
+
 ## [1.9.0] - 2026-08-07
 
 ### Added
@@ -270,6 +317,8 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   `docs/architecture/ARCHITECTURE.md`, "settings.ini nicht persistent im
   AppImage".
 
+[1.11.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.10.0...v1.11.0
+[1.10.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.9.0...v1.10.0
 [1.9.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/nessie1980/SharePortfolioManager-QT/compare/v1.6.0...v1.7.0
