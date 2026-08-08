@@ -154,7 +154,8 @@ tst_xmlportfolioparser / tst_portfoliovalidator / tst_portfolioimporter  ← too
 `tests/`-Unterverzeichnisse abgeglichen und umfasste zu diesem Zeitpunkt alle
 31 Testziele; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
 (07.08.2026, Phase 1 der Aktiensplit-Behandlung) waren es 33, seit
-`tst_salefifoallocator` (07.08.2026, Phase 2c) sind es 34. Die vollständige
+`tst_salefifoallocator` (07.08.2026, Phase 2c) waren es 34, seit
+`tst_sharesplitsform` (08.08.2026, Phase 3a) sind es 35. Die vollständige
 Startbefehl-Liste steht in TESTING.md, "Einzelnen Test direkt starten".
 
 ---
@@ -217,6 +218,7 @@ austauschbar und isoliert testbar.
 | SalesForm | `forms/SalesForm/` | ✅ implementiert |
 | DividendForm | `forms/DividendForm/` | ✅ implementiert |
 | BrokeragesForm | `forms/BrokeragesForm/` | ✅ implementiert |
+| ShareSplitsForm | `forms/ShareSplitsForm/` | ✅ implementiert (08.08.2026) — siehe "ShareSplitsForm-Details" |
 | OwnMessageBox | `forms/OwnMessageBoxForm/` | ✅ implementiert |
 | BackupProgressForm | `forms/BackupProgressForm/` | ✅ implementiert |
 | BackupSettingsForm | `forms/BackupSettingsForm/` | ✅ implementiert (08.07.2026) |
@@ -2772,12 +2774,54 @@ shares          ← Stammdaten je Aktie (GUID, WKN, ISIN, Name, ...)
   ├── brokerage         ← Gebühren (verknüpft mit buy oder sale)
   ├── dividends         ← Dividendenzahlungen
   ├── daily_values      ← Historische Kursdaten (OHLCV)
-  └── share_splits      ← Aktiensplits (Datum, Verhältnis), siehe "ShareSplitObject /
+  └── share_splits      ← Aktiensplits (Datum, Verhältnis, Beleg), siehe "ShareSplitObject /
                            ShareSplitRepository / ShareSplitAdjuster" unten
 @endcode
 
 Alle Tabellen verwenden `TEXT`-GUIDs als Primärschlüssel. Foreign Keys aktiviert
 (`PRAGMA foreign_keys = ON`), WAL-Modus aktiv (`PRAGMA journal_mode = WAL`).
+
+### Schema-Migration bestehender Portfolios (08.08.2026)
+
+`Database::open()` ruft nacheinander `createSchema()` und `migrateSchema()` auf.
+Die Aufteilung hat einen konkreten Grund.
+
+`createSchema()` arbeitet durchgehend mit `CREATE TABLE IF NOT EXISTS`. Eine
+komplett NEUE Tabelle kommt dadurch von selbst in bestehende Portfolios — genau
+so ist `share_splits` beim ersten Öffnen nach Phase 1 der Aktiensplit-Behandlung
+entstanden, ohne dass jemand etwas dafür tun musste. Bis dahin fiel nie auf,
+dass dieselbe Anweisung eine neue SPALTE in einer bereits vorhandenen Tabelle
+NICHT nachzieht: SQLite sieht die Tabelle, vergleicht die Spaltenliste nicht
+und tut nichts. Jede Tabelle hatte ihre Spalten bis dahin von Geburt an.
+
+Mit `share_splits.document` trat dieser Fall zum ersten Mal auf. `migrateSchema()`
+schliesst die Lücke:
+
+```cpp
+static const ColumnMigration migrations[] = {
+    { "share_splits", "document", "TEXT" },
+};
+```
+
+`ensureColumn(table, column, definition)` liest `PRAGMA table_info(<table>)` und
+setzt bei fehlender Spalte ein `ALTER TABLE … ADD COLUMN` ab. Eine nachgerüstete
+Spalte ist damit eine Zeile in dieser Tabelle.
+
+Bewusst OHNE Versionszähler in der Datenbank (etwa `PRAGMA user_version`): die
+Prüfung "existiert die Spalte?" ist idempotent, braucht keinen zusätzlichen
+Zustand und kann auch dann nicht aus dem Tritt geraten, wenn ein Portfolio eine
+oder mehrere Versionen übersprungen hat. Ein Zähler müsste dagegen bei jedem
+Sprung korrekt fortgeschrieben werden und wäre bei einem von Hand bearbeiteten
+oder aus einem Backup zurückgespielten Portfolio unzuverlässig.
+
+@note Was `ensureColumn()` NICHT kann: Spalten umbenennen, Typen oder
+Constraints ändern, Spalten entfernen. SQLite verlangt dafür den Umweg über
+eine Ersatztabelle (neu anlegen, kopieren, alte löschen, umbenennen). Das ist
+hier bewusst nicht vorgesehen, solange es keinen konkreten Anlass gibt — die
+Ersatztabellen-Variante ist deutlich fehleranfälliger und will einzeln
+durchdacht sein. Ebenfalls von SQLite vorgegeben: `ADD COLUMN` darf weder
+`PRIMARY KEY` noch `UNIQUE` enthalten und bei `NOT NULL` keinen Default
+vermissen lassen.
 
 ---
 
@@ -2800,8 +2844,10 @@ Chart-Modellen `ModelPortfolioChart`/`ModelChart` (ebenfalls eigener Absatz
 unten), Phase 2c in der FIFO-Verkaufszuteilung (`SaleFifoAllocator`,
 ebenfalls eigener Absatz unten) — damit ist die Umrechnung an allen Stellen
 angewendet, an denen Käufe, Verkäufe oder Tageswerte in Berechnungen
-einfliessen. Offen bleiben nur noch Phase 3 (Erfassungsmaske für Splits)
-und Phase 4 (automatische Nachprüfung des `prices_adjusted`-Zustands).
+einfliessen. Phase 3a ergänzte die Erfassungsmaske (`ShareSplitsForm`, siehe
+eigenen Abschnitt unten). Offen bleiben Phase 3b (Split-Hinweis in den
+Editier-Dialogen für Käufe und Verkäufe) und Phase 4 (automatische
+Nachprüfung des `prices_adjusted`-Zustands).
 
 `share_splits` (Schema siehe oben): eigene GUID je Split, wie bei
 `BuyObject`/`BrokerageObject` — nicht wie bei `DailyValuesObject` mit
@@ -3501,6 +3547,167 @@ Rechenkern durch seine Datenbankfreiheit bereits threadfähig.
 
 ---
 
+## ShareSplitsForm-Details (Phase 3a der Aktiensplit-Behandlung, 08.08.2026)
+
+Erfassungsmaske für Splits, erreichbar über den fünften Stift-Button in
+`ViewShareEdit`. Vollständige MVP-Triade unter `app/forms/ShareSplitsForm/`
+(`IViewShareSplitEdit`, `IModelShareSplitEdit`, `ModelShareSplitEdit`,
+`PresenterShareSplitEdit`, `ViewShareSplitEdit`), also kein leichtgewichtiger
+Einzeldialog — die Maske hat CRUD, Validierung und eine Übersicht und gehört
+damit zur selben Kategorie wie DividendForm und BrokeragesForm.
+
+**Warum der Button in "Allgemein" sitzt.** Die vier bestehenden Stift-Buttons
+stehen in der GroupBox "Einnahmen / Ausgabe", wo jede Zeile geldwertig ist und
+auf "€" endet. Ein Split hat keinen Betrag — er ändert nur die Stückelung.
+Die Zeile "Splits:" sitzt deshalb in "Allgemein", direkt unter "Anteile:", auf
+die sie sich fachlich bezieht (Nessies Entscheidung 08.08.2026).
+
+**Warum der Hinweis neben dem Button steht.** Erwogen war eine Fusszeile in
+`ShareDetailsForm` mit dem Hinweis, dass die dortigen Zahlen split-bereinigt
+sind. Verworfen (Nessies Entscheidung 08.08.2026): eine Fusszeile steht zu
+weit vom eigentlichen Geschehen entfernt. Die Information sitzt stattdessen im
+read-only Feld unmittelbar neben dem Stift-Button — dort, wo auch gehandelt
+wird. `ShareDetailsForm` bleibt unverändert.
+
+Angezeigt wird je nach Lage `keine`, `20:1 am 18.07.2022` oder
+`2 Splits, zuletzt 20:1 am 18.07.2022`; der Tooltip listet immer alle Splits.
+`ViewShareEdit::setSplitInfo()` bekommt die Rohliste und formatiert selbst,
+genau wie `loadShare()` — der Presenter reicht nur durch. Vorausgesetzt wird
+dabei die Sortierung von `ShareSplitRepository::findByShare()` (aufsteigend
+nach Datum), damit der letzte Eintrag der jüngste Split ist.
+
+**Aufbau der Maske.** Bewusst OHNE `OverviewTabWidget`: eine Aktie hat
+typischerweise null bis drei Splits, Jahres-Tabs wären reiner Ballast. Die
+Übersicht ist deshalb eine flache `QTableWidget` (Datum, Verhältnis,
+Umrechnung, Kurse bereinigt, Kommentar, Dokument).
+
+@note Die erste Fassung dieser Maske hatte auch kein `DocumentPreviewPanel`,
+mit der Begründung, zu einem Split gebe es ohnehin keinen Beleg. Das war
+schlicht falsch — Banken verschicken sehr wohl Mitteilungen über anstehende
+Kapitalmassnahmen (Nessies Einwand 08.08.2026). Dokumentfeld und Vorschau
+kamen deshalb noch am selben Tag nach, siehe den folgenden Absatz.
+Die Split-GUID hängt an jeder Zelle als `Qt::UserRole`, damit die Auswahl
+unabhängig von der angeklickten Spalte auflösbar ist.
+
+**Dokument und Vorschau (08.08.2026).** Ein Split trägt einen Beleg wie Kauf,
+Verkauf, Dividende und Kosten auch: Pfadfeld plus `…`-Button links,
+`DocumentPreviewPanel` rechts, Dialogbreite entsprechend auf 1100 × 680 wie bei
+`ViewBrokerageEdit`. Der Dateidialog lässt nur PDF zu und prüft den gewählten
+Pfad über `DocumentRootMigrator::isPathWithinRoot()` — beides identisch zu den
+anderen fünf Dialogen. Ein Zeilenklick in der Übersicht lädt den Beleg mit in
+die Vorschau. Die Dokument-Spalte der Tabelle ist 36 px breit und ohne
+Überschrift, nach der Vereinheitlichung vom 17.07.2026.
+
+Die Doppelbelegungs-Prüfung (`ModelShareSplitEdit::documentExists()`) läuft
+bewusst nur gegen `share_splits`, nicht tabellenübergreifend (Nessies
+Entscheidung 08.08.2026) — dieselbe Reichweite wie in BrokeragesForm. Sie
+meldet einen Hinweis, blockiert das Speichern aber nicht: dass zwei Splits auf
+derselben Bankmitteilung stehen, kann legitim sein.
+
+Die Abfrage sitzt im Model und nicht im Repository, genau wie bei
+`ModelBuyEdit`, `ModelSaleEdit`, `ModelDividendEdit` und
+`ModelBrokerageEdit`. Die erste Fassung hatte sie im Repository untergebracht,
+mit dem Argument, die SQL liege dann bei der übrigen `share_splits`-SQL. Auf
+Nessies Entscheidung vom 08.08.2026 wurde sie ins Model verschoben — die
+Prüfung ist eine Formular-Angelegenheit, kein allgemeiner Persistenzdienst.
+`ShareSplitRepository` führt entsprechend nur `updateDocument()`, das
+`DocumentRootMigrator` braucht.
+
+@note Diese Umstellung hat einen Nebeneffekt, der über Ordnungsliebe
+hinausgeht: das Abweichen vom bestehenden Muster hatte den NULL-Fehler unten
+überhaupt erst ermöglicht. Wer die vorhandene Implementierung als Vorlage
+nimmt, übernimmt ihre Lösungen für Fallstricke mit — auch die, deren Grund er
+gerade nicht sieht. Eine Abweichung sollte deshalb einen Gewinn haben, der die
+verlorene Vorlage aufwiegt; "die SQL liegt dann beisammen" war das nicht.
+
+@note Die Prüfung verwendet ZWEI getrennte Abfragen — eine mit und eine ohne
+`guid != :excl` —, genau wie die vier bestehenden Models. Die naheliegende
+Zusammenfassung zu einer einzigen Abfrage ist eine Falle, in die ich am
+08.08.2026 prompt getappt bin: beim Anlegen ist `excludeGuid` ein
+default-konstruiertes `QString()`, also NULL und nicht bloss leer. Qt bindet
+das als SQL-`NULL`, und `guid != NULL` ergibt in SQL nicht `true`, sondern
+`NULL`. Eine `WHERE`-Bedingung, die zu `NULL` auswertet, filtert die Zeile
+heraus — `COUNT(*)` war damit immer 0 und die Prüfung still wirkungslos.
+
+Bemerkenswert am Fehlerbild: der Test, der die Ausnahme der eigenen GUID
+prüft, lief grün durch. Ein Test, der belegt, dass etwas NICHT gefunden wird,
+kann einen Fehler nicht entdecken, bei dem nie etwas gefunden wird. Aufgedeckt
+haben es erst die beiden Positivtests. Wo eine Prüfung sowohl "gefunden" als
+auch "nicht gefunden" liefern muss, braucht es beide Richtungen als Test —
+sonst ist der Negativtest wertlos.
+
+Ausgewertet wird der Beleg nicht — es gibt keine Parse-Pipeline für
+Split-Mitteilungen. Ob sich eine lohnt, ist als offener Punkt festgehalten
+(siehe "Parsing von Split-Mitteilungen der Banken prüfen"). Da der Pfad jetzt
+gespeichert wird, liegen die Belege für eine spätere Untersuchung ohnehin
+gesammelt vor.
+
+**Validierung im Presenter.**
+
+| Prüfung | Verhalten |
+| --- | --- |
+| Ex-Tag <= 01.01.2000 (Sentinel wie in allen anderen Formen) | abgewiesen |
+| Ex-Tag in der Zukunft | ausdrücklich ERLAUBT |
+| Verhältnis-Seite <= 0 | abgewiesen |
+| Faktor = 1,0 (also 1:1, 2:2, …) | abgewiesen |
+| Zweiter Split derselben Aktie am selben Tag | abgewiesen |
+
+Zukünftige Ex-Tage sind erlaubt (Nessies Entscheidung 08.08.2026), damit ein
+angekündigter Split sofort erfasst werden kann. Das ist technisch folgenlos:
+`ShareSplitAdjuster::volumeFactor()` rechnet nur Datensätze mit einem Datum
+ECHT VOR dem Splittag um, ein Split in der Zukunft trifft also schlicht noch
+nichts.
+
+Der Faktor-1,0-Fall wird hart abgewiesen statt still gespeichert (Nessies
+Entscheidung 08.08.2026): er wäre fachlich kein Split, würde nichts umrechnen
+und trotzdem in jeder Berechnung mitlaufen. Geprüft wird der Quotient, nicht
+die wörtliche Eingabe — 2:2 fällt damit genauso durch wie 1:1.
+
+Die Duplikat-Prüfung nimmt `UNIQUE(share_guid, date)` vorweg, damit der
+Benutzer eine verständliche Meldung bekommt statt eines SQL-Fehlers. Beim
+Bearbeiten zählt das eigene, unveränderte Datum nicht als Duplikat — sonst
+liesse sich an einem bestehenden Split das Verhältnis nicht mehr korrigieren.
+
+Keine Letzter-Eintrag-Beschränkung: jeder Split ist jederzeit editier- und
+löschbar, analog DividendForm und BrokeragesForm.
+
+**Löschen eines Splits.** Weil die Datenbank durchgehend die Beleg-Wahrheit
+speichert, ist ein Split-Datensatz nichts als eine Rechenvorschrift. Beim
+Löschen wird ausschliesslich die Zeile in `share_splits` entfernt —
+`buys`, `sales` und `daily_values` bleiben unangetastet. Die Wirkung ist
+trotzdem sofort und überall sichtbar: alle Transaktionen vor dem Splittag
+werden wieder in ihrer Beleg-Stückzahl gerechnet, die Tageswerte vor dem
+Splittag nicht mehr heruntergerechnet, und Grid, Footer, Detailansicht sowie
+beide Charts ziehen unmittelbar nach. Geldbeträge (Einzahlung, Kaufwert,
+Verkaufserlös, Gebühren, Steuern, Dividenden) bleiben unberührt — sie werden
+von der Grundinvariante gar nicht erfasst.
+
+Der Vorgang ist vollständig umkehrbar: derselbe Split mit denselben Werten neu
+erfasst stellt bitgenau denselben Zustand wieder her. Verloren geht kein
+Datensatz, sondern nur Wissen — Datum, Verhältnis und `prices_adjusted`
+müssen erneut bekannt sein. Genau deshalb gibt es eine Rückfrage (Nessies
+Entscheidung 08.08.2026), und zwar eine konkrete statt einer generischen: sie
+nennt den betroffenen Split und beziffert die Bestandsänderung
+("von 2.000,0000 auf 100,0000 Stück"). Die beiden Zahlen rechnet der Presenter
+über `ShareSplitAdjuster::adjustedVolume()` einmal mit und einmal ohne den zu
+löschenden Split aus; `IModelShareSplitEdit::openLots()` liefert dafür die
+offenen Kauf-Posten in Beleg-Skala.
+
+@note `confirm()` sitzt bewusst im View-Interface, statt dass der Presenter
+`OwnMessageBox::question()` direkt aufruft. Sonst wäre der Löschpfad nicht
+testbar — ein modaler Dialog blockiert die Ereignisschleife, und
+`QDialog::exec()` in Tests ist ohnehin ausgeschlossen (siehe TESTING.md).
+Über das Interface gibt der Stub einfach einen vorgegebenen Wert zurück.
+
+**Aktualisierung nach Änderungen.** `PresenterShareSplitEdit::dataChanged()`
+hängt an `ViewShareEdit::refreshSummary()`, genau wie bei den vier bestehenden
+Sub-Dialogen. `PresenterShareEdit::populateSummary()` aktualisiert die
+Split-Zeile im selben Durchlauf wie die Geldsummen — fachlich gehört sie nicht
+zu "Einnahmen / Ausgabe", ein eigener Refresh-Pfad wäre aber nur zusätzliche
+Verdrahtung ohne Gewinn.
+
+---
+
 ## Offene Punkte
 
 ### Aktiensplits werden nicht behandelt (wichtig, 06.08.2026, Umsetzung begonnen 07.08.2026)
@@ -3567,8 +3774,38 @@ bereinigt liefert, ist je Anbieter unterschiedlich.
 | 2a | Anwendung in `ShareCalculator` — Grid, Footer und `ShareDetailsForm` rechnen jetzt split-bereinigt. | ✅ umgesetzt 07.08.2026 |
 | 2b | Anwendung in `ModelPortfolioChart`/`ModelChart` — Depotwert- und Aktien-Chart rechnen jetzt beide split-bereinigt. | ✅ umgesetzt 07.08.2026 |
 | 2c | FIFO-Verkaufszuteilung (`PresenterSaleEdit`/`ModelSaleEdit`). Neue gemeinsame Klasse `SaleFifoAllocator` ersetzt die vormals dreifach duplizierte Zuteilungslogik; Edit-Zweig berechnet FIFO beim Bearbeiten des jüngsten Verkaufs jetzt neu, statt gespeicherte `SaleBuyDetails` unverändert zu übernehmen. | ✅ umgesetzt 07.08.2026 |
-| 3 | `ShareSplitsForm` (fünfter Stift-Button in `ViewShareEdit`, analog Käufe/Verkäufe/Dividenden/Kosten) + Split-Hinweis in den Anzeigen | offen |
+| 3a | `ShareSplitsForm` — eigene MVP-Triade, fünfter Stift-Button in `ViewShareEdit` (GroupBox "Allgemein"), Split-Hinweis neben dem Button | ✅ umgesetzt 08.08.2026 |
+| 3b | Split-Hinweis in den Editier-Dialogen `ViewBuyEdit`/`ViewSaleEdit` ("Split 20:1 am 18.07.2022 — entspricht 100 Stück à 50,15 €") | offen |
 | 4 | Automatische Nachprüfung des `prices_adjusted`-Zustands nach jedem Tageswert-Abruf (Kurssprung um den Splittag vergleichen) + Startmeldung bei Widerspruch, analog `warnAboutSharesWithoutDailyValues()` | offen |
+
+### Parsing von Split-Mitteilungen der Banken prüfen (08.08.2026)
+
+Seit Phase 3a kann einem Split ein Beleg zugeordnet werden, ausgewertet wird er
+aber nicht. Beim Entwurf war ich davon ausgegangen, dass es zu einem Split gar
+keinen Beleg gibt; Nessies Einwand am 08.08.2026: seine Banken verschicken sehr
+wohl Mitteilungen über anstehende Kapitalmassnahmen.
+
+Ob sich eine Parse-Pipeline lohnt, lässt sich ohne echte Beispieldokumente nicht
+entscheiden. Offen sind mindestens:
+
+- **Welche Felder?** Ex-Tag und Verhältnis sind das Minimum. Die eingebuchte
+  Stückzahl wäre als Gegenprobe wertvoll — sie erlaubte, das erfasste Verhältnis
+  gegen den tatsächlichen Depotbestand zu prüfen.
+- **Wie stabil ist die Formulierung?** "20:1", "im Verhältnis 1:20", "je 1 alte
+  Aktie 19 zusätzliche" meinen dasselbe und lesen sich völlig verschieden. Bei
+  Kauf- und Verkaufsabrechnungen half die feste Tabellenstruktur; eine
+  Kapitalmassnahmen-Mitteilung ist eher Fliesstext.
+- **Eigener `DocumentType::Split` in `Documents.xml`?** Das hiesse je Bank eine
+  weitere Konfigurationssektion pflegen — für ein Ereignis, das je Aktie alle
+  paar Jahre einmal vorkommt.
+- **Lohnt die Erkennung per Drag+Drop?** `MainWindow::handleDroppedDocument()`
+  müsste den neuen Typ mitbehandeln und `ViewShareSplitEdit` öffnen.
+
+Nächster Schritt: zwei, drei reale Split-Mitteilungen sammeln und daran prüfen,
+ob die Felder überhaupt zuverlässig zu treffen sind. Da der Dokumentpfad seit
+Phase 3a gespeichert wird, sammeln sich die Belege dafür ohnehin an.
+
+---
 
 ### Spin-offs und Kapitalmaßnahmen mit Barkomponente nicht abgedeckt (07.08.2026)
 
@@ -5213,8 +5450,6 @@ Refresh"). Damit sind alle drei ursprünglich offenen Refresh-Flow-Testpunkte
 
 ---
 
----
-
 ## Plattform-Unterstützung
 
 | Plattform | Status | Besonderheiten |
@@ -5634,6 +5869,16 @@ In jedem der fünf `onBrowseDocument()`:
    außerhalb, erscheint `OwnMessageBox::critical()` mit Hinweis auf das
    Root-Verzeichnis, und die Auswahl wird verworfen (Feld bleibt
    unverändert, kein `onDocumentSelected()`-Aufruf an den Presenter).
+
+@note Seit 08.08.2026 gilt dieselbe Root-Prüfung auch in
+`ViewShareSplitEdit` — es sind damit sechs Dialoge. `DocumentRootMigrator`
+selbst deckt entsprechend fünf Tabellen ab (`buys`, `sales`, `brokerage`,
+`dividends`, `share_splits`); die Split-Tabelle wurde sowohl in
+`collectAllDocuments()` als auch im Switch von `updateDocument()` ergänzt.
+Beides ist nötig — nur den Switch zu erweitern, hätte dazu geführt, dass
+Split-Dokumente beim Root-Wechsel gar nicht erst eingesammelt und damit still
+übergangen werden. Genau dafür gibt es jetzt einen eigenen Anschlusstest, siehe
+TESTING.md.
 
 `ViewBrokerageEdit` erlaubte bislang zusätzlich zu PDF auch Word-/
 Excel-Dateien und "Alle Dateien" — auf Nutzer-Entscheidung (19.07.2026)

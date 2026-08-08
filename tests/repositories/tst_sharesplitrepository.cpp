@@ -30,10 +30,11 @@ private:
 
     ShareSplitObject makeSplit(const QDate& date, double ratioNew = 20.0, double ratioOld = 1.0,
                                bool pricesAdjusted = false,
-                               const QString& comment = QString()) const
+                               const QString& comment = QString(),
+                               const QString& document = QString()) const
     {
         return ShareSplitObject(newGuid(), k_shareGuid, date, ratioNew, ratioOld,
-                                pricesAdjusted, comment);
+                                pricesAdjusted, comment, document);
     }
 
 private slots:
@@ -150,6 +151,70 @@ private slots:
         QCOMPARE(reloaded.date(), QDate(2022, 7, 19));
         QVERIFY(reloaded.pricesAdjusted());
         QCOMPARE(reloaded.comment(), QStringLiteral("Korrigiert"));
+    }
+
+    // ── Dokument (08.08.2026) ───────────────────────────────────────────
+    //
+    // documentExists() wird hier bewusst NICHT geprüft: die Abfrage sitzt in
+    // ModelShareSplitEdit, nicht im Repository — dieselbe Platzierung wie bei
+    // ModelBuyEdit/ModelSaleEdit/ModelDividendEdit/ModelBrokerageEdit. Die
+    // zugehörigen Tests stehen entsprechend in tst_sharesplitsform.cpp.
+    // Das Repository führt nur updateDocument(), das DocumentRootMigrator
+    // beim Wechsel des Dokument-Roots aufruft.
+
+    void test_insert_storesDocumentPath()
+    {
+        ShareSplitRepository repo;
+        const ShareSplitObject split = makeSplit(QDate(2022, 7, 18), 20.0, 1.0, false,
+                                                 QString(), QStringLiteral("/belege/split.pdf"));
+        QVERIFY(repo.insert(split));
+
+        QCOMPARE(repo.findByGuid(split.guid()).document(),
+                 QStringLiteral("/belege/split.pdf"));
+    }
+
+    void test_insert_withoutDocument_returnsEmptyString()
+    {
+        ShareSplitRepository repo;
+        const ShareSplitObject split = makeSplit(QDate(2022, 7, 18));
+        QVERIFY(repo.insert(split));
+
+        QVERIFY(repo.findByGuid(split.guid()).document().isEmpty());
+    }
+
+    void test_update_changesDocumentPath()
+    {
+        ShareSplitRepository repo;
+        const ShareSplitObject split = makeSplit(QDate(2022, 7, 18), 20.0, 1.0, false,
+                                                 QString(), QStringLiteral("/belege/alt.pdf"));
+        QVERIFY(repo.insert(split));
+
+        const ShareSplitObject updated(split.guid(), k_shareGuid, QDate(2022, 7, 18),
+                                       20.0, 1.0, false, QString(),
+                                       QStringLiteral("/belege/neu.pdf"));
+        QVERIFY(repo.update(updated));
+
+        QCOMPARE(repo.findByGuid(split.guid()).document(),
+                 QStringLiteral("/belege/neu.pdf"));
+    }
+
+    void test_updateDocument_changesOnlyDocument()
+    {
+        // Wird von DocumentRootMigrator beim Root-Wechsel aufgerufen — dabei
+        // darf ausschliesslich der Pfad angefasst werden.
+        ShareSplitRepository repo;
+        const ShareSplitObject split = makeSplit(QDate(2022, 7, 18), 20.0, 1.0, true,
+                                                 QStringLiteral("Kommentar"),
+                                                 QStringLiteral("/alt/root/a.pdf"));
+        QVERIFY(repo.insert(split));
+
+        QVERIFY(repo.updateDocument(split.guid(), QStringLiteral("/neu/root/a.pdf")));
+
+        const ShareSplitObject reloaded = repo.findByGuid(split.guid());
+        QCOMPARE(reloaded.document(), QStringLiteral("/neu/root/a.pdf"));
+        QCOMPARE(reloaded.ratioNew(), 20.0);
+        QCOMPARE(reloaded.comment(),  QStringLiteral("Kommentar"));
+        QVERIFY(reloaded.pricesAdjusted());
     }
 
     // ── remove / removeByShare ──────────────────────────────────────────

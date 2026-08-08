@@ -8,6 +8,7 @@
 #include "../../repositories/SaleRepository.h"
 #include "../../repositories/DividendRepository.h"
 #include "../../repositories/BrokerageRepository.h"
+#include "../../repositories/ShareSplitRepository.h"
 
 /**
  * @brief Concrete model for the "Aktie editieren" dialog.
@@ -35,6 +36,8 @@ public:
     double currentVolume(const QString& shareGuid)      const override;
     QString firstBuyDate(const QString& shareGuid)      const override;
 
+    QList<ShareSplitObject> loadSplits(const QString& shareGuid) const override;
+
     QString lastError() const override { return m_lastError; }
 
 private:
@@ -43,5 +46,6 @@ private:
     SaleRepository     m_saleRepo;
     DividendRepository m_dividendRepo;
     BrokerageRepository m_brokerageRepo;
+    ShareSplitRepository m_splitRepo;
     mutable QString    m_lastError;
 };

@@ -7,6 +7,7 @@
 #include "../repositories/SaleRepository.h"
 #include "../repositories/BrokerageRepository.h"
 #include "../repositories/DividendRepository.h"
+#include "../repositories/ShareSplitRepository.h"
 
 #include <QDir>
 #include <QDebug>
@@ -22,6 +23,7 @@ QList<DocumentRootMigrator::DocumentEntry> DocumentRootMigrator::collectAllDocum
     SaleRepository      saleRepo;
     BrokerageRepository brokerageRepo;
     DividendRepository  dividendRepo;
+    ShareSplitRepository splitRepo;
 
     // Es gibt keine tabellenübergreifende "findAll()"-Abfrage für Dokumente —
     // Repositories liefern Transaktionen nur pro Aktie zurück (findByShare()).
@@ -45,6 +47,14 @@ QList<DocumentRootMigrator::DocumentEntry> DocumentRootMigrator::collectAllDocum
         for (const DividendObject& dividend : dividendRepo.findByShare(shareGuid)) {
             if (!dividend.document().isEmpty())
                 result.append({DocumentEntry::Table::Dividend, dividend.guid(), dividend.document()});
+        }
+        // 08.08.2026: Splits führen seit Phase 3a ebenfalls einen Beleg. Ohne
+        // diese Schleife bliebe der Pfad beim Root-Wechsel als einziger stehen
+        // und wäre danach still tot — der Switch in updateDocument() allein
+        // genügt nicht, das Einsammeln muss ebenso ergänzt werden.
+        for (const ShareSplitObject& split : splitRepo.findByShare(shareGuid)) {
+            if (!split.document().isEmpty())
+                result.append({DocumentEntry::Table::ShareSplit, split.guid(), split.document()});
         }
     }
 
@@ -186,6 +196,8 @@ bool DocumentRootMigrator::updateDocument(const DocumentEntry& entry, const QStr
         return BrokerageRepository().updateDocument(entry.guid, newPath);
     case DocumentEntry::Table::Dividend:
         return DividendRepository().updateDocument(entry.guid, newPath);
+    case DocumentEntry::Table::ShareSplit:
+        return ShareSplitRepository().updateDocument(entry.guid, newPath);
     }
     return false;
 }

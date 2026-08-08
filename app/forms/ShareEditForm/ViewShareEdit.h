@@ -4,6 +4,7 @@
 
 #include "IViewShareEdit.h"
 #include "../../config/DocumentsConfig.h"
+#include "../../models/ShareSplitObject.h"
 #include <QDialog>
 #include <QLineEdit>
 #include <QDateEdit>
@@ -28,6 +29,7 @@ class PresenterShareEdit;
  * │  Börsennotierung:   [date]                                        │
  * │  Einzahlung:        [read-only]  €                                │
  * │  Anteile:           [read-only]  Stk.                             │
+ * │  Splits:            [read-only]  [✏]                              │
  * │  Update via Internet: ○Beide  ○Markt-Preis  ○Tages-Werte  ○Keine │
  * │  Details-Webseite:  [edit]                                        │
  * │  Markt-Wert-Webseite: [edit]  [combo ApiYahoo/OnVista/Regex]      │
@@ -86,6 +88,7 @@ public:
     void loadShare(const ShareObject& share)              override;
     void setFirstBuyDate(const QString& dateStr)          override;
     void setCurrentVolume(double volume)                  override;
+    void setSplitInfo(const QList<ShareSplitObject>& splits) override;
     void setDailyValuesRequired(bool required)            override;
     void setTotalBuys(double value, int count)            override;
     void setTotalSales(double value, int count)           override;
@@ -111,6 +114,7 @@ private slots:
     void onEditSales();
     void onEditDividends();
     void onEditBrokerages();
+    void onEditSplits();
 
 private:
     void       setupUi();
@@ -126,6 +130,17 @@ private:
     /** Helper: format a monetary value for display in a read-only field. */
     static QString formatMoney(double value);
 
+    /**
+     * @brief Helper: Kurzform eines Splits, z. B. "20:1 am 18.07.2022".
+     *
+     * Wird sowohl für den Feldtext als auch für den Tooltip verwendet, damit
+     * beide garantiert dieselbe Schreibweise haben.
+     */
+    static QString formatSplit(const ShareSplitObject& split);
+
+    /** Helper: Verhältnis-Seite ohne unnötige Nachkommastellen ("20" statt "20,00"). */
+    static QString formatRatioPart(double value);
+
     // ── Allgemein ─────────────────────────────────────────────────────────
     QLineEdit*    m_wkn             = nullptr;
     QLineEdit*    m_isin            = nullptr;
@@ -134,6 +149,8 @@ private:
     QDateEdit*    m_listingDate     = nullptr; ///< editable Börsennotierung
     QLineEdit*    m_einzahlung      = nullptr; ///< read-only, filled from totalBuyValue
     QLineEdit*    m_anteile         = nullptr; ///< read-only, filled from totalVolume
+    QLineEdit*    m_splitsField     = nullptr; ///< read-only, siehe setSplitInfo() (08.08.2026)
+    QPushButton*  m_btnEditSplits   = nullptr; ///< fünfter Stift-Button, öffnet ViewShareSplitEdit
     QButtonGroup* m_updateGroup     = nullptr; ///< Beide / Markt-Preis / Tages-Werte / Keine
     QLabel*       m_updateHint      = nullptr; ///< Hinweis unter den Radios, siehe setDailyValuesRequired()
     QLineEdit*    m_detailsWebsite  = nullptr;

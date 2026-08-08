@@ -3,6 +3,8 @@
 #pragma once
 
 #include "../../models/ShareObject.h"
+#include "../../models/ShareSplitObject.h"
+#include <QList>
 #include <QString>
 #include <QDate>
 
@@ -79,6 +81,21 @@ public:
      * @param required  true if the share currently holds volume.
      */
     virtual void setDailyValuesRequired(bool required) = 0;
+
+    /**
+     * @brief Display the split information next to the "Splits" pencil button.
+     *
+     * Hinzugefügt 08.08.2026 (Phase 3 der Aktiensplit-Behandlung). Der Hinweis
+     * sitzt bewusst unmittelbar neben dem Button, über den ein Split erfasst
+     * wird — nicht in einer Fusszeile (Nessies Entscheidung 08.08.2026).
+     *
+     * Die View formatiert selbst; der Presenter reicht nur die Rohdaten durch,
+     * genau wie bei loadShare(). Erwartet wird die Reihenfolge von
+     * ShareSplitRepository::findByShare(), also aufsteigend nach Datum.
+     *
+     * @param splits  Alle Splits der Aktie; leer bedeutet "keine".
+     */
+    virtual void setSplitInfo(const QList<ShareSplitObject>& splits) = 0;
 
     /**
      * @brief Display the total buy value (incl. brokerage, net of reduction).

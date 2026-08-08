@@ -4,7 +4,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Sql)
 # Abschnitt "Versionierung". Gültig nur innerhalb dieses Unterverzeichnisses
 # (CMake-Projektvariablen sind pro Verzeichnis-Scope gültig), beeinflusst
 # also nicht die PROJECT_VERSION der Root-/app-Ebene.
-project(Database VERSION 1.1.0 LANGUAGES CXX)
+project(Database VERSION 1.2.0 LANGUAGES CXX)
 
 qt_add_library(Database STATIC
     Database.h

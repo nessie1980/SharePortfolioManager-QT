@@ -21,8 +21,10 @@
 #include "../../core/Database.h"
 #include "../../repositories/ShareRepository.h"
 #include "../../repositories/BuyRepository.h"
+#include "../../repositories/ShareSplitRepository.h"
 #include "../../models/ShareObject.h"
 #include "../../models/BuyObject.h"
+#include "../../models/ShareSplitObject.h"
 
 /**
  * @brief Tests für DocumentsSettingsForm, DocumentRootMigrator und die
@@ -32,11 +34,20 @@
  * stellt am Ende den ursprünglichen Wert wieder her (gleiches Muster wie
  * tst_backupsettingsform).
  *
- * @note Nur BuyObject/BuyRepository werden für die Migrator-Tests verwendet,
- * nicht zusätzlich Sale/Brokerage/Dividend — DocumentRootMigrator behandelt
- * alle vier Tabellen strukturell identisch (derselbe Switch über
- * DocumentEntry::Table in rewrite()/collectAllDocuments()), ein Fehler in
- * der Buy-Behandlung würde sich genauso in den anderen drei zeigen.
+ * @note Das VERHALTEN von changeRoot() wird nur über BuyObject/BuyRepository
+ * geprüft, nicht zusätzlich über Sale/Brokerage/Dividend/ShareSplit —
+ * DocumentRootMigrator behandelt alle fünf Tabellen strukturell identisch
+ * (derselbe Switch über DocumentEntry::Table in rewrite()/
+ * collectAllDocuments()), ein Fehler in der Buy-Behandlung würde sich genauso
+ * in den anderen zeigen.
+ *
+ * Davon zu unterscheiden ist der ANSCHLUSS einer Tabelle: dass sie überhaupt
+ * in collectAllDocuments() eingesammelt UND in updateDocument() bedient wird.
+ * Diese Begründung deckt das nicht ab — wer eine Tabelle ergänzt und dabei
+ * nur den Switch anfasst, aber die Sammelschleife vergisst, bekommt von den
+ * obigen Tests keinen Widerspruch. Für jede Tabelle gibt es deshalb einen
+ * eigenen Anschlusstest (bisher: ShareSplit, ergänzt 08.08.2026 mit der
+ * Split-Dokumentspalte).
  *
  * @note Die Fehler-/Bestätigungs-Zweige von DocumentsSettingsForm::onOk()
  * (leerer oder nicht existierender neuer Pfad, abweichender alter Pfad)
@@ -464,6 +475,31 @@ private slots:
     {
         QVERIFY(!DocumentRootMigrator::isPathWithinRoot(
             QStringLiteral("/other/Ordner/a.pdf"), QStringLiteral("/data/Belege")));
+    }
+
+    void test_migrator_changeRoot_rewritesShareSplitDocuments()
+    {
+        // Anschlusstest für die fünfte Tabelle (08.08.2026). Er prüft nicht
+        // das Umschreibe-Verhalten — das deckt der Buy-Test ab —, sondern
+        // dass share_splits überhaupt eingesammelt und bedient wird. Ohne die
+        // Schleife in collectAllDocuments() bliebe der Pfad unverändert
+        // stehen, ohne den case in updateDocument() zählte er als
+        // updateFailed; beide Fälle schlagen hier an.
+        const QString shareGuid = insertTestShare();
+
+        ShareSplitRepository splitRepo;
+        const QString splitGuid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        QVERIFY(splitRepo.insert(ShareSplitObject(
+            splitGuid, shareGuid, QDate(2022, 7, 18), 20.0, 1.0, false,
+            QString(), QStringLiteral("/old/root/split.pdf"))));
+
+        const auto result = DocumentRootMigrator::changeRoot(
+            QStringLiteral("/old/root"), QStringLiteral("/new/root"));
+
+        QCOMPARE(result.rewritten,    1);
+        QCOMPARE(result.updateFailed, 0);
+        QCOMPARE(splitRepo.findByGuid(splitGuid).document(),
+                 QStringLiteral("/new/root/split.pdf"));
     }
 
     void test_isPathWithinRoot_similarPrefixNotSubdirectory_false()

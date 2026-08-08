@@ -11,8 +11,9 @@
  *        root directory changes (e.g. moving from a Windows machine to
  *        Linux, or reorganizing where belongs/documents are kept).
  *
- * Touches only the `document` columns in `buys`, `sales`, `brokerage` and
- * `dividends` (via the respective repositories' `updateDocument()`) — no
+ * Touches only the `document` columns in `buys`, `sales`, `brokerage`,
+ * `dividends` and `share_splits` (via the respective repositories'
+ * `updateDocument()`; `share_splits` kam am 08.08.2026 dazu) — no
  * file-system operations (no copy/move) are performed. The physical files
  * are expected to already live at their new location before the rewrite
  * runs (see ARCHITECTURE.md, "Dokument-Root-Verzeichnis").
@@ -122,7 +123,7 @@ public:
 private:
     /// One document path together with its origin table/row for the update call.
     struct DocumentEntry {
-        enum class Table { Buy, Sale, Brokerage, Dividend };
+        enum class Table { Buy, Sale, Brokerage, Dividend, ShareSplit };
         Table   table;
         QString guid;
         QString path;

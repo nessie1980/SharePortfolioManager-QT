@@ -35,6 +35,14 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/forms/ShareEditForm/PresenterShareEdit.cpp
     ../../app/forms/ShareEditForm/ViewShareEdit.h
     ../../app/forms/ShareEditForm/ViewShareEdit.cpp
+    ../../app/forms/ShareSplitsForm/IViewShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/IModelShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/ModelShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/ModelShareSplitEdit.cpp
+    ../../app/forms/ShareSplitsForm/PresenterShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/PresenterShareSplitEdit.cpp
+    ../../app/forms/ShareSplitsForm/ViewShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/ViewShareSplitEdit.cpp
     ../../app/forms/ShareDetailsForm/IViewShareDetails.h
     ../../app/forms/ShareDetailsForm/IModelShareDetails.h
     ../../app/forms/ShareDetailsForm/ModelShareDetails.h
@@ -149,6 +157,7 @@ target_include_directories(tst_mainwindow
             ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/SalesForm
             ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/DividendForm
             ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/BrokeragesForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/ShareSplitsForm
             ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/OwnMessageBoxForm
             ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/BackupProgressForm
             ${CMAKE_CURRENT_SOURCE_DIR}/../../libs/logger/src
@@ -189,6 +198,10 @@ add_custom_command(TARGET tst_mainwindow POST_BUILD
 # ─────────────────────────────────────────────────────────────────────────────
 
 qt_add_executable(tst_buysform tst_buysform.cpp
+    ../../app/models/ShareSplitObject.h
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/ShareSplitRepository.h
+    ../../app/repositories/ShareSplitRepository.cpp
     ../../app/forms/BuysForm/IViewBuyEdit.h
     ../../app/forms/BuysForm/IModelBuyEdit.h
     ../../app/forms/BuysForm/ModelBuyEdit.h
@@ -275,6 +288,14 @@ qt_add_executable(tst_shareeditform tst_shareeditform.cpp
     ../../app/forms/ShareEditForm/PresenterShareEdit.cpp
     ../../app/forms/ShareEditForm/ViewShareEdit.h
     ../../app/forms/ShareEditForm/ViewShareEdit.cpp
+    ../../app/forms/ShareSplitsForm/IViewShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/IModelShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/ModelShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/ModelShareSplitEdit.cpp
+    ../../app/forms/ShareSplitsForm/PresenterShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/PresenterShareSplitEdit.cpp
+    ../../app/forms/ShareSplitsForm/ViewShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/ViewShareSplitEdit.cpp
     ../../app/forms/BuysForm/IViewBuyEdit.h
     ../../app/forms/BuysForm/IModelBuyEdit.h
     ../../app/forms/BuysForm/ModelBuyEdit.h
@@ -353,6 +374,7 @@ target_include_directories(tst_shareeditform
             ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/SalesForm
             ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/DividendForm
             ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/BrokeragesForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/ShareSplitsForm
             ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/OwnMessageBoxForm
             ${CMAKE_CURRENT_SOURCE_DIR}/../../libs/logger/src
             ${CMAKE_CURRENT_SOURCE_DIR}/../../libs/parser/src
@@ -587,6 +609,10 @@ add_test(NAME tst_overviewtabwidget COMMAND tst_overviewtabwidget)
 # ─────────────────────────────────────────────────────────────────────────────
 
 qt_add_executable(tst_documentssettingsform tst_documentssettingsform.cpp
+    ../../app/models/ShareSplitObject.h
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/ShareSplitRepository.h
+    ../../app/repositories/ShareSplitRepository.cpp
     ../../app/forms/DocumentsSettingsForm/DocumentsSettingsForm.h
     ../../app/forms/DocumentsSettingsForm/DocumentsSettingsForm.cpp
     ../../app/core/DocumentRootMigrator.h
@@ -688,3 +714,69 @@ target_link_libraries(tst_portfoliochartform
 )
 
 add_test(NAME tst_portfoliochartform COMMAND tst_portfoliochartform)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_sharesplitsform — ViewShareSplitEdit / PresenterShareSplitEdit
+# Phase 3 der Aktiensplit-Behandlung (08.08.2026).
+# Deutlich schlanker als tst_shareeditform: die Split-Maske hat weder
+# Dokumenten-Vorschau noch Parse-Pipeline und braucht deshalb weder
+# DocumentPreviewPanel noch PdfTextExtractor.
+# ─────────────────────────────────────────────────────────────────────────────
+
+qt_add_executable(tst_sharesplitsform tst_sharesplitsform.cpp
+    ../../app/forms/ShareSplitsForm/IViewShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/IModelShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/ModelShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/ModelShareSplitEdit.cpp
+    ../../app/forms/ShareSplitsForm/PresenterShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/PresenterShareSplitEdit.cpp
+    ../../app/forms/ShareSplitsForm/ViewShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/ViewShareSplitEdit.cpp
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
+    ../../app/widgets/DocumentPreviewPanel.h
+    ../../app/widgets/DocumentPreviewPanel.cpp
+    ../../app/core/DocumentRootMigrator.h
+    ../../app/core/DocumentRootMigrator.cpp
+    ../../app/config/AppSettings.cpp
+    ../../app/IconProvider.cpp
+    ../../app/models/ShareObject.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/DividendObject.cpp
+    ../../app/models/BrokerageObject.cpp
+    ../../app/models/ShareSplitObject.h
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/ShareRepository.cpp
+    ../../app/repositories/BuyRepository.cpp
+    ../../app/repositories/SaleRepository.cpp
+    ../../app/repositories/DividendRepository.cpp
+    ../../app/repositories/BrokerageRepository.cpp
+    ../../app/repositories/ShareSplitRepository.h
+    ../../app/repositories/ShareSplitRepository.cpp
+    ../../app/utils/ShareSplitAdjuster.h
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ${FORM_TEST_RESOURCES}
+)
+
+target_include_directories(tst_sharesplitsform
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/ShareSplitsForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/OwnMessageBoxForm
+)
+
+set_target_properties(tst_sharesplitsform PROPERTIES
+    AUTOMOC ON
+    AUTORCC ON
+)
+
+target_link_libraries(tst_sharesplitsform
+    PRIVATE Qt6::Test Qt6::Sql Qt6::Widgets Database Logger
+)
+
+if(Qt6PdfWidgets_FOUND)
+    target_link_libraries(tst_sharesplitsform PRIVATE Qt6::Pdf Qt6::PdfWidgets)
+    target_compile_definitions(tst_sharesplitsform PRIVATE SPM_HAVE_QTPDF)
+endif()
+
+add_test(NAME tst_sharesplitsform COMMAND tst_sharesplitsform)

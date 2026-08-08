@@ -94,3 +94,12 @@ QString ModelShareEdit::firstBuyDate(const QString& shareGuid) const
         return QString();
     return buys.first().dateAsStr();
 }
+
+// ── loadSplits ────────────────────────────────────────────────────────────────
+
+QList<ShareSplitObject> ModelShareEdit::loadSplits(const QString& shareGuid) const
+{
+    // Reine Weiterleitung — findByShare() liefert bereits aufsteigend nach Datum,
+    // was ViewShareEdit::setSplitInfo() für "zuletzt ..." voraussetzt.
+    return m_splitRepo.findByShare(shareGuid);
+}

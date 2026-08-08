@@ -28,6 +28,7 @@
 #include "../../app/forms/ShareEditForm/ViewShareEdit.h"
 #include "../../app/forms/ShareEditForm/ModelShareEdit.h"
 #include "../../app/forms/ShareEditForm/PresenterShareEdit.h"
+#include "../../app/models/ShareSplitObject.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TestViewShareEdit
@@ -81,6 +82,14 @@ private:
         s.setMarketPriceEncoding(QStringLiteral("en-US"));
         s.setShareType(ShareType::Etf);
         return s;
+    }
+
+    /** Build a ShareSplitObject for the setSplitInfo() tests (08.08.2026). */
+    static ShareSplitObject makeSplit(const QString& guid, const QDate& date,
+                                      double ratioNew, double ratioOld)
+    {
+        return ShareSplitObject(guid, QStringLiteral("share-guid"),
+                                date, ratioNew, ratioOld);
     }
 
     /**
@@ -139,14 +148,15 @@ private slots:
         const QString guid = insertTestShare();
         ViewShareEdit dlg(guid, &m_docsConfig);
         const auto btns = dlg.findChildren<QPushButton*>();
-        // Four pencil buttons: Käufe, Verkäufe, Dividenden, Kosten.
-        // They have an icon and no visible text (created with pencilIcon + QString()).
+        // Fünf Stift-Buttons: Käufe, Verkäufe, Dividenden, Kosten (alle in
+        // "Einnahmen / Ausgabe") und Splits (in "Allgemein", seit 08.08.2026).
+        // Sie haben ein Icon und keine sichtbare Beschriftung (pencilIcon + QString()).
         int pencilCount = 0;
         for (auto* b : btns) {
             if (b->text().isEmpty() && !b->icon().isNull())
                 ++pencilCount;
         }
-        QCOMPARE(pencilCount, 4);
+        QCOMPARE(pencilCount, 5);
     }
 
     void test_viewShareEdit_hasSaveAndCloseButtons()
@@ -533,6 +543,106 @@ private slots:
         QVERIFY(hint);
         QVERIFY(hint->isVisibleTo(&dlg));
         QVERIFY(!hint->text().isEmpty());
+    }
+
+    // ── setSplitInfo (Phase 3 der Aktiensplit-Behandlung, 08.08.2026) ────────
+    //
+    // Der Hinweis sitzt bewusst unmittelbar neben dem Stift-Button, über den
+    // ein Split erfasst wird (Nessies Entscheidung 08.08.2026) — nicht in
+    // einer Fusszeile. Geprüft wird deshalb genau dieses eine Feld, nicht
+    // irgendein QLineEdit im Dialog.
+
+    void test_viewShareEdit_hasSplitsFieldAndButton()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        QVERIFY(dlg.findChild<QLineEdit*>(QStringLiteral("splitsField")));
+        QVERIFY(dlg.findChild<QPushButton*>(QStringLiteral("btnEditSplits")));
+    }
+
+    void test_viewShareEdit_setSplitInfo_emptyShowsKeine()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        dlg.setSplitInfo({});
+
+        auto* field = dlg.findChild<QLineEdit*>(QStringLiteral("splitsField"));
+        if (!field) QFAIL("splitsField not found");
+        QCOMPARE(field->text(), QStringLiteral("keine"));
+    }
+
+    void test_viewShareEdit_setSplitInfo_singleSplitShowsRatioAndDate()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        dlg.setSplitInfo({ makeSplit(QStringLiteral("s1"), QDate(2022, 7, 18), 20.0, 1.0) });
+
+        auto* field = dlg.findChild<QLineEdit*>(QStringLiteral("splitsField"));
+        if (!field) QFAIL("splitsField not found");
+        // Ganze Verhältnisse ohne Nachkommastellen — "20:1", nicht "20,00:1,00".
+        QVERIFY2(field->text().startsWith(QStringLiteral("20:1")),
+                 qPrintable(field->text()));
+        QVERIFY(field->text().contains(
+            QLocale().toString(QDate(2022, 7, 18), QLocale::ShortFormat)));
+    }
+
+    void test_viewShareEdit_setSplitInfo_multipleShowsCountAndLatest()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        // Aufsteigend nach Datum, wie ShareSplitRepository::findByShare() liefert —
+        // der letzte Eintrag muss als "zuletzt" erscheinen.
+        dlg.setSplitInfo({ makeSplit(QStringLiteral("s1"), QDate(2014, 4, 3),  2.0,  1.0),
+                           makeSplit(QStringLiteral("s2"), QDate(2022, 7, 18), 20.0, 1.0) });
+
+        auto* field = dlg.findChild<QLineEdit*>(QStringLiteral("splitsField"));
+        if (!field) QFAIL("splitsField not found");
+        QVERIFY2(field->text().contains(QStringLiteral("2 Splits")),
+                 qPrintable(field->text()));
+        QVERIFY2(field->text().contains(QStringLiteral("20:1")),
+                 qPrintable(field->text()));
+    }
+
+    void test_viewShareEdit_setSplitInfo_tooltipListsAllSplits()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        dlg.setSplitInfo({ makeSplit(QStringLiteral("s1"), QDate(2014, 4, 3),  2.0,  1.0),
+                           makeSplit(QStringLiteral("s2"), QDate(2022, 7, 18), 20.0, 1.0) });
+
+        auto* field = dlg.findChild<QLineEdit*>(QStringLiteral("splitsField"));
+        if (!field) QFAIL("splitsField not found");
+        // Das Feld ist zu schmal für mehrere Splits — die vollständige Liste
+        // muss deshalb über den Tooltip erreichbar bleiben.
+        QVERIFY(field->toolTip().contains(QStringLiteral("2:1")));
+        QVERIFY(field->toolTip().contains(QStringLiteral("20:1")));
+    }
+
+    void test_viewShareEdit_setSplitInfo_reverseSplitKeepsRatioOrder()
+    {
+        // Reverse-Split 1:10 — ratioNew=1, ratioOld=10. Die Reihenfolge darf
+        // nicht vertauscht dargestellt werden, sonst wäre aus einer
+        // Zusammenlegung optisch eine Teilung geworden.
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareEdit dlg(guid, &m_docsConfig);
+
+        dlg.setSplitInfo({ makeSplit(QStringLiteral("s1"), QDate(2023, 5, 2), 1.0, 10.0) });
+
+        auto* field = dlg.findChild<QLineEdit*>(QStringLiteral("splitsField"));
+        if (!field) QFAIL("splitsField not found");
+        QVERIFY2(field->text().startsWith(QStringLiteral("1:10")),
+                 qPrintable(field->text()));
     }
 
     // ── refreshSummary ────────────────────────────────────────────────────────

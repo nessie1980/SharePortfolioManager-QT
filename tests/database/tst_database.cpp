@@ -4,6 +4,7 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlRecord>
+#include <QTemporaryDir>
 
 #include "../../app/core/Database.h"
 
@@ -79,6 +80,15 @@ private slots:
         QCOMPARE(q.value(0).toInt(), 1);
     }
 
+    void test_share_splits_table_exists()
+    {
+        QSqlQuery q(QSqlDatabase::database("spm_main"));
+        QVERIFY(q.exec("SELECT COUNT(*) FROM sqlite_master "
+                        "WHERE type='table' AND name='share_splits'"));
+        QVERIFY(q.next());
+        QCOMPARE(q.value(0).toInt(), 1);
+    }
+
     // ── Indexes ───────────────────────────────────────────────────────────
 
     void test_indexes_exist()
@@ -88,7 +98,8 @@ private slots:
             "idx_buys_datetime",
             "idx_sales_share",
             "idx_dividends_share",
-            "idx_daily_date"
+            "idx_daily_date",
+            "idx_splits_share"
         };
 
         QSqlQuery q(QSqlDatabase::database("spm_main"));
@@ -217,6 +228,134 @@ private slots:
         QVERIFY(q.exec("SELECT COUNT(*) FROM shares WHERE guid = 'tx-rollback-guid'"));
         QVERIFY(q.next());
         QCOMPARE(q.value(0).toInt(), 0);
+    }
+
+    // ── Schema migration (08.08.2026) ─────────────────────────────────────
+    //
+    // migrateSchema() und ensureColumn() sind privat, also nicht direkt
+    // aufrufbar. Geprüft wird deshalb ihr Ergebnis: nach open() muss die
+    // Spalte da sein — egal ob sie aus createSchema() oder aus einem
+    // nachgezogenen ALTER TABLE stammt.
+    //
+    // Den eigentlich interessanten Fall — eine Datenbank, die share_splits
+    // noch OHNE document führt — stellen die beiden letzten Tests her, indem
+    // sie die Tabelle von Hand im alten Zustand neu anlegen und dann ein
+    // zweites open() ausführen. Genau das passiert bei einem Portfolio, das
+    // zwischen Phase 1 und Phase 3a geöffnet wurde.
+
+    void test_share_splits_has_document_column()
+    {
+        QSqlQuery q(QSqlDatabase::database("spm_main"));
+        QVERIFY(q.exec("PRAGMA table_info(share_splits)"));
+
+        bool found = false;
+        while (q.next()) {
+            if (q.value(1).toString() == QStringLiteral("document")) {
+                found = true;
+                break;
+            }
+        }
+        QVERIFY2(found, "Spalte 'document' fehlt in share_splits");
+    }
+
+    void test_migration_addsMissingDocumentColumn()
+    {
+        // Der eigentliche Prüfgegenstand: eine Datenbank, die share_splits
+        // noch ohne document führt — genau der Zustand eines Portfolios, das
+        // zwischen Phase 1 und Phase 3a geöffnet wurde.
+        //
+        // Muss eine DATEI sein, kein :memory: — beim Schliessen einer
+        // In-Memory-Datenbank verschwindet der gesamte Inhalt, der alte
+        // Zustand wäre beim erneuten Öffnen also gar nicht mehr vorhanden
+        // und der Test würde nichts belegen.
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString dbPath = tempDir.path() + QStringLiteral("/migration.db");
+
+        QVERIFY(Database::instance().open(dbPath));
+        {
+            QSqlQuery q(QSqlDatabase::database("spm_main"));
+            QVERIFY(q.exec("DROP TABLE IF EXISTS share_splits"));
+            QVERIFY(q.exec("CREATE TABLE share_splits ("
+                           "guid TEXT PRIMARY KEY, "
+                           "share_guid TEXT NOT NULL REFERENCES shares(guid) ON DELETE CASCADE, "
+                           "date TEXT NOT NULL, "
+                           "ratio_new REAL NOT NULL CHECK(ratio_new > 0), "
+                           "ratio_old REAL NOT NULL CHECK(ratio_old > 0), "
+                           "prices_adjusted INTEGER DEFAULT 0, "
+                           "comment TEXT, "
+                           "UNIQUE(share_guid, date))"));
+            QVERIFY(q.exec("INSERT INTO shares (guid, wkn, name) "
+                           "VALUES ('mig-share', 'MIG001', 'Migration AG')"));
+            QVERIFY(q.exec("INSERT INTO share_splits "
+                           "(guid, share_guid, date, ratio_new, ratio_old) "
+                           "VALUES ('mig-split', 'mig-share', '2022-07-18', 20, 1)"));
+        }
+        Database::instance().close();
+
+        // Erneutes Öffnen zieht die fehlende Spalte nach. createSchema()
+        // allein täte das NICHT — CREATE TABLE IF NOT EXISTS sieht die
+        // vorhandene Tabelle und vergleicht die Spaltenliste nicht.
+        QVERIFY(Database::instance().open(dbPath));
+
+        QSqlQuery q(QSqlDatabase::database("spm_main"));
+        QVERIFY(q.exec("PRAGMA table_info(share_splits)"));
+        bool found = false;
+        while (q.next()) {
+            if (q.value(1).toString() == QStringLiteral("document")) { found = true; break; }
+        }
+        QVERIFY2(found, "Spalte 'document' wurde nicht nachgezogen");
+
+        // Und der bereits erfasste Split ist noch da — die Migration darf
+        // keine Daten kosten, das ist ihr ganzer Zweck.
+        QVERIFY(q.exec("SELECT ratio_new FROM share_splits WHERE guid = 'mig-split'"));
+        QVERIFY(q.next());
+        QCOMPARE(q.value(0).toDouble(), 20.0);
+
+        Database::instance().close();
+        QVERIFY(Database::instance().open(":memory:")); // Ausgangszustand wiederherstellen
+    }
+
+    void test_migration_isIdempotent()
+    {
+        // Zweimaliges Öffnen nach der Migration darf die Spalte nicht erneut
+        // anlegen — ein zweites ALTER TABLE mit demselben Spaltennamen wäre
+        // ein SQL-Fehler und würde open() fehlschlagen lassen.
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString dbPath = tempDir.path() + QStringLiteral("/idempotent.db");
+
+        QVERIFY(Database::instance().open(dbPath));
+        {
+            QSqlQuery q(QSqlDatabase::database("spm_main"));
+            QVERIFY(q.exec("DROP TABLE IF EXISTS share_splits"));
+            QVERIFY(q.exec("CREATE TABLE share_splits ("
+                           "guid TEXT PRIMARY KEY, "
+                           "share_guid TEXT NOT NULL, "
+                           "date TEXT NOT NULL, "
+                           "ratio_new REAL NOT NULL, "
+                           "ratio_old REAL NOT NULL, "
+                           "prices_adjusted INTEGER DEFAULT 0, "
+                           "comment TEXT, "
+                           "UNIQUE(share_guid, date))"));
+        }
+        Database::instance().close();
+
+        QVERIFY(Database::instance().open(dbPath));   // migriert
+        Database::instance().close();
+        QVERIFY(Database::instance().open(dbPath));   // darf nicht erneut migrieren
+
+        QSqlQuery q(QSqlDatabase::database("spm_main"));
+        QVERIFY(q.exec("PRAGMA table_info(share_splits)"));
+        int documentColumns = 0;
+        while (q.next()) {
+            if (q.value(1).toString() == QStringLiteral("document"))
+                ++documentColumns;
+        }
+        QCOMPARE(documentColumns, 1);
+
+        Database::instance().close();
+        QVERIFY(Database::instance().open(":memory:")); // Ausgangszustand wiederherstellen
     }
 };
 

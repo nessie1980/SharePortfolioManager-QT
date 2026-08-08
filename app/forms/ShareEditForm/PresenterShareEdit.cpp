@@ -91,6 +91,11 @@ void PresenterShareEdit::onEditBrokerages()
     emit openBrokeragesRequested(m_shareGuid);
 }
 
+void PresenterShareEdit::onEditSplits()
+{
+    emit openSplitsRequested(m_shareGuid);
+}
+
 // ── loadAndPopulate ───────────────────────────────────────────────────────────
 
 void PresenterShareEdit::loadAndPopulate()
@@ -148,6 +153,12 @@ void PresenterShareEdit::populateSummary()
     m_view->setTotalBrokerages(
         m_model->totalBrokerageValue(m_shareGuid),
         m_model->brokerageCount(m_shareGuid));
+
+    // 08.08.2026 (Phase 3 der Aktiensplit-Behandlung): die Split-Zeile in
+    // "Allgemein" zieht bei jedem Aufruf mit nach. Sie steht bewusst dort und
+    // nicht in "Einnahmen / Ausgabe" — ein Split ist keine Geldbewegung,
+    // sondern eine reine Stückelungsänderung.
+    m_view->setSplitInfo(m_model->loadSplits(m_shareGuid));
 }
 
 // ── validateInput ─────────────────────────────────────────────────────────────

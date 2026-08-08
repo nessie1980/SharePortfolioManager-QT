@@ -18,7 +18,8 @@ ShareSplitObject ShareSplitRepository::fromQuery(const QSqlQuery& sqlQuery) cons
         sqlQuery.value("ratio_new").toDouble(),
         sqlQuery.value("ratio_old").toDouble(),
         sqlQuery.value("prices_adjusted").toBool(),
-        sqlQuery.value("comment").toString()
+        sqlQuery.value("comment").toString(),
+        sqlQuery.value("document").toString()
     );
 }
 
@@ -29,9 +30,9 @@ bool ShareSplitRepository::insert(const ShareSplitObject& split)
     QSqlQuery sqlQuery(QSqlDatabase::database("spm_main"));
     sqlQuery.prepare(R"(
         INSERT INTO share_splits
-            (guid, share_guid, date, ratio_new, ratio_old, prices_adjusted, comment)
+            (guid, share_guid, date, ratio_new, ratio_old, prices_adjusted, comment, document)
         VALUES
-            (:guid, :share_guid, :date, :ratio_new, :ratio_old, :prices_adjusted, :comment)
+            (:guid, :share_guid, :date, :ratio_new, :ratio_old, :prices_adjusted, :comment, :document)
     )");
 
     sqlQuery.bindValue(":guid",            split.guid());
@@ -41,6 +42,7 @@ bool ShareSplitRepository::insert(const ShareSplitObject& split)
     sqlQuery.bindValue(":ratio_old",       split.ratioOld());
     sqlQuery.bindValue(":prices_adjusted", split.pricesAdjusted());
     sqlQuery.bindValue(":comment",         split.comment());
+    sqlQuery.bindValue(":document",        split.document());
 
     if (!sqlQuery.exec()) {
         m_lastError = sqlQuery.lastError();
@@ -107,7 +109,8 @@ bool ShareSplitRepository::update(const ShareSplitObject& split)
             ratio_new       = :ratio_new,
             ratio_old       = :ratio_old,
             prices_adjusted = :prices_adjusted,
-            comment         = :comment
+            comment         = :comment,
+            document        = :document
         WHERE guid = :guid
     )");
 
@@ -117,10 +120,26 @@ bool ShareSplitRepository::update(const ShareSplitObject& split)
     sqlQuery.bindValue(":ratio_old",       split.ratioOld());
     sqlQuery.bindValue(":prices_adjusted", split.pricesAdjusted());
     sqlQuery.bindValue(":comment",         split.comment());
+    sqlQuery.bindValue(":document",        split.document());
 
     if (!sqlQuery.exec()) {
         m_lastError = sqlQuery.lastError();
         qWarning() << "[ShareSplitRepository] update failed:" << m_lastError.text();
+        return false;
+    }
+    return true;
+}
+
+bool ShareSplitRepository::updateDocument(const QString& guid, const QString& document)
+{
+    QSqlQuery sqlQuery(QSqlDatabase::database(Database::connectionName()));
+    sqlQuery.prepare("UPDATE share_splits SET document = :doc WHERE guid = :guid");
+    sqlQuery.bindValue(":doc",  document);
+    sqlQuery.bindValue(":guid", guid);
+
+    if (!sqlQuery.exec()) {
+        m_lastError = sqlQuery.lastError();
+        qWarning() << "[ShareSplitRepository] updateDocument failed:" << m_lastError.text();
         return false;
     }
     return true;

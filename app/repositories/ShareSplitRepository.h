@@ -64,6 +64,19 @@ public:
      */
     bool update(const ShareSplitObject& split);
 
+    /**
+     * @brief Update only the document path of a split.
+     *
+     * Wird von DocumentRootMigrator beim Wechsel des Dokument-Root-
+     * Verzeichnisses aufgerufen — gleiche Signatur wie die
+     * `updateDocument()` der vier anderen Repositories.
+     *
+     * @param guid     GUID des Splits.
+     * @param document Neuer Dokumentpfad.
+     * @return true on success.
+     */
+    bool updateDocument(const QString& guid, const QString& document);
+
     // ── Delete ────────────────────────────────────────────────────────────
     /**
      * @brief Delete a split by its GUID.

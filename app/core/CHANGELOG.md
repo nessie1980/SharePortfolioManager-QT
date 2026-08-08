@@ -10,6 +10,31 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-08
+### Hinzugefügt
+- Schema-Migration für bestehende Portfolios: `migrateSchema()` läuft in
+  `open()` unmittelbar nach `createSchema()` und ergänzt über
+  `ensureColumn(table, column, definition)` fehlende Spalten in bereits
+  vorhandenen Tabellen. Die Prüfung erfolgt über `PRAGMA table_info(<table>)`,
+  ergänzt wird per `ALTER TABLE … ADD COLUMN`.
+
+  Hintergrund: `createSchema()` arbeitet durchgehend mit
+  `CREATE TABLE IF NOT EXISTS`. Eine komplett neue Tabelle kommt dadurch von
+  selbst in bestehende Portfolios — so entstand `share_splits` beim ersten
+  Öffnen nach Version 1.1.0. Eine neue Spalte in einer bereits vorhandenen
+  Tabelle wird auf diesem Weg jedoch nicht nachgezogen: SQLite sieht die
+  Tabelle, vergleicht die Spaltenliste nicht und tut nichts. Bis hierher fiel
+  das nie auf, weil jede Tabelle ihre Spalten von Beginn an hatte.
+
+  Bewusst ohne Versionszähler in der Datenbank: die Prüfung "existiert die
+  Spalte?" ist idempotent, braucht keinen zusätzlichen Zustand und bleibt auch
+  dann verlässlich, wenn ein Portfolio eine oder mehrere Versionen
+  übersprungen hat.
+- Spalte `document` in `share_splits` — ein Split trägt jetzt einen Beleg wie
+  Käufe, Verkäufe, Dividenden und Kosten auch. Bestehende Portfolios bekommen
+  die Spalte über den oben beschriebenen Migrationsschritt beim nächsten
+  Öffnen, ohne Datenverlust. Siehe CHANGELOG.md der Anwendung, `[1.12.0]`.
+
 ## [1.1.0] - 2026-08-07
 ### Hinzugefügt
 - Neue Tabelle `share_splits` für Aktiensplits (`guid`, `share_guid`,

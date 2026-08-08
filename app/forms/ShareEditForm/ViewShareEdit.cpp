@@ -23,12 +23,17 @@
 #include "../BrokeragesForm/ViewBrokerageEdit.h"
 #include "../BrokeragesForm/PresenterBrokerageEdit.h"
 
+// ── ShareSplitsForm ───────────────────────────────────────────────────────────
+#include "../ShareSplitsForm/ViewShareSplitEdit.h"
+#include "../ShareSplitsForm/PresenterShareSplitEdit.h"
+
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QRadioButton>
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
 #include <QLocale>
 #include <QSizePolicy>
+#include <QStringList>
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
@@ -69,6 +74,12 @@ ViewShareEdit::ViewShareEdit(const QString& shareGuid,
     // the summary after the sub-dialog closes.
     connect(m_btnEditBuys, &QPushButton::clicked,
             this, &ViewShareEdit::onEditBuys);
+
+    // Splits pencil (08.08.2026) — sitzt als einziger Stift-Button in
+    // "Allgemein" statt in "Einnahmen / Ausgabe", weil ein Split keinen
+    // Geldbetrag hat. Siehe createGeneralGroup() und ARCHITECTURE.md.
+    connect(m_btnEditSplits, &QPushButton::clicked,
+            this, &ViewShareEdit::onEditSplits);
 }
 
 // ── setupUi ───────────────────────────────────────────────────────────────────
@@ -148,6 +159,35 @@ QGroupBox* ViewShareEdit::createGeneralGroup()
     m_anteile->setEnabled(false);
     m_anteile->setAlignment(Qt::AlignRight);
     addRow(grid, row, tr("Anteile:"), m_anteile, tr("Stk."));
+
+    // Splits (08.08.2026, Phase 3 der Aktiensplit-Behandlung).
+    //
+    // Bewusst hier und nicht in "Einnahmen / Ausgabe": dort ist jede Zeile
+    // geldwertig und endet auf "€", ein Split hat aber keinen Betrag — er
+    // ändert nur die Stückelung. Die Zeile steht deshalb direkt unter
+    // "Anteile:", auf die sie sich fachlich bezieht.
+    //
+    // Der Hinweistext sitzt unmittelbar neben dem Button, über den ein Split
+    // erfasst wird (Nessies Entscheidung 08.08.2026) — nicht in einer
+    // Fusszeile, die vom eigentlichen Geschehen zu weit weg wäre.
+    m_splitsField = new QLineEdit;
+    m_splitsField->setObjectName(QStringLiteral("splitsField"));
+    m_splitsField->setReadOnly(true);
+    m_splitsField->setEnabled(false);
+
+    m_btnEditSplits = new QPushButton(IconProvider::icon(IconProvider::ButtonEdit),
+                                      QString());
+    m_btnEditSplits->setObjectName(QStringLiteral("btnEditSplits"));
+    m_btnEditSplits->setFixedSize(28, UiConstants::kButtonHeight);
+    m_btnEditSplits->setToolTip(tr("Aktiensplits erfassen / bearbeiten"));
+
+    auto* splitsWidget = new QWidget;
+    auto* splitsLayout = new QHBoxLayout(splitsWidget);
+    splitsLayout->setContentsMargins(0, 0, 0, 0);
+    splitsLayout->setSpacing(4);
+    splitsLayout->addWidget(m_splitsField, 1);
+    splitsLayout->addWidget(m_btnEditSplits, 0);
+    addRow(grid, row, tr("Splits:"), splitsWidget);
 
     // Update via Internet — radio buttons
     auto* updateWidget = new QWidget;
@@ -399,6 +439,20 @@ void ViewShareEdit::onEditBrokerages()
     refreshSummary();
 }
 
+// ── onEditSplits ──────────────────────────────────────────────────────────────
+
+void ViewShareEdit::onEditSplits()
+{
+    ViewShareSplitEdit dlg(m_shareGuid, this);
+
+    connect(dlg.presenter(), &PresenterShareSplitEdit::dataChanged,
+            this,            &ViewShareEdit::refreshSummary);
+
+    dlg.exec();
+
+    refreshSummary();
+}
+
 // ── refreshSummary ────────────────────────────────────────────────────────────
 
 void ViewShareEdit::refreshSummary()
@@ -462,6 +516,31 @@ void ViewShareEdit::setFirstBuyDate(const QString& dateStr)
 void ViewShareEdit::setCurrentVolume(double volume)
 {
     m_anteile->setText(QLocale().toString(volume, 'f', 4));
+}
+
+void ViewShareEdit::setSplitInfo(const QList<ShareSplitObject>& splits)
+{
+    if (splits.isEmpty()) {
+        m_splitsField->setText(tr("keine"));
+        m_splitsField->setToolTip(tr("Für diese Aktie ist kein Split erfasst."));
+        return;
+    }
+
+    // findByShare() sortiert aufsteigend nach Datum — der letzte Eintrag ist
+    // damit der jüngste Split.
+    const QString latest = formatSplit(splits.constLast());
+
+    m_splitsField->setText(splits.size() == 1
+        ? latest
+        : tr("%1 Splits, zuletzt %2").arg(splits.size()).arg(latest));
+
+    // Vollständige Liste im Tooltip — das Feld selbst ist zu schmal für
+    // mehrere Splits, die Information soll aber erreichbar bleiben.
+    QStringList lines;
+    lines.reserve(splits.size());
+    for (const ShareSplitObject& s : splits)
+        lines << formatSplit(s);
+    m_splitsField->setToolTip(lines.join(QLatin1Char('\n')));
 }
 
 void ViewShareEdit::setDailyValuesRequired(bool required)
@@ -637,4 +716,23 @@ QLabel* ViewShareEdit::addRow(QGridLayout* grid, int& row,
 QString ViewShareEdit::formatMoney(double value)
 {
     return QLocale().toString(value, 'f', 2);
+}
+
+QString ViewShareEdit::formatSplit(const ShareSplitObject& split)
+{
+    return tr("%1:%2 am %3").arg(formatRatioPart(split.ratioNew()),
+                                 formatRatioPart(split.ratioOld()),
+                                 QLocale().toString(split.date(), QLocale::ShortFormat));
+}
+
+QString ViewShareEdit::formatRatioPart(double value)
+{
+    // Ganze Verhältnisse ohne Nachkommastellen ("20:1" statt "20,00:1,00").
+    // Gebrochene Verhältnisse gibt es aber (z. B. 3:2), deshalb kein
+    // pauschales Abschneiden.
+    const QLocale loc;
+    const double rounded = static_cast<double>(qRound(value));
+    if (qAbs(value - rounded) < 1e-9)
+        return loc.toString(qRound(value));
+    return loc.toString(value, 'f', 2);
 }

@@ -3,6 +3,9 @@
 #pragma once
 
 #include "../../models/ShareObject.h"
+#include "../../models/ShareSplitObject.h"
+
+#include <QList>
 
 /**
  * @brief Abstract model interface for the "Aktie editieren" dialog.
@@ -63,6 +66,15 @@ public:
      * This is the number of shares currently in the depot.
      */
     virtual double currentVolume(const QString& shareGuid) const = 0;
+
+    /**
+     * @brief All splits of the share, ordered by date ascending.
+     *
+     * Hinzugefügt 08.08.2026 (Phase 3 der Aktiensplit-Behandlung) als Grundlage
+     * für die Split-Zeile in der GroupBox "Allgemein". Reine Weiterleitung an
+     * ShareSplitRepository::findByShare() — die Aufbereitung passiert in der View.
+     */
+    virtual QList<ShareSplitObject> loadSplits(const QString& shareGuid) const = 0;
 
     /**
      * @brief Date of the first (earliest) buy, formatted for display.

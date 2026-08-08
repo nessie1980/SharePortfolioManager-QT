@@ -8,7 +8,8 @@ ShareSplitObject::ShareSplitObject(const QString& guid,
                                    double ratioNew,
                                    double ratioOld,
                                    bool   pricesAdjusted,
-                                   const QString& comment)
+                                   const QString& comment,
+                                   const QString& document)
     : m_guid(guid)
     , m_shareGuid(shareGuid)
     , m_date(date)
@@ -16,4 +17,5 @@ ShareSplitObject::ShareSplitObject(const QString& guid,
     , m_ratioOld(ratioOld)
     , m_pricesAdjusted(pricesAdjusted)
     , m_comment(comment)
+    , m_document(document)
 {}

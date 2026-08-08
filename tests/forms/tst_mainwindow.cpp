@@ -394,6 +394,15 @@ public:
     void setCurrentVolume(double)        override {}
     void setDailyValuesRequired(bool required) override
         { dailyValuesRequired = required; dailyValuesRequiredCalled = true; }
+    // 08.08.2026 — Phase 3 der Aktiensplit-Behandlung.
+    /// Zuletzt an setSplitInfo() übergebene Liste.
+    QList<ShareSplitObject> lastSplitInfo;
+    /// Wurde setSplitInfo() überhaupt aufgerufen?
+    bool setSplitInfoCalled = false;
+
+    void setSplitInfo(const QList<ShareSplitObject>& splits) override
+        { lastSplitInfo = splits; setSplitInfoCalled = true; }
+
     void setTotalBuys(double, int)       override { setTotalBuysCalled = true; }
     void setTotalSales(double, int)      override {}
     void setTotalProfitLoss(double, int) override {}
@@ -431,6 +440,13 @@ public:
     int    brokerageCount(const QString&)     const override { return 2; }
     double currentVolume(const QString&)      const override { return volumeToReturn; }
     QString firstBuyDate(const QString&)      const override { return QStringLiteral("2020-01-01"); }
+
+    /// Splits, die loadSplits() liefert — je Test setzbar (08.08.2026).
+    /// Vorgabe leer: die allermeisten Tests hier interessieren sich nicht dafür.
+    QList<ShareSplitObject> splitsToReturn;
+
+    QList<ShareSplitObject> loadSplits(const QString&) const override { return splitsToReturn; }
+
     QString lastError()                       const override { return QString(); }
 };
 
@@ -4685,6 +4701,82 @@ private slots:
         PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
         QSignalSpy spy(&p, &PresenterShareEdit::openBrokeragesRequested);
         p.onEditBrokerages();
+        QCOMPARE(spy.count(), 1);
+    }
+
+    // ── Split-Zeile in "Allgemein" (Phase 3, 08.08.2026) ──────────────────
+    //
+    // Nur die Verdrahtung im Presenter — dass die Splits geladen und an die
+    // richtige View-Methode gereicht werden. Die Aufbereitung des Textes
+    // gehört zur View und wird in tst_shareeditform.cpp geprüft.
+
+    void test_presenterShareEdit_populatesSplitInfoOnConstruction()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        model.splitsToReturn << ShareSplitObject(QStringLiteral("split-1"),
+                                                 QStringLiteral("guid-1"),
+                                                 QDate(2022, 7, 18), 20.0, 1.0);
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        QVERIFY(view.setSplitInfoCalled);
+        QCOMPARE(view.lastSplitInfo.size(), 1);
+        QCOMPARE(view.lastSplitInfo.first().guid(), QStringLiteral("split-1"));
+    }
+
+    void test_presenterShareEdit_populatesSplitInfo_emptyWhenNoSplits()
+    {
+        // Der Aufruf muss auch ohne Splits stattfinden — sonst bliebe nach
+        // dem Löschen des letzten Splits der alte Text stehen.
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        QVERIFY(view.setSplitInfoCalled);
+        QVERIFY(view.lastSplitInfo.isEmpty());
+    }
+
+    void test_presenterShareEdit_refreshSummary_refreshesSplitInfo()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        // Simuliert: der Split-Dialog hat einen Split angelegt und
+        // dataChanged() gesendet, ViewShareEdit ruft refreshSummary().
+        view.setSplitInfoCalled = false;
+        model.splitsToReturn << ShareSplitObject(QStringLiteral("split-1"),
+                                                 QStringLiteral("guid-1"),
+                                                 QDate(2022, 7, 18), 20.0, 1.0);
+        p.refreshSummary();
+
+        QVERIFY(view.setSplitInfoCalled);
+        QCOMPARE(view.lastSplitInfo.size(), 1);
+    }
+
+    void test_presenterShareEdit_onEditSplits_emitsSignal()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+        QSignalSpy spy(&p, &PresenterShareEdit::openSplitsRequested);
+        p.onEditSplits();
         QCOMPARE(spy.count(), 1);
     }
 

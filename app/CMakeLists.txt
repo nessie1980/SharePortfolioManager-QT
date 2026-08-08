@@ -118,6 +118,18 @@ set(APP_SOURCES
     forms/BrokeragesForm/ViewBrokerageEdit.h
     forms/BrokeragesForm/ViewBrokerageEdit.cpp
 
+    # ── Forms – Splits ────────────────────────────────────────────────────
+    # Phase 3 der Aktiensplit-Behandlung (08.08.2026). Wird ausschliesslich
+    # aus ViewShareEdit heraus geöffnet (fünfter Stift-Button in "Allgemein").
+    forms/ShareSplitsForm/IViewShareSplitEdit.h
+    forms/ShareSplitsForm/IModelShareSplitEdit.h
+    forms/ShareSplitsForm/ModelShareSplitEdit.h
+    forms/ShareSplitsForm/ModelShareSplitEdit.cpp
+    forms/ShareSplitsForm/PresenterShareSplitEdit.h
+    forms/ShareSplitsForm/PresenterShareSplitEdit.cpp
+    forms/ShareSplitsForm/ViewShareSplitEdit.h
+    forms/ShareSplitsForm/ViewShareSplitEdit.cpp
+
     # ── Forms – Share Add/Edit ────────────────────────────────────────────
     forms/ShareAddForm/IViewShareAdd.h
     forms/ShareAddForm/IModelShareAdd.h

@@ -32,6 +32,14 @@
  * (Nessies Entscheidung 07.08.2026) — bei mehreren Splits derselben Aktie
  * kann die Kurshistorie unterschiedlich weit bereinigt vorliegen, je
  * nachdem, wann und mit welchem Datenanbieter sie zuletzt abgerufen wurde.
+ *
+ * ### Dokument
+ *
+ * `document` hält den Pfad zum Beleg der Bank, analog zu
+ * `BuyObject`/`SaleObject`/`DividendObject`/`BrokerageObject` (ergänzt
+ * 08.08.2026, Nessies Vorgabe — Banken verschicken sehr wohl Mitteilungen
+ * über anstehende Splits). Der Pfad wird beim Wechsel des Dokument-Roots
+ * von `DocumentRootMigrator` mit umgeschrieben.
  */
 class ShareSplitObject
 {
@@ -48,6 +56,7 @@ public:
      * @param pricesAdjusted  true, wenn die in `daily_values` gespeicherte
      *        Kurshistorie vor @p date bereits split-bereinigt vorliegt.
      * @param comment         Freitext, z. B. Quelle oder Anlass des Splits.
+     * @param document        Pfad zum Beleg der Bank (optional).
      */
     ShareSplitObject(const QString& guid,
                      const QString& shareGuid,
@@ -55,7 +64,8 @@ public:
                      double ratioNew,
                      double ratioOld,
                      bool   pricesAdjusted = false,
-                     const QString& comment = QString());
+                     const QString& comment  = QString(),
+                     const QString& document = QString());
 
     // ── Identity ──────────────────────────────────────────────────────────
     QString guid()      const { return m_guid; }      ///< Unique identifier
@@ -86,6 +96,11 @@ public:
     QString comment() const { return m_comment; }
     void    setComment(const QString& value) { m_comment = value; }
 
+    // ── Document ──────────────────────────────────────────────────────────
+    /// Pfad zum Beleg der Bank; leer, wenn keiner zugeordnet ist.
+    QString document() const { return m_document; }
+    void    setDocument(const QString& value) { m_document = value; }
+
     // ── Validity ──────────────────────────────────────────────────────────
     /**
      * @brief Returns true if the object contains valid data.
@@ -110,4 +125,5 @@ private:
 
     bool    m_pricesAdjusted = false;
     QString m_comment;
+    QString m_document;
 };

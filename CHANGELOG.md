@@ -6,6 +6,54 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.12.0] - 2026-08-08
+
+### Added
+
+- Aktiensplit-Behandlung, Phase 3a: neue Erfassungsmaske `ShareSplitsForm`
+  (`app/forms/ShareSplitsForm/`) als vollständige MVP-Triade, erreichbar über
+  einen fünften Stift-Button in `ViewShareEdit`. Der Button sitzt in der
+  GroupBox "Allgemein" direkt unter "Anteile:" statt in "Einnahmen / Ausgabe",
+  weil ein Split keinen Geldbetrag hat, sondern nur die Stückelung ändert.
+  Daneben ein Hinweisfeld, das je nach Lage `keine`, `20:1 am 18.07.2022` oder
+  `2 Splits, zuletzt 20:1 am 18.07.2022` anzeigt und alle Splits im Tooltip
+  führt.
+- Die Maske erfasst Ex-Tag, Verhältnis (neu : alt) mit abgeleiteter
+  Umrechnungs-Vorschau, das Kennzeichen "Kurshistorie bereits split-bereinigt"
+  sowie einen Kommentar. Zukünftige Ex-Tage sind ausdrücklich erlaubt, damit
+  ein angekündigter Split sofort erfasst werden kann; ein Verhältnis mit
+  Faktor 1,0 wird abgewiesen, ebenso ein zweiter Split derselben Aktie am
+  selben Tag. Die Übersicht ist bewusst eine flache Tabelle ohne Jahres-Tabs —
+  eine Aktie hat typischerweise null bis drei Splits.
+- Das Löschen eines Splits fragt vorher nach und beziffert dabei die
+  Bestandsänderung ("von 2.000,0000 auf 100,0000 Stück"). Die Transaktionen
+  selbst bleiben unberührt: ein Split ist nur eine Rechenvorschrift, das
+  Löschen ist vollständig umkehrbar.
+- Splits tragen jetzt einen Beleg wie Käufe, Verkäufe, Dividenden und Kosten
+  auch: Dokumentpfad in `ShareSplitObject`/`ShareSplitRepository`,
+  Pfadfeld mit Dateidialog und `DocumentPreviewPanel` in der Maske,
+  Dokument-Spalte in der Übersicht. Der Dateidialog lässt nur PDF zu und prüft
+  den Pfad gegen das Dokument-Root-Verzeichnis. Ausgewertet wird der Beleg
+  nicht — ob ein Parsing von Split-Mitteilungen lohnt, ist als offener Punkt
+  festgehalten.
+- `DocumentRootMigrator` deckt mit `share_splits` jetzt fünf Tabellen ab, damit
+  Split-Dokumente beim Wechsel des Dokument-Roots mit umgeschrieben werden.
+  Ergänzt sowohl in `collectAllDocuments()` als auch im Switch von
+  `updateDocument()` — nur eins von beiden hätte dazu geführt, dass
+  Split-Dokumente still übergangen werden.
+- Die Doppelbelegungs-Prüfung `documentExists()` sitzt in
+  `ModelShareSplitEdit`, nicht im Repository — dieselbe Platzierung wie bei
+  `ModelBuyEdit`, `ModelSaleEdit`, `ModelDividendEdit` und
+  `ModelBrokerageEdit`. Sie prüft nur innerhalb von `share_splits` und meldet
+  einen Hinweis, blockiert das Speichern aber nicht: zwei Splits können
+  legitim auf derselben Bankmitteilung stehen.
+
+### Changed
+
+- `IViewShareEdit` und `IModelShareEdit` um je eine Methode erweitert
+  (`setSplitInfo()`, `loadSplits()`); `PresenterShareEdit::populateSummary()`
+  aktualisiert die Split-Zeile im selben Durchlauf wie die Geldsummen.
+
 ## [1.11.0] - 2026-08-08
 
 ### Added

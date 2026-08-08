@@ -48,6 +48,14 @@ bool Database::open(const QString& path)
         return false;
     }
 
+    // Bestehende Portfolios auf den aktuellen Stand bringen (08.08.2026).
+    // createSchema() legt fehlende TABELLEN an, aber keine fehlenden SPALTEN
+    // in bereits vorhandenen Tabellen — siehe migrateSchema().
+    if (!migrateSchema()) {
+        qCritical() << "[Database] Schema migration failed";
+        return false;
+    }
+
     qInfo() << "[Database] Opened:" << path;
     return true;
 }
@@ -231,6 +239,7 @@ bool Database::createSchema()
             ratio_old       REAL    NOT NULL CHECK(ratio_old > 0),
             prices_adjusted INTEGER DEFAULT 0,
             comment         TEXT,
+            document        TEXT,
             UNIQUE(share_guid, date)
         ))",
 
@@ -251,4 +260,80 @@ bool Database::createSchema()
         }
     }
     return commitTransaction();
+}
+
+// ── Migration ─────────────────────────────────────────────────────────────────
+
+bool Database::migrateSchema()
+{
+    // Eine Zeile je nachgerüsteter Spalte. Reihenfolge ist unerheblich, jeder
+    // Eintrag ist für sich idempotent.
+    //
+    // 08.08.2026 — share_splits.document: Splits bekommen einen Beleg wie
+    // Käufe, Verkäufe, Dividenden und Kosten auch. Portfolios, die zwischen
+    // Phase 1 und Phase 3a geöffnet wurden, haben die Tabelle bereits ohne
+    // diese Spalte angelegt.
+    struct ColumnMigration {
+        const char* table;
+        const char* column;
+        const char* definition;
+    };
+
+    static const ColumnMigration migrations[] = {
+        { "share_splits", "document", "TEXT" },
+    };
+
+    for (const ColumnMigration& migration : migrations) {
+        if (!ensureColumn(QString::fromLatin1(migration.table),
+                          QString::fromLatin1(migration.column),
+                          QString::fromLatin1(migration.definition)))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Database::ensureColumn(const QString& table,
+                            const QString& column,
+                            const QString& definition)
+{
+    if (hasColumn(table, column))
+        return true;
+
+    // Tabellen-, Spalten- und Typnamen lassen sich in DDL nicht binden —
+    // sie kommen ausschliesslich aus der obigen, fest einkompilierten
+    // Tabelle, nie aus Benutzereingaben.
+    const QString sql = QStringLiteral("ALTER TABLE %1 ADD COLUMN %2 %3")
+                            .arg(table, column, definition);
+
+    if (!execute(sql)) {
+        qCritical() << "[Database] Could not add column" << column << "to" << table;
+        return false;
+    }
+
+    qInfo() << "[Database] Migrated: added column" << column << "to" << table;
+    return true;
+}
+
+bool Database::hasColumn(const QString& table, const QString& column) const
+{
+    QSqlQuery sqlQuery(m_db);
+
+    // PRAGMA table_info liefert eine leere Ergebnismenge, wenn die Tabelle
+    // gar nicht existiert — der Aufrufer bekommt dann false und würde ein
+    // ALTER TABLE auf eine fehlende Tabelle versuchen. Das kann hier nicht
+    // eintreten, weil migrateSchema() erst nach createSchema() läuft.
+    if (!sqlQuery.exec(QStringLiteral("PRAGMA table_info(%1)").arg(table))) {
+        qWarning() << "[Database] PRAGMA table_info failed for" << table
+                   << ":" << sqlQuery.lastError().text();
+        return false;
+    }
+
+    while (sqlQuery.next()) {
+        // Spalte 1 der PRAGMA-Ausgabe ist der Spaltenname.
+        if (sqlQuery.value(1).toString().compare(column, Qt::CaseInsensitive) == 0)
+            return true;
+    }
+    return false;
 }

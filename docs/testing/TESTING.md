@@ -45,6 +45,7 @@ ctest --output-on-failure
 ./bin/tst_shareupdaterules
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
+./bin/tst_sharesplitsform
 ./bin/tst_sharedetailsform
 ./bin/tst_chartform
 ./bin/tst_portfoliochartform
@@ -64,7 +65,8 @@ darin definierten `qt_add_executable()`-Ziele abgeglichen — in beide
 Richtungen — und umfasste zu diesem Zeitpunkt alle 31 Testziele des
 Projekts; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
 (07.08.2026, Phase 1 der Aktiensplit-Behandlung) waren es 33, seit
-`tst_salefifoallocator` (07.08.2026, Phase 2c) sind es 34. Anlass für den
+`tst_salefifoallocator` (07.08.2026, Phase 2c) waren es 34, seit
+`tst_sharesplitsform` (08.08.2026, Phase 3a) sind es 35. Anlass für den
 ursprünglichen Abgleich war der Vorfall vom 05.08.2026, bei dem
 `tst_sharecalculator` hier aufgeführt war, aber in keiner `CMakeLists.txt`
 stand und deshalb nie gebaut wurde und nie mitlief. Wer ein Testziel
@@ -232,17 +234,62 @@ beiden Besonderheiten des Schemas — eigene GUID je Zeile (anders als bei
 | `test_findByShare_orderedByDateAscending` | Zwei Splits → aufsteigend nach Datum |
 | `test_findByShare_noSplits_returnsEmpty` | Aktie ohne Splits → leere Liste |
 | `test_findByGuid_found` / `test_findByGuid_notFound_returnsInvalid` | Einzelabruf per GUID |
-| `test_existsForDate_true` / `test_existsForDate_false` | Vorgriff auf die künftige Erfassungsmaske (Phase 3) |
+| `test_existsForDate_true` / `test_existsForDate_false` | Duplikat-Prüfung der Erfassungsmaske (Phase 3a) |
 | `test_insert_duplicateDate_fails` | `UNIQUE(share_guid, date)` — zweiter Split am selben Tag scheitert |
 | `test_update_changesFields` | Datum, `prices_adjusted` und Kommentar änderbar |
 | `test_remove_deletesSplit` / `test_removeByShare_deletesAllSplitsOfShare` | Löschpfade |
 | `test_deletingShare_cascadesToSplits` | `ON DELETE CASCADE` über `share_guid` — läuft bewusst als letzter Test, da er die Test-Aktie löscht und danach neu anlegt |
+
+Dokumentspalte (ergänzt 08.08.2026 mit Phase 3a — ein Split trägt jetzt einen
+Beleg wie Kauf, Verkauf, Dividende und Kosten auch):
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_insert_storesDocumentPath` | Pfad wird gespeichert und kommt unverändert zurück |
+| `test_insert_withoutDocument_returnsEmptyString` | Kein Beleg → leerer String, kein NULL-Artefakt |
+| `test_update_changesDocumentPath` | Pfad über `update()` änderbar |
+| `test_updateDocument_changesOnlyDocument` | Nur der Pfad wird angefasst — Verhältnis, Kommentar und `prices_adjusted` bleiben stehen |
+
+@note `documentExists()` wird hier bewusst NICHT geprüft — die Abfrage sitzt in
+`ModelShareSplitEdit`, nicht im Repository (dieselbe Platzierung wie bei
+`ModelBuyEdit`/`ModelSaleEdit`/`ModelDividendEdit`/`ModelBrokerageEdit`). Die
+zugehörigen Tests stehen in `tst_sharesplitsform.cpp`.
+
+@note `test_updateDocument_changesOnlyDocument` ist der Regressionstest für den
+Aufruf aus `DocumentRootMigrator`: würde dort versehentlich `update()` statt
+`updateDocument()` verwendet, überschriebe ein Root-Wechsel die fachlichen
+Felder mit dem, was gerade im Speicher liegt.
 
 ---
 
 ### tests/database/ — Database Unit-Tests
 
 Tabellen-Existenz, Indizes, Foreign Keys, Default-Werte, WAL-Modus und Transaktionen.
+
+Schema-Migration (ergänzt 08.08.2026, siehe ARCHITECTURE.md,
+"Schema-Migration bestehender Portfolios"):
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_share_splits_table_exists` | Tabelle wird von `createSchema()` angelegt |
+| `test_share_splits_has_document_column` | Spalte `document` ist nach `open()` vorhanden |
+| `test_migration_addsMissingDocumentColumn` | Alte Tabelle ohne `document` → Spalte wird beim nächsten `open()` nachgezogen, bestehende Zeilen bleiben erhalten |
+| `test_migration_isIdempotent` | Zweites und drittes `open()` legen die Spalte nicht erneut an |
+
+@note Die beiden Migrationstests arbeiten als einzige in dieser Datei mit einer
+DATEI-Datenbank in einem `QTemporaryDir`, nicht mit `:memory:`. Der Grund ist
+zwingend: beim Schliessen einer In-Memory-Datenbank verschwindet ihr gesamter
+Inhalt. Der von Hand hergestellte Altzustand (Tabelle ohne `document`) wäre
+beim erneuten Öffnen also gar nicht mehr da, und der Test bewiese nichts — er
+liefe grün, egal ob `migrateSchema()` existiert oder nicht. Beide Tests stellen
+am Ende mit `open(":memory:")` den Ausgangszustand für `cleanupTestCase()`
+wieder her.
+
+@note `test_migration_isIdempotent` deckt den Fall ab, der in der Praxis am
+häufigsten eintritt: jedes weitere Öffnen eines bereits migrierten Portfolios.
+Ein zweites `ALTER TABLE` mit demselben Spaltennamen wäre ein SQL-Fehler und
+liesse `open()` scheitern — die Anwendung würde also ab dem zweiten Start nicht
+mehr hochkommen.
 
 ---
 
@@ -937,10 +984,10 @@ ruft `onReset()` auf → Formular geleert, Button "Hinzufügen".
 Executable: `tst_shareeditform`
 Klassen unter Test: `ViewShareEdit`
 
-@note `ViewShareEdit.cpp` zieht alle vier Sub-Form-Trios (`BuysForm`,
-`SalesForm`, `DividendForm`, `BrokeragesForm`) als Compile-Abhängigkeit rein —
-diese werden in `tst_shareeditform` nur kompiliert und gelinkt, aber nicht
-getestet. `ModelShareEdit` und `PresenterShareEdit` sind ebenfalls Compile-
+@note `ViewShareEdit.cpp` zieht alle fünf Sub-Form-Trios (`BuysForm`,
+`SalesForm`, `DividendForm`, `BrokeragesForm` und seit 08.08.2026
+`ShareSplitsForm`) als Compile-Abhängigkeit rein — diese werden in
+`tst_shareeditform` nur kompiliert und gelinkt, aber nicht getestet. `ModelShareEdit` und `PresenterShareEdit` sind ebenfalls Compile-
 Abhängigkeiten; ihre Tests verbleiben in `tst_mainwindow`.
 
 ViewShareEdit:
@@ -948,7 +995,7 @@ ViewShareEdit:
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_viewShareEdit_canBeConstructed` | Dialog öffnet ohne Absturz | Fenstertitel enthält "Aktie" |
-| `test_viewShareEdit_hasPencilButtons` | Vier Pencil-Buttons vorhanden | Anzahl Buttons mit Icon und leerem Text = 4 |
+| `test_viewShareEdit_hasPencilButtons` | Fünf Pencil-Buttons vorhanden (Käufe, Verkäufe, Dividenden, Kosten, Splits) | Anzahl Buttons mit Icon und leerem Text = 5 |
 | `test_viewShareEdit_hasSaveAndCloseButtons` | Speichern- und Schließen-Button vorhanden | Beide Texte gefunden |
 | `test_viewShareEdit_loadShare_setsWknAndIsin` | `loadShare()` schreibt WKN + ISIN | `wkn()` = "840400", `isin()` = "DE0008404005" |
 | `test_viewShareEdit_loadShare_setsName` | Name wird korrekt gesetzt | `name()` = "Allianz SE" |
@@ -973,6 +1020,33 @@ ViewShareEdit:
 | `test_viewShareEdit_marketApiKey_setFromSettingsForYahoo` | Yahoo-Modus → Key aus AppSettings | `marketPriceApiKey()` = gesetzter Key |
 | `test_viewShareEdit_dailyApiKey_setFromSettingsForOnVista` | OnVista-Modus → Key aus AppSettings | `dailyValuesApiKey()` = gesetzter Key |
 | `test_viewShareEdit_refreshSummary_doesNotCrash` | `refreshSummary()` ohne Absturz | Kein Absturz |
+
+Split-Zeile in "Allgemein" (ergänzt 08.08.2026, Phase 3a der
+Aktiensplit-Behandlung) — sechs Tests zu `setSplitInfo()`. Anders als bei den
+Update-Radios wird hier gezielt über `objectName` gesucht (`splitsField`,
+`btnEditSplits`) statt über alle `QLineEdit` des Dialogs: der Hinweis soll
+nachweislich in genau diesem einen Feld neben dem Stift-Button landen, nicht
+irgendwo:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_viewShareEdit_hasSplitsFieldAndButton` | Feld und Button existieren | `splitsField` und `btnEditSplits` per `objectName` gefunden |
+| `test_viewShareEdit_setSplitInfo_emptyShowsKeine` | Aktie ohne Splits | Feldtext = "keine" |
+| `test_viewShareEdit_setSplitInfo_singleSplitShowsRatioAndDate` | Genau ein Split | Text beginnt mit "20:1", enthält das Datum |
+| `test_viewShareEdit_setSplitInfo_multipleShowsCountAndLatest` | Zwei Splits | Text enthält "2 Splits" und das jüngste Verhältnis |
+| `test_viewShareEdit_setSplitInfo_tooltipListsAllSplits` | Zwei Splits | Tooltip enthält beide Verhältnisse |
+| `test_viewShareEdit_setSplitInfo_reverseSplitKeepsRatioOrder` | Reverse-Split 1:10 | Text beginnt mit "1:10", nicht "10:1" |
+
+@note `test_..._singleSplitShowsRatioAndDate` prüft mit `startsWith("20:1")`
+bewusst auch die Formatierung ohne Nachkommastellen. Ein Verhältnis als
+"20,00:1,00" darzustellen wäre nicht falsch, aber schwer lesbar — und der Test
+schlägt an, sobald jemand die Sonderbehandlung ganzer Zahlen entfernt.
+
+@note `test_..._reverseSplitKeepsRatioOrder` ist der Regressionstest gegen eine
+vertauschte Verhältnis-Darstellung. Aus einer Zusammenlegung (1:10) würde
+optisch eine Teilung (10:1), was die Bedeutung ins Gegenteil verkehrt — ein
+Fehler, der ohne Test lange unbemerkt bliebe, weil beide Formen plausibel
+aussehen.
 
 Update-Typ-Sperre bei Bestand (ergänzt 06.08.2026) — sieben Tests zu
 `setDailyValuesRequired()`. Die vier Radiobuttons haben bewusst keine
@@ -1005,6 +1079,197 @@ das Speichern eines solchen Werts blockiert wird — braucht ein Stub-Paar und
 liegt deshalb in `tst_mainwindow.cpp`, siehe dort
 `test_presenterShareEdit_onSave_forbiddenUpdateType_showsErrorAndDoesNotSave`.
 `tst_shareeditform` selbst arbeitet durchgehend gegen den echten Dialog.
+
+---
+
+#### tst_sharesplitsform — ShareSplitsForm (neu, 08.08.2026)
+
+Executable: `tst_sharesplitsform`
+Klassen unter Test: `ViewShareSplitEdit`, `ModelShareSplitEdit`, `PresenterShareSplitEdit`
+
+@note Stub-Pattern: `StubViewShareSplitEdit` und `StubModelShareSplitEdit` für
+alle Presenter-Tests. `StubViewShareSplitEdit::confirm()` liefert einen je Test
+setzbaren Wert (`confirmResult`) zurück, statt einen modalen Dialog zu öffnen —
+genau dafür sitzt die Löschabfrage im View-Interface und nicht als direkter
+`OwnMessageBox::question()`-Aufruf im Presenter. Ohne diesen Umweg wäre der
+gesamte Löschpfad nicht testbar.
+
+@note Schlanker als `tst_shareeditform`: die Split-Maske hat keine
+Parse-Pipeline und braucht deshalb weder `PdfTextExtractor` noch
+`DocumentClassifier` als Compile-Abhängigkeit. `DocumentPreviewPanel` und
+`DocumentRootMigrator` kamen am 08.08.2026 mit der Dokumentspalte dazu, ebenso
+der `SPM_HAVE_QTPDF`-Zweig im CMake-Ziel.
+
+@note `main()` setzt `QLocale::setDefault(QLocale::German)`. Presenter und View
+formatieren Zahlen und Datumsangaben über `QLocale()`; CI-Runner laufen nicht
+mit deutschem Locale, ohne diese Zeile schlügen die Vergleiche der
+Löschabfrage-Texte dort fehl.
+
+PresenterShareSplitEdit — Konstruktion und Vorschau:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_presenter_populatesOverviewOnConstruction` | Übersicht wird beim Öffnen gefüllt | `populateOverview()` erhält die Modell-Liste |
+| `test_presenter_startsInAddModeWithRemoveDisabled` | Frisch geöffnet | `canRemove` = false, `isEdit` = false |
+| `test_presenter_setsFactorPreviewOnConstruction` | Umrechnungs-Vorschau initial gesetzt | Text nicht leer, enthält "20" |
+| `test_presenter_factorPreview_reverseSplitUsesSingular` | Reverse-Split 1:10 | Text enthält "wird 1", nicht "werden" |
+| `test_presenter_factorPreview_invalidRatioShowsDash` | Verhältnis-Seite = 0 | Vorschau = "-" |
+
+PresenterShareSplitEdit — Validierung beim Speichern:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_presenter_onSave_validSplit_callsAdd` | Gültige Eingabe | `addSplit()` aufgerufen, Werte korrekt übernommen |
+| `test_presenter_onSave_emitsDataChanged` | Gültige Eingabe | `dataChanged()` genau einmal gesendet |
+| `test_presenter_onSave_sentinelDate_showsErrorAndDoesNotSave` | Ex-Tag = 01.01.2000 | Kein Speichern, Fehlermeldung |
+| `test_presenter_onSave_futureDate_isAllowed` | Ex-Tag ein Jahr in der Zukunft | Speichern erfolgt, keine Meldung |
+| `test_presenter_onSave_zeroRatio_showsErrorAndDoesNotSave` | Verhältnis-Seite = 0 | Kein Speichern, Fehlermeldung |
+| `test_presenter_onSave_ratioOneToOne_isRejected` | Verhältnis 1:1 | Kein Speichern, Fehlermeldung |
+| `test_presenter_onSave_equivalentRatio_isAlsoRejected` | Verhältnis 2:2 | Kein Speichern — geprüft wird der Quotient, nicht der Wortlaut |
+| `test_presenter_onSave_duplicateDate_showsErrorAndDoesNotSave` | Tag bereits belegt | Kein Speichern, Fehlermeldung |
+| `test_presenter_onSave_modelFails_showsError` | Modell meldet Fehler | `showError()` mit der Modell-Meldung |
+
+PresenterShareSplitEdit — Bearbeiten:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_presenter_onRowSelected_loadsSplitAndEnablesRemove` | Zeile ausgewählt | `loadSplit()` aufgerufen, `canRemove` und `isEdit` = true |
+| `test_presenter_onRowSelected_olderSplitIsAlsoRemovable` | Ältere von zwei Zeilen | `canRemove` = true — keine Letzter-Eintrag-Sperre |
+| `test_presenter_onRowSelected_emptyGuid_resetsForm` | Auswahl aufgehoben | `clearForm()` aufgerufen |
+| `test_presenter_onSave_existingSplit_callsUpdate` | Geladener Split gespeichert | `updateSplit()` statt `addSplit()`, GUID erhalten |
+| `test_presenter_onSave_existingSplit_unchangedDateIsNoDuplicate` | Nur Verhältnis geändert | Speichern erlaubt trotz `existsForDate()` = true |
+| `test_presenter_onSave_existingSplit_changedDateToOccupiedDay_isRejected` | Auf belegten Tag verschoben | Kein Speichern, Fehlermeldung |
+
+Dokument (ergänzt 08.08.2026):
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_presenter_onSave_storesDocumentPath` | Pfad im Feld | Landet unverändert im gespeicherten Objekt |
+| `test_presenter_onSave_trimsDocumentPath` | Pfad mit Leerzeichen | Wird getrimmt gespeichert |
+| `test_presenter_onDocumentSelected_setsPathAndPreview` | Auswahl im Dateidialog | Feld gesetzt UND Vorschau geladen |
+| `test_presenter_onDocumentPathEdited_duplicateShowsHint` | Pfad schon vergeben | Hinweis über `showError()` |
+| `test_presenter_onDocumentPathEdited_duplicateDoesNotBlockSaving` | Gleicher Fall, danach speichern | Speichern läuft trotzdem durch |
+| `test_presenter_onDocumentPathEdited_emptyPath_noCheck` | Leeres Feld | Keine Prüfung, keine Meldung |
+| `test_presenter_onDocumentPathEdited_excludesLoadedSplit` | Geladener Split | Eigene GUID wird als `excludeGuid` durchgereicht |
+| `test_presenter_onRowSelected_withDocument_opensPreview` | Zeile mit Beleg | Vorschau wird mit dem Pfad geladen |
+| `test_presenter_onRowSelected_withoutDocument_clearsPreview` | Zeile ohne Beleg | Vorschau wird geleert |
+| `test_presenter_onReset_clearsPreview` | Reset | Vorschau wird geleert |
+
+@note `test_..._duplicateDoesNotBlockSaving` hält die Entscheidung fest, dass
+die Doppelbelegung nur ein Hinweis ist. Zwei Splits können legitim auf
+derselben Bankmitteilung stehen; würde jemand die Prüfung später zu einer
+Blockade in `validateInput()` hochziehen, schlägt dieser Test an und erzwingt
+eine bewusste Entscheidung.
+
+@note `test_..._excludesLoadedSplit` prüft nicht das Ergebnis, sondern das
+ÜBERGEBENE ARGUMENT — der Stub merkt sich den `excludeGuid`. Ohne diesen Weg
+liesse sich nicht unterscheiden, ob die Ausnahme wirklich gesetzt wurde oder
+ob das Modell zufällig `false` geliefert hat.
+
+PresenterShareSplitEdit — Löschen:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_presenter_onRemove_withoutSelection_doesNothing` | Keine Auswahl | Weder `confirm()` noch `removeSplit()` |
+| `test_presenter_onRemove_asksForConfirmation` | Auswahl vorhanden | `confirm()` aufgerufen, danach gelöscht |
+| `test_presenter_onRemove_declinedConfirmation_doesNotRemove` | Rückfrage verneint | `removeSplit()` NICHT aufgerufen |
+| `test_presenter_onRemove_confirmationNamesTheSplit` | Meldungstext | Enthält "20:1" |
+| `test_presenter_onRemove_confirmationShowsVolumeChange` | 100 Stk. vor 20:1-Split | Meldung enthält 2.000,0000 und 100,0000 |
+| `test_presenter_onRemove_lotAfterSplitIsUnaffected` | Kauf nach dem Splittag | Bestand vorher = nachher |
+| `test_presenter_onRemove_emitsDataChanged` | Erfolgreiches Löschen | `dataChanged()` genau einmal |
+| `test_presenter_onRemove_modelFails_showsError` | Modell meldet Fehler | `showError()` mit der Modell-Meldung |
+
+PresenterShareSplitEdit — Reset und Schliessen:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_presenter_onReset_clearsFormAndButtonStates` | Nach Auswahl zurückgesetzt | `clearForm()`, `canRemove` und `isEdit` = false |
+| `test_presenter_onReset_forgetsSelection` | Speichern nach Reset | `addSplit()` statt `updateSplit()` |
+| `test_presenter_onClose_closesView` | Schliessen | `acceptAndClose()` aufgerufen |
+
+ModelShareSplitEdit — gegen die echte In-Memory-Datenbank:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_model_addAndLoadSplit_roundTrip` | Anlegen und Lesen | Verhältnis und Kommentar unverändert zurück |
+| `test_model_loadSplits_orderedByDateAscending` | Umgekehrt eingefügt | Rückgabe aufsteigend nach Datum |
+| `test_model_existsForDate_findsInsertedSplit` | Belegter und freier Tag | true bzw. false |
+| `test_model_updateSplit_changesStoredValues` | Verhältnis und Flag geändert | Werte in der Datenbank aktualisiert |
+| `test_model_removeSplit_deletesRow` | Löschen | Liste danach leer |
+| `test_model_removeSplit_leavesBuysUntouched` | Löschen bei vorhandenem Kauf | `buys.volume` und `buys.price` unverändert |
+| `test_model_openLots_skipsFullySoldBuys` | Ein Kauf voll verkauft, einer teilweise | Nur der offene Posten, Restmenge = 30 |
+| `test_model_documentExists_findsAssignedDocument` | Vergebener Beleg, ohne excludeGuid | true — der Fall, der den NULL-Fallstrick aufdeckte |
+| `test_model_documentExists_unknownDocument_returnsFalse` | Unbekannter Pfad | false |
+| `test_model_documentExists_excludesOwnGuid` | Eigene GUID ausgenommen | false |
+| `test_model_documentExists_otherSplitStillCounts` | Fremde GUID ausgenommen | true — die Ausnahme darf nicht zu weit greifen |
+| `test_model_documentExists_emptyPath_returnsFalse` | Leerer Pfad | false |
+| `test_model_documentExists_trimsPath` | Pfad mit Leerzeichen | true — es wird auch beim Binden getrimmt |
+
+@note `test_..._findsAssignedDocument` und `test_..._otherSplitStillCounts`
+sind die Lehre aus dem Bugfix vom 08.08.2026. Die erste Fassung hatte nur den
+Ausschluss-Fall getestet — und ein Test, der belegt, dass etwas NICHT gefunden
+wird, kann einen Fehler nicht entdecken, bei dem nie etwas gefunden wird. Wo
+eine Prüfung beide Antworten liefern muss, braucht es beide Richtungen als
+Test, sonst ist der Negativtest wertlos.
+
+@note `test_model_removeSplit_leavesBuysUntouched` ist der Regressionstest der
+Grundentscheidung vom 07.08.2026: die Datenbank behält die Beleg-Wahrheit, ein
+Split ist nur eine Rechenvorschrift. Sobald jemand beim Löschen anfinge,
+`buys` mit umzuschreiben, wäre der Vorgang nicht mehr umkehrbar — und der Test
+schlägt an.
+
+ViewShareSplitEdit — Widget-Ebene:
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_view_canBeConstructed` | Dialog öffnet ohne Absturz | Fenstertitel enthält "Split" |
+| `test_view_hasAllFormFields` | Alle Eingabefelder vorhanden | Sieben `objectName`-Treffer inkl. Tabelle |
+| `test_view_hasNoOverviewTabWidget` | Kein `OverviewTabWidget` | Kein `QTabWidget` im Dialog |
+| `test_view_loadSplit_populatesFields` | Split geladen | Alle fünf Felder korrekt gefüllt |
+| `test_view_clearForm_resetsRatioToOne` | Nach `clearForm()` | Verhältnis 1:1, Flag aus, Kommentar leer |
+| `test_view_populateOverview_fillsTable` | Zwei Splits | `rowCount()` = 2, Verhältnis-Zelle = "20:1" |
+| `test_view_populateOverview_storesGuidPerRow` | Ein Split | GUID an erster UND letzter Zelle der Zeile |
+| `test_view_populateOverview_clearsPreviousRows` | Zweiter Aufruf mit leerer Liste | `rowCount()` = 0 |
+| `test_view_setButtonStates_editModeRenamesAddButton` | `isEdit` = true | Button heisst "Speichern" |
+| `test_view_setButtonStates_removeDisabledWithoutSelection` | `canRemove` = false | Entfernen-Button gesperrt |
+| `test_view_setFactorPreview_setsField` | Vorschautext gesetzt | Feldtext exakt übernommen |
+| `test_view_futureDateIsAccepted` | Datum ein Jahr in der Zukunft | `splitDate()` liefert es unverändert |
+| `test_view_ratioFieldsAcceptGermanDecimalComma` | Eingabe "1,5" | `ratioNew()` = 1.5 |
+| `test_view_presenterIsAccessible` | `presenter()`-Getter | Nicht `nullptr` |
+
+Dokument und Vorschau auf Widget-Ebene (ergänzt 08.08.2026):
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_view_hasDocumentFieldAndBrowseButton` | Pfadfeld und "…"-Button | Beide per `objectName` gefunden |
+| `test_view_loadSplit_populatesDocumentPath` | Split mit Beleg geladen | `documentPath()` = gespeicherter Pfad |
+| `test_view_clearForm_clearsDocumentPath` | Nach `clearForm()` | Feld leer |
+| `test_view_hasPreviewPanel` | Vorschau eingebettet | `DocumentPreviewPanel` als Kind vorhanden |
+| `test_view_clearPdfPreview_doesNotCrash` | Leeren der Vorschau | Kein Absturz, kein modaler Dialog |
+| `test_view_overviewTable_hasDocumentColumn` | Tabellenaufbau | 6 Spalten, letzte ohne Überschrift, 36 px breit |
+| `test_view_populateOverview_showsDocumentIcon` | Zeile mit und ohne Beleg | Icon plus Tooltip nur bei vorhandenem Beleg |
+
+@note `test_view_clearPdfPreview_doesNotCrash` ist unbedenklich, obwohl er ein
+Anzeige-Widget anfasst: `DocumentPreviewPanel` meldet eine fehlende Datei seit
+19.07.2026 inline statt über `OwnMessageBox::critical()` — genau damit ein
+solcher Aufruf den Testlauf nicht blockiert.
+
+@note Der `onBrowseDocument()`-Pfad selbst bleibt ungetestet — er öffnet einen
+`QFileDialog` und meldet den Fehlerfall über `OwnMessageBox::critical()`.
+Dieselbe Konvention wie bei den fünf anderen Dialogen; die zugrundeliegende
+`isPathWithinRoot()`-Logik ist in `tst_documentssettingsform.cpp` abgedeckt.
+
+@note `test_view_hasNoOverviewTabWidget` hält die bewusste Abweichung von
+BuysForm/SalesForm/DividendForm fest. Er ist kein Selbstzweck: er schlägt an,
+sobald jemand die Übersicht "der Einheitlichkeit halber" auf
+`OverviewTabWidget` umstellt, und zwingt damit zu einer erneuten Entscheidung
+statt zu einer stillen Angleichung (siehe ARCHITECTURE.md,
+"ShareSplitsForm-Details").
+
+@note `test_view_populateOverview_storesGuidPerRow` prüft die erste UND die
+letzte Spalte. Die GUID hängt absichtlich an jeder Zelle, damit die Auswahl
+unabhängig davon auflösbar ist, welche Spalte der Benutzer angeklickt hat —
+läge sie nur an Spalte 0, wäre ein Klick auf den Kommentar wirkungslos.
 
 ---
 
@@ -2906,14 +3171,26 @@ abgedeckt — nur der UI-Dialog-Aufruf selbst bleibt ungetestet.
 
 DocumentRootMigrator — `changeRoot()`:
 
-@note Alle Migrator-Tests verwenden ausschließlich `BuyObject`/`BuyRepository`,
-nicht zusätzlich Sale/Brokerage/Dividend — `DocumentRootMigrator` behandelt
-alle vier Tabellen strukturell identisch (derselbe Switch über
-`DocumentEntry::Table` in `rewrite()`/`collectAllDocuments()`).
+@note Das VERHALTEN von `changeRoot()` wird ausschließlich über
+`BuyObject`/`BuyRepository` geprüft, nicht zusätzlich über
+Sale/Brokerage/Dividend/ShareSplit — `DocumentRootMigrator` behandelt alle fünf
+Tabellen strukturell identisch (derselbe Switch über `DocumentEntry::Table` in
+`rewrite()`/`collectAllDocuments()`).
+
+@note Davon zu unterscheiden ist der ANSCHLUSS einer Tabelle, und hier wurde
+die Begründung oben am 08.08.2026 nachgeschärft: dass eine Tabelle sich wie die
+anderen verhält, sagt nichts darüber, ob sie überhaupt angeschlossen IST. Wer
+eine Tabelle ergänzt und dabei nur den Switch in `updateDocument()` anfasst,
+aber die Sammelschleife in `collectAllDocuments()` vergisst, bekommt von den
+Verhaltenstests keinen Widerspruch — die Dokumente werden dann schlicht nie
+eingesammelt, und der Fehler fällt erst Monate später an einem toten Pfad auf.
+Für jede neu hinzukommende Tabelle gibt es deshalb einen eigenen
+Anschlusstest.
 
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_migrator_changeRoot_rewritesMatchingPaths` | Buy-Dokument unter altem Root | Neuer Pfad in DB, `Result::rewritten` = 1 |
+| `test_migrator_changeRoot_rewritesShareSplitDocuments` | Split-Dokument unter altem Root (Anschlusstest, 08.08.2026) | `rewritten` = 1, `updateFailed` = 0, neuer Pfad in `share_splits` |
 | `test_migrator_changeRoot_leavesOutsidePathsUntouched` | Dokument außerhalb des alten Root | `Result::outsideRoot` = 1, Pfad unverändert in DB |
 | `test_migrator_changeRoot_alreadyCorrectPath_notCounted` | Pfad bereits identisch zum Zielpfad | `Result::alreadyInRoot` erhöht, kein DB-Write |
 | `test_migrator_changeRoot_oldRootNeedNotExistOnDisk` | Alter Root ist ein Windows-Pfad, der auf dem Testrechner nicht existiert | Umschreibung funktioniert trotzdem (reiner String-Vergleich) |
@@ -3040,3 +3317,23 @@ eigenständig in `tst_portfolioseriescalculator.cpp` und
 | `test_loadPortfolioInput_split_saleAfterSplitStaysInTodayScale` | Verkauf nach dem Split | Werte unverändert, keine weitere Umrechnung nötig |
 | `test_loadPortfolioInput_split_costsStayUnscaled` | Brokerage-Kosten trotz Split | Betrag bleibt exakt 9,90 € |
 | `test_loadPortfolioInput_reverseSplit_scalesDown` | Reverse-Split 1:10 | 100 Stück à 5,00 € → 10 Stück à 50,00 € |
+
+@note Bugfix 08.08.2026 — dieser Block war von seiner Einführung an nie
+lauffähig. Der von Hand geschriebene `main()` legte keine `QCoreApplication`
+an; ohne die verweigert `QSqlDatabase::addDatabase()` die Arbeit, warnt nur
+("QSqlDatabase requires a QCoreApplication") und gibt ein ungültiges
+`QSqlDatabase` zurück, dessen `open()` dann in einen SIGSEGV läuft. Das
+`QVERIFY` in `initTestCase()` kam gar nicht erst zum Zug.
+
+Unbemerkt blieb das, weil `TestPortfolioChartForm` davor mit 23 Tests grün
+durchläuft — die Klasse arbeitet ausschliesslich mit Fake-View und Fake-Model
+und fasst Qt SQL nie an. Wer nur auf die Zusammenfassung schaut, sieht erst
+Erfolge und dann einen Absturz, der nach einem Umgebungsproblem aussieht.
+
+Lehre für künftige mehrklassige `main()`: Wenn eine Testklasse mit
+Datenbankzugriff zu einer bis dahin reinen Fake-Datei dazukommt, muss die
+`QCoreApplication` mitkommen. `QTEST_MAIN` erzeugt sie automatisch — genau
+diese Absicherung entfällt beim Handschreiben von `main()`. Betroffen sind
+davon `tst_mainwindow.cpp`, `tst_shareeditform.cpp`, `tst_sharesplitsform.cpp`,
+`tst_documentssettingsform.cpp` und `tst_portfoliochartform.cpp`; alle ausser
+der letzten hatten ihre `QApplication` von Anfang an.
