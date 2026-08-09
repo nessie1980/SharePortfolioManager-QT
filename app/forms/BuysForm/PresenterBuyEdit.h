@@ -6,6 +6,7 @@
 #include "IModelBuyEdit.h"
 #include "../../config/DocumentsConfig.h"
 #include "../../utils/PdfTextExtractor.h"
+#include "../../models/ShareSplitObject.h"
 #include "../../libs/parser/src/Parser.h"
 
 #include <QObject>
@@ -80,6 +81,15 @@ private slots:
 private:
     void    reloadOverview();
     void    refreshDerivedValues();
+
+    /**
+     * @brief Aktualisiert den Split-Hinweis unter den Kaufdaten (Phase 3b).
+     *
+     * Wird aus refreshDerivedValues() (Stückzahl/Preis geändert) UND aus
+     * onDateEdited() (Datum geändert) heraus aufgerufen — der Hinweis hängt
+     * von allen dreien ab und soll live mitlaufen.
+     */
+    void    refreshSplitHint();
     QString validateInput() const;
 
     /** Returns true if @p buyGuid has the most recent dateTime in m_buys. */
@@ -100,6 +110,12 @@ private:
     QString          m_shareGuid;
 
     QList<BuyObject> m_buys;
+
+    /// Splits der Aktie, einmalig im Konstruktor geladen — sie ändern sich
+    /// während einer Dialog-Sitzung praktisch nie (gleiches Vorgehen wie
+    /// IViewSaleEdit::setSplits() in Phase 2c).
+    QList<ShareSplitObject> m_splits;
+
     QString          m_currentBuyGuid;
     bool             m_isLastBuy    = false;  ///< true when selected buy is most recent
 

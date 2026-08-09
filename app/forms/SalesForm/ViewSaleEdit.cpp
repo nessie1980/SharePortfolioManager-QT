@@ -336,6 +336,17 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
     m_auszahlung->setAlignment(Qt::AlignRight);
     addRow(grid, row, tr("Auszahlung:"), m_auszahlung, tr("€"));
 
+    // ── Split-Hinweis (09.08.2026, Phase 3b) ──────────────────────────────
+    //
+    // Identisch zu ViewBuyEdit: Fusszeile der Gruppe statt einer Zeile
+    // mitten im Formular, damit beim live mitlaufenden Datumswechsel nichts
+    // oberhalb springt (Nessies Entscheidung 08.08.2026).
+    m_splitHint = new QLabel;
+    m_splitHint->setObjectName(QStringLiteral("splitHint"));
+    m_splitHint->setWordWrap(true);
+    grid->addWidget(m_splitHint, row, 0, 1, 3);
+    ++row;
+
     return gb;
 }
 
@@ -694,6 +705,16 @@ void ViewSaleEdit::setAuszahlung(double value)
 }
 
 // ── Field status ──────────────────────────────────────────────────────────────
+
+void ViewSaleEdit::setSplitHint(const QString& text, const QString& tooltip, bool hasSplit)
+{
+    m_splitHint->setText(text);
+    m_splitHint->setToolTip(tooltip);
+
+    m_splitHint->setStyleSheet(hasSplit
+        ? QStringLiteral("color: #185FA5;")
+        : QStringLiteral("color: palette(mid);"));
+}
 
 void ViewSaleEdit::setFieldOk(const QString& field, const QString& value)
 {

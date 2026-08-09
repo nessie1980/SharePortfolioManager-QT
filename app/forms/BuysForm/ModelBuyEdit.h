@@ -6,6 +6,7 @@
 #include "../../repositories/BuyRepository.h"
 #include "../../repositories/BrokerageRepository.h"
 #include "../../repositories/ShareRepository.h"
+#include "../../repositories/ShareSplitRepository.h"
 
 /**
  * @brief Concrete model for the "Käufe" dialog.
@@ -21,6 +22,8 @@ public:
     QList<BuyObject> loadBuys(const QString& shareGuid)    const override;
     ShareObject      loadShare(const QString& shareGuid)   const override;
     BrokerageObject  loadBrokerage(const QString& buyGuid) const override;
+
+    QList<ShareSplitObject> loadSplits(const QString& shareGuid) const override;
 
     bool addBuy(const BuyObject& buy,
                 double provision = 0.0,
@@ -49,5 +52,6 @@ private:
     BuyRepository       m_buyRepo;
     BrokerageRepository m_brokerageRepo;
     ShareRepository     m_shareRepo;
+    ShareSplitRepository m_splitRepo;
     mutable QString     m_lastError;
 };

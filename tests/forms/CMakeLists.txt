@@ -133,6 +133,8 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/utils/ShareCalculator.cpp
     ../../app/utils/ShareSplitAdjuster.h
     ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/ShareSplitHint.h
+    ../../app/utils/ShareSplitHint.cpp
     ../../app/utils/SaleFifoAllocator.h
     ../../app/utils/SaleFifoAllocator.cpp
     ../../app/utils/PortfolioSeriesCalculator.cpp
@@ -231,6 +233,10 @@ qt_add_executable(tst_buysform tst_buysform.cpp
     ../../app/repositories/SaleRepository.cpp
     ../../app/repositories/DividendRepository.cpp
     ../../app/repositories/BrokerageRepository.cpp
+    ../../app/utils/ShareSplitAdjuster.h
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/ShareSplitHint.h
+    ../../app/utils/ShareSplitHint.cpp
     ../../app/utils/PdfTextExtractor.h
     ../../app/utils/PdfTextExtractor.cpp
     ../../app/utils/DocumentClassifier.h
@@ -358,6 +364,8 @@ qt_add_executable(tst_shareeditform tst_shareeditform.cpp
     ../../app/repositories/ShareSplitRepository.cpp
     ../../app/utils/ShareSplitAdjuster.h
     ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/ShareSplitHint.h
+    ../../app/utils/ShareSplitHint.cpp
     ../../app/utils/SaleFifoAllocator.h
     ../../app/utils/SaleFifoAllocator.cpp
     ../../app/utils/PdfTextExtractor.h

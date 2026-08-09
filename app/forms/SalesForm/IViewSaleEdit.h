@@ -62,6 +62,21 @@ public:
     virtual void setTaxSum(double value)           = 0;
     virtual void setAuszahlung(double value)       = 0;
 
+    /**
+     * @brief Zeigt den Split-Hinweis unter den Verkaufsdaten (Phase 3b, 09.08.2026).
+     *
+     * Wortgleich zu IViewBuyEdit::setSplitHint(): die Zeile ist immer
+     * sichtbar, auch ohne Split, damit das Formular beim Ändern des Datums
+     * nicht springt (Nessies Entscheidung 08.08.2026).
+     *
+     * @param text      Fusszeilen-Text aus ShareSplitHint.
+     * @param tooltip   Vollständige Split-Liste, leer wenn keine vorhanden.
+     * @param hasSplit  true, wenn nach dem Belegdatum ein Split liegt.
+     */
+    virtual void setSplitHint(const QString& text,
+                              const QString& tooltip,
+                              bool hasSplit) = 0;
+
     // ── Field status ──────────────────────────────────────────────────────
     /**
      * @brief Set a field's value and mark it as Ok (green checkmark).

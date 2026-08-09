@@ -20,6 +20,8 @@
 #include <QDateEdit>
 #include <QTimeEdit>
 #include <QProgressBar>
+#include <QLabel>
+#include <QLocale>
 #include <QUuid>
 
 #include "../../app/config/AppSettings.h"
@@ -38,6 +40,7 @@
 #include "../../app/forms/BuysForm/ModelBuyEdit.h"
 #include "../../app/widgets/OverviewTabWidget.h"
 #include "../../app/forms/BuysForm/PresenterBuyEdit.h"
+#include "../../app/models/ShareSplitObject.h"
 
 #include "../../app/forms/UiConstants.h"
 
@@ -57,6 +60,10 @@ public:
     bool                docExists    = false;
     QString             errorMsg;
 
+    /// Splits, die loadSplits() liefert (Phase 3b, 09.08.2026). Vorgabe leer —
+    /// die meisten Tests hier interessieren sich nicht dafür.
+    QList<ShareSplitObject> splits;
+
     // Captured calls
     bool    addBuyCalled    = false;
     bool    updateBuyCalled = false;
@@ -65,6 +72,7 @@ public:
     QList<BuyObject> loadBuys(const QString&) const override { return buys; }
     ShareObject      loadShare(const QString&) const override { return ShareObject{}; }
     BrokerageObject  loadBrokerage(const QString&) const override { return brokerage; }
+    QList<ShareSplitObject> loadSplits(const QString&) const override { return splits; }
 
     bool addBuy(const BuyObject&, double, double, double, double) override
         { addBuyCalled = true; return addResult; }
@@ -109,6 +117,12 @@ public:
     QString lastError;
     bool    closed                 = false;
 
+    // Phase 3b (09.08.2026) — zuletzt gesetzter Split-Hinweis.
+    QString lastSplitHint;
+    QString lastSplitTooltip;
+    bool    lastHasSplit          = false;
+    int     splitHintCallCount    = 0;
+
     // IViewBuyEdit — read
     QString dateTime()     const override { return m_dateTime; }
     QString depotNumber()  const override { return m_depotNumber; }
@@ -129,6 +143,14 @@ public:
     void setKurswert(double)                      override {}
     void setGesGebuehren(double)                  override {}
     void setEndbetrag(double)                     override {}
+
+    void setSplitHint(const QString& text, const QString& tooltip, bool hasSplit) override
+    {
+        lastSplitHint    = text;
+        lastSplitTooltip = tooltip;
+        lastHasSplit     = hasSplit;
+        ++splitHintCallCount;
+    }
 
     void setFieldOk(const QString&, const QString&) override {}
     void setFieldError(const QString&)              override {}
@@ -2076,6 +2098,142 @@ private slots:
             if (bar->value() == 50) { found = true; break; }
         }
         QVERIFY(found);
+    }
+
+    // ── Split-Hinweis (Phase 3b, 09.08.2026) ──────────────────────────────
+    //
+    // Die Formatierung selbst prüft tst_sharesplithint — hier geht es nur um
+    // die Verdrahtung: dass der Presenter die Splits lädt, den Hinweis bei
+    // jeder relevanten Änderung neu setzt, und dass die View ihn im dafür
+    // vorgesehenen Label ablegt.
+
+    void test_presenterBuyEdit_setsSplitHintOnConstruction()
+    {
+        StubViewBuyEdit  view;
+        StubModelBuyEdit model;
+        PresenterBuyEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        QVERIFY(view.splitHintCallCount > 0);
+        QVERIFY(!view.lastSplitHint.isEmpty());
+    }
+
+    void test_presenterBuyEdit_noSplits_hintSaysNoSplit()
+    {
+        StubViewBuyEdit  view;
+        StubModelBuyEdit model;
+        PresenterBuyEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        QVERIFY(!view.lastHasSplit);
+        QVERIFY(view.lastSplitTooltip.isEmpty());
+    }
+
+    void test_presenterBuyEdit_splitAfterBuyDate_hintIsActive()
+    {
+        StubViewBuyEdit  view;
+        StubModelBuyEdit model;
+        view.m_dateTime = QStringLiteral("2021-03-18T10:00:00");
+        view.m_volume   = 5.0;
+        view.m_price    = 1003.00;
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 20.0, 1.0);
+        PresenterBuyEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        QVERIFY(view.lastHasSplit);
+        QVERIFY2(view.lastSplitHint.contains(QStringLiteral("20:1")),
+                 qPrintable(view.lastSplitHint));
+        QVERIFY(!view.lastSplitTooltip.isEmpty());
+    }
+
+    void test_presenterBuyEdit_splitBeforeBuyDate_hintIsInactive()
+    {
+        StubViewBuyEdit  view;
+        StubModelBuyEdit model;
+        view.m_dateTime = QStringLiteral("2023-02-14T10:00:00");
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 20.0, 1.0);
+        PresenterBuyEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        QVERIFY(!view.lastHasSplit);
+    }
+
+    void test_presenterBuyEdit_onDateEdited_refreshesHint()
+    {
+        // Der Hinweis läuft live mit (Nessies Entscheidung 08.08.2026):
+        // refreshDerivedValues() allein genügt nicht, es wird beim Ändern des
+        // Datums nicht aufgerufen.
+        StubViewBuyEdit  view;
+        StubModelBuyEdit model;
+        view.m_dateTime = QStringLiteral("2023-02-14T10:00:00");
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 20.0, 1.0);
+        PresenterBuyEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        QVERIFY(!view.lastHasSplit);
+
+        view.m_dateTime = QStringLiteral("2021-03-18T10:00:00");
+        p.onDateEdited();
+
+        QVERIFY(view.lastHasSplit);
+    }
+
+    void test_presenterBuyEdit_onValuesChanged_refreshesHint()
+    {
+        StubViewBuyEdit  view;
+        StubModelBuyEdit model;
+        view.m_dateTime = QStringLiteral("2021-03-18T10:00:00");
+        view.m_volume   = 5.0;
+        view.m_price    = 1003.00;
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 20.0, 1.0);
+        PresenterBuyEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        const int before = view.splitHintCallCount;
+        view.m_volume = 10.0;
+        p.onValuesChanged();
+
+        QVERIFY(view.splitHintCallCount > before);
+        // 10 × 20 = 200
+        QVERIFY2(view.lastSplitHint.contains(QLocale().toString(200.0, 'f', 4)),
+                 qPrintable(view.lastSplitHint));
+    }
+
+    void test_viewBuyEdit_hasSplitHintLabel()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        QVERIFY(dlg.findChild<QLabel*>(QStringLiteral("splitHint")));
+    }
+
+    void test_viewBuyEdit_setSplitHint_setsTextAndTooltip()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        dlg.setSplitHint(QStringLiteral("Split 20:1 am 18.07.2022"),
+                         QStringLiteral("20:1 am 18.07.2022"),
+                         /*hasSplit=*/true);
+
+        auto* label = dlg.findChild<QLabel*>(QStringLiteral("splitHint"));
+        if (!label) QFAIL("splitHint label not found");
+        QCOMPARE(label->text(), QStringLiteral("Split 20:1 am 18.07.2022"));
+        QCOMPARE(label->toolTip(), QStringLiteral("20:1 am 18.07.2022"));
+    }
+
+    void test_viewBuyEdit_setSplitHint_labelStaysVisibleWithoutSplit()
+    {
+        // Kernpunkt der Platzierungsentscheidung: die Zeile verschwindet
+        // NICHT, wenn kein Split vorliegt — sonst würden beim Tippen im
+        // Datumsfeld alle Zeilen darüber springen.
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        dlg.setSplitHint(QStringLiteral("Kein Split nach diesem Datum"),
+                         QString(), /*hasSplit=*/false);
+
+        auto* label = dlg.findChild<QLabel*>(QStringLiteral("splitHint"));
+        if (!label) QFAIL("splitHint label not found");
+        QVERIFY(!label->text().isEmpty());
+        QVERIFY(!label->isHidden());
     }
 
     void test_viewBuyEdit_populateOverview_docPdfIcon()

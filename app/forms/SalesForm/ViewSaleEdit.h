@@ -106,6 +106,7 @@ public:
     void setTaxSum(double value)        override;
     void setAuszahlung(double value)    override;
 
+    void setSplitHint(const QString& text, const QString& tooltip, bool hasSplit) override;
     void setFieldOk(const QString& field, const QString& value) override;
     void setFieldError(const QString& field)                    override;
     void setDocumentPreview(const QString& text)                override;
@@ -167,6 +168,7 @@ private:
     QLineEdit*   m_reduction        = nullptr;
     QLineEdit*   m_gesGebuehren     = nullptr;   ///< read-only
     QLineEdit*   m_auszahlung       = nullptr;   ///< read-only, green
+    QLabel*      m_splitHint        = nullptr;   ///< Fusszeile der Gruppe, siehe setSplitHint() (09.08.2026)
 
     // ── Dokument GroupBox ─────────────────────────────────────────────────
     QLineEdit*    m_documentPath    = nullptr;

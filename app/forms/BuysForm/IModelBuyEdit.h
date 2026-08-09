@@ -5,6 +5,7 @@
 #include "../../models/BuyObject.h"
 #include "../../models/BrokerageObject.h"
 #include "../../models/ShareObject.h"
+#include "../../models/ShareSplitObject.h"
 
 #include <QList>
 #include <QString>
@@ -24,6 +25,14 @@ public:
 
     /** Load the share this dialog was opened for (used for WKN/ISIN validation). */
     virtual ShareObject      loadShare(const QString& shareGuid)   const = 0;
+
+    /**
+     * @brief Load all splits for a share, ordered by date ascending.
+     *
+     * Ergänzt 09.08.2026 (Phase 3b) für den Split-Hinweis unter den
+     * Kaufdaten. Gleiche Signatur wie IModelSaleEdit::loadSplits().
+     */
+    virtual QList<ShareSplitObject> loadSplits(const QString& shareGuid) const = 0;
 
     /** Load the brokerage linked to a specific buy. */
     virtual BrokerageObject  loadBrokerage(const QString& buyGuid) const = 0;

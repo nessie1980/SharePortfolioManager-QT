@@ -155,7 +155,8 @@ tst_xmlportfolioparser / tst_portfoliovalidator / tst_portfolioimporter  ← too
 31 Testziele; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
 (07.08.2026, Phase 1 der Aktiensplit-Behandlung) waren es 33, seit
 `tst_salefifoallocator` (07.08.2026, Phase 2c) waren es 34, seit
-`tst_sharesplitsform` (08.08.2026, Phase 3a) sind es 35. Die vollständige
+`tst_sharesplitsform` (08.08.2026, Phase 3a) waren es 35, seit
+`tst_sharesplithint` (09.08.2026, Phase 3b) sind es 36. Die vollständige
 Startbefehl-Liste steht in TESTING.md, "Einzelnen Test direkt starten".
 
 ---
@@ -3708,6 +3709,98 @@ Verdrahtung ohne Gewinn.
 
 ---
 
+## Split-Hinweis in den Editier-Dialogen (Phase 3b, 09.08.2026)
+
+Setzt die Grundentscheidung vom 07.08.2026 um: Editier-Dialoge zeigen
+durchgehend den BELEG, Grid, Charts und Detailansicht zeigen bereinigt. Damit
+die Beleg-Stückzahl neben dem heutigen Bestand nicht wie ein Fehler wirkt,
+steht unter den Feldern in `ViewBuyEdit` und `ViewSaleEdit` ein Hinweis:
+
+@code{.unparsed}
+Split 20:1 am 18.07.2022 — entspricht heute 100,0000 stk. à 50,1500 €
+@endcode
+
+**Warum als Fusszeile der Gruppe.** Erwogen war eine Zeile direkt unter
+"Preis", also am fachlichen Bezugspunkt. Verworfen (Nessies Entscheidung
+08.08.2026), weil der Hinweis live mitläuft: beim Ändern des Datums erscheint
+und verschwindet er, und mitten im Formular würden dabei jedes Mal alle
+darunter liegenden Zeilen — Provision, Courtage, Rabatt, Endbetrag — nach
+unten und wieder nach oben springen. An der Gruppenkante bewegt sich oberhalb
+nichts.
+
+**Warum die Zeile auch ohne Split steht.** Aus demselben Grund. Ohne Split
+zeigt sie gedämpft "Kein Split nach diesem Datum — Stückzahl entspricht dem
+heutigen Stand" (Nessies Entscheidung 08.08.2026). Eine Zeile, die kommt und
+geht, verschiebt das Layout genauso wie eine eingefügte.
+
+**Warum Preis und Stückzahl gemeinsam umgerechnet werden.** Aus 5 Stück à
+1.003,00 € werden bei einem 20:1-Split 100 Stück à 50,15 € — das Produkt
+bleibt 5.015,00 €. Stünde nur die veränderte Stückzahl da, sähe es aus, als
+hätte sich der Wert vervielfacht. Beide Zahlen zusammen zeigen, dass ein Split
+weder Gewinn noch Verlust schafft.
+
+**Bei mehreren Splits** nennt der Text Anzahl und jüngsten Splittag
+(`2 Splits, zuletzt 20:1 am 18.07.2022 — …`) und rechnet mit dem kumulierten
+Faktor. Die vollständige Liste steht im Tooltip des Labels. Alle Splits in die
+Zeile zu schreiben wäre ab dreien unlesbar.
+
+### ShareSplitHint
+
+Die Formatierung liegt in `app/utils/ShareSplitHint.h/.cpp`, weil `ViewBuyEdit`
+und `ViewSaleEdit` denselben Text brauchen. Zustandslos und datenbankfrei wie
+`ShareSplitAdjuster` und `SaleFifoAllocator` daneben — alle Eingangsdaten
+kommen als Parameter herein, die Klasse ist damit ohne Widgets und ohne SQLite
+prüfbar.
+
+@note Die Auslagerung geschah vorbeugend, nicht als Aufräumarbeit: eine zweite
+Kopie derselben Formatierung wäre der direkte Weg zurück zu dem Problem, das
+Phase 2c mit der dreifach duplizierten FIFO-Schleife aufgeräumt hat. Zwei
+Kopien driften genauso auseinander wie drei, nur langsamer.
+
+Die eigentliche Umrechnung macht `ShareSplitHint` nicht selbst, sondern ruft
+`ShareSplitAdjuster::adjustedVolume()` und `adjustedTransactionPrice()` auf.
+Die Regel, welche Splits zählen und wie Stückzahl und Preis gegenläufig
+skalieren, existiert damit weiterhin nur an einer Stelle.
+
+### Verdrahtung in den Presentern
+
+Beide Presenter laden die Splits einmalig im Konstruktor und rufen
+`refreshSplitHint()` aus zwei Richtungen auf:
+
+| Auslöser | Weg |
+| --- | --- |
+| Stückzahl oder Preis geändert | `onValuesChanged()` → `refreshDerivedValues()` |
+| Datum geändert | `onDateEdited()` |
+
+Beide sind nötig. `refreshDerivedValues()` wird beim Ändern des Datums nicht
+aufgerufen, `onDateEdited()` nicht beim Ändern von Stückzahl oder Preis — der
+Hinweis hängt aber an allen dreien.
+
+@note Nebenbefund vom 09.08.2026: `PresenterSaleEdit::refreshDerivedValues()`
+holte die Splits bislang bei JEDEM Aufruf frisch aus der Datenbank, also bei
+jedem Tastendruck in einem der Eingabefelder. Da sie sich während einer
+Dialog-Sitzung nicht ändern können — die Split-Maske ist von hier aus nicht
+erreichbar —, nutzt die Methode jetzt denselben Zwischenspeicher, der ohnehin
+für den Hinweis angelegt wird.
+
+### Dividenden bewusst ausgenommen
+
+`ViewDividendEdit` bekommt keinen Split-Hinweis (Nessies Entscheidung
+09.08.2026). Der Grund ist nicht Sparsamkeit, sondern dass die beiden
+Argumente dort nicht greifen:
+
+Die Ausschüttung ist `rate × volume` und über einen Split invariant — es gibt
+nichts umzurechnen. Und die Dividenden-Übersicht summiert im Gegensatz zu
+Käufen und Verkäufen **keine Stückzahlen** (Übersicht-Tab: Jahr, Dividende),
+der Summenfehler aus Phase 3c existiert dort also gar nicht.
+
+Bleibt das Risiko, dass ein Nutzer die Beleg-Stückzahl für veraltet hält und
+"korrigiert" — womit die Ausschüttung nicht mehr zum Beleg passt. Dagegen
+hilft aber keine Anzeige, sondern eine Prüfung, die tatsächlich rechnet; siehe
+"Offene Punkte", "Plausibilitätsprüfung der Dividenden-Stückzahl".
+
+---
+
 ## Offene Punkte
 
 ### Aktiensplits werden nicht behandelt (wichtig, 06.08.2026, Umsetzung begonnen 07.08.2026)
@@ -3775,8 +3868,66 @@ bereinigt liefert, ist je Anbieter unterschiedlich.
 | 2b | Anwendung in `ModelPortfolioChart`/`ModelChart` — Depotwert- und Aktien-Chart rechnen jetzt beide split-bereinigt. | ✅ umgesetzt 07.08.2026 |
 | 2c | FIFO-Verkaufszuteilung (`PresenterSaleEdit`/`ModelSaleEdit`). Neue gemeinsame Klasse `SaleFifoAllocator` ersetzt die vormals dreifach duplizierte Zuteilungslogik; Edit-Zweig berechnet FIFO beim Bearbeiten des jüngsten Verkaufs jetzt neu, statt gespeicherte `SaleBuyDetails` unverändert zu übernehmen. | ✅ umgesetzt 07.08.2026 |
 | 3a | `ShareSplitsForm` — eigene MVP-Triade, fünfter Stift-Button in `ViewShareEdit` (GroupBox "Allgemein"), Split-Hinweis neben dem Button | ✅ umgesetzt 08.08.2026 |
-| 3b | Split-Hinweis in den Editier-Dialogen `ViewBuyEdit`/`ViewSaleEdit` ("Split 20:1 am 18.07.2022 — entspricht 100 Stück à 50,15 €") | offen |
+| 3b | Split-Hinweis in den Editier-Dialogen `ViewBuyEdit`/`ViewSaleEdit` | ✅ umgesetzt 09.08.2026 |
+| 3c | Übersichtstabellen: Split-Marker je Zeile, Korrektur der Stückzahl-Summenzeile | offen |
 | 4 | Automatische Nachprüfung des `prices_adjusted`-Zustands nach jedem Tageswert-Abruf (Kurssprung um den Splittag vergleichen) + Startmeldung bei Widerspruch, analog `warnAboutSharesWithoutDailyValues()` | offen |
+
+### Plausibilitätsprüfung der Dividenden-Stückzahl (09.08.2026)
+
+Die Stückzahl in `ViewDividendEdit` ist ein Eingabefeld, und aus ihr wird die
+Ausschüttung gerechnet (`rate × volume`). Wer eine Dividende von 2021 öffnet,
+sieht dort die damalige Stückzahl, weiss aber, dass er heute ein Vielfaches
+hält — und die naheliegende Reaktion ist, das für einen Fehler zu halten und
+zu "korrigieren". Danach passt die Ausschüttung nicht mehr zum Beleg, und weil
+Dividenden in die Gewinnrechnung eingehen, fällt das nicht sofort auf.
+
+Erwogen war ein blosser Hinweis wie in Käufen und Verkäufen. Nessies Einwand
+vom 09.08.2026 ist der bessere Ansatz: der Benutzer hat ein Bankdokument
+vorliegen und soll sich daran halten; sinnvoller als eine Erklärung ist eine
+Prüfung, die tatsächlich rechnet.
+
+Bezugsgrösse ist die **damals gehaltene Stückzahl zum Stichtag**, nicht die
+split-umgerechnete — nach ihr hat die Bank ausgeschüttet. Sie ergibt sich aus
+allen Käufen und Verkäufen vor dem Ex-Tag, durchgehend in Beleg-Skala.
+
+Offen sind mindestens:
+
+- **Warnung oder Blockade?** Eine Blockade wäre riskant: Teilbestände in
+  mehreren Depots, unterjährige Käufe zwischen Ex-Tag und Zahltag und
+  Bruchstücke aus Reverse-Splits können legitim abweichen.
+- **Welcher Stichtag?** Ex-Tag oder Zahltag — `DividendObject` führt nur ein
+  Datum, welches von beiden es fachlich ist, muss geklärt werden.
+- **Depotbezug.** Eine Dividende kennt keine Depotnummer, Käufe und Verkäufe
+  schon. Die Summe über alle Depots ist die einzige verfügbare Grösse.
+
+### tst_mainwindow.cpp in eigene Testdateien aufteilen (09.08.2026)
+
+`tests/forms/tst_mainwindow.cpp` ist auf 9673 Zeilen gewachsen und enthält
+fünf Testklassen, obwohl TESTING.md ein Testziel je Form vorsieht:
+
+| Klasse | gehört nach |
+| --- | --- |
+| `TestMainWindow` | bleibt in `tst_mainwindow.cpp` |
+| `TestSalesForm` | `tst_salesform.cpp` |
+| `TestDividendForm` | `tst_dividendform.cpp` |
+| `TestOwnMessageBox` | `tst_ownmessagebox.cpp` |
+| `TestBackupForm` | `tst_backupform.cpp` |
+
+Die Konvention wird damit viermal gebrochen. Praktisch heisst das: wer eine
+Änderung an SalesForm testet, baut und lädt eine 9600-Zeilen-Datei mit, und
+ein Fehlschlag irgendwo in der Mitte ist schwer zuzuordnen — der Absturz vom
+08.08.2026 in `tst_portfoliochartform` hat genau diese Sorte Verwechslung
+vorgeführt.
+
+Der Umzug ist überschaubar: `TestSalesForm` bringt `openMemoryDb()` und
+`insertTestShare()` bereits als eigene Kopien mit, greift also nicht auf
+`TestMainWindow` zu. `StubModelSaleEdit`/`StubViewSaleEdit` stehen zwar oben
+bei den übrigen Stubs, gehören aber ausschliesslich zu ihr. Es ist weitgehend
+Ausschneiden, Einfügen und je ein neues CMake-Ziel — kein Umbau.
+
+@note Bewusst NICHT zusammen mit einem Feature erledigen. Eine reine
+Umstrukturierung ohne sichtbaren Nutzen sollte für sich stehen, damit bei
+einem Fehlschlag nicht gleichzeitig ein neues Feature im Verdacht steht.
 
 ### Parsing von Split-Mitteilungen der Banken prüfen (08.08.2026)
 

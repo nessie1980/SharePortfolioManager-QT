@@ -6,6 +6,46 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.13.0] - 2026-08-09
+
+### Added
+
+- Aktiensplit-Behandlung, Phase 3b: Split-Hinweis unter den Kauf- und
+  Verkaufsdaten in `ViewBuyEdit` und `ViewSaleEdit`. Die Editier-Dialoge
+  zeigen weiterhin durchgehend den Beleg; der Hinweis nennt zusätzlich, wie
+  viele Stücke daraus heute geworden sind — etwa "Split 20:1 am 18.07.2022 —
+  entspricht heute 100,0000 stk. à 50,1500 €". Preis und Stückzahl werden
+  gegenläufig umgerechnet, damit sichtbar bleibt, dass ein Split weder Gewinn
+  noch Verlust schafft.
+- Der Hinweis läuft live mit: er reagiert sowohl auf das Datumsfeld als auch
+  auf Stückzahl und Preis. Er steht als Fusszeile der Datengruppe und ist
+  IMMER sichtbar — ohne Split mit dem gedämpften Text "Kein Split nach diesem
+  Datum". Beides zusammen verhindert, dass beim Tippen Formularzeilen
+  springen.
+- Bei mehreren Splits nennt der Text Anzahl und jüngsten Splittag und rechnet
+  mit dem kumulierten Faktor; die vollständige Liste steht im Tooltip.
+- Neuer Helfer `ShareSplitHint` (`app/utils/`) formatiert die Texte für beide
+  Dialoge. Zustandslos und datenbankfrei, mit eigenem Testziel
+  `tst_sharesplithint`. Die Umrechnung selbst delegiert er an
+  `ShareSplitAdjuster` — die Regel, welche Splits zählen und wie Stückzahl
+  und Preis skalieren, existiert damit weiterhin nur an einer Stelle.
+
+### Changed
+
+- `IModelBuyEdit`/`ModelBuyEdit` um `loadSplits()` erweitert (in
+  `IModelSaleEdit` bereits seit Phase 2c vorhanden); `IViewBuyEdit` und
+  `IViewSaleEdit` um `setSplitHint()`.
+- `PresenterSaleEdit::refreshDerivedValues()` liest die Splits nicht mehr bei
+  jedem Aufruf frisch aus der Datenbank, sondern nutzt den im Konstruktor
+  gefüllten Zwischenspeicher. Die Methode läuft bei jeder Eingabe, die Splits
+  einer Aktie ändern sich während einer Dialog-Sitzung aber nicht — der Abruf
+  war eine Datenbankabfrage je Tastendruck.
+- Dividenden bleiben bewusst ohne Split-Hinweis: die Ausschüttung ist über
+  einen Split invariant, und die Dividenden-Übersicht summiert im Gegensatz
+  zu Käufen und Verkäufen keine Stückzahlen. Stattdessen als offener Punkt
+  aufgenommen, die eingegebene Stückzahl künftig gegen den Bestand zum
+  Stichtag zu prüfen.
+
 ## [1.12.0] - 2026-08-08
 
 ### Added

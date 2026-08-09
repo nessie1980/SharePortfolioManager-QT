@@ -264,6 +264,19 @@ QGroupBox* ViewBuyEdit::createKaufdatenGroup()
     m_endbetrag->setAlignment(Qt::AlignRight);
     addRow(grid, row, tr("Endbetrag:"), m_endbetrag, tr("€"));
 
+    // ── Split-Hinweis (09.08.2026, Phase 3b) ──────────────────────────────
+    //
+    // Fusszeile der Gruppe statt einer Zeile mitten im Formular: der Text
+    // läuft beim Ändern des Datums live mit, und an dieser Stelle bewegt
+    // sich dabei nichts oberhalb (Nessies Entscheidung 08.08.2026). Über
+    // die volle Gitterbreite, damit auch der lange Text mit Umrechnung
+    // hineinpasst.
+    m_splitHint = new QLabel;
+    m_splitHint->setObjectName(QStringLiteral("splitHint"));
+    m_splitHint->setWordWrap(true);
+    grid->addWidget(m_splitHint, row, 0, 1, 3);
+    ++row;
+
     return gb;
 }
 
@@ -574,6 +587,18 @@ void ViewBuyEdit::setEndbetrag(double value)
 }
 
 // ── Field status (1:1 wie ViewShareAdd) ───────────────────────────────────────
+
+void ViewBuyEdit::setSplitHint(const QString& text, const QString& tooltip, bool hasSplit)
+{
+    m_splitHint->setText(text);
+    m_splitHint->setToolTip(tooltip);
+
+    // Mit Split hervorgehoben, ohne Split gedämpft — die Zeile bleibt in
+    // beiden Fällen stehen, damit das Formular nicht springt.
+    m_splitHint->setStyleSheet(hasSplit
+        ? QStringLiteral("color: #185FA5;")
+        : QStringLiteral("color: palette(mid);"));
+}
 
 void ViewBuyEdit::setFieldOk(const QString& field, const QString& value)
 {

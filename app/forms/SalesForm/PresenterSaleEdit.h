@@ -74,6 +74,14 @@ private slots:
 private:
     void    reloadOverview();
     void    refreshDerivedValues();
+
+    /**
+     * @brief Aktualisiert den Split-Hinweis unter den Verkaufsdaten (Phase 3b).
+     *
+     * Aufgerufen aus refreshDerivedValues() und onDateEdited() — der Hinweis
+     * hängt an Datum, Stückzahl und Preis und läuft live mit.
+     */
+    void    refreshSplitHint();
     QString validateInput() const;
     bool    isLatestSale(const QString& saleGuid) const;
 
@@ -87,6 +95,11 @@ private:
     QString          m_shareGuid;
 
     QList<SaleObject> m_sales;
+
+    /// Splits der Aktie, einmalig im Konstruktor geladen — identisch zu dem,
+    /// was bereits an IViewSaleEdit::setSplits() geht (Phase 2c).
+    QList<ShareSplitObject> m_splits;
+
     QString           m_currentSaleGuid;
     bool              m_isLastSale = false;
 

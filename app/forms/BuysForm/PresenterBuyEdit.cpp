@@ -2,6 +2,7 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterBuyEdit.h"
 #include "../../utils/DocumentClassifier.h"
+#include "../../utils/ShareSplitHint.h"
 
 #include <QTimer>
 #include <QUuid>
@@ -25,9 +26,12 @@ PresenterBuyEdit::PresenterBuyEdit(IViewBuyEdit*    view,
     connect(&m_pdfExtractor, &PdfTextExtractor::finished,
             this,            &PresenterBuyEdit::onPdfTextExtracted);
 
+    m_splits = m_model->loadSplits(m_shareGuid);
+
     reloadOverview();
     m_view->clearForm();
     m_view->setButtonStates(/*canRemove=*/false, /*isLastBuy=*/false, /*isEdit=*/false);
+    refreshSplitHint();
 }
 
 // ── onSave ────────────────────────────────────────────────────────────────────
@@ -214,6 +218,11 @@ void PresenterBuyEdit::onDateEdited()
         m_view->setFieldOk(QStringLiteral("date"), QString());
     else
         m_view->setFieldError(QStringLiteral("date"));
+
+    // Der Hinweis hängt am Datum und soll live mitlaufen (Nessies Entscheidung
+    // 08.08.2026) — refreshDerivedValues() allein genügt nicht, es wird beim
+    // Ändern des Datums nicht aufgerufen.
+    refreshSplitHint();
 }
 
 void PresenterBuyEdit::onDepotNumberEdited()
@@ -538,6 +547,20 @@ void PresenterBuyEdit::refreshDerivedValues()
     m_view->setKurswert(vol * price);
     m_view->setGesGebuehren(prov + broker + trader);
     m_view->setEndbetrag(vol * price + prov + broker + trader - red);
+
+    refreshSplitHint();
+}
+
+// ── refreshSplitHint ──────────────────────────────────────────────────────────
+
+void PresenterBuyEdit::refreshSplitHint()
+{
+    const QDate date = QDate::fromString(m_view->dateTime().left(10), Qt::ISODate);
+
+    m_view->setSplitHint(
+        ShareSplitHint::footerText(m_splits, date, m_view->volume(), m_view->price()),
+        ShareSplitHint::tooltipText(m_splits, date),
+        ShareSplitHint::hasSplitAfter(m_splits, date));
 }
 
 // ── validateInput ─────────────────────────────────────────────────────────────

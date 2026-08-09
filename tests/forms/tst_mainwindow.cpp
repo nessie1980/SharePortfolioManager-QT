@@ -279,6 +279,12 @@ public:
     bool    showOverviewTabCalled    = false;
     QString lastError;
     bool    closed                   = false;
+
+    // Phase 3b (09.08.2026) — zuletzt gesetzter Split-Hinweis.
+    QString lastSplitHint;
+    QString lastSplitTooltip;
+    bool    lastHasSplit             = false;
+    int     splitHintCallCount       = 0;
     double  lastKaufwert             = 0.0;
     double  lastGewinnVerlust        = 0.0;
 
@@ -310,6 +316,14 @@ public:
     void setGesGebuehren(double)                   override {}
     void setTaxSum(double)                         override {}
     void setAuszahlung(double)                     override {}
+
+    void setSplitHint(const QString& text, const QString& tooltip, bool hasSplit) override
+    {
+        lastSplitHint    = text;
+        lastSplitTooltip = tooltip;
+        lastHasSplit     = hasSplit;
+        ++splitHintCallCount;
+    }
 
     void setFieldOk(const QString&, const QString&) override {}
     void setFieldError(const QString&)              override {}
@@ -6270,6 +6284,93 @@ private slots:
     // ─────────────────────────────────────────────────────────────────────
     // PresenterSaleEdit — via StubView + StubModel
     // ─────────────────────────────────────────────────────────────────────
+
+    // ── Split-Hinweis (Phase 3b, 09.08.2026) ──────────────────────────────
+    //
+    // Die Formatierung selbst prüft tst_sharesplithint — hier geht es nur um
+    // die Verdrahtung. Wortgleich zu den Buy-Pendants in tst_buysform.cpp.
+
+    void test_presenterSaleEdit_setsSplitHintOnConstruction()
+    {
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        QVERIFY(view.splitHintCallCount > 0);
+        QVERIFY(!view.lastSplitHint.isEmpty());
+    }
+
+    void test_presenterSaleEdit_noSplits_hintSaysNoSplit()
+    {
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        QVERIFY(!view.lastHasSplit);
+        QVERIFY(view.lastSplitTooltip.isEmpty());
+    }
+
+    void test_presenterSaleEdit_splitAfterSaleDate_hintIsActive()
+    {
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        view.m_dateTime  = QStringLiteral("2021-03-18T10:00:00");
+        view.m_volume    = 5.0;
+        view.m_salePrice = 1003.00;
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 20.0, 1.0);
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        QVERIFY(view.lastHasSplit);
+        QVERIFY2(view.lastSplitHint.contains(QStringLiteral("20:1")),
+                 qPrintable(view.lastSplitHint));
+    }
+
+    void test_presenterSaleEdit_splitBeforeSaleDate_hintIsInactive()
+    {
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        view.m_dateTime = QStringLiteral("2023-02-14T10:00:00");
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 20.0, 1.0);
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        QVERIFY(!view.lastHasSplit);
+    }
+
+    void test_presenterSaleEdit_onDateEdited_refreshesHint()
+    {
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        view.m_dateTime = QStringLiteral("2023-02-14T10:00:00");
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 20.0, 1.0);
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        QVERIFY(!view.lastHasSplit);
+
+        view.m_dateTime = QStringLiteral("2021-03-18T10:00:00");
+        p.onDateEdited();
+
+        QVERIFY(view.lastHasSplit);
+    }
+
+    void test_presenterSaleEdit_usesSalePriceNotBuyPrice()
+    {
+        // Bei den Verkäufen geht der VERKAUFSpreis in den Hinweis ein —
+        // ein Copy-Paste-Fehler aus der Buy-Variante würde hier auffallen.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        view.m_dateTime  = QStringLiteral("2021-03-18T10:00:00");
+        view.m_volume    = 5.0;
+        view.m_salePrice = 2000.00;
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 20.0, 1.0);
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        // 2000 / 20 = 100
+        QVERIFY2(view.lastSplitHint.contains(QLocale().toString(100.0, 'f', 4)),
+                 qPrintable(view.lastSplitHint));
+    }
 
     void test_presenterSaleEdit_construction_loadsOverview()
     {

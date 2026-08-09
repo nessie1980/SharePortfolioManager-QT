@@ -78,6 +78,7 @@ public:
     void setEndbetrag(double value)               override;
 
     // ── Field status (same as ViewShareAdd) ───────────────────────────────
+    void setSplitHint(const QString& text, const QString& tooltip, bool hasSplit) override;
     void setFieldOk(const QString& field, const QString& value) override;
     void setFieldError(const QString& field)                    override;
     void setDocumentPreview(const QString& text)                override;
@@ -138,6 +139,7 @@ private:
     QLineEdit*   m_gesGebuehren  = nullptr;   ///< read-only
     QLineEdit*   m_reduction     = nullptr;
     QLineEdit*   m_endbetrag     = nullptr;   ///< read-only
+    QLabel*      m_splitHint     = nullptr;   ///< Fusszeile der Gruppe, siehe setSplitHint() (09.08.2026)
 
     // ── Dokument GroupBox (same as ViewShareAdd) ──────────────────────────
     QLineEdit*    m_documentPath    = nullptr;

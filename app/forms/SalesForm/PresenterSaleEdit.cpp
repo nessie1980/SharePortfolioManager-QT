@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterSaleEdit.h"
+#include "../../utils/ShareSplitHint.h"
 #include "../../utils/DocumentClassifier.h"
 
 #include <QTimer>
@@ -31,11 +32,13 @@ PresenterSaleEdit::PresenterSaleEdit(IViewSaleEdit*   view,
     m_view->setAllBuys(m_model->loadAllBuys(shareGuid));
     // Splits der Aktie — einmalig, siehe IViewSaleEdit::setSplits() (Phase 2c
     // der Aktiensplit-Behandlung, 07.08.2026, ARCHITECTURE.md "Offene Punkte").
-    m_view->setSplits(m_model->loadSplits(shareGuid));
+    m_splits = m_model->loadSplits(shareGuid);
+    m_view->setSplits(m_splits);
 
     reloadOverview();
     m_view->clearForm();
     m_view->setButtonStates(/*canRemove=*/false, /*isLastSale=*/false, /*isEdit=*/false);
+    refreshSplitHint();
 }
 
 // ── onSave ────────────────────────────────────────────────────────────────────
@@ -247,6 +250,10 @@ void PresenterSaleEdit::onDateEdited()
         m_view->setFieldOk(QStringLiteral("date"), QString());
     else
         m_view->setFieldError(QStringLiteral("date"));
+
+    // Der Hinweis hängt am Datum und läuft live mit — refreshDerivedValues()
+    // wird beim Ändern des Datums nicht aufgerufen.
+    refreshSplitHint();
 }
 
 void PresenterSaleEdit::onDepotNumberEdited()
@@ -597,7 +604,13 @@ void PresenterSaleEdit::refreshDerivedValues()
             // zeigt die Vorschau während der Eingabe einen anderen Wert als
             // das, was beim Speichern tatsächlich berechnet wird.
             const QDate saleDate = QDateTime::fromString(m_view->dateTime(), Qt::ISODate).date();
-            const QList<ShareSplitObject> splits = m_model->loadSplits(m_shareGuid);
+
+            // 09.08.2026: nutzt den im Konstruktor gefüllten Zwischenspeicher
+            // statt eines erneuten loadSplits(). refreshDerivedValues() läuft
+            // bei jeder Eingabe, die Splits einer Aktie ändern sich während
+            // einer Dialog-Sitzung aber nicht — der Abruf war eine
+            // Datenbankabfrage je Tastendruck.
+            const QList<ShareSplitObject>& splits = m_splits;
             const QList<BuyObject> available = m_currentSaleGuid.isEmpty()
                 ? m_model->loadAvailableBuysForDepot(m_shareGuid, m_view->depotNumber())
                 : m_model->loadAvailableBuysForDepotExcludingSale(
@@ -619,6 +632,20 @@ void PresenterSaleEdit::refreshDerivedValues()
     m_view->setGesGebuehren(gesGebuehren);
     m_view->setTaxSum(taxSum);
     m_view->setAuszahlung(auszahlung);
+
+    refreshSplitHint();
+}
+
+// ── refreshSplitHint ──────────────────────────────────────────────────────────
+
+void PresenterSaleEdit::refreshSplitHint()
+{
+    const QDate date = QDate::fromString(m_view->dateTime().left(10), Qt::ISODate);
+
+    m_view->setSplitHint(
+        ShareSplitHint::footerText(m_splits, date, m_view->volume(), m_view->salePrice()),
+        ShareSplitHint::tooltipText(m_splits, date),
+        ShareSplitHint::hasSplitAfter(m_splits, date));
 }
 
 // ── validateInput ─────────────────────────────────────────────────────────────

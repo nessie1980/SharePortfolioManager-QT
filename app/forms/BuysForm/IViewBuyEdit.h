@@ -44,6 +44,24 @@ public:
     virtual void setGesGebuehren(double value) = 0;
     virtual void setEndbetrag(double value)    = 0;
 
+    /**
+     * @brief Zeigt den Split-Hinweis unter den Kaufdaten (Phase 3b, 09.08.2026).
+     *
+     * Die Zeile ist immer sichtbar — auch ohne Split, dann mit dem gedämpften
+     * "kein Split"-Text. Andernfalls würden beim Tippen im Datumsfeld alle
+     * darunter liegenden Zeilen springen (Nessies Entscheidung 08.08.2026).
+     *
+     * Der fertige Text kommt aus ShareSplitHint; die View entscheidet nur
+     * noch über die Darstellung (gedämpft oder hervorgehoben).
+     *
+     * @param text      Fusszeilen-Text.
+     * @param tooltip   Vollständige Split-Liste, leer wenn keine vorhanden.
+     * @param hasSplit  true, wenn nach dem Belegdatum ein Split liegt.
+     */
+    virtual void setSplitHint(const QString& text,
+                              const QString& tooltip,
+                              bool hasSplit) = 0;
+
     // ── Field status (same API as IViewShareAdd) ──────────────────────────
 
     /**

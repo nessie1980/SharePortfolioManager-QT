@@ -42,6 +42,7 @@ ctest --output-on-failure
 ./bin/tst_portfolioseriescalculator
 ./bin/tst_sharesplitadjuster
 ./bin/tst_salefifoallocator
+./bin/tst_sharesplithint
 ./bin/tst_shareupdaterules
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
@@ -66,7 +67,8 @@ Richtungen — und umfasste zu diesem Zeitpunkt alle 31 Testziele des
 Projekts; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
 (07.08.2026, Phase 1 der Aktiensplit-Behandlung) waren es 33, seit
 `tst_salefifoallocator` (07.08.2026, Phase 2c) waren es 34, seit
-`tst_sharesplitsform` (08.08.2026, Phase 3a) sind es 35. Anlass für den
+`tst_sharesplitsform` (08.08.2026, Phase 3a) waren es 35, seit
+`tst_sharesplithint` (09.08.2026, Phase 3b) sind es 36. Anlass für den
 ursprünglichen Abgleich war der Vorfall vom 05.08.2026, bei dem
 `tst_sharecalculator` hier aufgeführt war, aber in keiner `CMakeLists.txt`
 stand und deshalb nie gebaut wurde und nie mitlief. Wer ein Testziel
@@ -976,6 +978,33 @@ ruft `onReset()` auf → Formular geleert, Button "Hinzufügen".
 | `test_viewBuyEdit_tabChange_noAutoSelectInUebersicht` | Wechsel zu Uebersicht-Tab (Index 0) — keine Autoauswahl | `selectedItems()` leer |
 | `test_viewBuyEdit_tabChange_toJahresTab_selectsFirstRow` | Wechsel zu Jahres-Tab selektiert Zeile 0 | Selektion nicht leer, `currentRow()` = 0 |
 | `test_viewBuyEdit_tabChange_backToUebersicht_clearsJahresSelection` | Zurück zu Übersicht → Jahres-Tab-Selektion geleert | `selectedItems()` leer |
+
+Split-Hinweis (ergänzt 09.08.2026, Phase 3b) — die Formatierung selbst prüft
+`tst_sharesplithint`, hier geht es ausschliesslich um die Verdrahtung:
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_presenterBuyEdit_setsSplitHintOnConstruction` | Hinweis wird beim Öffnen gesetzt |
+| `test_presenterBuyEdit_noSplits_hintSaysNoSplit` | `hasSplit` = false, Tooltip leer |
+| `test_presenterBuyEdit_splitAfterBuyDate_hintIsActive` | `hasSplit` = true, Text enthält "20:1" |
+| `test_presenterBuyEdit_splitBeforeBuyDate_hintIsInactive` | Kauf nach dem Split → `hasSplit` = false |
+| `test_presenterBuyEdit_onDateEdited_refreshesHint` | Datumswechsel schaltet den Hinweis um |
+| `test_presenterBuyEdit_onValuesChanged_refreshesHint` | Stückzahländerung rechnet neu (10 × 20 = 200) |
+| `test_viewBuyEdit_hasSplitHintLabel` | Label `splitHint` existiert |
+| `test_viewBuyEdit_setSplitHint_setsTextAndTooltip` | Text und Tooltip landen im Label |
+| `test_viewBuyEdit_setSplitHint_labelStaysVisibleWithoutSplit` | Zeile bleibt auch ohne Split stehen |
+
+@note `test_..._onDateEdited_refreshesHint` und `test_..._onValuesChanged_refreshesHint`
+sind bewusst getrennt. Der Hinweis hängt an Datum, Stückzahl und Preis, aber
+`refreshDerivedValues()` läuft beim Datumswechsel nicht und `onDateEdited()`
+nicht beim Ändern von Stückzahl oder Preis. Wer später einen der beiden
+Aufrufe entfernt, weil er redundant aussieht, bekommt von genau einem der
+beiden Tests Widerspruch.
+
+@note `test_..._labelStaysVisibleWithoutSplit` hält die Platzierungsentscheidung
+vom 08.08.2026 fest: die Zeile darf NICHT ausgeblendet werden, wenn kein Split
+vorliegt — sonst springt beim Tippen im Datumsfeld das halbe Formular. Ein
+naheliegendes `setVisible(hasSplit)` würde hier auffliegen.
 
 ---
 
@@ -1945,6 +1974,23 @@ Konfiguration & Settings:
 | `test_configurations_documentsLoaded` | Documents.xml ladbar | `Success`, `count()` > 0 |
 | `test_apiSettings_saveYahooKey` | Yahoo API-Key gespeichert | `apiKeyYahoo()` = gesetzter Wert |
 
+Split-Hinweis (ergänzt 09.08.2026, Phase 3b) — wortgleiche Verdrahtung wie in
+BuysForm:
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_presenterSaleEdit_setsSplitHintOnConstruction` | Hinweis wird beim Öffnen gesetzt |
+| `test_presenterSaleEdit_noSplits_hintSaysNoSplit` | `hasSplit` = false, Tooltip leer |
+| `test_presenterSaleEdit_splitAfterSaleDate_hintIsActive` | `hasSplit` = true, Text enthält "20:1" |
+| `test_presenterSaleEdit_splitBeforeSaleDate_hintIsInactive` | Verkauf nach dem Split → false |
+| `test_presenterSaleEdit_onDateEdited_refreshesHint` | Datumswechsel schaltet den Hinweis um |
+| `test_presenterSaleEdit_usesSalePriceNotBuyPrice` | Verkaufspreis geht ein (2.000 / 20 = 100) |
+
+@note `test_..._usesSalePriceNotBuyPrice` fängt den wahrscheinlichsten Fehler
+beim Übertragen aus der Buy-Variante ab. Der Test prüft die konkrete Zahl
+statt nur die Anwesenheit eines Textes — sonst liefe er auch dann grün, wenn
+versehentlich die Stückzahl statt des Preises umgerechnet würde.
+
 ---
 
 ### tests/forms/ — DividendForm
@@ -2480,6 +2526,81 @@ Fall aus der Architektur-Doku: ein Kauf von 5 Stück zu 1.003,00 € am
 | `test_adjustedHistoryPrice_unadjustedHistory_isScaledDown` | Alphabet-Fall, Tageswert | 1.003,00 € → 50,15 € |
 | `test_adjustedHistoryPrice_alreadyAdjustedHistory_isUnchanged` | Bereits bereinigte Historie | Kurs unverändert |
 | `test_dateAfterSplit_pricesAndVolumesUnchanged` | Stichtag nach dem Split | Stückzahl und beide Preis-Umrechnungen unverändert |
+
+---
+
+### ShareSplitHint (tests/utils/tst_sharesplithint.cpp)
+
+Executable: `tst_sharesplithint`
+Klasse unter Test: `ShareSplitHint`
+
+Formatierung der Split-Hinweise unter den Kauf- und Verkaufsdaten, Phase 3b
+der Aktiensplit-Behandlung (09.08.2026, siehe ARCHITECTURE.md,
+"Split-Hinweis in den Editier-Dialogen").
+
+@note Kein `QCoreApplication` in `main()` — der Helfer ist zustandslos, greift
+nicht auf Qt SQL zu und instanziiert keine Widgets, gleiche Bauweise wie
+`tst_sharesplitadjuster`. `QLocale::setDefault(QLocale::German)` wird
+trotzdem gesetzt: der Helfer formatiert über `QLocale()`, und CI-Runner laufen
+nicht mit deutschem Locale.
+
+hasSplitAfter():
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_hasSplitAfter_emptyList_false` | Keine Splits → false |
+| `test_hasSplitAfter_splitLater_true` | Split nach dem Belegdatum → true |
+| `test_hasSplitAfter_splitEarlier_false` | Split vor dem Belegdatum → false |
+| `test_hasSplitAfter_splitOnSameDay_false` | Split AM Belegdatum → false |
+| `test_hasSplitAfter_invalidDate_false` | Ungültiges Datum → false, kein Absturz |
+
+footerText():
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_footerText_noSplits_mentionsCurrentState` | Text ist auch ohne Split belegt |
+| `test_footerText_onlyEarlierSplits_mentionsCurrentState` | Frühere Splits zählen nicht |
+| `test_footerText_singleSplit_showsRatioDateAndConversion` | Verhältnis, Datum, umgerechnete Stückzahl und Preis |
+| `test_footerText_singleSplit_productStaysEqual` | 5 × 1.003,00 € = 100 × 50,15 € |
+| `test_footerText_reverseSplit_scalesDown` | 1:10 → aus 100 à 5,00 € werden 10 à 50,00 € |
+| `test_footerText_multipleSplits_showsCountAndLatest` | "2 Splits", jüngstes Verhältnis, kumulierter Faktor 80 |
+| `test_footerText_multipleSplits_onlyCountsThoseAfterTheDate` | Beleg zwischen zwei Splits sieht nur den späteren |
+| `test_footerText_unsortedSplits_stillNamesTheLatest` | Unsortierte Eingabe liefert dasselbe Ergebnis |
+| `test_footerText_pricesAdjustedFlag_isIrrelevantHere` | `prices_adjusted` verändert den Hinweis nicht |
+| `test_footerText_zeroVolume_doesNotCrash` | Frisch geöffnetes Formular (0 Stück, 0 €) |
+| `test_footerText_fractionalRatio_keepsDecimals` | 3:2 wird nicht auf ganze Zahlen gerundet |
+
+tooltipText() und Formatierung:
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_tooltipText_noSplits_isEmpty` | Leerer Tooltip ohne Splits |
+| `test_tooltipText_listsAllSplitsAfterTheDate` | Beide Splits, eine Zeile je Split |
+| `test_tooltipText_skipsSplitsBeforeTheDate` | Frühere Splits fehlen |
+| `test_describeSplit_wholeRatioHasNoDecimals` | "20:1", nicht "20,00:1,00" |
+| `test_describeSplit_reverseSplitKeepsOrder` | "1:10", nicht "10:1" |
+| `test_formatRatioPart_fractionalKeepsTwoDecimals` | 1,5 bleibt 1,50 |
+| `test_formatRatioPart_wholeNumberHasNoDecimals` | 20,0 wird "20" |
+
+@note `test_footerText_pricesAdjustedFlag_isIrrelevantHere` sichert eine
+Unterscheidung, die leicht verrutscht: `prices_adjusted` betrifft
+ausschliesslich die Tageswert-Historie (`priceFactorForHistory()`). Belege
+liegen IMMER in Beleg-Skala vor. Würde der Hinweis versehentlich den
+History-Faktor verwenden, zeigte er bei einem bereits bereinigten Split gar
+keine Umrechnung mehr an — obwohl die Stückzahl auf dem Beleg sehr wohl eine
+alte ist.
+
+@note `test_footerText_unsortedSplits_stillNamesTheLatest` prüft eine
+Eigenschaft, die im laufenden Betrieb nie gebraucht wird —
+`ShareSplitRepository::findByShare()` liefert stets sortiert. Der Helfer ist
+aber öffentlich und wird von zwei Presentern aufgerufen; verlässt er sich
+stillschweigend auf die Sortierung, nennt er beim ersten Aufrufer mit anderer
+Reihenfolge den falschen Splittag.
+
+@note `test_footerText_singleSplit_productStaysEqual` ist der Test, der den
+eigentlichen Zweck des Hinweises festhält. Stückzahl mal Preis muss über einen
+Split hinweg gleich bleiben; würde nur die Stückzahl umgerechnet, sähe der
+Nutzer eine scheinbare Wertvervielfachung.
 
 ---
 

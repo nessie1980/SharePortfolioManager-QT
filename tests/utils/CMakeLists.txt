@@ -169,3 +169,31 @@ target_link_libraries(tst_salefifoallocator
 )
 
 add_test(NAME tst_salefifoallocator COMMAND tst_salefifoallocator)
+
+# ── ShareSplitHint tests ─────────────────────────────────────────────────────────
+# Formatierung der Split-Hinweise in den Editier-Dialogen, Phase 3b der
+# Aktiensplit-Behandlung (09.08.2026, siehe ARCHITECTURE.md). Ausgelagert,
+# weil ViewBuyEdit und ViewSaleEdit denselben Text brauchen — eine zweite
+# Kopie wäre der direkte Weg zurück zu dem Problem, das Phase 2c mit der
+# dreifach duplizierten FIFO-Schleife aufgeräumt hat.
+#
+# Zustandslos und datenbankfrei, gleiche Begründung wie bei
+# tst_sharesplitadjuster oben. Qt6::Gui wird NICHT gebraucht: der Helfer
+# liefert reine Strings, die Darstellung entscheiden die Views.
+qt_add_executable(tst_sharesplithint tst_sharesplithint.cpp
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/ShareSplitHint.cpp
+)
+
+target_include_directories(tst_sharesplithint
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_sharesplithint PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_sharesplithint
+    PRIVATE Qt6::Test
+)
+
+add_test(NAME tst_sharesplithint COMMAND tst_sharesplithint)

@@ -20,6 +20,15 @@ ShareObject ModelBuyEdit::loadShare(const QString& shareGuid) const
     return m_shareRepo.findByGuid(shareGuid);
 }
 
+// ── loadSplits ────────────────────────────────────────────────────────────────
+
+QList<ShareSplitObject> ModelBuyEdit::loadSplits(const QString& shareGuid) const
+{
+    // findByShare() liefert bereits aufsteigend nach Datum — ShareSplitHint
+    // setzt diese Reihenfolge voraus, um den jüngsten Split zu benennen.
+    return m_splitRepo.findByShare(shareGuid);
+}
+
 // ── loadBrokerage ─────────────────────────────────────────────────────────────
 
 BrokerageObject ModelBuyEdit::loadBrokerage(const QString& buyGuid) const
