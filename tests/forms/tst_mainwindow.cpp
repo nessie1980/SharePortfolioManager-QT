@@ -288,6 +288,12 @@ public:
     double  lastKaufwert             = 0.0;
     double  lastGewinnVerlust        = 0.0;
 
+    // Bugfix "anteilige Kauf-Nebenkosten gehen bei der FIFO-Zuteilung
+    // verloren": der Details-Inhalt wird jetzt vom Presenter aufbereitet und
+    // fertig an die View gereicht — hier fuer die Pruefung mitgeschrieben.
+    SaleBuyDetailSummary lastBuyDetails;
+    int                  showBuyDetailsCallCount = 0;
+
     // IViewSaleEdit — read
     QString dateTime()        const override { return m_dateTime;        }
     QString depotNumber()     const override { return m_depotNumber;     }
@@ -333,6 +339,12 @@ public:
     void setParseStatusIcon(int)                    override {}
     void setUiBusy(bool)                            override {}
     void onParseFinished()                          override {}
+
+    void showBuyDetails(const SaleBuyDetailSummary& summary) override
+    {
+        lastBuyDetails = summary;
+        ++showBuyDetailsCallCount;
+    }
 
     void populateOverview(const QList<SaleObject>&) override
         { populateOverviewCalled = true; }
@@ -6370,6 +6382,191 @@ private slots:
         // 2000 / 20 = 100
         QVERIFY2(view.lastSplitHint.contains(QLocale().toString(100.0, 'f', 4)),
                  qPrintable(view.lastSplitHint));
+    }
+
+    // ── Anteilige Kauf-Nebenkosten (Bugfix) ───────────────────────────────
+    // Regression gegen den Verlust von brokeragePart/reductionPart beim
+    // Umbau auf SaleFifoAllocator: SaleBuyDetail hat fuer beide Parameter
+    // Defaultwerte 0.0, weshalb der Verlust ohne Compilerfehler blieb.
+    // Aufgefallen ist er erst an einer echten Datenbank, in der 48 historisch
+    // erfasste Verkaeufe ihre Kosten korrekt tragen und nur ein neu
+    // erfasster Verkauf 0,00 EUR auswies.
+
+    void test_presenterSaleEdit_onSave_fullyConsumedBuy_carriesCompleteBrokerage()
+    {
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        view.m_dateTime  = QStringLiteral("2025-03-28T16:01:44");
+        view.m_volume    = 10.0;
+        view.m_salePrice = 145.0;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                      QStringLiteral("depot1"), QString(),
+                      QStringLiteral("2020-03-18T09:04:13"), 10.0, 0.0, 971.90)
+        };
+        // Provision 29,20 + Handelsplatzgebuehr 1,75 = 30,95
+        model.brokerage = BrokerageObject(
+            QStringLiteral("brk-1"), QStringLiteral("share-1"),
+            QStringLiteral("b1"), QString(),
+            QStringLiteral("2020-03-18T09:04:13"), 29.20, 0.0, 1.75, 0.0);
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onSave();
+
+        QVERIFY(model.addSaleCalled);
+        QCOMPARE(model.lastAddedSale.saleBuyDetails().size(), 1);
+        const SaleBuyDetail d = model.lastAddedSale.saleBuyDetails().first();
+        QVERIFY2(qAbs(d.brokeragePart() - 30.95) < 1e-9,
+                 qPrintable(QStringLiteral("brokeragePart=%1").arg(d.brokeragePart())));
+    }
+
+    void test_presenterSaleEdit_onSave_partialSale_splitsBrokerageProportionally()
+    {
+        // Ein Drittel des Kaufs verbraucht -> ein Drittel der Kosten. Genau
+        // dieses Verhalten steht in der Datenbank fuer zwei Verkaeufe vom
+        // 25.09.2017, die sich einen Kauf teilen (6,87333 + 3,43667 = 10,31).
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        view.m_volume    = 10.0;
+        view.m_salePrice = 150.0;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                      QStringLiteral("depot1"), QString(),
+                      QStringLiteral("2024-01-01T10:00:00"), 30.0, 0.0, 100.0)
+        };
+        model.brokerage = BrokerageObject(
+            QStringLiteral("brk-1"), QStringLiteral("share-1"),
+            QStringLiteral("b1"), QString(),
+            QStringLiteral("2024-01-01T10:00:00"), 30.0, 0.0, 0.0, 6.0);
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onSave();
+
+        QCOMPARE(model.lastAddedSale.saleBuyDetails().size(), 1);
+        const SaleBuyDetail d = model.lastAddedSale.saleBuyDetails().first();
+        QVERIFY(qAbs(d.brokeragePart() - 10.0) < 1e-9);   // 30,00 x 10/30
+        QVERIFY(qAbs(d.reductionPart() -  2.0) < 1e-9);   //  6,00 x 10/30
+    }
+
+    void test_presenterSaleEdit_onSave_brokerageIsNotScaledBySplit()
+    {
+        // Kauf 10 Stueck vor einem 20:1-Split, Verkauf von 200 heutigen
+        // Stuecken. Die Zuteilung liegt in Beleg-Skala des Kaufs (10), der
+        // Bruch detailVolume/buy.volume() ist damit 1,0 — die Kosten duerfen
+        // NICHT mitskaliert werden. Ein Geldbetrag kennt keinen Split.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        view.m_dateTime  = QStringLiteral("2025-03-28T16:01:44");
+        view.m_volume    = 200.0;
+        view.m_salePrice = 145.0;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                      QStringLiteral("depot1"), QString(),
+                      QStringLiteral("2020-03-18T09:04:13"), 10.0, 0.0, 971.90)
+        };
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 20.0, 1.0);
+        model.brokerage = BrokerageObject(
+            QStringLiteral("brk-1"), QStringLiteral("share-1"),
+            QStringLiteral("b1"), QString(),
+            QStringLiteral("2020-03-18T09:04:13"), 29.20, 0.0, 1.75, 0.0);
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onSave();
+
+        QCOMPARE(model.lastAddedSale.saleBuyDetails().size(), 1);
+        const SaleBuyDetail d = model.lastAddedSale.saleBuyDetails().first();
+        QVERIFY(qAbs(d.volume() - 10.0) < 1e-9);          // Beleg-Skala des Kaufs
+        QVERIFY2(qAbs(d.brokeragePart() - 30.95) < 1e-9,  // NICHT 619,00
+                 qPrintable(QStringLiteral("brokeragePart=%1").arg(d.brokeragePart())));
+    }
+
+    void test_presenterSaleEdit_onShowDetails_liveBranch_reportsBuyCosts()
+    {
+        // Vor dem Bugfix stand in der Spalte "Kosten" im Live-Zweig hart 0.0.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        view.m_volume    = 10.0;
+        view.m_salePrice = 145.0;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                      QStringLiteral("depot1"), QString(),
+                      QStringLiteral("2020-03-18T09:04:13"), 10.0, 0.0, 971.90)
+        };
+        model.brokerage = BrokerageObject(
+            QStringLiteral("brk-1"), QStringLiteral("share-1"),
+            QStringLiteral("b1"), QString(),
+            QStringLiteral("2020-03-18T09:04:13"), 29.20, 0.0, 1.75, 0.0);
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onShowDetails();
+
+        QCOMPARE(view.showBuyDetailsCallCount, 1);
+        QCOMPARE(view.lastBuyDetails.rows.size(), 1);
+        QVERIFY(qAbs(view.lastBuyDetails.rows.first().fees - 30.95) < 1e-9);
+        QVERIFY(qAbs(view.lastBuyDetails.totalFees          - 30.95) < 1e-9);
+    }
+
+    void test_presenterSaleEdit_onShowDetails_profitLossSubtractsBuyCosts()
+    {
+        // G/V = Verkaufswert - (Kaufsumme + Kaufkosten - Kaufrabatt)
+        //       - Verkaufsgebuehren/Steuern. Der Rabatt wurde in der
+        //       Summenzeile bisher uebergangen, obwohl die Spalte "Gesamt"
+        //       je Zeile ihn bereits abzieht.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        view.m_volume    = 10.0;
+        view.m_salePrice = 150.0;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                      QStringLiteral("depot1"), QString(),
+                      QStringLiteral("2024-01-01T10:00:00"), 10.0, 0.0, 100.0)
+        };
+        model.brokerage = BrokerageObject(
+            QStringLiteral("brk-1"), QStringLiteral("share-1"),
+            QStringLiteral("b1"), QString(),
+            QStringLiteral("2024-01-01T10:00:00"), 12.0, 0.0, 0.0, 2.0);
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onShowDetails();
+
+        const SaleBuyDetailSummary& s = view.lastBuyDetails;
+        QVERIFY(qAbs(s.totalSaleValue - 1500.0) < 1e-9);
+        QVERIFY(qAbs(s.totalBuyValue  - 1000.0) < 1e-9);
+        QVERIFY(qAbs(s.totalFees      -   12.0) < 1e-9);
+        QVERIFY(qAbs(s.totalReduction -    2.0) < 1e-9);
+        // 1500 - (1000 + 12 - 2) - 0 = 490
+        QVERIFY2(qAbs(s.totalProfitLoss - 490.0) < 1e-9,
+                 qPrintable(QStringLiteral("totalProfitLoss=%1").arg(s.totalProfitLoss)));
+    }
+
+    void test_presenterSaleEdit_livePreview_gewinnVerlustIncludesBuyCosts()
+    {
+        // Die Live-Vorschau im Formular muss dasselbe zeigen wie das, was
+        // nach dem Speichern aus SaleObject::profitLossBrokerageReduction()
+        // zurueckkommt — sonst springt der Wert beim Speichern.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        view.m_volume    = 10.0;
+        view.m_salePrice = 150.0;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                      QStringLiteral("depot1"), QString(),
+                      QStringLiteral("2024-01-01T10:00:00"), 10.0, 0.0, 100.0)
+        };
+        model.brokerage = BrokerageObject(
+            QStringLiteral("brk-1"), QStringLiteral("share-1"),
+            QStringLiteral("b1"), QString(),
+            QStringLiteral("2024-01-01T10:00:00"), 12.0, 0.0, 0.0, 2.0);
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onValuesChanged();
+
+        // Anzeigefeld "Gekaufter Kaufwert" bleibt OHNE Brokerage
+        QVERIFY(qAbs(view.lastKaufwert - 1000.0) < 1e-9);
+        // 1500 - 0 + 0 - 1000 - 12 + 2 - 0 = 490
+        QVERIFY2(qAbs(view.lastGewinnVerlust - 490.0) < 1e-9,
+                 qPrintable(QStringLiteral("lastGewinnVerlust=%1").arg(view.lastGewinnVerlust)));
     }
 
     void test_presenterSaleEdit_construction_loadsOverview()

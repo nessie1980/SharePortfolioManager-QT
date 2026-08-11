@@ -7,6 +7,9 @@
 #include <QTimer>
 #include <QUuid>
 #include <QDateTime>
+#include <QLocale>
+
+#include <utility>
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
@@ -100,11 +103,21 @@ void PresenterSaleEdit::onSave()
     const QDate saleDate = QDateTime::fromString(m_view->dateTime(), Qt::ISODate).date();
     const QList<ShareSplitObject> splits = m_model->loadSplits(m_shareGuid);
 
+    // Die anteiligen Kauf-Nebenkosten müssen hier mitgeschrieben werden —
+    // SaleFifoAllocator kennt sie nicht und soll sie auch nicht kennen
+    // (zustandslos und datenbankfrei, siehe SaleFifoAllocator.h). Bis zu
+    // diesem Bugfix wurden nur vier der sechs Konstruktor-Parameter belegt;
+    // reductionPart/brokeragePart haben Defaultwerte 0.0, weshalb der
+    // Verlust ohne Compilerfehler blieb (siehe ARCHITECTURE.md).
     QList<SaleBuyDetail> buyDetails;
     for (const FifoAllocationRow& row :
          SaleFifoAllocator::allocate(m_view->volume(), saleDate, available, splits)) {
+        double buyFees = 0.0;
+        double buyRed  = 0.0;
+        proportionalBuyCosts(row.buyGuid, row.volume, available, buyFees, buyRed);
         buyDetails.append(SaleBuyDetail(row.buyGuid, row.buyDateTime,
-                                        row.volume, row.buyPrice));
+                                        row.volume, row.buyPrice,
+                                        buyRed, buyFees));
     }
 
     const SaleObject sale(
@@ -616,13 +629,32 @@ void PresenterSaleEdit::refreshDerivedValues()
                 : m_model->loadAvailableBuysForDepotExcludingSale(
                       m_shareGuid, m_view->depotNumber(), m_currentSaleGuid);
 
+            double buyFeesTotal = 0.0;
+            double buyRedTotal  = 0.0;
             for (const FifoAllocationRow& row :
                  SaleFifoAllocator::allocate(vol, saleDate, available, splits)) {
                 kaufwert += row.volume * row.buyPrice;
+
+                double buyFees = 0.0;
+                double buyRed  = 0.0;
+                proportionalBuyCosts(row.buyGuid, row.volume, available, buyFees, buyRed);
+                buyFeesTotal += buyFees;
+                buyRedTotal  += buyRed;
             }
-            // G/V-Vorschau: Verkaufsgebühren und Steuern abziehen
-            // (Kaufbrokerage ist in der Vorschau nicht verfügbar)
-            gewinnVerlust = saleValue - gesGebuehren + red - kaufwert - taxSum;
+            // G/V-Vorschau inkl. anteiliger Kaufkosten — identisch zu
+            // SaleObject::profitLossBrokerageReduction(), das nach dem
+            // Speichern angezeigt wird:
+            //   (saleValue - Verkaufsgebühren + Rabatt)
+            // - (Kaufwert + Kaufbrokerage - Kaufrabatt) - Steuern
+            //
+            // Die Kaufbrokerage war hier bis zu diesem Bugfix nicht
+            // verfügbar; die Vorschau wies den Gewinn dadurch um die
+            // Kauf-Nebenkosten zu hoch aus (siehe ARCHITECTURE.md).
+            // Der Anzeigewert "Gekaufter Kaufwert" bleibt bewusst OHNE
+            // Brokerage — er entspricht SaleObject::buyValue().
+            gewinnVerlust = saleValue - gesGebuehren + red
+                          - kaufwert - buyFeesTotal + buyRedTotal
+                          - taxSum;
         }
     }
 
@@ -646,6 +678,169 @@ void PresenterSaleEdit::refreshSplitHint()
         ShareSplitHint::footerText(m_splits, date, m_view->volume(), m_view->salePrice()),
         ShareSplitHint::tooltipText(m_splits, date),
         ShareSplitHint::hasSplitAfter(m_splits, date));
+}
+
+// ── proportionalBuyCosts ──────────────────────────────────────────────────────
+
+void PresenterSaleEdit::proportionalBuyCosts(const QString&          buyGuid,
+                                             double                  detailVolume,
+                                             const QList<BuyObject>& buys,
+                                             double&                 fees,
+                                             double&                 reduction) const
+{
+    fees      = 0.0;
+    reduction = 0.0;
+
+    double buyVolume = 0.0;
+    for (const BuyObject& b : buys) {
+        if (b.guid() == buyGuid) { buyVolume = b.volume(); break; }
+    }
+    if (buyVolume <= 0.0) return;   // Kauf nicht in der Liste oder Volumen 0
+
+    // Bewusst KEINE Split-Umrechnung: detailVolume und buy.volume() liegen
+    // in derselben Beleg-Skala, der Bruch ist skaleninvariant.
+    const double fraction = detailVolume / buyVolume;
+
+    const BrokerageObject brk = m_model->loadBrokerageForBuy(buyGuid);
+    fees      = brk.brokerage() * fraction;
+    reduction = brk.reduction() * fraction;
+}
+
+// ── buildBuyDetailSummary ─────────────────────────────────────────────────────
+
+SaleBuyDetailSummary PresenterSaleEdit::buildBuyDetailSummary() const
+{
+    SaleBuyDetailSummary summary;
+
+    // Ein bereits gespeicherter Verkauf ist geladen? Steuert nur die
+    // Kopfzeile des Dialogs (vormals m_loadedSale.isValid() in der View).
+    const bool isEditMode = !m_currentSaleGuid.isEmpty();
+    summary.editMode = isEditMode;
+
+    // Der jüngste Verkauf bleibt bis zum Speichern voll editierbar — die
+    // Details-Vorschau muss deshalb live neu rechnen, sonst weicht sie vom
+    // tatsächlichen Ergebnis von onSave() ab (Aktiensplit-Behandlung,
+    // Phase 2c, 07.08.2026). Nur ältere, nicht editierbare Verkäufe zeigen
+    // die gespeicherte Zuteilung.
+    const bool useLiveFifo = !isEditMode || m_isLastSale;
+
+    // Anzeige durchgängig auf heutiger (split-bereinigter) Skala — diese
+    // Ansicht ist eine berechnete Übersicht über ggf. mehrere Lots, keine
+    // Beleg-Abschrift, und nur so bleiben Summen über mehrere Lots hinweg
+    // sinnvoll, auch wenn ein Split zwischen zwei Lots liegt.
+    if (!useLiveFifo) {
+        // Alle Käufe inkl. vollständig verbrauchter — ein Kauf, den dieser
+        // Verkauf komplett aufgebraucht hat, fehlt in der "verfügbar"-Liste.
+        const QList<BuyObject> allBuys = m_model->loadAllBuys(m_shareGuid);
+
+        SaleObject loaded;
+        for (const SaleObject& s : m_sales) {
+            if (s.guid() == m_currentSaleGuid) { loaded = s; break; }
+        }
+
+        const QDate  saleDate       = QDateTime::fromString(loaded.dateTime(), Qt::ISODate).date();
+        const double todaySalePrice = ShareSplitAdjuster::adjustedTransactionPrice(
+            loaded.salePrice(), m_splits, saleDate);
+
+        for (const SaleBuyDetail& d : loaded.saleBuyDetails()) {
+            const QDate  buyDate      = QDateTime::fromString(d.dateTime(), Qt::ISODate).date();
+            const double todayVolume  = ShareSplitAdjuster::adjustedVolume(
+                d.volume(), m_splits, buyDate);
+            const double todayBuyPrice = ShareSplitAdjuster::adjustedTransactionPrice(
+                d.buyPrice(), m_splits, buyDate);
+
+            SaleBuyDetailRow r;
+            r.date      = QLocale().toString(buyDate, QLocale::ShortFormat);
+            r.volume    = todayVolume;
+            r.buyPrice  = todayBuyPrice;
+            r.fees      = d.brokeragePart();   // Geldbetrag, unskaliert
+            r.reduction = d.reductionPart();   // Geldbetrag, unskaliert
+            r.buyValue  = todayVolume * todayBuyPrice;
+            r.saleValue = todayVolume * todaySalePrice;
+            r.profitLoss = r.saleValue - r.buyValue;
+            for (const BuyObject& b : allBuys) {
+                if (b.guid() == d.buyGuid()) { r.document = b.document(); break; }
+            }
+            summary.rows.append(r);
+        }
+
+        summary.saleFees = loaded.brokerage() + loaded.taxSum();
+    } else {
+        const QDate  saleDate       = QDateTime::fromString(m_view->dateTime(), Qt::ISODate).date();
+        const double todaySalePrice = ShareSplitAdjuster::adjustedTransactionPrice(
+            m_view->salePrice(), m_splits, saleDate);
+
+        const QList<BuyObject> available = m_currentSaleGuid.isEmpty()
+            ? m_model->loadAvailableBuysForDepot(m_shareGuid, m_view->depotNumber())
+            : m_model->loadAvailableBuysForDepotExcludingSale(
+                  m_shareGuid, m_view->depotNumber(), m_currentSaleGuid);
+
+        for (const FifoAllocationRow& row :
+             SaleFifoAllocator::allocate(m_view->volume(), saleDate, available, m_splits)) {
+            const BuyObject* matchedBuy = nullptr;
+            for (const BuyObject& b : available) {
+                if (b.guid() == row.buyGuid) { matchedBuy = &b; break; }
+            }
+            const QDate  buyDate      = matchedBuy ? matchedBuy->date() : saleDate;
+            const double todayVolume  = ShareSplitAdjuster::adjustedVolume(
+                row.volume, m_splits, buyDate);
+            const double todayBuyPrice = ShareSplitAdjuster::adjustedTransactionPrice(
+                row.buyPrice, m_splits, buyDate);
+
+            // Bis zu diesem Bugfix standen hier hart 0.0 — die Spalte
+            // "Kosten" blieb dadurch im Live-Zweig immer leer, und die
+            // ausgewiesene G/V war um die Kauf-Nebenkosten zu hoch.
+            double buyFees = 0.0;
+            double buyRed  = 0.0;
+            proportionalBuyCosts(row.buyGuid, row.volume, available, buyFees, buyRed);
+
+            SaleBuyDetailRow r;
+            r.date      = matchedBuy ? matchedBuy->dateAsStr() : QString();
+            r.volume    = todayVolume;
+            r.buyPrice  = todayBuyPrice;
+            r.fees      = buyFees;
+            r.reduction = buyRed;
+            r.buyValue  = todayVolume * todayBuyPrice;
+            r.saleValue = todayVolume * todaySalePrice;
+            r.profitLoss = r.saleValue - r.buyValue;
+            r.document  = matchedBuy ? matchedBuy->document() : QString();
+            summary.rows.append(r);
+        }
+
+        // Verkaufsgebühren und Steuern des Verkaufs selbst kommen aus dem
+        // Formular — beim Bearbeiten des jüngsten Verkaufs sind die Felder
+        // editierbar, gespeicherte Werte wären dort veraltet.
+        summary.saleFees = m_view->provision() + m_view->brokerFee() + m_view->traderFee()
+                         + m_view->taxAtSource() + m_view->capitalGainsTax()
+                         + m_view->solidarityTax();
+    }
+
+    for (const SaleBuyDetailRow& r : std::as_const(summary.rows)) {
+        summary.totalVolume    += r.volume;
+        summary.totalFees      += r.fees;
+        summary.totalReduction += r.reduction;
+        summary.totalBuyValue  += r.buyValue;
+        summary.totalSaleValue += r.saleValue;
+    }
+
+    // Ges. Kauf inkl. Kosten: Kaufsumme + Brokerage - Rabatt. Der Rabatt
+    // wurde in der Summenzeile bisher übergangen, obwohl die Spalte
+    // "Gesamt" je Zeile bereits `buyValue + fees - reduction` zeigt —
+    // solange reductionPart überall 0 war, fiel das nicht auf.
+    // Entspricht jetzt SaleObject::buyValueBrokerageReduction().
+    const double totBuyValWithFees =
+        summary.totalBuyValue + summary.totalFees - summary.totalReduction;
+
+    summary.totalProfitLoss = summary.totalSaleValue - totBuyValWithFees - summary.saleFees;
+
+    return summary;
+}
+
+// ── onShowDetails ─────────────────────────────────────────────────────────────
+
+void PresenterSaleEdit::onShowDetails()
+{
+    m_view->showBuyDetails(buildBuyDetailSummary());
 }
 
 // ── validateInput ─────────────────────────────────────────────────────────────

@@ -6,6 +6,47 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.13.1] - 2026-08-11
+
+### Fixed
+
+- Die anteiligen Kauf-Nebenkosten gingen beim Speichern eines Verkaufs
+  verloren. `PresenterSaleEdit::onSave()` belegte beim Erzeugen der
+  `SaleBuyDetail`-Objekte nur vier der sechs Konstruktor-Parameter;
+  `reductionPart` und `brokeragePart` haben Defaultwerte 0.0, weshalb der
+  Verlust ohne Compilerfehler blieb. In der Datenbank stand seither
+  `brokerage_part = 0` fuer jeden neu erfassten oder bearbeiteten Verkauf,
+  und die ausgewiesene Gewinnermittlung war um die Provision, Courtage und
+  Handelsplatzgebuehr des Kaufs zu guenstig.
+- Der Details-Dialog "Verwendete Kaeufe" zeigte die Spalte Kosten im
+  Live-FIFO-Zweig immer mit 0,00 EUR — dort standen die Werte hart im Code.
+  Der Grund war strukturell: die anteilige Brokerage kommt ueber
+  `IModelSaleEdit::loadBrokerageForBuy()`, und die View hat per MVP keinen
+  Modellzugriff.
+- Die Live-Vorschau von Gewinn/Verlust im Verkaufsformular rechnete ohne die
+  anteiligen Kaufkosten und sprang deshalb beim Speichern auf einen anderen
+  Wert.
+- Die Summenzeile des Details-Dialogs zog den anteiligen Kaufrabatt nicht ab,
+  obwohl die Spalte Gesamt ihn je Zeile bereits beruecksichtigt. Solange
+  `reduction_part` ueberall 0 war, fiel die Abweichung nicht auf.
+
+### Changed
+
+- Der Inhalt des Details-Dialogs wird jetzt vollstaendig im Presenter
+  aufbereitet (`PresenterSaleEdit::buildBuyDetailSummary()`) und ueber die
+  neue Interface-Methode `IViewSaleEdit::showBuyDetails()` an die View
+  gereicht. `ViewSaleEdit` rendert nur noch. Neuer Header
+  `app/forms/SalesForm/SaleBuyDetailRow.h` mit den Transportstrukturen
+  `SaleBuyDetailRow` und `SaleBuyDetailSummary`.
+- Die Verkaufsgebuehren und Steuern im Details-Dialog stammen beim Bearbeiten
+  des juengsten Verkaufs aus dem Formular statt aus dem gespeicherten
+  `SaleObject`. Die Felder sind dort editierbar, gespeicherte Werte waeren
+  veraltet und wichen von dem ab, was `onSave()` anschliessend schreibt.
+- `SaleFifoAllocator` bleibt unveraendert zustandslos und datenbankfrei. Die
+  anteilige Verteilung braucht keine Split-Logik: Zuteilungsmenge und
+  `buy.volume()` liegen in derselben Beleg-Skala, der Bruch ist damit
+  skaleninvariant.
+
 ## [1.13.0] - 2026-08-09
 
 ### Added

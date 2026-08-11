@@ -499,6 +499,12 @@ für den Dokumentpfad-Lookup im Edit-Modus verwendet.
 `populateAvailableBuys(buys)` befüllt `m_availableBuys` (nur Käufe mit verbleibendem
 Volumen) — wird für die FIFO-Vorschau im Neu-Modus und die Depot-Filterung verwendet.
 
+`showBuyDetails(summary)` (11.08.2026) nimmt den fertig aufbereiteten Inhalt des
+Details-Dialogs entgegen — siehe "Anteilige Kauf-Nebenkosten der FIFO-Zuteilung"
+weiter unten. Seither wertet `ViewSaleEdit` weder `m_availableBuys` noch
+`m_allBuys` oder `m_splits` selbst aus; die Listen werden aber weiterhin ueber
+die Setter befuellt (Interface-Vertrag, Depot-Filterung).
+
 `IModelSaleEdit` — Interface: `loadSales()`, `loadShare()`, `loadAvailableBuys()`,
 `loadAllBuys()`, `loadAvailableBuysForDepot()`, `loadBrokerage()`,
 `loadBrokerageForBuy()`, `addSale()`, `updateSale()`, `removeSale()`,
@@ -3801,6 +3807,130 @@ hilft aber keine Anzeige, sondern eine Prüfung, die tatsächlich rechnet; siehe
 
 ---
 
+## Anteilige Kauf-Nebenkosten der FIFO-Zuteilung (Bugfix, 11.08.2026)
+
+Ein Verkauf verbraucht ueber `SaleFifoAllocator` einen oder mehrere Kaeufe.
+Jede dabei entstehende `SaleBuyDetail`-Zeile traegt neben Menge und Kaufkurs
+auch den anteiligen Betrag der Kauf-Brokerage und des Kauf-Rabatts —
+`brokeragePart` und `reductionPart`. Diese Betraege gehen in
+`SaleObject::buyValueBrokerageReduction()` und damit in die Gewinnermittlung
+ein.
+
+Beim Umbau auf `SaleFifoAllocator` (Phase 2c) fielen beide Werte aus der
+Erzeugung heraus. `PresenterSaleEdit::onSave()` belegte nur vier der sechs
+Konstruktor-Parameter von `SaleBuyDetail`; `reductionPart` und
+`brokeragePart` haben Defaultwerte 0.0, weshalb der Verlust ohne
+Compilerfehler blieb. Fuer jeden seither erfassten oder bearbeiteten Verkauf
+stand in der Datenbank `brokerage_part = 0`.
+
+### Wie der Fehler auffiel
+
+Nicht durch einen Test, sondern durch einen Vergleich zweier Datenbanken. In
+der gewachsenen Produktivdatenbank tragen 48 historisch erfasste Verkaeufe
+ihre Kosten korrekt; nur ein frisch erfasster Verkauf wies 0,00 EUR aus,
+obwohl der zugehoerige Kauf 30,95 EUR Gebuehren traegt.
+
+Die Abfrage, die das trennt, vergleicht zwei Spalten nebeneinander — der
+alleinige Blick auf "Kosten gleich 0" fuehrt in die Irre, weil gebuehrenfreie
+Kaeufe voellig zu Recht 0 ergeben:
+
+```sql
+SELECT s.order_number,
+       SUM(sbd.brokerage_part) AS zugeteilte_kosten,
+       SUM(COALESCE(br.provision,0)
+         + COALESCE(br.broker_fee,0)
+         + COALESCE(br.trader_fee,0)) AS kosten_am_kauf
+FROM sale_buy_details sbd
+JOIN sales s ON s.guid = sbd.sale_guid
+JOIN buys  b ON b.guid = sbd.buy_guid
+LEFT JOIN brokerage br ON br.buy_guid = b.guid
+GROUP BY s.guid;
+```
+
+### Verteilungsregel
+
+Verteilt wird nach dem Bruchteil des verbrauchten Kaufs — dasselbe
+Pro-Lot-FIFO-Modell, das `ShareCalculator` fuer gehaltene Anteile verwendet:
+
+```
+brokeragePart = brokerage.brokerage() * (detailVolume / buy.volume())
+reductionPart = brokerage.reduction() * (detailVolume / buy.volume())
+```
+
+Belegt wird die Regel durch die Altdaten selbst: zwei Verkaeufe vom
+25.09.2017 teilen sich einen Kauf mit 10,31 EUR Gebuehren und tragen
+6,87333 EUR beziehungsweise 3,43667 EUR — zwei Drittel und ein Drittel,
+Summe exakt 10,31 EUR.
+
+@note Es wird bewusst nicht gerundet. Nur so trifft die Summe der Teile den
+Gesamtbetrag des Kaufs exakt, wenn mehrere Verkaeufe denselben Kauf
+verbrauchen. Die Rundung auf zwei Stellen geschieht erst bei der Anzeige.
+
+@note Der Bruch darf NICHT ueber `ShareSplitAdjuster` laufen. `detailVolume`
+und `buy.volume()` liegen in der Beleg-Skala DESSELBEN Kaufs, der Bruch ist
+damit skaleninvariant — ein Split zwischen Kauf und Verkauf veraendert ihn
+nicht. Eine Umrechnung wuerde einen Geldbetrag mit dem Split-Faktor
+multiplizieren; im Feldfall Alphabet waeren aus 30,95 EUR die Summe
+619,00 EUR geworden. Ein Split schafft weder Gewinn noch Kosten.
+
+### Warum die Berechnung im Presenter liegt
+
+`SaleFifoAllocator` ist zustandslos und datenbankfrei und soll das bleiben.
+Die Brokerage liegt in einer eigenen Tabelle mit FK auf den Kauf und ist nur
+ueber `IModelSaleEdit::loadBrokerageForBuy()` erreichbar. Die anteilige
+Berechnung sitzt deshalb in `PresenterSaleEdit::proportionalBuyCosts()`,
+aufgerufen aus `onSave()`, `refreshDerivedValues()` und
+`buildBuyDetailSummary()`.
+
+Daraus folgt auch die Verlagerung des Details-Dialogs: `ViewSaleEdit` hat als
+View keinen Modellzugriff und setzte die Kosten im Live-FIFO-Zweig deshalb
+hart auf 0.0. Der gesamte Rechenteil ist nach
+`PresenterSaleEdit::buildBuyDetailSummary()` gewandert und wird ueber
+`IViewSaleEdit::showBuyDetails()` als `SaleBuyDetailSummary` uebergeben. Der
+neue Header `app/forms/SalesForm/SaleBuyDetailRow.h` enthaelt beide
+Transportstrukturen. Die View rendert nur noch.
+
+### Mitbehobene Nebenwirkungen
+
+Die Live-Vorschau von Gewinn/Verlust in `refreshDerivedValues()` rechnete
+ohne die Kaufkosten und sprang deshalb beim Speichern auf einen anderen Wert.
+Sie folgt jetzt derselben Formel wie
+`SaleObject::profitLossBrokerageReduction()`:
+
+```
+(saleValue - Verkaufsgebuehren + Rabatt)
+- (Kaufwert + Kaufbrokerage - Kaufrabatt)
+- Steuern
+```
+
+Das Anzeigefeld "Gekaufter Kaufwert" bleibt bewusst OHNE Brokerage — es
+entspricht `SaleObject::buyValue()`.
+
+Die Summenzeile des Details-Dialogs zog den anteiligen Kaufrabatt nicht ab,
+obwohl die Spalte Gesamt ihn je Zeile bereits beruecksichtigt. Solange
+`reduction_part` ueberall 0 war, fiel die Abweichung nicht auf. Die Summe
+entspricht jetzt `SaleObject::buyValueBrokerageReduction()`.
+
+Verkaufsgebuehren und Steuern im Details-Dialog stammen beim Bearbeiten des
+juengsten Verkaufs aus dem Formular statt aus dem gespeicherten `SaleObject`.
+Die Felder sind dort editierbar; gespeicherte Werte waeren veraltet und
+wichen von dem ab, was `onSave()` anschliessend schreibt.
+
+### Sackgasse waehrend der Analyse
+
+Der Details-Dialog eignet sich nicht zur Diagnose von Datenfehlern. Fuer den
+juengsten Verkauf rechnet er die Zuteilung neu, statt die gespeicherte
+anzuzeigen (Phase 2c). Ein Kauf, der versehentlich in heutiger Skala erfasst
+wurde, und ein Kauf in Beleg-Skala mit zugehoerigem Split ergeben dort exakt
+dieselben Zahlen — die Anzeige kann beide Faelle nicht unterscheiden. Nur die
+Rohtabelle `sale_buy_details` gibt darueber Auskunft.
+
+Ebenfalls irrefuehrend: die Kopfzeile lautet auch im Neuberechnungs-Fall
+"Tatsaechliche FIFO-Zuteilung des gespeicherten Verkaufs". Als offener Punkt
+vermerkt, siehe unten.
+
+---
+
 ## Offene Punkte
 
 ### Aktiensplits werden nicht behandelt (wichtig, 06.08.2026, Umsetzung begonnen 07.08.2026)
@@ -3967,6 +4097,65 @@ Barkomponente sind fachlich keine reine Stückelungsänderung — anders als
 beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
+
+### Kopfzeile des Details-Dialogs im Neuberechnungs-Fall irrefuehrend (11.08.2026)
+
+`ViewSaleEdit::showBuyDetails()` beschriftet den Dialog anhand von
+`SaleBuyDetailSummary::editMode`, also danach, ob ein gespeicherter Verkauf
+geladen ist. Beim juengsten Verkauf wird die Zuteilung aber live neu
+gerechnet — die Beschriftung "Tatsaechliche FIFO-Zuteilung des gespeicherten
+Verkaufs" trifft dann nicht zu.
+
+Sinnvoll waere ein dritter Zustand, der die Neuberechnung des juengsten
+Verkaufs als solche benennt. Bewusst nicht im Rahmen des Brokerage-Bugfixes
+geaendert (ein Anliegen pro Commit).
+
+### Kaufkurs im Details-Dialog nur mit zwei Nachkommastellen (11.08.2026)
+
+Die Spalte Kaufkurs zeigt `formatMoney()`, also zwei Stellen. Bei
+split-bereinigten Kursen entsteht dadurch eine Zeile, die zum Nachrechnen
+einlaedt und dabei scheitert: 200,0000 Stk. mal 48,59 EUR ergibt 9.718,00 EUR,
+angezeigt werden korrekt 9.719,00 EUR (tatsaechlicher Kurs 48,595 EUR). Weil
+die Zeile als Gleichung mit Mal- und Gleichheitszeichen aufgebaut ist, faellt
+das auf. Vier Nachkommastellen wie in der Anteile-Spalte wuerden es aufloesen.
+
+### Split-Verhaeltnis: Notation der Bankmitteilungen (11.08.2026)
+
+Bankmitteilungen zu Splits nennen ueblicherweise das Zuteilungsverhaeltnis in
+der Form "1:19" — je einem gehaltenen Stueck werden 19 ZUSAETZLICHE
+eingebucht. Die Anwendung erwartet das Umrechnungsverhaeltnis, hier also 20.
+Im Feldfall Alphabet wurde 19 eingetragen; der Fehler ist systematisch immer
+genau eins zu klein.
+
+Drei Massnahmen sind denkbar, alle im Split-Dialog:
+
+- Ein Hinweistext unter der Umrechnungszeile, der beide Notationen benennt.
+  Reine Textaenderung, groesster Nutzen pro Aufwand.
+- Eine Plausibilitaetspruefung gegen die eigenen Daten: Bestand vor dem Ex-Tag
+  mal Faktor gegen die Stueckzahl auf spaeteren Verkaufsbelegen. Im Feldfall
+  haette das den Fehler sofort gemeldet — Bestand 10 mal 19 ergibt 190,
+  der Verkaufsbeleg lautet auf 200. Kein Parsen noetig.
+- Warnung, wenn der Ex-Tag in der Zukunft oder auf dem heutigen Tag liegt.
+  Der Dialog schlaegt das aktuelle Datum vor; im Feldfall wurde es
+  unveraendert uebernommen und stand als 10.08.2026 in der Datenbank.
+
+@note Ein Parser fuer die Split-Mitteilung haette hier nicht geholfen — im
+Dokument steht woertlich "1:19". Siehe "Parsing von Split-Mitteilungen der
+Banken pruefen".
+
+### Skalenbewusste Mengenpruefung im Verkaufsformular (11.08.2026)
+
+Waehrend der Analyse des Feldfalls zeigte das Verkaufsformular gruene Haken
+und eine vollstaendige Gewinnermittlung, obwohl die angeforderte Menge die
+verfuegbare deutlich ueberstieg (3.800 angefordert gegen 190 verfuegbar,
+beides auf heutiger Skala). `SaleFifoAllocator` deckelt still nach unten,
+statt einen Fehler zu melden. Dass das Ergebnis trotzdem stimmte, lag daran,
+dass zufaellig die gesamte Position verkauft wurde; bei einem Teilverkauf
+waere es stillschweigend falsch gewesen.
+
+Ob die Luecke im heutigen Code noch besteht, ist nicht abschliessend geprueft
+— der Feldfall entstand aus fehlerhaften Split-Daten, nicht zwingend aus
+einem Programmfehler.
 
 ### Bruchstücke bei Reverse-Splits nicht abgedeckt (07.08.2026)
 

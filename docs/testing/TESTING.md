@@ -1787,10 +1787,44 @@ zusätzlich in `lastAddedSale`/`lastUpdatedSale`, damit Tests die tatsächlich
 berechneten `SaleBuyDetails` prüfen können.
 
 `StubViewSaleEdit` implementiert `setAllBuys()` als No-op — der Aufruf
-durch den Presenter im Konstruktor wird damit ohne Seiteneffekt absorbiert.
+durch den Presenter im Konstruktor wird damit ohne Seiteneffekt absorbiert. Seit
+dem Bugfix zu den anteiligen Kauf-Nebenkosten (11.08.2026) implementiert er
+zusaetzlich `showBuyDetails()` und legt den uebergebenen
+`SaleBuyDetailSummary` in `lastBuyDetails` ab; `showBuyDetailsCallCount`
+zaehlt die Aufrufe. Damit sind Zeilen und Summen des Details-Dialogs ohne
+echte UI pruefbar — die Aufbereitung liegt seither im Presenter.
 `setSplits()` speichert die übergebenen Splits in `m_splits`. `setKaufwert()`/
 `setGewinnVerlust()` erfassen den zuletzt übergebenen Wert in
 `lastKaufwert`/`lastGewinnVerlust` (Phase 2c, für Tests der Live-FIFO-Vorschau).
+
+---
+
+PresenterSaleEdit — anteilige Kauf-Nebenkosten (Bugfix 11.08.2026):
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_presenterSaleEdit_onSave_fullyConsumedBuy_carriesCompleteBrokerage` | Kauf vollstaendig verbraucht | `brokeragePart` = 30,95 statt 0,0 |
+| `test_presenterSaleEdit_onSave_partialSale_splitsBrokerageProportionally` | Ein Drittel des Kaufs verkauft | `brokeragePart` und `reductionPart` je ein Drittel |
+| `test_presenterSaleEdit_onSave_brokerageIsNotScaledBySplit` | Kauf 10 Stk. vor 20:1, Verkauf 200 heutige | `volume` = 10 (Beleg-Skala), `brokeragePart` = 30,95 und NICHT 619,00 |
+| `test_presenterSaleEdit_onShowDetails_liveBranch_reportsBuyCosts` | Details-Dialog im Live-FIFO-Zweig | Zeile und Summe tragen 30,95 statt 0,00 |
+| `test_presenterSaleEdit_onShowDetails_profitLossSubtractsBuyCosts` | G/V-Summe des Dialogs | Kosten abgezogen, Rabatt gegengerechnet |
+| `test_presenterSaleEdit_livePreview_gewinnVerlustIncludesBuyCosts` | Live-Vorschau im Formular | `lastGewinnVerlust` inkl. Kaufkosten, `lastKaufwert` weiterhin OHNE |
+
+@note Der dritte Test ist der eigentliche Regressionsschutz. Ein Geldbetrag
+darf nicht mit dem Split-Faktor skaliert werden; der Anteil
+`detailVolume / buy.volume()` ist skaleninvariant, weil beide Werte in der
+Beleg-Skala desselben Kaufs liegen (siehe ARCHITECTURE.md, "Anteilige
+Kauf-Nebenkosten der FIFO-Zuteilung").
+
+@note Der erste Test verwendet bewusst die Zahlen des Feldfalls
+(Provision 29,20 + Handelsplatzgebuehr 1,75 = 30,95). Der Fehler war ueber
+Unit-Tests nicht aufgefallen, sondern erst beim Vergleich zweier Datenbanken
+— 48 historisch erfasste Verkaeufe trugen ihre Kosten korrekt, ein frisch
+erfasster nicht.
+
+@note Kein Testziel deckt `ViewSaleEdit::showBuyDetails()` selbst ab. Die
+Methode rendert seit der Verlagerung nur noch; die Logik liegt im Presenter
+und ist dort abgedeckt. Das entspricht der bestehenden Konvention, reine
+Qt-Widgets-Views ohne eigene Logik nicht isoliert zu testen.
 
 ---
 

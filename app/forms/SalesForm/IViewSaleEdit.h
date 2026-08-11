@@ -2,6 +2,7 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #pragma once
 
+#include "SaleBuyDetailRow.h"
 #include "../../models/SaleObject.h"
 #include "../../models/BuyObject.h"
 #include "../../models/BrokerageObject.h"
@@ -99,6 +100,23 @@ public:
     virtual void setParseStatusIcon(int iconType)                     = 0;
     virtual void setUiBusy(bool busy)                                 = 0;
     virtual void onParseFinished()                                    = 0;
+
+    // ── Details-Dialog (Presenter → View) ────────────────────────────────
+    /**
+     * @brief Zeigt den Dialog "Details der verwendeten Käufe" an.
+     *
+     * Die Aufbereitung der Zeilen liegt seit dem Bugfix "anteilige
+     * Kauf-Nebenkosten gehen bei der FIFO-Zuteilung verloren" vollständig
+     * im Presenter (siehe ARCHITECTURE.md). Grund: die anteilige
+     * Kauf-Brokerage kommt über `IModelSaleEdit::loadBrokerageForBuy()`,
+     * und die View hat per MVP keinen Modellzugriff. Vorher setzte
+     * `ViewSaleEdit::onShowDetails()` die Kosten im Live-FIFO-Zweig
+     * hart auf 0,00 €.
+     *
+     * Die View rendert nur noch — alle Werte in @p summary liegen bereits
+     * in heutiger (split-bereinigter) Skala vor.
+     */
+    virtual void showBuyDetails(const SaleBuyDetailSummary& summary) = 0;
 
     // ── Overview table (Presenter → View) ────────────────────────────────
     virtual void populateOverview(const QList<SaleObject>& sales) = 0;

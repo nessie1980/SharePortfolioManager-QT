@@ -7,6 +7,7 @@
 #include "../../config/DocumentsConfig.h"
 #include "../../utils/PdfTextExtractor.h"
 #include "../../utils/SaleFifoAllocator.h"
+#include "../../utils/ShareSplitAdjuster.h"
 #include "../../libs/parser/src/Parser.h"
 
 #include <QObject>
@@ -54,6 +55,16 @@ public slots:
     void onValuesChanged();
     void onDocumentSelected(const QString& path);
 
+    /**
+     * @brief Baut den Inhalt des Details-Dialogs und übergibt ihn an die View.
+     *
+     * Am Details-Button verdrahtet. Die Berechnung lag bis zum Bugfix
+     * "anteilige Kauf-Nebenkosten gehen bei der FIFO-Zuteilung verloren"
+     * in `ViewSaleEdit::onShowDetails()`, konnte dort aber die anteilige
+     * Kauf-Brokerage nicht ermitteln (kein Modellzugriff aus der View).
+     */
+    void onShowDetails();
+
     // ── Live field validation ─────────────────────────────────────────────
     void onDateEdited();
     void onDepotNumberEdited();
@@ -84,6 +95,42 @@ private:
     void    refreshSplitHint();
     QString validateInput() const;
     bool    isLatestSale(const QString& saleGuid) const;
+
+    /**
+     * @brief Anteilige Kauf-Nebenkosten einer FIFO-Zuteilungszeile.
+     *
+     * Bugfix (siehe ARCHITECTURE.md): beim Umbau auf `SaleFifoAllocator`
+     * fielen `brokeragePart`/`reductionPart` aus der Erzeugung der
+     * `SaleBuyDetail`-Objekte heraus — der Konstruktor hat für beide
+     * Defaultwerte 0.0, deshalb blieb der Verlust ohne Compilerfehler.
+     * Seither wurden die Kauf-Nebenkosten nicht mehr in der Gewinnermittlung
+     * berücksichtigt.
+     *
+     * Verteilt wird nach dem Bruchteil des verbrauchten Kaufs — dasselbe
+     * Pro-Lot-FIFO-Modell, das `ShareCalculator` für gehaltene Anteile
+     * verwendet. @p detailVolume und `buy.volume()` liegen beide in der
+     * Beleg-Skala DESSELBEN Kaufs, der Bruch ist damit skaleninvariant:
+     * ein Split zwischen Kauf und Verkauf verändert ihn nicht, und es darf
+     * hier ausdrücklich NICHT über `ShareSplitAdjuster` gerechnet werden.
+     *
+     * Es wird bewusst nicht gerundet — nur so trifft die Summe der Teile
+     * den Gesamtbetrag des Kaufs exakt, wenn mehrere Verkäufe denselben
+     * Kauf verbrauchen.
+     *
+     * @param buyGuid       GUID des referenzierten Kaufs.
+     * @param detailVolume  Zugeteilte Menge, Beleg-Skala des Kaufs.
+     * @param buys          Liste, in der der Kauf gesucht wird.
+     * @param fees          [out] Anteilige Brokerage.
+     * @param reduction     [out] Anteiliger Rabatt.
+     */
+    void proportionalBuyCosts(const QString&          buyGuid,
+                              double                  detailVolume,
+                              const QList<BuyObject>& buys,
+                              double&                 fees,
+                              double&                 reduction) const;
+
+    /** Baut Zeilen und Summen für den Details-Dialog auf heutiger Skala. */
+    SaleBuyDetailSummary buildBuyDetailSummary() const;
 
     void startParserForText(const QString& pdfText);
     void populateFromResult(const QMap<QString, QList<QString>>& result);
