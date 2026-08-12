@@ -9,6 +9,7 @@
 #include "../../models/SaleObject.h"
 #include "../../models/DividendObject.h"
 #include "../../models/BrokerageObject.h"
+#include "../../models/ShareSplitObject.h"
 
 /**
  * @brief One line of a "Bestandsberechnung" box (Gesamt/Vortag/Aktuelle).
@@ -81,11 +82,37 @@ public:
     // Depotwert-Modus geöffnet wurde; die View legt die zugehörigen Tabs auch
     // nur in diesem Fall an (siehe ViewShareDetails::setupUi()).
 
-    /** Befüllt den "Gewinne/Verluste"-Tab mit allen Verkäufen der Aktie. */
-    virtual void populateGewinneVerluste(const QList<SaleObject>& sales) = 0;
+    /**
+     * @brief Befüllt den "Gewinne/Verluste"-Tab mit allen Verkäufen der Aktie.
+     *
+     * @param splits  Alle Splits der Aktie (Phase 3c, 11.08.2026) — als
+     *        Parameter statt über einen eigenen Setter, damit keine
+     *        unsichtbare Reihenfolge-Abhängigkeit zwischen zwei View-Aufrufen
+     *        entsteht (gleiche Bauweise wie IViewBuyEdit/IViewSaleEdit).
+     *
+     * Belegzeilen der Jahres-Tabs bleiben in BELEG-Skala und tragen bei
+     * Bedarf den Split-Marker; alle Summen — Fusszeilen und die Jahreszeilen
+     * des Übersicht-Tabs — stehen auf heutiger Skala. Siehe ARCHITECTURE.md,
+     * "Split-Marker und Summen in den Übersichtstabellen".
+     *
+     * Gilt in beiden Modi: die Stückzahlen sind identisch, nur die
+     * Geldbeträge unterscheiden sich (brokeragefrei im Marktwert-Modus).
+     */
+    virtual void populateGewinneVerluste(const QList<SaleObject>&       sales,
+                                         const QList<ShareSplitObject>& splits) = 0;
 
-    /** Befüllt den "Dividenden"-Tab mit allen Dividendenzahlungen der Aktie. */
-    virtual void populateDividenden(const QList<DividendObject>& dividends) = 0;
+    /**
+     * @brief Befüllt den "Dividenden"-Tab mit allen Dividendenzahlungen.
+     *
+     * @param splits  Alle Splits der Aktie (Phase 3c, 11.08.2026).
+     *
+     * Anders als bei Verkäufen werden die Anteile hier NICHT auf heutige
+     * Skala umgerechnet: "Anteile am Auszahlungstag" bezieht sich auf einen
+     * Stichtag, und eine Summe über mehrere Stichtage beschreibt keinen
+     * Bestand. Die Belegzeilen tragen den Marker, die Summenzelle zeigt "-".
+     */
+    virtual void populateDividenden(const QList<DividendObject>&   dividends,
+                                    const QList<ShareSplitObject>& splits) = 0;
 
     /** Befüllt den "Kosten"-Tab mit allen Kosten-Einträgen der Aktie. */
     virtual void populateKosten(const QList<BrokerageObject>& brokerages) = 0;

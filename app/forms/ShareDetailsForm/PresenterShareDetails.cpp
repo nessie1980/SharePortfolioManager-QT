@@ -343,12 +343,15 @@ QColor PresenterShareDetails::performanceColor(double value)
 
 void PresenterShareDetails::populateGewinneVerluste()
 {
-    m_view.populateGewinneVerluste(m_model.loadSales(m_shareGuid));
+    // Splits als Parameter — siehe IViewShareDetails::populateGewinneVerluste().
+    m_view.populateGewinneVerluste(m_model.loadSales(m_shareGuid),
+                                   m_model.loadSplits(m_shareGuid));
 }
 
 void PresenterShareDetails::populateDividenden()
 {
-    m_view.populateDividenden(m_model.loadDividends(m_shareGuid));
+    m_view.populateDividenden(m_model.loadDividends(m_shareGuid),
+                              m_model.loadSplits(m_shareGuid));
 }
 
 void PresenterShareDetails::populateKosten()

@@ -10,6 +10,7 @@
 #include "../../models/SaleObject.h"
 #include "../../models/DividendObject.h"
 #include "../../models/BrokerageObject.h"
+#include "../../models/ShareSplitObject.h"
 #include "../../utils/ShareCalculator.h"
 
 /**
@@ -55,6 +56,17 @@ public:
 
     /** Alle Kosten-Einträge der Aktie (Kauf/Verkauf/Sonstig), für den "Kosten"-Tab. */
     virtual QList<BrokerageObject> loadBrokerages(const QString& shareGuid) const = 0;
+
+    /**
+     * @brief Alle Splits der Aktie, aufsteigend nach Datum.
+     *
+     * Ergänzt 11.08.2026 (Phase 3c der Aktiensplit-Behandlung) für den
+     * Split-Marker in den Anteile-Spalten der Tabs "Gewinne/Verluste" und
+     * "Dividenden". Reine Weiterleitung an ShareSplitRepository::findByShare();
+     * die Aufbereitung passiert in der View. Wortgleich zu
+     * IModelBuyEdit::loadSplits().
+     */
+    virtual QList<ShareSplitObject> loadSplits(const QString& shareGuid) const = 0;
 
     /**
      * @brief Neuestes vorhandenes Datum in daily_values für die Aktie —

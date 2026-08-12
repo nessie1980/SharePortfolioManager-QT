@@ -119,7 +119,26 @@ public:
     virtual void showBuyDetails(const SaleBuyDetailSummary& summary) = 0;
 
     // ── Overview table (Presenter → View) ────────────────────────────────
-    virtual void populateOverview(const QList<SaleObject>& sales) = 0;
+    /**
+     * @brief Baut die Verkaufs-Übersicht neu auf.
+     *
+     * @param sales   Alle Verkäufe der Aktie.
+     * @param splits  Alle Splits der Aktie (Phase 3c, 11.08.2026).
+     *
+     * Die Splits kommen bewusst als Parameter herein und nicht über einen
+     * eigenen `setSplits()`-Aufruf: sonst entstünde eine unsichtbare
+     * Reihenfolge-Abhängigkeit zwischen zwei View-Aufrufen, die erst
+     * auffällt, wenn sie einmal falsch herum steht. Gleiche Bauweise wie
+     * IViewBuyEdit::populateOverview().
+     *
+     * Zeilen der Jahres-Tabs bleiben in BELEG-Skala (sie sind Abschriften
+     * des Dokuments, das nach einem Zeilenklick rechts erscheint) und tragen
+     * bei Bedarf den Split-Marker; alle Summen — Fusszeilen und die
+     * Jahreszeilen des Übersicht-Tabs — stehen auf heutiger Skala. Siehe
+     * ARCHITECTURE.md, "Split-Marker und Summen in den Übersichtstabellen".
+     */
+    virtual void populateOverview(const QList<SaleObject>&       sales,
+                                  const QList<ShareSplitObject>& splits) = 0;
 
     /** Switch to the Gesamtübersicht tab (index 0) and clear the form. */
     virtual void showOverviewTab() = 0;

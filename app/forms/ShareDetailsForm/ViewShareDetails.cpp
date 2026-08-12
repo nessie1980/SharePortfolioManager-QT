@@ -1,6 +1,8 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "ViewShareDetails.h"
+#include "../../utils/ShareSplitAdjuster.h"
+#include "../../utils/ShareSplitHint.h"
 
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
 #include "../../IconProvider.h"
@@ -387,7 +389,8 @@ void ViewShareDetails::populateAktuelleBox(const CalculationRows& rows)
 
 // ── IViewShareDetails: Gewinne/Verluste-, Dividenden-, Kosten-Tabs ────────────
 
-void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
+void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>&       sales,
+                                               const QList<ShareSplitObject>& splits)
 {
     if (!m_gewinneVerlusteTab)
         return; // defensiv — Tab wird seit 14.07.2026 immer in setupUi() angelegt
@@ -419,6 +422,44 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
     for (const SaleObject& s : sales)
         totalPayout += salePayout(s);
 
+    // ── Split-Behandlung (Phase 3c, 11.08.2026) ───────────────────────────
+    //
+    // Aggregate rechnen je Beleg über ShareSplitAdjuster::adjustedVolume()
+    // auf heutige Skala und summieren erst danach — niemals die Summe
+    // skalieren. Liegt vor dem ältesten Beleg einer Summe ein Split, war
+    // mindestens ein summierter Beleg umzurechnen; genau dann trägt die
+    // Zelle den Marker.
+    //
+    // @note Gilt für STÜCKZAHLEN, nicht für Geldbeträge. Auszahlung und
+    // Gewinn/Verlust werden unverändert summiert — ein Split schafft weder
+    // Gewinn noch Verlust. Siehe ARCHITECTURE.md, "Anteilige
+    // Kauf-Nebenkosten der FIFO-Zuteilung".
+    auto todayVolume = [&splits](const SaleObject& s) {
+        return ShareSplitAdjuster::adjustedVolume(s.volume(), splits, s.date());
+    };
+
+    QMap<int, QDate> yearEarliest;
+    QDate            earliestOverall;
+    for (const SaleObject& s : sales) {
+        const QDate d = s.date();
+        if (!d.isValid()) continue;
+        const int y = s.year();
+        if (!yearEarliest.contains(y) || d < yearEarliest.value(y))
+            yearEarliest[y] = d;
+        if (!earliestOverall.isValid() || d < earliestOverall)
+            earliestOverall = d;
+    }
+
+    auto yearVolAffected = [&splits, yearEarliest](int year) {
+        return ShareSplitHint::hasSplitAfter(splits, yearEarliest.value(year));
+    };
+    auto yearVolTooltip = [&splits, yearEarliest](int year) {
+        return ShareSplitHint::overviewAggregateTooltip(splits, yearEarliest.value(year));
+    };
+    const bool    totalVolAffected = ShareSplitHint::hasSplitAfter(splits, earliestOverall);
+    const QString totalVolTooltip  =
+        ShareSplitHint::overviewAggregateTooltip(splits, earliestOverall);
+
     m_gewinneVerlusteTab->populateOverview(
         years,
         tr("Übersicht (%1)").arg(fmtMoney(totalPayout)),
@@ -428,29 +469,37 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
             data->setRowCount(years.size());
             for (int i = 0; i < years.size(); ++i) {
                 const int yr = years.at(i);
-                double vol = 0.0, payout = 0.0, gv = 0.0;
+                double volToday = 0.0, payout = 0.0, gv = 0.0;
                 for (const SaleObject& s : sales) {
                     if (s.year() != yr) continue;
-                    vol    += s.volume();
-                    payout += salePayout(s);
-                    gv     += saleProfitLoss(s);
+                    volToday += todayVolume(s);
+                    payout   += salePayout(s);
+                    gv       += saleProfitLoss(s);
                 }
                 auto* iYear = centeredItem(QString::number(yr));
                 iYear->setData(Qt::UserRole, yr);
                 data->setItem(i, 0, iYear);
-                data->setItem(i, 1, centeredItem(fmtVolume(vol)));
+                auto* iVol = centeredItem(ShareSplitHint::withMarker(
+                    fmtVolume(volToday), yearVolAffected(yr)));
+                if (!yearVolTooltip(yr).isEmpty())
+                    iVol->setToolTip(yearVolTooltip(yr));
+                data->setItem(i, 1, iVol);
                 data->setItem(i, 2, centeredItem(fmtMoney(payout)));
                 data->setItem(i, 3, centeredItem(fmtMoney(gv)));
             }
         },
         [&](QTableWidget* footer) {
-            double totVol = 0.0, totGV = 0.0;
+            double totVolToday = 0.0, totGV = 0.0;
             for (const SaleObject& s : sales) {
-                totVol += s.volume();
-                totGV  += saleProfitLoss(s);
+                totVolToday += todayVolume(s);
+                totGV       += saleProfitLoss(s);
             }
             footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
-            footer->setItem(0, 1, centeredItem(fmtVolume(totVol)));
+            auto* fVol = centeredItem(ShareSplitHint::withMarker(
+                fmtVolume(totVolToday), totalVolAffected));
+            if (!totalVolTooltip.isEmpty())
+                fVol->setToolTip(totalVolTooltip);
+            footer->setItem(0, 1, fVol);
             footer->setItem(0, 2, centeredItem(fmtMoney(totalPayout)));
             footer->setItem(0, 3, centeredItem(fmtMoney(totGV)));
         },
@@ -472,7 +521,19 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
                 auto* iDate = centeredItem(s.dateAsStr());
                 iDate->setData(Qt::UserRole, s.guid());
                 data->setItem(i, 0, iDate);
-                data->setItem(i, 1, centeredItem(fmtVolume(s.volume())));
+
+                // Belegzeile: bleibt in BELEG-Skala. Die Zeile ist eine
+                // Abschrift des Dokuments, das nach einem Zeilenklick rechts
+                // in der Vorschau erscheint — die Zahlen müssen sich decken.
+                const bool    volAffected = ShareSplitHint::hasSplitAfter(splits, s.date());
+                auto* iVol = centeredItem(ShareSplitHint::withMarker(
+                    fmtVolume(s.volume()), volAffected));
+                const QString volTooltip = ShareSplitHint::overviewRowTooltip(
+                    splits, s.date(), s.volume(), s.salePrice());
+                if (!volTooltip.isEmpty())
+                    iVol->setToolTip(volTooltip);
+                data->setItem(i, 1, iVol);
+
                 data->setItem(i, 2, centeredItem(fmtMoney(salePayout(s))));
                 data->setItem(i, 3, centeredItem(fmtMoney(saleProfitLoss(s))));
 
@@ -488,15 +549,22 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
             }
         },
         [&](int year, QTableWidget* footer) {
-            double vol = 0.0, payout = 0.0, gv = 0.0;
+            // Summe über die Belege eines Jahres: je Beleg umrechnen, dann
+            // summieren. Fällt ein Split mitten ins Jahr, mischte die frühere
+            // rohe Summe zwei Stückelungen und war damit bedeutungslos.
+            double volToday = 0.0, payout = 0.0, gv = 0.0;
             for (const SaleObject& s : sales) {
                 if (s.year() != year) continue;
-                vol    += s.volume();
-                payout += salePayout(s);
-                gv     += saleProfitLoss(s);
+                volToday += todayVolume(s);
+                payout   += salePayout(s);
+                gv       += saleProfitLoss(s);
             }
             footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
-            footer->setItem(0, 1, centeredItem(fmtVolume(vol)));
+            auto* fVol = centeredItem(ShareSplitHint::withMarker(
+                fmtVolume(volToday), yearVolAffected(year)));
+            if (!yearVolTooltip(year).isEmpty())
+                fVol->setToolTip(yearVolTooltip(year));
+            footer->setItem(0, 1, fVol);
             footer->setItem(0, 2, centeredItem(fmtMoney(payout)));
             footer->setItem(0, 3, centeredItem(fmtMoney(gv)));
             footer->setItem(0, 4, centeredItem(QStringLiteral("-")));
@@ -504,7 +572,8 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>& sales)
         /*jahresDocColumn=*/4);
 }
 
-void ViewShareDetails::populateDividenden(const QList<DividendObject>& dividends)
+void ViewShareDetails::populateDividenden(const QList<DividendObject>&   dividends,
+                                          const QList<ShareSplitObject>& splits)
 {
     if (!m_dividendenTab)
         return; // Marktwert-Modus — Tab existiert nicht, siehe setupUi()
@@ -566,7 +635,19 @@ void ViewShareDetails::populateDividenden(const QList<DividendObject>& dividends
                 iDate->setData(Qt::UserRole, d.guid());
                 data->setItem(i, 0, iDate);
                 data->setItem(i, 1, centeredItem(fmtRate(d.rate())));
-                data->setItem(i, 2, centeredItem(fmtVolume(d.volume())));
+
+                // Belegzeile: bleibt in BELEG-Skala. "Anteile am
+                // Auszahlungstag" ist die Stückzahl, auf die die Bank
+                // tatsächlich ausgeschüttet hat (Phase 3c, 11.08.2026).
+                const bool volAffected = ShareSplitHint::hasSplitAfter(splits, d.date());
+                auto* iVol = centeredItem(ShareSplitHint::withMarker(
+                    fmtVolume(d.volume()), volAffected));
+                const QString volTooltip = ShareSplitHint::overviewRowTooltip(
+                    splits, d.date(), d.volume(), d.rate());
+                if (!volTooltip.isEmpty())
+                    iVol->setToolTip(volTooltip);
+                data->setItem(i, 2, iVol);
+
                 data->setItem(i, 3, centeredItem(fmtMoney(d.dividendPayoutWithTaxes())));
 
                 if (!d.document().isEmpty()) {
@@ -581,15 +662,28 @@ void ViewShareDetails::populateDividenden(const QList<DividendObject>& dividends
             }
         },
         [&](int year, QTableWidget* footer) {
-            double totVol = 0.0, totDiv = 0.0;
+            double totDiv = 0.0;
             for (const DividendObject& d : dividends) {
                 if (d.year() != year) continue;
-                totVol += d.volume();
                 totDiv += d.dividendPayoutWithTaxes();
             }
             footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
             footer->setItem(0, 1, centeredItem(QStringLiteral("-")));
-            footer->setItem(0, 2, centeredItem(fmtVolume(totVol)));
+
+            // Anteile-Summe bewusst "-" statt einer Zahl (Nessies
+            // Entscheidung 11.08.2026, Phase 3c). "Anteile am Auszahlungstag"
+            // bezieht sich auf je einen Stichtag; die Summe über mehrere
+            // Ausschüttungen beschreibt keinen Bestand, den es je gab. Anders
+            // als bei Verkäufen hilft hier auch eine Umrechnung auf heutige
+            // Skala nicht weiter — sie würde aus einer bedeutungslosen Zahl
+            // nur eine andere machen. Der Dividendensatz daneben steht aus
+            // demselben Grund schon immer auf "-". Identisch zu
+            // ViewDividendEdit::populateOverview().
+            auto* fVol = centeredItem(QStringLiteral("-"));
+            fVol->setToolTip(tr("Anteile beziehen sich auf verschiedene "
+                                "Auszahlungstage und lassen sich nicht summieren."));
+            footer->setItem(0, 2, fVol);
+
             footer->setItem(0, 3, centeredItem(fmtMoney(totDiv)));
             footer->setItem(0, 4, centeredItem(QStringLiteral("-")));
         },

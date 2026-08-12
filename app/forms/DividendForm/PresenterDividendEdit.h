@@ -99,6 +99,14 @@ private:
     QString             m_shareGuid;
 
     QList<DividendObject> m_dividends;
+
+    /// Splits der Aktie, einmalig im Konstruktor geladen (Phase 3c,
+    /// 11.08.2026). Die Splits einer Aktie ändern sich während einer
+    /// Dialog-Sitzung nicht — ein Abruf je reloadOverview() wäre eine
+    /// unnötige Datenbankabfrage (gleiche Überlegung wie in
+    /// PresenterSaleEdit::refreshDerivedValues(), 09.08.2026).
+    QList<ShareSplitObject> m_splits;
+
     QString               m_currentDividendGuid;
 
     ParserLib::Parser m_parser;

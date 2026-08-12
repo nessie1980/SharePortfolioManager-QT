@@ -4,6 +4,7 @@
 
 #include "../../models/BuyObject.h"
 #include "../../models/BrokerageObject.h"
+#include "../../models/ShareSplitObject.h"
 
 #include <QList>
 #include <QString>
@@ -112,8 +113,29 @@ public:
     virtual void onParseFinished() = 0;
 
     // ── Overview table (Presenter → View) ────────────────────────────────
-    virtual void populateOverview(const QList<BuyObject>&       buys,
-                                  const QList<BrokerageObject>& brokerages) = 0;
+
+    /**
+     * @brief Baut die Kauf-Übersicht neu auf.
+     *
+     * @param buys        Alle Käufe der Aktie.
+     * @param brokerages  Zum jeweiligen Kauf gehörende Kosten, index-parallel
+     *        zu @p buys.
+     * @param splits      Alle Splits der Aktie (Phase 3c, 10.08.2026).
+     *
+     * Die Splits kommen bewusst als Parameter herein und nicht über einen
+     * eigenen `setSplits()`-Aufruf: sonst entstünde eine unsichtbare
+     * Reihenfolge-Abhängigkeit zwischen zwei View-Aufrufen, die erst auffällt,
+     * wenn sie einmal falsch herum steht.
+     *
+     * Zeilen der Jahres-Tabs bleiben in BELEG-Skala (sie sind Abschriften des
+     * Dokuments, das nach einem Zeilenklick rechts erscheint); alle Summen —
+     * Fusszeilen und die Jahreszeilen des Übersicht-Tabs — stehen auf
+     * heutiger Skala. Siehe ARCHITECTURE.md, "Split-Marker und Summen in den
+     * Übersichtstabellen".
+     */
+    virtual void populateOverview(const QList<BuyObject>&        buys,
+                                  const QList<BrokerageObject>&  brokerages,
+                                  const QList<ShareSplitObject>& splits) = 0;
 
     /** Switch to the Gesamtübersicht tab (index 0) and clear the form. */
     virtual void showOverviewTab() = 0;

@@ -79,6 +79,7 @@
 #include "../../app/forms/ShareEditForm/ModelShareEdit.h"
 #include "../../app/forms/ShareEditForm/PresenterShareEdit.h"
 #include "../../app/models/ShareSplitObject.h"
+#include "../../app/utils/ShareSplitHint.h"
 #include "../../app/repositories/ShareSplitRepository.h"
 #include <QDateEdit>
 #include <QTimeEdit>
@@ -294,6 +295,9 @@ public:
     SaleBuyDetailSummary lastBuyDetails;
     int                  showBuyDetailsCallCount = 0;
 
+    // Phase 3c (11.08.2026): von populateOverview() zuletzt übergebene Splits.
+    QList<ShareSplitObject> lastOverviewSplits;
+
     // IViewSaleEdit — read
     QString dateTime()        const override { return m_dateTime;        }
     QString depotNumber()     const override { return m_depotNumber;     }
@@ -346,8 +350,13 @@ public:
         ++showBuyDetailsCallCount;
     }
 
-    void populateOverview(const QList<SaleObject>&) override
-        { populateOverviewCalled = true; }
+    void populateOverview(const QList<SaleObject>&,
+                          const QList<ShareSplitObject>& splits) override
+    {
+        populateOverviewCalled = true;
+        // Phase 3c (11.08.2026): die Splits kommen als Parameter herein.
+        lastOverviewSplits = splits;
+    }
     void openPdfPreview(const QString&)             override {}
     void clearPdfPreview()                          override {}
     void showOverviewTab()                          override
@@ -6569,6 +6578,31 @@ private slots:
                  qPrintable(QStringLiteral("lastGewinnVerlust=%1").arg(view.lastGewinnVerlust)));
     }
 
+    // ── Split-Marker in der Verkaufs-Übersicht (Phase 3c) ─────────────────
+
+    void test_presenterSaleEdit_populateOverview_passesSplitsAsParameter()
+    {
+        // Die Splits gehen als Parameter an die View, nicht über einen
+        // eigenen setSplits()-Aufruf — sonst entstünde eine unsichtbare
+        // Reihenfolge-Abhängigkeit zwischen zwei View-Aufrufen.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        model.sales = {
+            SaleObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                       QStringLiteral("depot1"), QStringLiteral("ord-s1"),
+                       QStringLiteral("2025-03-28T16:01:44"),
+                       200.0, 145.0, {})
+        };
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 20.0, 1.0);
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        QVERIFY(view.populateOverviewCalled);
+        QCOMPARE(view.lastOverviewSplits.size(), 1);
+        QCOMPARE(view.lastOverviewSplits.first().ratioNew(), 20.0);
+    }
+
     void test_presenterSaleEdit_construction_loadsOverview()
     {
         StubViewSaleEdit  view;
@@ -7326,7 +7360,7 @@ private slots:
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
-        dlg.populateOverview({});
+        dlg.populateOverview({}, {});
         QCOMPARE(tabs->count(), 0);
     }
 
@@ -7338,7 +7372,7 @@ private slots:
 
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2024)
-        });
+        }, {});
 
         QCOMPARE(tabs->count(), 2);
         QVERIFY(tabs->tabText(0).contains(tr("Übersicht")));
@@ -7354,7 +7388,7 @@ private slots:
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2023),
             makeSale(QStringLiteral("s2"), QStringLiteral("share-guid"), 2024)
-        });
+        }, {});
 
         QCOMPARE(tabs->count(), 3);
     }
@@ -7369,7 +7403,7 @@ private slots:
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2022),
             makeSale(QStringLiteral("s2"), QStringLiteral("share-guid"), 2024)
-        });
+        }, {});
 
         QVERIFY(tabs->tabText(1).contains(QStringLiteral("2024")));
         QVERIFY(tabs->tabText(2).contains(QStringLiteral("2022")));
@@ -7382,7 +7416,7 @@ private slots:
 
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2024)
-        });
+        }, {});
 
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs->count() >= 2);
@@ -7402,7 +7436,7 @@ private slots:
         dlg.populateOverview({
             makeSale(QStringLiteral("sale-guid-1"),
                      QStringLiteral("share-guid"), 2024)
-        });
+        }, {});
 
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         auto* container = tabs->widget(1);
@@ -7422,13 +7456,13 @@ private slots:
 
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2023)
-        });
+        }, {});
         QCOMPARE(tabs->count(), 2);
 
         dlg.populateOverview({
             makeSale(QStringLiteral("s2"), QStringLiteral("share-guid"), 2024),
             makeSale(QStringLiteral("s3"), QStringLiteral("share-guid"), 2025)
-        });
+        }, {});
         QCOMPARE(tabs->count(), 3);
         QVERIFY(!tabs->tabText(1).contains(QStringLiteral("2023")));
     }
@@ -7451,7 +7485,7 @@ private slots:
             10.0, 150.0, {}, 0.0, 0.0, 0.0, QString(),
             0.0, 0.0, 0.0, 0.0,
             QStringLiteral("/path/to/doc.pdf"));
-        dlg.populateOverview({ sWithDoc });
+        dlg.populateOverview({ sWithDoc }, {});
 
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         auto* container = tabs->widget(1);
@@ -7469,7 +7503,7 @@ private slots:
 
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2024)
-        });
+        }, {});
 
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         auto* container = tabs->widget(1);
@@ -7495,7 +7529,7 @@ private slots:
 
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2024)
-        });
+        }, {});
 
         auto* container = tabs->widget(0);
         QVERIFY(container != nullptr);
@@ -7519,7 +7553,7 @@ private slots:
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2024),
             makeSale(QStringLiteral("s2"), QStringLiteral("share-guid"), 2024),
             makeSale(QStringLiteral("s3"), QStringLiteral("share-guid"), 2024)
-        });
+        }, {});
 
         auto* container = tabs->widget(1);
         QVERIFY(container != nullptr);
@@ -7540,11 +7574,124 @@ private slots:
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2024,
                      10.0, 150.0)
-        });
+        }, {});
 
         QVERIFY(tabs->tabText(0).contains(QStringLiteral("€")));
         QVERIFY(tabs->tabText(1).contains(QStringLiteral("2024")));
         QVERIFY(tabs->tabText(1).contains(QStringLiteral("€")));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ViewSaleEdit — Split-Marker und Summen (Phase 3c)
+    // ─────────────────────────────────────────────────────────────────────
+
+    /** dataTable eines Tab-Containers (siehe OverviewTabWidget::buildFrozenTable()). */
+    static QTableWidget* dataTableOf(QWidget* container)
+    {
+        if (!container) return nullptr;
+        return qobject_cast<QTableWidget*>(
+            container->property("dataTable").value<QObject*>());
+    }
+
+    /** footerTable eines Tab-Containers (einzeilige Gesamt-Zeile). */
+    static QTableWidget* footerTableOf(QWidget* container)
+    {
+        if (!container) return nullptr;
+        return qobject_cast<QTableWidget*>(
+            container->property("footerTable").value<QObject*>());
+    }
+
+    void test_viewSaleEdit_populateOverview_belegRowKeepsBelegVolumeWithMarker()
+    {
+        // Belegzeile bleibt in Beleg-Skala — sie ist eine Abschrift des
+        // Dokuments, das nach einem Zeilenklick rechts erscheint. Der Marker
+        // weist darauf hin, dass die Zahl nicht dem heutigen Stand entspricht.
+        openMemoryDb();
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        QVERIFY(tabs != nullptr);
+
+        dlg.populateOverview(
+            { makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2021, 5.0, 1000.0) },
+            { ShareSplitObject(QStringLiteral("sp1"), QStringLiteral("share-guid"),
+                               QDate(2022, 7, 18), 20.0, 1.0) });
+
+        auto* tbl = dataTableOf(tabs->widget(1));   // Jahres-Tab 2021
+        QVERIFY(tbl != nullptr);
+        const QString volText = tbl->item(0, 1)->text();
+        QVERIFY2(volText.contains(QLocale().toString(5.0, 'f', 4)), qPrintable(volText));
+        QVERIFY2(volText.contains(ShareSplitHint::marker()), qPrintable(volText));
+        QVERIFY(!tbl->item(0, 1)->toolTip().isEmpty());
+    }
+
+    void test_viewSaleEdit_populateOverview_belegRowWithoutSplitHasNoMarker()
+    {
+        openMemoryDb();
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        QVERIFY(tabs != nullptr);
+
+        dlg.populateOverview(
+            { makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2024, 5.0, 1000.0) },
+            {});
+
+        auto* tbl = dataTableOf(tabs->widget(1));
+        QVERIFY(tbl != nullptr);
+        QVERIFY(!tbl->item(0, 1)->text().contains(ShareSplitHint::marker()));
+        QVERIFY(tbl->item(0, 1)->toolTip().isEmpty());
+    }
+
+    void test_viewSaleEdit_populateOverview_uebersichtRowUsesTodayScale()
+    {
+        // Aggregate rechnen je Beleg um und summieren erst danach: aus
+        // 5 Stück vor einem 20:1-Split werden 100 heutige Stück.
+        openMemoryDb();
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        QVERIFY(tabs != nullptr);
+
+        dlg.populateOverview(
+            { makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2021, 5.0, 1000.0) },
+            { ShareSplitObject(QStringLiteral("sp1"), QStringLiteral("share-guid"),
+                               QDate(2022, 7, 18), 20.0, 1.0) });
+
+        auto* tbl = dataTableOf(tabs->widget(0));   // Übersicht
+        QVERIFY(tbl != nullptr);
+        const QString volText = tbl->item(0, 1)->text();
+        QVERIFY2(volText.contains(QLocale().toString(100.0, 'f', 4)), qPrintable(volText));
+        QVERIFY2(volText.contains(ShareSplitHint::marker()), qPrintable(volText));
+    }
+
+    void test_viewSaleEdit_populateOverview_splitMidYearSumsOnOneScale()
+    {
+        // Der eigentliche Grund für die Umrechnung: zwei Verkäufe desselben
+        // Jahres, dazwischen ein Split. Die frühere rohe Summe (5 + 100 =
+        // 105) mischte zwei Stückelungen und bedeutete gar nichts.
+        // Richtig: 5 × 20 + 100 = 200 heutige Stück.
+        openMemoryDb();
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        QVERIFY(tabs != nullptr);
+
+        const SaleObject before(QStringLiteral("s1"), QStringLiteral("share-guid"),
+                                QStringLiteral("depot1"), QStringLiteral("ord-s1"),
+                                QStringLiteral("2022-03-01T10:00:00"), 5.0, 1000.0,
+                                QList<SaleBuyDetail>());
+        const SaleObject after(QStringLiteral("s2"), QStringLiteral("share-guid"),
+                               QStringLiteral("depot1"), QStringLiteral("ord-s2"),
+                               QStringLiteral("2022-11-01T10:00:00"), 100.0, 50.0,
+                               QList<SaleBuyDetail>());
+
+        dlg.populateOverview(
+            { before, after },
+            { ShareSplitObject(QStringLiteral("sp1"), QStringLiteral("share-guid"),
+                               QDate(2022, 7, 18), 20.0, 1.0) });
+
+        auto* footer = footerTableOf(tabs->widget(1));   // Jahres-Tab 2022
+        QVERIFY(footer != nullptr);
+        const QString sumText = footer->item(0, 1)->text();
+        QVERIFY2(sumText.contains(QLocale().toString(200.0, 'f', 4)), qPrintable(sumText));
+        QVERIFY2(sumText.contains(ShareSplitHint::marker()), qPrintable(sumText));
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -7558,7 +7705,7 @@ private slots:
         dlg.populateOverview({
             makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2023),
             makeSale(QStringLiteral("s2"), QStringLiteral("share-guid"), 2024)
-        });
+        }, {});
         return tabs;
     }
 
@@ -8030,6 +8177,8 @@ class StubModelDividendEdit : public IModelDividendEdit
 {
 public:
     QList<DividendObject> dividends;
+    // Phase 3c (11.08.2026): Splits für den Marker in der Anteile-Spalte.
+    QList<ShareSplitObject> splits;
     bool                  addResult    = true;
     bool                  updateResult = true;
     bool                  removeResult = true;
@@ -8049,6 +8198,7 @@ public:
 
     QList<DividendObject> loadDividends(const QString&) const override { return dividends; }
     ShareObject           loadShare(const QString&)     const override { return ShareObject{}; }
+    QList<ShareSplitObject> loadSplits(const QString&)  const override { return splits; }
 
     bool findClosingPriceForDate(const QString& shareGuid, const QDate& date,
                                  double& outPrice) const override
@@ -8091,6 +8241,7 @@ public:
 
     // Captured calls
     bool    populateOverviewCalled = false;
+    QList<ShareSplitObject> lastOverviewSplits;
     bool    clearFormCalled        = false;
     bool    loadDividendCalled     = false;
     bool    setButtonStatesCalled  = false;
@@ -8149,8 +8300,13 @@ public:
     void setUiBusy(bool)                            override {}
     void onParseFinished()                          override {}
 
-    void populateOverview(const QList<DividendObject>&) override
-        { populateOverviewCalled = true; }
+    void populateOverview(const QList<DividendObject>&,
+                          const QList<ShareSplitObject>& splits) override
+    {
+        populateOverviewCalled = true;
+        // Phase 3c (11.08.2026): die Splits kommen als Parameter herein.
+        lastOverviewSplits = splits;
+    }
     void openPdfPreview(const QString&)             override {}
     void clearPdfPreview()                          override {}
     void showOverviewTab()                          override { clearFormCalled = true; }
@@ -8719,11 +8875,105 @@ private slots:
         QCOMPARE(dlg.rate(), 2.0);
     }
 
+    // ── Split-Marker in der Dividenden-Übersicht (Phase 3c) ───────────────
+
+    /** dataTable eines Tab-Containers (siehe OverviewTabWidget::buildFrozenTable()). */
+    static QTableWidget* divDataTableOf(QWidget* container)
+    {
+        if (!container) return nullptr;
+        return qobject_cast<QTableWidget*>(
+            container->property("dataTable").value<QObject*>());
+    }
+
+    /** footerTable eines Tab-Containers (einzeilige Gesamt-Zeile). */
+    static QTableWidget* divFooterTableOf(QWidget* container)
+    {
+        if (!container) return nullptr;
+        return qobject_cast<QTableWidget*>(
+            container->property("footerTable").value<QObject*>());
+    }
+
+    void test_viewDividendEdit_populateOverview_belegRowKeepsBelegVolumeWithMarker()
+    {
+        // "Anteile am Auszahlungstag" bleibt in Beleg-Skala — die Zahl steht
+        // so auf der Abrechnung. Der Marker nennt die heutige Entsprechung.
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        dlg.populateOverview(
+            { makeDividend(QStringLiteral("div-1"),
+                           QStringLiteral("2021-06-15T00:00:00")) },
+            { ShareSplitObject(QStringLiteral("sp1"), makeShareGuid(),
+                               QDate(2022, 7, 18), 20.0, 1.0) });
+
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
+        auto* tbl = divDataTableOf(tabs->widget(1));   // Jahres-Tab 2021
+        QVERIFY(tbl != nullptr);
+        const QString volText = tbl->item(0, 2)->text();   // kColVolume
+        QVERIFY2(volText.contains(QLocale().toString(100.0, 'f', 4)), qPrintable(volText));
+        QVERIFY2(volText.contains(ShareSplitHint::marker()), qPrintable(volText));
+        QVERIFY(!tbl->item(0, 2)->toolTip().isEmpty());
+    }
+
+    void test_viewDividendEdit_populateOverview_withoutSplitHasNoMarker()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) }, {});
+
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
+        auto* tbl = divDataTableOf(tabs->widget(1));
+        QVERIFY(tbl != nullptr);
+        QVERIFY(!tbl->item(0, 2)->text().contains(ShareSplitHint::marker()));
+        QVERIFY(tbl->item(0, 2)->toolTip().isEmpty());
+    }
+
+    void test_viewDividendEdit_populateOverview_footerVolumeIsDash()
+    {
+        // Anders als bei Käufen und Verkäufen wird hier NICHT summiert:
+        // die Stückzahlen beziehen sich auf verschiedene Auszahlungstage,
+        // eine Summe beschreibt keinen Bestand, den es je gab. Gilt auch
+        // ohne Split — die Summe war schon vorher bedeutungslos.
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        dlg.populateOverview(
+            { makeDividend(QStringLiteral("div-1"),
+                           QStringLiteral("2024-03-15T00:00:00")),
+              makeDividend(QStringLiteral("div-2"),
+                           QStringLiteral("2024-09-15T00:00:00")) },
+            {});
+
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
+        auto* footer = divFooterTableOf(tabs->widget(1));
+        QVERIFY(footer != nullptr);
+        QCOMPARE(footer->item(0, 2)->text(), QStringLiteral("-"));
+        QVERIFY(!footer->item(0, 2)->toolTip().isEmpty());
+        // Die Dividenden-Summe daneben wird sehr wohl gebildet.
+        QVERIFY(footer->item(0, 3)->text().contains(QStringLiteral("€")));
+    }
+
+    void test_presenterDividendEdit_populateOverview_passesSplitsAsParameter()
+    {
+        StubViewDividendEdit  view;
+        StubModelDividendEdit model;
+        model.dividends = { makeDividend(QStringLiteral("div-1")) };
+        model.splits << ShareSplitObject(QStringLiteral("sp1"), makeShareGuid(),
+                                         QDate(2022, 7, 18), 20.0, 1.0);
+
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        QVERIFY(view.populateOverviewCalled);
+        QCOMPARE(view.lastOverviewSplits.size(), 1);
+        QCOMPARE(view.lastOverviewSplits.first().ratioNew(), 20.0);
+    }
+
     void test_viewDividendEdit_populateOverview_emptyList_noTabs()
     {
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
-        dlg.populateOverview({});
+        dlg.populateOverview({}, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         QCOMPARE(tabs->count(), 0);
@@ -8733,7 +8983,7 @@ private slots:
     {
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
-        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
+        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) }, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         QCOMPARE(tabs->count(), 2);
@@ -8748,7 +8998,7 @@ private slots:
         dlg.populateOverview({
             makeDividend(QStringLiteral("div-1"), QStringLiteral("2022-01-01T00:00:00")),
             makeDividend(QStringLiteral("div-2"), QStringLiteral("2024-06-15T00:00:00")),
-        });
+        }, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         QCOMPARE(tabs->count(), 3);
@@ -9006,7 +9256,7 @@ private slots:
         dlg.populateOverview({
             makeDividend(QStringLiteral("div-1"), QStringLiteral("2023-01-01T00:00:00")),
             makeDividend(QStringLiteral("div-2"), QStringLiteral("2024-06-15T00:00:00")),
-        });
+        }, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         QCOMPARE(tabs->count(), 3);
@@ -9016,7 +9266,7 @@ private slots:
     {
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
-        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
+        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) }, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(1);
@@ -9035,7 +9285,7 @@ private slots:
             makeDividend(QStringLiteral("div-1"), QStringLiteral("2024-01-01T00:00:00")),
             makeDividend(QStringLiteral("div-2"), QStringLiteral("2024-06-15T00:00:00")),
             makeDividend(QStringLiteral("div-3"), QStringLiteral("2024-12-01T00:00:00")),
-        });
+        }, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(1);
@@ -9050,7 +9300,7 @@ private slots:
     {
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
-        dlg.populateOverview({ makeDividend(QStringLiteral("div-guid-99")) });
+        dlg.populateOverview({ makeDividend(QStringLiteral("div-guid-99")) }, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(1);
@@ -9067,7 +9317,7 @@ private slots:
     {
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
-        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
+        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) }, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(1);
@@ -9086,7 +9336,7 @@ private slots:
     {
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
-        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
+        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) }, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         QVERIFY(tabs->tabText(0).contains(QStringLiteral("€")));
@@ -9096,11 +9346,11 @@ private slots:
     {
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
-        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
+        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) }, {});
         dlg.populateOverview({
             makeDividend(QStringLiteral("div-2"), QStringLiteral("2023-01-01T00:00:00")),
             makeDividend(QStringLiteral("div-3"), QStringLiteral("2022-06-01T00:00:00")),
-        });
+        }, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         // Old 2024-tab must be gone; now 2023 and 2022
@@ -9113,7 +9363,7 @@ private slots:
     {
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
-        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
+        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) }, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(0);
@@ -9129,7 +9379,7 @@ private slots:
     {
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
-        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) });
+        dlg.populateOverview({ makeDividend(QStringLiteral("div-1")) }, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         auto* container = tabs->widget(0);
@@ -9152,7 +9402,7 @@ private slots:
         dlg.populateOverview({
             makeDividend(QStringLiteral("div-1"), QStringLiteral("2024-01-01T00:00:00")),
             makeDividend(QStringLiteral("div-2"), QStringLiteral("2024-06-15T00:00:00")),
-        });
+        }, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
         tabs->setCurrentIndex(1);  // switch to year tab

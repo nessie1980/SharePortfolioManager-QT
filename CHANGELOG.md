@@ -6,6 +6,48 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.14.0] - 2026-08-11
+
+### Added
+
+- Split-Marker in den Anteile-Spalten der Übersichtstabellen (Phase 3c der
+  Aktiensplit-Behandlung). Eine Stückzahl, die wegen eines späteren Splits
+  nicht mehr dem heutigen Stand entspricht, traegt ein angehaengtes "*" und
+  einen Tooltip mit der heutigen Entsprechung. Betroffen sind `ViewBuyEdit`,
+  `ViewSaleEdit`, `ViewDividendEdit` sowie die Tabs "Gewinne/Verluste" und
+  "Dividenden" in `ViewShareDetails` (Gewinne/Verluste in beiden Modi).
+- `loadSplits()` in `IModelDividendEdit` und `IModelShareDetails` — reine
+  Weiterleitung an `ShareSplitRepository::findByShare()`, wortgleich zu
+  `IModelBuyEdit`/`IModelSaleEdit`.
+
+### Fixed
+
+- Summen ueber Stueckzahlen mischten Belege unterschiedlicher Stueckelung.
+  Fusszeilen und Jahreszeilen der Uebersicht rechnen jetzt je Beleg ueber
+  `ShareSplitAdjuster::adjustedVolume()` auf heutige Skala um und summieren
+  erst danach. Sichtbar wurde der Fehler, wenn ein Split mitten in ein Jahr
+  fiel: aus 5 Stueck vor und 100 Stueck nach einem 20:1-Split ergab die rohe
+  Summe 105 statt der korrekten 200.
+- Die Anteile-Summe der Jahres-Fusszeile in `ViewDividendEdit` und im
+  Dividenden-Tab von `ViewShareDetails` zeigt jetzt "-". "Anteile am
+  Auszahlungstag" bezieht sich auf je einen Stichtag; die Summe ueber mehrere
+  Ausschuettungen beschreibt keinen Bestand, den es je gab. Diese Summe war
+  schon vor jedem Split falsch — der Split machte sie nur sichtbar.
+
+### Changed
+
+- Der aktive Split-Hinweis unter den Kauf-/Verkaufsdaten ist jetzt orange und
+  fett statt blau. Der gedaempfte Zustand ("Kein Split nach diesem Datum")
+  bleibt zurueckhaltend, wechselt aber auf `palette(placeholderText)` — im
+  dunklen Theme war er zuvor kaum lesbar. Das Label sitzt ab Gitterspalte 1
+  statt 0, der untere Rand der Gruppe ist auf 4 px reduziert.
+- `populateOverview()` in `IViewBuyEdit`, `IViewSaleEdit` und
+  `IViewDividendEdit` sowie `populateGewinneVerluste()`/`populateDividenden()`
+  in `IViewShareDetails` nehmen die Splits als zusaetzlichen Parameter
+  entgegen statt ueber einen eigenen Setter. Ein Setter erzeugt eine
+  unsichtbare Reihenfolge-Abhaengigkeit zwischen zwei View-Aufrufen; als
+  Parameter ist sie im Signatur-Typ sichtbar und vom Compiler geprueft.
+
 ## [1.13.1] - 2026-08-11
 
 ### Fixed

@@ -117,7 +117,8 @@ public:
     void onParseFinished()                                      override;
 
     void showBuyDetails(const SaleBuyDetailSummary& summary)     override;
-    void populateOverview(const QList<SaleObject>& sales)       override;
+    void populateOverview(const QList<SaleObject>&       sales,
+                          const QList<ShareSplitObject>& splits)     override;
     void openPdfPreview(const QString& pdfPath)                 override;
     void clearPdfPreview()                                       override;
     void showOverviewTab()                                       override;

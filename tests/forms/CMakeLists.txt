@@ -488,7 +488,13 @@ add_test(NAME tst_traysettingsform COMMAND tst_traysettingsform)
 # PresenterShareDetails.cpp sowie ShareObject.cpp/SaleObject.cpp/
 # DividendObject.cpp/BrokerageObject.cpp (für deren Volltyp-Konstruktoren, da
 # die Fakes in tst_sharedetailsform.cpp echte Instanzen dieser vier Typen
-# konstruieren) als Compile-Abhängigkeit. ModelShareDetails.cpp wird bewusst
+# konstruieren) als Compile-Abhängigkeit. Seit 11.08.2026 (Aktiensplit-
+# Behandlung, Phase 3c) kommt ShareSplitObject.cpp dazu: die Tests prüfen,
+# dass PresenterShareDetails die Splits an populateGewinneVerluste()/
+# populateDividenden() durchreicht, und konstruieren dafür echte
+# ShareSplitObject-Instanzen. ShareSplitAdjuster.cpp/ShareSplitHint.cpp
+# werden weiterhin NICHT gebraucht — die Umrechnung und die Marker-Texte
+# liegen in der View, die hier Fake ist. ModelShareDetails.cpp wird bewusst
 # NICHT mitkompiliert — die Tests laufen ausschließlich gegen die
 # Fake-Implementierungen von IViewShareDetails/IModelShareDetails, ohne
 # Repository- oder Qt6::Sql-Abhängigkeit. OverviewTabWidget wird hier
@@ -506,6 +512,7 @@ qt_add_executable(tst_sharedetailsform tst_sharedetailsform.cpp
     ../../app/models/SaleObject.cpp
     ../../app/models/DividendObject.cpp
     ../../app/models/BrokerageObject.cpp
+    ../../app/models/ShareSplitObject.cpp
 )
 
 target_include_directories(tst_sharedetailsform

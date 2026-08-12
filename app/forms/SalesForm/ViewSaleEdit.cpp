@@ -4,6 +4,7 @@
 #include "PresenterSaleEdit.h"
 #include "../../utils/SaleFifoAllocator.h"
 #include "../../utils/ShareSplitAdjuster.h"
+#include "../../utils/ShareSplitHint.h"
 #include "ModelSaleEdit.h"
 #include "../../IconProvider.h"
 #include "../../config/AppSettings.h"
@@ -142,7 +143,11 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
     grid->setColumnStretch(1, 1);
     grid->setVerticalSpacing(4);
     grid->setHorizontalSpacing(8);
-    grid->setContentsMargins(8, 8, 8, 10);
+    // Unterer Rand knapper als in den übrigen Gruppen (4 statt 10):
+    // die letzte Zeile ist der Split-Hinweis, ein reines Textlabel ohne
+    // Feldrahmen. Mit dem regulären Rand stand er zu weit von der
+    // Gruppenunterkante ab (Nessies Vorgabe 11.08.2026).
+    grid->setContentsMargins(8, 8, 8, 4);
     int row = 0;
 
     // ── Datum + Uhrzeit ───────────────────────────────────────────────────
@@ -344,13 +349,26 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
 
     // ── Split-Hinweis (09.08.2026, Phase 3b) ──────────────────────────────
     //
-    // Identisch zu ViewBuyEdit: Fusszeile der Gruppe statt einer Zeile
-    // mitten im Formular, damit beim live mitlaufenden Datumswechsel nichts
-    // oberhalb springt (Nessies Entscheidung 08.08.2026).
+    // Fusszeile der Gruppe statt einer Zeile mitten im Formular: der Text
+    // läuft beim Ändern des Datums live mit, und an dieser Stelle bewegt
+    // sich dabei nichts oberhalb (Nessies Entscheidung 08.08.2026).
+    //
+    // Ab Spalte 1 statt Spalte 0 (Nessies Vorgabe 11.08.2026): der Hinweis
+    // gehört inhaltlich zu den Eingabewerten, nicht zu den Feldnamen, und
+    // beginnt deshalb bündig mit der Feldspalte. Er spannt bis Spalte 3
+    // (inkl. Einheiten- und Status-Spalte), damit auch der lange Text mit
+    // Umrechnung ohne Umbruch hineinpasst.
+    //
+    // Ein knapper Innenabstand statt einer Mindesthöhe (Nessies Vorgabe
+    // 11.08.2026): der Hinweis soll sich vom letzten Eingabefeld absetzen,
+    // aber die Gruppe nicht unnötig in die Höhe ziehen. Die 3 px sind die
+    // Stellschraube, falls der Abstand nachjustiert werden muss.
     m_splitHint = new QLabel;
     m_splitHint->setObjectName(QStringLiteral("splitHint"));
     m_splitHint->setWordWrap(true);
-    grid->addWidget(m_splitHint, row, 0, 1, 3);
+    m_splitHint->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_splitHint->setContentsMargins(0, 3, 0, 0);
+    grid->addWidget(m_splitHint, row, 1, 1, 3);
     ++row;
 
     return gb;
@@ -717,9 +735,18 @@ void ViewSaleEdit::setSplitHint(const QString& text, const QString& tooltip, boo
     m_splitHint->setText(text);
     m_splitHint->setToolTip(tooltip);
 
+    // Mit Split hervorgehoben, ohne Split gedämpft — die Zeile bleibt in
+    // beiden Fällen stehen, damit das Formular nicht springt.
+    //
+    // Orange statt Blau (Nessies Vorgabe 11.08.2026): der Hinweis meldet,
+    // dass die Beleg-Stückzahl nicht mehr dem heutigen Stand entspricht.
+    // Der gedämpfte Zustand bleibt bewusst zurückhaltend — er steht bei
+    // jeder Aktie ohne Split dauerhaft im Formular und würde in Warnfarbe
+    // abstumpfen. `palette(mid)` war im dunklen Theme aber kaum lesbar,
+    // deshalb `palette(placeholderText)`: gedämpft, aber kontrastreich.
     m_splitHint->setStyleSheet(hasSplit
-        ? QStringLiteral("color: #185FA5;")
-        : QStringLiteral("color: palette(mid);"));
+        ? QStringLiteral("color: #C77400; font-weight: bold;")
+        : QStringLiteral("color: palette(placeholderText);"));
 }
 
 void ViewSaleEdit::setFieldOk(const QString& field, const QString& value)
@@ -843,7 +870,8 @@ void ViewSaleEdit::onParseFinished()
 
 // ── populateOverview ──────────────────────────────────────────────────────────
 
-void ViewSaleEdit::populateOverview(const QList<SaleObject>& sales)
+void ViewSaleEdit::populateOverview(const QList<SaleObject>&       sales,
+                                    const QList<ShareSplitObject>& splits)
 {
     if (sales.isEmpty()) {
         m_overviewTabs->clear();
@@ -858,35 +886,74 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>& sales)
     std::sort(years.begin(), years.end(), std::greater<int>());
 
     // ── Übersicht-Tab (Jahr | Anteile | Auszahlung | G/V) ─────────────────
-    QMap<int, double> yearVol, yearPayout, yearGV;
+    //
+    // Aggregate rechnen je Beleg über ShareSplitAdjuster::adjustedVolume()
+    // auf heutige Skala und summieren erst danach — niemals die Summe
+    // skalieren. Liegt vor dem ältesten Beleg einer Summe ein Split, war
+    // mindestens ein summierter Beleg umzurechnen; genau dann tragen Zelle
+    // und Fusszeile den Marker (Phase 3c, 11.08.2026).
+    //
+    // @note Diese Regel gilt für STÜCKZAHLEN, nicht für Geldbeträge.
+    // Auszahlung und Gewinn/Verlust werden unverändert summiert — ein Split
+    // schafft weder Gewinn noch Verlust. Siehe ARCHITECTURE.md, "Anteilige
+    // Kauf-Nebenkosten der FIFO-Zuteilung".
+    QMap<int, double> yearVolToday, yearPayout, yearGV;
+    QMap<int, QDate>  yearEarliest;
+    QDate             earliestOverall;
+
     for (const SaleObject& s : sales) {
         const int y = s.year();
-        yearVol[y]    += s.volume();
-        yearPayout[y] += s.payoutBrokerageReduction();
-        yearGV[y]     += s.profitLossBrokerageReduction();
+        yearVolToday[y] += ShareSplitAdjuster::adjustedVolume(s.volume(), splits, s.date());
+        yearPayout[y]   += s.payoutBrokerageReduction();
+        yearGV[y]       += s.profitLossBrokerageReduction();
+
+        const QDate d = s.date();
+        if (d.isValid()) {
+            if (!yearEarliest.contains(y) || d < yearEarliest.value(y))
+                yearEarliest[y] = d;
+            if (!earliestOverall.isValid() || d < earliestOverall)
+                earliestOverall = d;
+        }
     }
 
-    double totVol = 0, totPayout = 0, totGV = 0;
-    for (const SaleObject& s : sales) {
-        totVol    += s.volume();
-        totPayout += s.payoutBrokerageReduction();
-        totGV     += s.profitLossBrokerageReduction();
+    double totVolToday = 0, totPayout = 0, totGV = 0;
+    for (int y : std::as_const(years)) {
+        totVolToday += yearVolToday.value(y);
+        totPayout   += yearPayout.value(y);
+        totGV       += yearGV.value(y);
     }
 
-    auto populateUebersichtData = [this, years, yearVol, yearPayout, yearGV](QTableWidget* tbl) {
+    // Marker- und Tooltip-Texte einmal vorab bauen, damit die Lambdas unten
+    // nur noch nachschlagen und nicht jede für sich dieselbe Prüfung machen.
+    QMap<int, bool>    yearVolAffected;
+    QMap<int, QString> yearVolTooltip;
+    for (int y : std::as_const(years)) {
+        const QDate earliest = yearEarliest.value(y);
+        yearVolAffected[y] = ShareSplitHint::hasSplitAfter(splits, earliest);
+        yearVolTooltip[y]  = ShareSplitHint::overviewAggregateTooltip(splits, earliest);
+    }
+    const bool    totalVolAffected = ShareSplitHint::hasSplitAfter(splits, earliestOverall);
+    const QString totalVolTooltip  = ShareSplitHint::overviewAggregateTooltip(splits, earliestOverall);
+
+    auto populateUebersichtData = [years, yearVolToday, yearPayout, yearGV,
+                                   yearVolAffected, yearVolTooltip](QTableWidget* tbl) {
         tbl->setRowCount(years.size());
         for (int i = 0; i < years.size(); ++i) {
             const int y = years.at(i);
             auto* iY = new QTableWidgetItem(QString::number(y));
             auto* iV = new QTableWidgetItem(
-                formatVolume(yearVol[y]) + QStringLiteral(" stk."));
+                ShareSplitHint::withMarker(
+                    formatVolume(yearVolToday.value(y)) + QStringLiteral(" stk."),
+                    yearVolAffected.value(y)));
             auto* iP = new QTableWidgetItem(
-                formatMoney(yearPayout[y]) + QStringLiteral(" €"));
+                formatMoney(yearPayout.value(y)) + QStringLiteral(" €"));
             auto* iG = new QTableWidgetItem(
-                formatMoney(yearGV[y]) + QStringLiteral(" €"));
+                formatMoney(yearGV.value(y)) + QStringLiteral(" €"));
             for (auto* it : { iY, iV, iP, iG })
                 it->setTextAlignment(Qt::AlignCenter);
             iY->setData(Qt::UserRole, y);
+            if (!yearVolTooltip.value(y).isEmpty())
+                iV->setToolTip(yearVolTooltip.value(y));
             tbl->setItem(i, 0, iY);
             tbl->setItem(i, 1, iV);
             tbl->setItem(i, 2, iP);
@@ -894,13 +961,18 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>& sales)
         }
     };
 
-    auto populateUebersichtFooter = [this, totVol, totPayout, totGV](QTableWidget* f) {
+    auto populateUebersichtFooter = [this, totVolToday, totPayout, totGV,
+                                     totalVolAffected, totalVolTooltip](QTableWidget* f) {
         auto* iL = new QTableWidgetItem(tr("Gesamt:"));
-        auto* iV = new QTableWidgetItem(formatVolume(totVol) + QStringLiteral(" stk."));
+        auto* iV = new QTableWidgetItem(
+            ShareSplitHint::withMarker(
+                formatVolume(totVolToday) + QStringLiteral(" stk."), totalVolAffected));
         auto* iP = new QTableWidgetItem(formatMoney(totPayout) + QStringLiteral(" €"));
         auto* iG = new QTableWidgetItem(formatMoney(totGV) + QStringLiteral(" €"));
         for (auto* it : { iL, iV, iP, iG })
             it->setTextAlignment(Qt::AlignCenter);
+        if (!totalVolTooltip.isEmpty())
+            iV->setToolTip(totalVolTooltip);
         f->setItem(0, 0, iL); f->setItem(0, 1, iV);
         f->setItem(0, 2, iP); f->setItem(0, 3, iG);
     };
@@ -918,7 +990,7 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>& sales)
         tr("Datum"), tr("Anteile"), tr("Auszahlung"), tr("Gewinn / Verlust"), QString()
     };
 
-    auto populateJahresData = [this, sales](int year, QTableWidget* tbl) {
+    auto populateJahresData = [this, sales, splits](int year, QTableWidget* tbl) {
         QList<SaleObject> yearSales;
         for (const SaleObject& s : sales)
             if (s.year() == year) yearSales.append(s);
@@ -931,9 +1003,20 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>& sales)
             iDate->setData(Qt::UserRole, s.guid());
             iDate->setTextAlignment(Qt::AlignCenter);
 
+            // Belegzeile: bleibt in BELEG-Skala. Die Zeile ist eine
+            // Abschrift des Dokuments, das nach einem Zeilenklick rechts in
+            // der Vorschau steht — die Zahlen müssen sich decken. Der Marker
+            // und sein Tooltip nennen die heutige Entsprechung.
+            const bool    volAffected = ShareSplitHint::hasSplitAfter(splits, s.date());
+            const QString volTooltip  = ShareSplitHint::overviewRowTooltip(
+                splits, s.date(), s.volume(), s.salePrice());
+
             auto* iVol = new QTableWidgetItem(
-                formatVolume(s.volume()) + QStringLiteral(" stk."));
+                ShareSplitHint::withMarker(
+                    formatVolume(s.volume()) + QStringLiteral(" stk."), volAffected));
             iVol->setTextAlignment(Qt::AlignCenter);
+            if (!volTooltip.isEmpty())
+                iVol->setToolTip(volTooltip);
 
             auto* iAusz = new QTableWidgetItem(
                 formatMoney(s.payoutBrokerageReduction()) + QStringLiteral(" €"));
@@ -976,21 +1059,30 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>& sales)
         }
     };
 
-    auto populateJahresFooter = [this, sales](int year, QTableWidget* f) {
-        double vol = 0, payout = 0, gv = 0;
+    auto populateJahresFooter = [this, sales, splits,
+                                 yearVolAffected, yearVolTooltip](int year, QTableWidget* f) {
+        // Summe über die Belege eines Jahres: je Beleg umrechnen, dann
+        // summieren. Fällt ein Split mitten ins Jahr, mischte die frühere
+        // rohe Summe zwei Stückelungen und war damit bedeutungslos.
+        double volToday = 0, payout = 0, gv = 0;
         for (const SaleObject& s : sales) {
             if (s.year() != year) continue;
-            vol    += s.volume();
-            payout += s.payoutBrokerageReduction();
-            gv     += s.profitLossBrokerageReduction();
+            volToday += ShareSplitAdjuster::adjustedVolume(s.volume(), splits, s.date());
+            payout   += s.payoutBrokerageReduction();
+            gv       += s.profitLossBrokerageReduction();
         }
         auto* iL = new QTableWidgetItem(tr("Gesamt:"));
-        auto* iV = new QTableWidgetItem(formatVolume(vol)    + QStringLiteral(" stk."));
+        auto* iV = new QTableWidgetItem(
+            ShareSplitHint::withMarker(
+                formatVolume(volToday) + QStringLiteral(" stk."),
+                yearVolAffected.value(year)));
         auto* iP = new QTableWidgetItem(formatMoney(payout)  + QStringLiteral(" €"));
         auto* iG = new QTableWidgetItem(formatMoney(gv)      + QStringLiteral(" €"));
         auto* iD = new QTableWidgetItem(QStringLiteral("-"));
         for (auto* it : { iL, iV, iP, iG, iD })
             it->setTextAlignment(Qt::AlignCenter);
+        if (!yearVolTooltip.value(year).isEmpty())
+            iV->setToolTip(yearVolTooltip.value(year));
         f->setItem(0, 0, iL); f->setItem(0, 1, iV);
         f->setItem(0, 2, iP); f->setItem(0, 3, iG);
         f->setItem(0, 4, iD);

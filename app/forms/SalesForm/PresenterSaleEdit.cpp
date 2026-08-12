@@ -574,7 +574,10 @@ QString PresenterSaleEdit::xmlNameToViewField(const QString& xmlName)
 void PresenterSaleEdit::reloadOverview()
 {
     m_sales = m_model->loadSales(m_shareGuid);
-    m_view->populateOverview(m_sales);
+    // Splits als Parameter statt über einen eigenen Setter — sonst entstünde
+    // eine unsichtbare Reihenfolge-Abhängigkeit zwischen zwei View-Aufrufen
+    // (Phase 3c, 11.08.2026).
+    m_view->populateOverview(m_sales, m_splits);
 }
 
 // ── refreshDerivedValues ──────────────────────────────────────────────────────

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "../../models/DividendObject.h"
+#include "../../models/ShareSplitObject.h"
 
 #include <QList>
 #include <QString>
@@ -76,7 +77,26 @@ public:
     virtual void onParseFinished()                                    = 0;
 
     // ── Overview table (Presenter → View) ────────────────────────────────
-    virtual void populateOverview(const QList<DividendObject>& dividends) = 0;
+    /**
+     * @brief Baut die Dividenden-Übersicht neu auf.
+     *
+     * @param dividends  Alle Dividenden der Aktie.
+     * @param splits     Alle Splits der Aktie (Phase 3c, 11.08.2026).
+     *
+     * Die Splits kommen als Parameter herein und nicht über einen eigenen
+     * Setter — gleiche Bauweise wie IViewBuyEdit/IViewSaleEdit, damit keine
+     * unsichtbare Reihenfolge-Abhängigkeit zwischen zwei View-Aufrufen
+     * entsteht.
+     *
+     * Anders als bei Käufen und Verkäufen werden die Anteile hier NICHT auf
+     * heutige Skala umgerechnet: "Anteile am Auszahlungstag" bezieht sich auf
+     * einen Stichtag, und eine Summe über mehrere Stichtage beschreibt keinen
+     * Bestand. Die Belegzeilen tragen den Marker, die Summenzelle zeigt "-".
+     * Siehe ARCHITECTURE.md, "Split-Marker und Summen in den
+     * Übersichtstabellen".
+     */
+    virtual void populateOverview(const QList<DividendObject>&   dividends,
+                                  const QList<ShareSplitObject>& splits) = 0;
 
     /** Switch to the Gesamtübersicht tab (index 0) and clear the form. */
     virtual void showOverviewTab() = 0;

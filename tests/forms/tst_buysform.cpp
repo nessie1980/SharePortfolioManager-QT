@@ -41,6 +41,7 @@
 #include "../../app/widgets/OverviewTabWidget.h"
 #include "../../app/forms/BuysForm/PresenterBuyEdit.h"
 #include "../../app/models/ShareSplitObject.h"
+#include "../../app/utils/ShareSplitHint.h"
 
 #include "../../app/forms/UiConstants.h"
 
@@ -109,6 +110,8 @@ public:
 
     // Captured calls
     bool    populateOverviewCalled = false;
+    /// Split-Liste, die populateOverview() zuletzt bekommen hat (Phase 3c).
+    QList<ShareSplitObject> lastOverviewSplits;
     bool    clearFormCalled        = false;
     bool    loadBuyCalled          = false;
     bool    setButtonStatesCalled  = false;
@@ -162,8 +165,9 @@ public:
     void onParseFinished()                           override {}
 
     void populateOverview(const QList<BuyObject>&,
-                          const QList<BrokerageObject>&) override
-        { populateOverviewCalled = true; }
+                          const QList<BrokerageObject>&,
+                          const QList<ShareSplitObject>& splits) override
+        { populateOverviewCalled = true; lastOverviewSplits = splits; }
     void openPdfPreview(const QString&)              override {}
     void clearPdfPreview()                           override {}
     void showOverviewTab()                           override { clearFormCalled = true; }
@@ -254,8 +258,50 @@ private:
             makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid")),
             makeBrokerage(QStringLiteral("b2"), QStringLiteral("share-guid"))
         };
-        dlg.populateOverview(buys, brs);
+        dlg.populateOverview(buys, brs, {});
         return tabs;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Aktiensplit-Behandlung, Phase 3c (10.08.2026)
+    //
+    // Zwei Käufe um einen 20:1-Split herum: der Kauf vom 15.06.2022 liegt
+    // davor (Beleg 5 Stück, heute 100), der vom 15.06.2023 dahinter (Beleg
+    // 100 Stück, heute ebenfalls 100). Die alte Fusszeile addierte 5 + 100 =
+    // 105 — eine Zahl in keiner der beiden Stückelungen. Richtig sind 200.
+    //
+    // Siehe ARCHITECTURE.md, "Split-Marker und Summen in den
+    // Übersichtstabellen".
+    // ─────────────────────────────────────────────────────────────────────
+
+    static QList<ShareSplitObject> splitList2022()
+    {
+        return { ShareSplitObject(QStringLiteral("sp1"), QStringLiteral("share-guid"),
+                                  QDate(2022, 7, 18), 20.0, 1.0) };
+    }
+
+    static QList<BuyObject> buysAroundSplit()
+    {
+        return {
+            makeBuy(QStringLiteral("b1"), QStringLiteral("share-guid"), 2022, 5.0,   1003.00),
+            makeBuy(QStringLiteral("b2"), QStringLiteral("share-guid"), 2023, 100.0, 50.15)
+        };
+    }
+
+    static QList<BrokerageObject> brokeragesAroundSplit()
+    {
+        return {
+            makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid")),
+            makeBrokerage(QStringLiteral("b2"), QStringLiteral("share-guid"))
+        };
+    }
+
+    /// Fusszeilen-Tabelle eines Containers (die zweite der beiden Tabellen).
+    static QTableWidget* footerTableFromContainer(QWidget* container)
+    {
+        if (!container) return nullptr;
+        const auto tables = container->findChildren<QTableWidget*>();
+        return tables.size() >= 2 ? tables.at(1) : nullptr;
     }
 
 private slots:
@@ -1182,7 +1228,7 @@ private slots:
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         QVERIFY(tabs != nullptr);
 
-        dlg.populateOverview({}, {});
+        dlg.populateOverview({}, {}, {});
         QCOMPARE(tabs->count(), 0);
     }
 
@@ -1202,7 +1248,7 @@ private slots:
             makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid"))
         };
 
-        dlg.populateOverview(buys, brokerages);
+        dlg.populateOverview(buys, brokerages, {});
 
         QCOMPARE(tabs->count(), 2);
         QVERIFY(tabs->tabText(0).contains(QStringLiteral("Übersicht")));
@@ -1227,7 +1273,7 @@ private slots:
             makeBrokerage(QStringLiteral("b2"), QStringLiteral("share-guid"))
         };
 
-        dlg.populateOverview(buys, brokerages);
+        dlg.populateOverview(buys, brokerages, {});
 
         QCOMPARE(tabs->count(), 3);
         QVERIFY(tabs->tabText(0).contains(QStringLiteral("Übersicht")));
@@ -1250,7 +1296,7 @@ private slots:
         const QList<BrokerageObject> brokerages = {
             makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid"))
         };
-        dlg.populateOverview(buys, brokerages);
+        dlg.populateOverview(buys, brokerages, {});
 
         // Übersicht tab: find its table
         auto* container = tabs->widget(0);
@@ -1279,7 +1325,7 @@ private slots:
         const QList<BrokerageObject> brokerages = {
             makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid"))
         };
-        dlg.populateOverview(buys, brokerages);
+        dlg.populateOverview(buys, brokerages, {});
 
         // Jahres-tab is index 1
         auto* container = tabs->widget(1);
@@ -1309,7 +1355,7 @@ private slots:
             makeBrokerage(QStringLiteral("b2"), QStringLiteral("share-guid")),
             makeBrokerage(QStringLiteral("b3"), QStringLiteral("share-guid"))
         };
-        dlg.populateOverview(buys, brokerages);
+        dlg.populateOverview(buys, brokerages, {});
 
         auto* container = tabs->widget(1);
         QVERIFY(container != nullptr);
@@ -1334,7 +1380,7 @@ private slots:
         const QList<BrokerageObject> brokerages = {
             makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid"))
         };
-        dlg.populateOverview(buys, brokerages);
+        dlg.populateOverview(buys, brokerages, {});
 
         auto* container = tabs->widget(1); // Jahres-tab
         if (!container) QFAIL("Jahres-tab container not found");
@@ -1362,7 +1408,7 @@ private slots:
         const QList<BrokerageObject> brokerages = {
             makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid"))
         };
-        dlg.populateOverview(buys, brokerages);
+        dlg.populateOverview(buys, brokerages, {});
 
         auto* container = tabs->widget(1);
         QVERIFY(container != nullptr);
@@ -1392,7 +1438,7 @@ private slots:
         const QList<BrokerageObject> brokerages = {
             makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid"))
         };
-        dlg.populateOverview(buys, brokerages);
+        dlg.populateOverview(buys, brokerages, {});
 
         auto* container = tabs->widget(1);
         QVERIFY(container != nullptr);
@@ -1420,7 +1466,7 @@ private slots:
         const QList<BrokerageObject> brokerages = {
             makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid"), 0.0)
         };
-        dlg.populateOverview(buys, brokerages);
+        dlg.populateOverview(buys, brokerages, {});
 
         auto* container = tabs->widget(1);
         QVERIFY(container != nullptr);
@@ -1447,7 +1493,7 @@ private slots:
         const QList<BrokerageObject> brokerages = {
             makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid"))
         };
-        dlg.populateOverview(buys, brokerages);
+        dlg.populateOverview(buys, brokerages, {});
 
         // Footer table is the second QTableWidget in the container
         auto* container = tabs->widget(1);
@@ -1476,7 +1522,7 @@ private slots:
         const QList<BrokerageObject> brokerages = {
             makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid"), 9.90)
         };
-        dlg.populateOverview(buys, brokerages);
+        dlg.populateOverview(buys, brokerages, {});
 
         // Both Übersicht and 2024 tabs must show the same total
         QVERIFY(tabs->tabText(0).contains(QStringLiteral("€")));
@@ -1499,7 +1545,7 @@ private slots:
         const QList<BrokerageObject> br1 = {
             makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid"))
         };
-        dlg.populateOverview(buys1, br1);
+        dlg.populateOverview(buys1, br1, {});
         QCOMPARE(tabs->count(), 2); // Übersicht + 2023
 
         const QList<BuyObject> buys2 = {
@@ -1510,11 +1556,184 @@ private slots:
             makeBrokerage(QStringLiteral("b2"), QStringLiteral("share-guid")),
             makeBrokerage(QStringLiteral("b3"), QStringLiteral("share-guid"))
         };
-        dlg.populateOverview(buys2, br2);
+        dlg.populateOverview(buys2, br2, {});
 
         // Old tabs gone, new ones present
         QCOMPARE(tabs->count(), 3); // Übersicht + 2024 + 2025
         QVERIFY(!tabs->tabText(1).contains(QStringLiteral("2023")));
+    }
+
+    void test_viewBuyEdit_populateOverview_split_jahresRowKeepsBelegVolume()
+    {
+        // Eine Zeile im Jahres-Tab ist eine Beleg-Abschrift: die Stückzahl
+        // bleibt stehen, wie sie im Dokument steht. Nur Marker und Tooltip
+        // kommen hinzu.
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        QVERIFY(tabs != nullptr);
+
+        dlg.populateOverview(buysAroundSplit(), brokeragesAroundSplit(), splitList2022());
+
+        // Jahres-Tabs absteigend: Tab 1 = 2023, Tab 2 = 2022.
+        auto* tbl = dataTableFromContainer(tabs->widget(2));
+        QVERIFY(tbl != nullptr);
+        QVERIFY(tbl->item(0, 1) != nullptr);
+
+        const QString cell = tbl->item(0, 1)->text();
+        QVERIFY2(cell.contains(QLocale().toString(5.0, 'f', 4)), qPrintable(cell));
+        QVERIFY2(cell.endsWith(ShareSplitHint::marker()), qPrintable(cell));
+        QVERIFY2(!tbl->item(0, 1)->toolTip().isEmpty(), "Tooltip fehlt");
+        QVERIFY2(tbl->item(0, 1)->toolTip().contains(QStringLiteral("20:1")),
+                 qPrintable(tbl->item(0, 1)->toolTip()));
+    }
+
+    void test_viewBuyEdit_populateOverview_split_rowAfterSplitHasNoMarker()
+    {
+        // Ein Kauf NACH dem Splittag ist bereits in heutiger Stückelung
+        // ausgestellt — er darf weder Marker noch Tooltip bekommen.
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        QVERIFY(tabs != nullptr);
+
+        dlg.populateOverview(buysAroundSplit(), brokeragesAroundSplit(), splitList2022());
+
+        auto* tbl = dataTableFromContainer(tabs->widget(1)); // 2023
+        QVERIFY(tbl != nullptr);
+        QVERIFY(tbl->item(0, 1) != nullptr);
+
+        QVERIFY(!tbl->item(0, 1)->text().contains(ShareSplitHint::marker()));
+        QVERIFY(tbl->item(0, 1)->toolTip().isEmpty());
+    }
+
+    void test_viewBuyEdit_populateOverview_split_jahresFooterIsOnTodaysScale()
+    {
+        // Die Fusszeile ist eine Rechnung, keine Abschrift: 5 Beleg-Stücke
+        // von 2022 sind heute 100.
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        QVERIFY(tabs != nullptr);
+
+        dlg.populateOverview(buysAroundSplit(), brokeragesAroundSplit(), splitList2022());
+
+        auto* footerTbl = footerTableFromContainer(tabs->widget(2)); // 2022
+        QVERIFY(footerTbl != nullptr);
+        QVERIFY(footerTbl->item(0, 1) != nullptr);
+
+        const QString cell = footerTbl->item(0, 1)->text();
+        QVERIFY2(cell.contains(QLocale().toString(100.0, 'f', 4)), qPrintable(cell));
+        QVERIFY2(cell.endsWith(ShareSplitHint::marker()), qPrintable(cell));
+        QVERIFY(!footerTbl->item(0, 1)->toolTip().isEmpty());
+    }
+
+    void test_viewBuyEdit_populateOverview_split_uebersichtFooterDoesNotMixScales()
+    {
+        // Kernpunkt von Phase 3c: 5 + 100 = 105 wäre eine Zahl, die es in
+        // keiner Stückelung je gab. Richtig sind 100 + 100 = 200.
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        QVERIFY(tabs != nullptr);
+
+        dlg.populateOverview(buysAroundSplit(), brokeragesAroundSplit(), splitList2022());
+
+        auto* footerTbl = footerTableFromContainer(tabs->widget(0)); // Übersicht
+        QVERIFY(footerTbl != nullptr);
+        QVERIFY(footerTbl->item(0, 1) != nullptr);
+
+        const QString cell = footerTbl->item(0, 1)->text();
+        QVERIFY2(cell.contains(QLocale().toString(200.0, 'f', 4)), qPrintable(cell));
+        QVERIFY2(!cell.contains(QLocale().toString(105.0, 'f', 4)), qPrintable(cell));
+    }
+
+    void test_viewBuyEdit_populateOverview_split_uebersichtYearRowIsOnTodaysScale()
+    {
+        // Auch eine Jahreszeile ist bereits eine Summe — sie mischt sonst
+        // genauso, sobald der Splittag mitten im Jahr liegt.
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        QVERIFY(tabs != nullptr);
+
+        dlg.populateOverview(buysAroundSplit(), brokeragesAroundSplit(), splitList2022());
+
+        auto* tbl = dataTableFromContainer(tabs->widget(0));
+        QVERIFY(tbl != nullptr);
+        QCOMPARE(tbl->rowCount(), 2);
+
+        // Zeile 0 = 2023 (absteigend sortiert), Zeile 1 = 2022.
+        QVERIFY(tbl->item(1, 1) != nullptr);
+        const QString cell2022 = tbl->item(1, 1)->text();
+        QVERIFY2(cell2022.contains(QLocale().toString(100.0, 'f', 4)), qPrintable(cell2022));
+        QVERIFY2(cell2022.endsWith(ShareSplitHint::marker()), qPrintable(cell2022));
+
+        // Das Jahr nach dem Split bleibt unmarkiert.
+        QVERIFY(tbl->item(0, 1) != nullptr);
+        QVERIFY(!tbl->item(0, 1)->text().contains(ShareSplitHint::marker()));
+    }
+
+    void test_viewBuyEdit_populateOverview_split_moneyColumnsAreUnchanged()
+    {
+        // Über einen Split ist Stückzahl × Preis invariant — Einzahlung und
+        // Gebühren dürfen sich durch Phase 3c nicht bewegen.
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        QVERIFY(tabs != nullptr);
+
+        dlg.populateOverview(buysAroundSplit(), brokeragesAroundSplit(), splitList2022());
+
+        auto* tbl = dataTableFromContainer(tabs->widget(2)); // 2022
+        QVERIFY(tbl != nullptr);
+        QVERIFY(tbl->item(0, 4) != nullptr);
+
+        // 5 × 1.003,00 = 5.015,00 + 9,90 Provision = 5.024,90
+        const QString einzahlung = tbl->item(0, 4)->text();
+        QVERIFY2(einzahlung.contains(QLocale().toString(5024.90, 'f', 2)),
+                 qPrintable(einzahlung));
+    }
+
+    void test_viewBuyEdit_populateOverview_withoutSplits_noMarkerAnywhere()
+    {
+        // Regression: ohne gespeicherte Splits muss die Übersicht exakt so
+        // aussehen wie vor Phase 3c — kein Marker, kein Tooltip, Rohsummen.
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        QVERIFY(tabs != nullptr);
+
+        dlg.populateOverview(buysAroundSplit(), brokeragesAroundSplit(), {});
+
+        auto* footerTbl = footerTableFromContainer(tabs->widget(0));
+        QVERIFY(footerTbl != nullptr);
+        QVERIFY(footerTbl->item(0, 1) != nullptr);
+
+        const QString cell = footerTbl->item(0, 1)->text();
+        QVERIFY2(cell.contains(QLocale().toString(105.0, 'f', 4)), qPrintable(cell));
+        QVERIFY2(!cell.contains(ShareSplitHint::marker()), qPrintable(cell));
+        QVERIFY(footerTbl->item(0, 1)->toolTip().isEmpty());
+
+        auto* tbl = dataTableFromContainer(tabs->widget(2));
+        QVERIFY(tbl != nullptr);
+        QVERIFY(tbl->item(0, 1) != nullptr);
+        QVERIFY(!tbl->item(0, 1)->text().contains(ShareSplitHint::marker()));
+        QVERIFY(tbl->item(0, 1)->toolTip().isEmpty());
+    }
+
+    void test_presenterBuyEdit_passesSplitsToOverview()
+    {
+        // Ohne diesen Durchreichweg bliebe die Übersicht dauerhaft
+        // split-blind, ohne dass ein View-Test das bemerken würde.
+        StubViewBuyEdit  view;
+        StubModelBuyEdit model;
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 20.0, 1.0);
+        PresenterBuyEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        QVERIFY(view.populateOverviewCalled);
+        QCOMPARE(view.lastOverviewSplits.size(), 1);
     }
 
     void test_viewBuyEdit_uebersichtClick_jumpsToYearTab()
@@ -1859,7 +2078,7 @@ private slots:
             makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid"), 0.0),
             makeBrokerage(QStringLiteral("b2"), QStringLiteral("share-guid"), 0.0),
         };
-        dlg.populateOverview(buys, brokerages);
+        dlg.populateOverview(buys, brokerages, {});
 
         // Tab 0 = Übersicht, Tab 1 = 2024 (newest), Tab 2 = 2022 (older)
         QVERIFY(tabs->count() == 3);
@@ -2247,7 +2466,7 @@ private slots:
         b.setDocument(QStringLiteral("/some/path/receipt.pdf"));
         const BrokerageObject br = makeBrokerage(QStringLiteral("b1"),
                                                   QStringLiteral("share-guid"), 9.90);
-        dlg.populateOverview({ b }, { br });
+        dlg.populateOverview({ b }, { br }, {});
 
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");

@@ -25,6 +25,11 @@ PresenterDividendEdit::PresenterDividendEdit(IViewDividendEdit*  view,
     connect(&m_pdfExtractor, &PdfTextExtractor::finished,
             this,            &PresenterDividendEdit::onPdfTextExtracted);
 
+    // Splits einmalig laden — sie ändern sich während einer Dialog-Sitzung
+    // nicht, ein Abruf je reloadOverview() wäre eine unnötige Abfrage
+    // (Phase 3c, 11.08.2026).
+    m_splits = m_model->loadSplits(m_shareGuid);
+
     reloadOverview();
     m_view->clearForm();
     m_view->setButtonStates(/*canRemove=*/false, /*isEdit=*/false);
@@ -490,7 +495,7 @@ QString PresenterDividendEdit::xmlNameToViewField(const QString& xmlName)
 void PresenterDividendEdit::reloadOverview()
 {
     m_dividends = m_model->loadDividends(m_shareGuid);
-    m_view->populateOverview(m_dividends);
+    m_view->populateOverview(m_dividends, m_splits);
 }
 
 // ── refreshDerivedValues ──────────────────────────────────────────────────────

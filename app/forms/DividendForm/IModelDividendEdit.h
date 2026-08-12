@@ -4,6 +4,7 @@
 
 #include "../../models/DividendObject.h"
 #include "../../models/ShareObject.h"
+#include "../../models/ShareSplitObject.h"
 
 #include <QDate>
 #include <QList>
@@ -24,6 +25,16 @@ public:
 
     /** Load the share this dialog was opened for (used for WKN/ISIN validation). */
     virtual ShareObject           loadShare(const QString& shareGuid)     const = 0;
+
+    /**
+     * @brief Alle Splits der Aktie, aufsteigend nach Datum.
+     *
+     * Ergänzt 11.08.2026 (Phase 3c der Aktiensplit-Behandlung) für den
+     * Split-Marker in der Anteile-Spalte der Dividenden-Übersicht. Reine
+     * Weiterleitung an ShareSplitRepository::findByShare(); die Aufbereitung
+     * passiert in der View. Wortgleich zu IModelBuyEdit::loadSplits().
+     */
+    virtual QList<ShareSplitObject> loadSplits(const QString& shareGuid) const = 0;
 
     /**
      * @brief Look up the closing price for a share on a given date from the

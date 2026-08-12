@@ -530,7 +530,11 @@ void PresenterBuyEdit::reloadOverview()
     for (const BuyObject& b : std::as_const(m_buys))
         brokerages.append(m_model->loadBrokerage(b.guid()));
 
-    m_view->populateOverview(m_buys, brokerages);
+    // m_splits stammt aus dem Konstruktor und wird hier bewusst nicht neu
+    // geladen: die Split-Maske ist aus diesem Dialog heraus nicht erreichbar,
+    // die Liste kann sich während einer Sitzung also nicht ändern (derselbe
+    // Zwischenspeicher, den auch refreshSplitHint() nutzt).
+    m_view->populateOverview(m_buys, brokerages, m_splits);
 }
 
 // ── refreshDerivedValues ──────────────────────────────────────────────────────

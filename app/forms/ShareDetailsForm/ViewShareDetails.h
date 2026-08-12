@@ -100,8 +100,10 @@ public:
     void populateVortagBox(const CalculationRows& rows) override;
     void populateAktuelleBox(const CalculationRows& rows) override;
 
-    void populateGewinneVerluste(const QList<SaleObject>& sales) override;
-    void populateDividenden(const QList<DividendObject>& dividends) override;
+    void populateGewinneVerluste(const QList<SaleObject>&       sales,
+                                 const QList<ShareSplitObject>& splits) override;
+    void populateDividenden(const QList<DividendObject>&   dividends,
+                            const QList<ShareSplitObject>& splits) override;
     void populateKosten(const QList<BrokerageObject>& brokerages) override;
 
     void showError(const QString& message) override;

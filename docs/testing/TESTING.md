@@ -1459,6 +1459,28 @@ manuell befüllbar), `FakeViewShareDetails` speichert die drei per
 den Listen selbst, damit Tests "gar nicht aufgerufen" (Marktwert-Modus) von
 "mit leerer Liste aufgerufen" unterscheiden können.
 
+Seit 11.08.2026 (Aktiensplit-Behandlung, Phase 3c) hat `FakeModelShareDetails`
+zusätzlich einen `splits`-Member und implementiert `loadSplits()`;
+`FakeViewShareDetails` legt die per `populateGewinneVerluste()`/
+`populateDividenden()` übergebenen Splits getrennt je Tab in
+`gewinneVerlusteSplits`/`dividendenSplits` ab. Damit prüfbar, dass der
+Presenter die Splits an beide Tabs durchreicht und im Marktwert-Modus nur an
+Gewinne/Verluste (dort existiert der Dividenden-Tab nicht).
+
+@note `tst_sharedetailsform` brauchte dafür `ShareSplitObject.cpp` neu in
+seiner Quellenliste in `tests/forms/CMakeLists.txt` — die Fakes konstruieren
+echte `ShareSplitObject`-Instanzen. `ShareSplitAdjuster.cpp`/
+`ShareSplitHint.cpp` bleiben bewusst draussen: Umrechnung und Marker-Texte
+liegen in der View, die hier Fake ist. Das Target bleibt damit das
+schlankste im Projekt (keine Widgets, keine Datenbank).
+
+PresenterShareDetails — Split-Übergabe (Phase 3c, 11.08.2026):
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_loadAndDisplay_depotwertMode_passesSplitsToGewinneVerlusteAndDividenden` | Depotwert-Modus mit einem 20:1-Split | Beide Tabs erhalten die Splitliste |
+| `test_loadAndDisplay_marketValueMode_passesSplitsToGewinneVerluste` | Marktwert-Modus | Gewinne/Verluste erhält die Splits, Dividenden-Tab wird gar nicht aufgerufen |
+| `test_loadAndDisplay_withoutSplits_passesEmptySplitList` | Aktie ohne Splits | Leere Liste statt Sonderbehandlung |
+
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_loadAndDisplay_shareNotFound_showsErrorAndCloses` | Unbekannte GUID | `loadAndDisplay()` liefert `false`, `showError()`/`closeDialog()` aufgerufen, keine Boxen befüllt |
@@ -1828,6 +1850,26 @@ Qt-Widgets-Views ohne eigene Logik nicht isoliert zu testen.
 
 ---
 
+ViewSaleEdit / PresenterSaleEdit — Split-Marker und Summen (Phase 3c, 11.08.2026):
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_viewSaleEdit_populateOverview_belegRowKeepsBelegVolumeWithMarker` | Verkauf 2021, Split 20:1 danach | Belegzeile bleibt bei 5,0000, trägt Marker und Tooltip |
+| `test_viewSaleEdit_populateOverview_belegRowWithoutSplitHasNoMarker` | Aktie ohne Splits | Kein Marker, kein Tooltip |
+| `test_viewSaleEdit_populateOverview_uebersichtRowUsesTodayScale` | Übersicht-Tab | Jahreszeile zeigt 100,0000 (heutige Skala) mit Marker |
+| `test_viewSaleEdit_populateOverview_splitMidYearSumsOnOneScale` | Zwei Verkäufe 2022, Split dazwischen | Jahres-Fusszeile zeigt 200,0000 (5 × 20 + 100), nicht 105 |
+| `test_presenterSaleEdit_populateOverview_passesSplitsAsParameter` | Presenter-Verdrahtung | Splits kommen als Parameter an |
+
+@note Der vierte Test ist der eigentliche Punkt der Änderung. Die frühere rohe
+Summe mischte zwei Stückelungen und war damit bedeutungslos — sichtbar wird
+das nur, wenn ein Split MITTEN in ein Jahr fällt.
+
+@note Die View-Tests greifen über die dynamischen Eigenschaften `dataTable`
+und `footerTable` des Tab-Containers auf die Tabellen zu (Helfer
+`dataTableOf()`/`footerTableOf()`). `OverviewTabWidget` erbt von `QWidget`,
+nicht von `QTabWidget` — `currentWidget()` gibt es dort nicht.
+
+---
+
 ModelSaleEdit (Datenbanktests):
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
@@ -2040,6 +2082,22 @@ die WKN/ISIN-Prüfung im Presenter wird damit übersprungen (korrekt für Unit-T
 Aufrufs auf (`lastFieldOkField/-Value/-Tooltip`) und schreibt den Wert für
 `priceAtPayday` zusätzlich zurück in `m_priceAtPayday`, analog zum echten
 `ViewDividendEdit`-Verhalten.
+
+Seit 11.08.2026 (Phase 3c) hat `StubModelDividendEdit` einen `splits`-Member
+und implementiert `loadSplits()`; `StubViewDividendEdit::populateOverview()`
+legt die übergebenen Splits in `lastOverviewSplits` ab.
+
+ViewDividendEdit / PresenterDividendEdit — Split-Marker (Phase 3c, 11.08.2026):
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_viewDividendEdit_populateOverview_belegRowKeepsBelegVolumeWithMarker` | Ausschüttung 2021, Split 20:1 danach | Belegzeile bleibt in Beleg-Skala, trägt Marker und Tooltip |
+| `test_viewDividendEdit_populateOverview_withoutSplitHasNoMarker` | Aktie ohne Splits | Kein Marker, kein Tooltip |
+| `test_viewDividendEdit_populateOverview_footerVolumeIsDash` | Zwei Ausschüttungen im selben Jahr, kein Split | Anteile-Summe ist "-" mit Tooltip, Dividenden-Summe wird weiterhin gebildet |
+| `test_presenterDividendEdit_populateOverview_passesSplitsAsParameter` | Presenter-Verdrahtung | Splits kommen als Parameter an, nicht über einen Setter |
+
+@note Der Strich in der Fusszeile steht unabhängig von Splits — die Summe war
+schon vorher bedeutungslos (Anteile verschiedener Auszahlungstage). Genau das
+prüft der dritte Test bewusst OHNE Split.
 
 ModelDividendEdit (Datenbanktests):
 | Test | Beschreibung | Prüft |

@@ -20,6 +20,15 @@ ShareObject ModelDividendEdit::loadShare(const QString& shareGuid) const
     return m_shareRepo.findByGuid(shareGuid);
 }
 
+// ── loadSplits ────────────────────────────────────────────────────────────────
+
+QList<ShareSplitObject> ModelDividendEdit::loadSplits(const QString& shareGuid) const
+{
+    // findByShare() liefert bereits aufsteigend nach Datum — ShareSplitHint
+    // setzt diese Reihenfolge voraus, um den jüngsten Split zu benennen.
+    return m_splitRepo.findByShare(shareGuid);
+}
+
 // ── findClosingPriceForDate ────────────────────────────────────────────────────
 
 bool ModelDividendEdit::findClosingPriceForDate(const QString& shareGuid,

@@ -3796,14 +3796,142 @@ für den Hinweis angelegt wird.
 Argumente dort nicht greifen:
 
 Die Ausschüttung ist `rate × volume` und über einen Split invariant — es gibt
-nichts umzurechnen. Und die Dividenden-Übersicht summiert im Gegensatz zu
-Käufen und Verkäufen **keine Stückzahlen** (Übersicht-Tab: Jahr, Dividende),
-der Summenfehler aus Phase 3c existiert dort also gar nicht.
+nichts umzurechnen. Und der Übersicht-Tab der Dividenden summiert im Gegensatz
+zu Käufen und Verkäufen keine Stückzahlen (Spalten: Jahr, Dividende).
 
 Bleibt das Risiko, dass ein Nutzer die Beleg-Stückzahl für veraltet hält und
 "korrigiert" — womit die Ausschüttung nicht mehr zum Beleg passt. Dagegen
 hilft aber keine Anzeige, sondern eine Prüfung, die tatsächlich rechnet; siehe
 "Offene Punkte", "Plausibilitätsprüfung der Dividenden-Stückzahl".
+
+@note Teilweise überholt durch Phase 3c (11.08.2026). Die Aussage zum
+Fusszeilen-Hinweis gilt weiterhin — `ViewDividendEdit` hat keinen. Die
+Begründung "summiert keine Stückzahlen" traf aber nur auf den Übersicht-Tab
+zu: die Fusszeile der JAHRES-Tabs summierte sehr wohl `volume()`, über
+verschiedene Auszahlungstage hinweg. Diese Summe war schon vor jedem Split
+bedeutungslos und zeigt seit Phase 3c "-". Die Belegzeilen tragen den
+Split-Marker wie überall sonst — siehe "Split-Marker und Summen in den
+Übersichtstabellen".
+
+---
+
+## Split-Marker und Summen in den Übersichtstabellen (Phase 3c, 11.08.2026)
+
+Phase 3b setzte einen Hinweis unter die Eingabefelder der Editier-Dialoge.
+Phase 3c bringt dieselbe Aussage in die Tabellen: eine Stückzahl, die nicht
+mehr dem heutigen Stand entspricht, wird als solche gekennzeichnet, und
+Summen über mehrere Belege stehen auf einer einheitlichen Skala.
+
+### Die Regel
+
+Zwei Arten von Zellen, zwei Verhaltensweisen:
+
+| Zellart | Skala | Marker |
+| ------- | ----- | ------ |
+| Belegzeile eines Jahres-Tabs | BELEG | ja, wenn nach dem Belegdatum ein Split liegt |
+| Aggregat (Fusszeile, Jahreszeile der Übersicht) | HEUTE | ja, wenn vor dem ältesten summierten Beleg ein Split liegt |
+
+Belegzeilen bleiben in Beleg-Skala, weil sie Abschriften des Dokuments sind,
+das nach einem Zeilenklick rechts in der Vorschau erscheint — die Zahlen
+müssen sich decken. Aggregate stehen auf heutiger Skala, weil eine Summe über
+Belege verschiedener Stückelung sonst gar nichts bedeutet.
+
+Aggregate rechnen dabei **je Beleg** über `ShareSplitAdjuster::adjustedVolume()`
+um und summieren erst danach. Die Summe selbst zu skalieren wäre falsch,
+sobald mehrere Belege betroffen sind.
+
+@note Die Regel gilt für STÜCKZAHLEN, nicht für Geldbeträge. Auszahlung,
+Gewinn/Verlust, Gebühren und Rabatte werden unverändert summiert — ein Split
+schafft weder Gewinn noch Kosten. Der Brokerage-Bugfix vom selben Tag zeigt,
+wohin die Verwechslung führt: aus 30,95 EUR Kauf-Nebenkosten wären bei einem
+20:1-Split 619,00 EUR geworden (siehe "Anteilige Kauf-Nebenkosten der
+FIFO-Zuteilung").
+
+### Betroffene Views
+
+| View | Belegzeilen | Aggregate |
+| ---- | ----------- | --------- |
+| `ViewBuyEdit` | Marker | heutige Skala + Marker |
+| `ViewSaleEdit` | Marker | heutige Skala + Marker |
+| `ViewDividendEdit` | Marker | Anteile-Summe → "-" |
+| `ViewShareDetails`, Gewinne/Verluste | Marker | heutige Skala + Marker |
+| `ViewShareDetails`, Dividenden | Marker | Anteile-Summe → "-" |
+| `ViewShareDetails`, Kosten | — | keine Anteile-Spalte |
+| `ViewBrokerageEdit` | — | keine Anteile-Spalte |
+
+Im Marktwert-Modus von `ViewShareDetails` gilt für Gewinne/Verluste dasselbe
+wie im Depotwert-Modus: die Stückzahlen sind in beiden Modi identisch, nur die
+Geldbeträge unterscheiden sich (brokeragefrei).
+
+### Sonderfall Dividenden
+
+Bei Dividenden wird die Anteile-Summe der Jahres-Fusszeile NICHT umgerechnet,
+sondern durch "-" ersetzt (Nessies Entscheidung 11.08.2026).
+
+"Anteile am Auszahlungstag" bezieht sich auf je einen Stichtag. Zwei
+Ausschüttungen auf 100 und 150 Stück ergeben addiert 250 — einen Bestand, den
+es zu keinem Zeitpunkt gab. Anders als bei Käufen und Verkäufen hilft hier
+auch die Umrechnung auf heutige Skala nicht: sie würde aus einer
+bedeutungslosen Zahl nur eine andere machen. Der Dividendensatz in der Spalte
+daneben steht aus demselben Grund seit jeher auf "-".
+
+Die Summe war damit auch ohne jeden Split falsch; der Split machte sie nur
+sichtbar. Damit erledigt sich der zuvor unter "Offene Punkte" geführte
+Dividenden-Footer-Punkt.
+
+### Marker und Tooltips
+
+Das Markerzeichen ist ein angehängtes `*` (`ShareSplitHint::marker()`),
+gesetzt über `ShareSplitHint::withMarker()`. Bewusst ein Textzeichen statt
+eines Icons: die Anteile-Spalte ist eine Textspalte, und ein `setCellWidget()`
+wie in der Dokument-Spalte würde den Zellentext verdrängen und die
+Zentrierung zerstören (Nessies Entscheidung 10.08.2026).
+
+Der Marker bleibt in normaler Textfarbe (Nessies Entscheidung 11.08.2026).
+Ein `QTableWidgetItem` trägt einen einzigen String; `setForeground()` würde
+immer die ganze Zelle einfärben, und nur das Sternchen zu färben bräuchte
+einen eigenen Delegate. Die orange Hervorhebung bleibt deshalb den
+Fusszeilen-Hinweisen der Editier-Dialoge vorbehalten.
+
+Zwei Tooltip-Texte, beide in `ShareSplitHint`:
+
+- `overviewRowTooltip()` an Belegzeilen — nennt die heutige Entsprechung,
+  erste Zeile wortgleich zur Fusszeile der Editier-Dialoge.
+- `overviewAggregateTooltip()` an Aggregatzellen — erklärt, dass über Belege
+  unterschiedlicher Stückelung summiert und dafür umgerechnet wurde.
+
+### Splits als Parameter, nicht als Setter
+
+`populateOverview()` in `IViewBuyEdit`, `IViewSaleEdit`, `IViewDividendEdit`
+sowie `populateGewinneVerluste()`/`populateDividenden()` in
+`IViewShareDetails` nehmen die Splits als zusätzlichen Parameter entgegen.
+
+Ein eigener `setSplits()`-Aufruf wäre die naheliegende Alternative gewesen —
+`IViewSaleEdit` hatte einen aus Phase 2c. Er erzeugt aber eine unsichtbare
+Reihenfolge-Abhängigkeit zwischen zwei View-Aufrufen, die erst auffällt, wenn
+sie einmal falsch herum steht. Als Parameter ist die Abhängigkeit im
+Signatur-Typ sichtbar und vom Compiler geprüft.
+
+`IModelDividendEdit` und `IModelShareDetails` bekamen dafür `loadSplits()`,
+wortgleich zu `IModelBuyEdit`/`IModelSaleEdit` — reine Weiterleitung an
+`ShareSplitRepository::findByShare()`.
+
+### Farbe des Split-Hinweises
+
+Der aktive Hinweis in `ViewBuyEdit`/`ViewSaleEdit` ist seit 11.08.2026 orange
+(`#C77400`, fett) statt blau. Der gedämpfte Zustand ("Kein Split nach diesem
+Datum") bleibt zurückhaltend, wechselt aber von `palette(mid)` auf
+`palette(placeholderText)` — im dunklen Theme war er zuvor kaum lesbar.
+
+Nessies ursprüngliche Vorgabe war "durchgängig orange". Dagegen sprach, dass
+der gedämpfte Zustand bei jeder Aktie ohne Split dauerhaft im Formular steht:
+in Warnfarbe würde er abstumpfen und den echten Hinweis mit entwerten
+(Entscheidung 11.08.2026).
+
+Das Label sitzt seither ab Gitterspalte 1 statt 0 — es gehört inhaltlich zu
+den Eingabewerten, nicht zu den Feldnamen. Der untere Rand der Kaufdaten-/
+Verkaufsdaten-Gruppe ist auf 4 px reduziert (statt 10): die letzte Zeile ist
+ein reines Textlabel ohne Feldrahmen und braucht weniger Luft.
 
 ---
 
@@ -3999,7 +4127,7 @@ bereinigt liefert, ist je Anbieter unterschiedlich.
 | 2c | FIFO-Verkaufszuteilung (`PresenterSaleEdit`/`ModelSaleEdit`). Neue gemeinsame Klasse `SaleFifoAllocator` ersetzt die vormals dreifach duplizierte Zuteilungslogik; Edit-Zweig berechnet FIFO beim Bearbeiten des jüngsten Verkaufs jetzt neu, statt gespeicherte `SaleBuyDetails` unverändert zu übernehmen. | ✅ umgesetzt 07.08.2026 |
 | 3a | `ShareSplitsForm` — eigene MVP-Triade, fünfter Stift-Button in `ViewShareEdit` (GroupBox "Allgemein"), Split-Hinweis neben dem Button | ✅ umgesetzt 08.08.2026 |
 | 3b | Split-Hinweis in den Editier-Dialogen `ViewBuyEdit`/`ViewSaleEdit` | ✅ umgesetzt 09.08.2026 |
-| 3c | Übersichtstabellen: Split-Marker je Zeile, Korrektur der Stückzahl-Summenzeile | offen |
+| 3c | Übersichtstabellen: Split-Marker je Zeile, Korrektur der Stückzahl-Summenzeile in `ViewBuyEdit`, `ViewSaleEdit`, `ViewDividendEdit` und `ViewShareDetails` (Gewinne/Verluste + Dividenden); Anteile-Summe der Dividenden-Fusszeile als "-"; Split-Hinweis der Editier-Dialoge in Orange | ✅ umgesetzt 11.08.2026 |
 | 4 | Automatische Nachprüfung des `prices_adjusted`-Zustands nach jedem Tageswert-Abruf (Kurssprung um den Splittag vergleichen) + Startmeldung bei Widerspruch, analog `warnAboutSharesWithoutDailyValues()` | offen |
 
 ### Plausibilitätsprüfung der Dividenden-Stückzahl (09.08.2026)

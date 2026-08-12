@@ -101,7 +101,8 @@ public:
     void setUiBusy(bool busy)                                   override;
     void onParseFinished()                                      override;
 
-    void populateOverview(const QList<DividendObject>& dividends) override;
+    void populateOverview(const QList<DividendObject>&   dividends,
+                          const QList<ShareSplitObject>& splits)      override;
     void openPdfPreview(const QString& pdfPath)                   override;
     void clearPdfPreview()                                         override;
     void showOverviewTab()                                         override;

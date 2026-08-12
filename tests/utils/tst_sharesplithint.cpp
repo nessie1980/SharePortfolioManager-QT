@@ -6,6 +6,10 @@
 // Phase 3b der Aktiensplit-Behandlung (09.08.2026), siehe ARCHITECTURE.md,
 // "Split-Hinweis in den Editier-Dialogen". Zustandslos und datenbankfrei,
 // gleiches Muster wie tst_sharesplitadjuster und tst_salefifoallocator.
+//
+// Phase 3c (10.08.2026) ergänzt marker()/withMarker() sowie die beiden
+// Tooltip-Texte der Übersichtstabellen — siehe ARCHITECTURE.md,
+// "Split-Marker und Summen in den Übersichtstabellen".
 
 #include <QtTest>
 #include <QLocale>
@@ -237,6 +241,116 @@ private slots:
 
         QVERIFY2(!tip.contains(QStringLiteral("4:1")), qPrintable(tip));
         QVERIFY2(tip.contains(QStringLiteral("20:1")), qPrintable(tip));
+    }
+
+    // ── marker / withMarker (Phase 3c) ────────────────────────────────────
+
+    void test_withMarker_unaffectedCellIsUnchanged()
+    {
+        const QString cell = QStringLiteral("5,0000 stk.");
+        QCOMPARE(ShareSplitHint::withMarker(cell, false), cell);
+    }
+
+    void test_withMarker_affectedCellEndsWithMarker()
+    {
+        const QString cell = QStringLiteral("5,0000 stk.");
+        const QString out  = ShareSplitHint::withMarker(cell, true);
+
+        QVERIFY2(out.startsWith(cell), qPrintable(out));
+        QVERIFY2(out.endsWith(ShareSplitHint::marker()), qPrintable(out));
+    }
+
+    void test_marker_isNotEmpty()
+    {
+        QVERIFY(!ShareSplitHint::marker().isEmpty());
+    }
+
+    // ── overviewRowTooltip (Phase 3c) ─────────────────────────────────────
+
+    void test_overviewRowTooltip_noSplitAfterDate_isEmpty()
+    {
+        // Ohne Split bekommt die Zelle weder Marker noch Tooltip — anders als
+        // die Fusszeile der Editier-Dialoge, die immer belegt sein muss.
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 20.0, 1.0) };
+
+        QVERIFY(ShareSplitHint::overviewRowTooltip({}, d(2021, 3, 18), 5.0, 1003.00).isEmpty());
+        QVERIFY(ShareSplitHint::overviewRowTooltip(splits, d(2023, 2, 14), 5.0, 52.40).isEmpty());
+    }
+
+    void test_overviewRowTooltip_namesBelegAndTodaysVolume()
+    {
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 20.0, 1.0) };
+        const QString tip = ShareSplitHint::overviewRowTooltip(splits, d(2021, 3, 18), 5.0, 1003.00);
+
+        QVERIFY2(tip.contains(QStringLiteral("Beleg")), qPrintable(tip));
+        QVERIFY2(tip.contains(QStringLiteral("20:1")), qPrintable(tip));
+        QVERIFY2(tip.contains(QLocale().toString(100.0, 'f', 4)), qPrintable(tip));
+    }
+
+    void test_overviewRowTooltip_singleSplit_doesNotRepeatTheList()
+    {
+        // Bei genau einem Split nennt der Satz ihn bereits vollständig; eine
+        // angehängte Liste wäre dieselbe Zeile ein zweites Mal.
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 20.0, 1.0) };
+        const QString tip = ShareSplitHint::overviewRowTooltip(splits, d(2021, 3, 18), 5.0, 1003.00);
+
+        QCOMPARE(tip.count(QStringLiteral("20:1")), 1);
+    }
+
+    void test_overviewRowTooltip_multipleSplits_appendsTheList()
+    {
+        const QList<ShareSplitObject> splits = {
+            makeSplit(d(2018, 3, 1),  4.0,  1.0),
+            makeSplit(d(2022, 7, 18), 20.0, 1.0),
+        };
+        const QString tip = ShareSplitHint::overviewRowTooltip(splits, d(2015, 1, 1), 1.0, 800.00);
+
+        QVERIFY2(tip.contains(QStringLiteral("4:1")), qPrintable(tip));
+        QVERIFY2(tip.contains(QStringLiteral("20:1")), qPrintable(tip));
+    }
+
+    // ── overviewAggregateTooltip (Phase 3c) ───────────────────────────────
+
+    void test_overviewAggregateTooltip_noSplitAfterEarliest_isEmpty()
+    {
+        // Kein Beleg der Summe musste umgerechnet werden — dann sieht die
+        // Zelle exakt so aus wie vor Phase 3c.
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 20.0, 1.0) };
+
+        QVERIFY(ShareSplitHint::overviewAggregateTooltip({}, d(2021, 3, 18)).isEmpty());
+        QVERIFY(ShareSplitHint::overviewAggregateTooltip(splits, d(2023, 2, 14)).isEmpty());
+    }
+
+    void test_overviewAggregateTooltip_explainsTheConversion()
+    {
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 20.0, 1.0) };
+        const QString tip = ShareSplitHint::overviewAggregateTooltip(splits, d(2021, 3, 18));
+
+        QVERIFY(!tip.isEmpty());
+        QVERIFY2(tip.contains(QStringLiteral("heutige")), qPrintable(tip));
+        QVERIFY2(tip.contains(QStringLiteral("20:1")), qPrintable(tip));
+    }
+
+    void test_overviewAggregateTooltip_listsEverySplitAfterTheOldestReceipt()
+    {
+        // Bezugsdatum ist der ÄLTESTE Beleg der Summe: jeder Split danach hat
+        // mindestens einen der summierten Belege umgerechnet.
+        const QList<ShareSplitObject> splits = {
+            makeSplit(d(2018, 3, 1),  4.0,  1.0),
+            makeSplit(d(2022, 7, 18), 20.0, 1.0),
+        };
+        const QString tip = ShareSplitHint::overviewAggregateTooltip(splits, d(2015, 1, 1));
+
+        QVERIFY2(tip.contains(QStringLiteral("4:1")), qPrintable(tip));
+        QVERIFY2(tip.contains(QStringLiteral("20:1")), qPrintable(tip));
+    }
+
+    void test_overviewAggregateTooltip_invalidEarliestDate_isEmpty()
+    {
+        // Kein einziger Beleg mit gültigem Datum — dann gibt es auch nichts
+        // zu erklären (hasSplitAfter() liefert für QDate() false).
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 20.0, 1.0) };
+        QVERIFY(ShareSplitHint::overviewAggregateTooltip(splits, QDate()).isEmpty());
     }
 
     // ── describeSplit / formatRatioPart ───────────────────────────────────

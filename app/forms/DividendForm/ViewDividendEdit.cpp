@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "ViewDividendEdit.h"
+#include "../../utils/ShareSplitHint.h"
 #include "PresenterDividendEdit.h"
 #include "ModelDividendEdit.h"
 #include "../../IconProvider.h"
@@ -803,7 +804,8 @@ void ViewDividendEdit::onParseFinished()
 
 // ── populateOverview ──────────────────────────────────────────────────────────
 
-void ViewDividendEdit::populateOverview(const QList<DividendObject>& dividends)
+void ViewDividendEdit::populateOverview(const QList<DividendObject>&   dividends,
+                                        const QList<ShareSplitObject>& splits)
 {
     if (dividends.isEmpty()) {
         m_overviewTabs->clear();
@@ -874,7 +876,7 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>& dividends)
         return tr("%1 (%2 €)").arg(year).arg(formatMoney(yearTotal));
     };
 
-    auto populateJahresData = [this, dividends, kColDate, kColRate, kColVolume,
+    auto populateJahresData = [this, dividends, splits, kColDate, kColRate, kColVolume,
                                 kColDividend, kColDoc](int year, QTableWidget* tbl) {
         QList<DividendObject> yearDivs;
         for (const DividendObject& d : dividends)
@@ -893,9 +895,22 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>& dividends)
                 formatVolume(d.rate()) + QStringLiteral(" €"));
             iRate->setTextAlignment(Qt::AlignCenter);
 
+            // Belegzeile: bleibt in BELEG-Skala. "Anteile am Auszahlungstag"
+            // ist die Stückzahl, auf die die Bank tatsächlich ausgeschüttet
+            // hat — sie steht so auf der Abrechnung, die nach einem
+            // Zeilenklick rechts in der Vorschau erscheint. Der Marker und
+            // sein Tooltip nennen die heutige Entsprechung
+            // (Phase 3c, 11.08.2026).
+            const bool    volAffected = ShareSplitHint::hasSplitAfter(splits, d.date());
+            const QString volTooltip  = ShareSplitHint::overviewRowTooltip(
+                splits, d.date(), d.volume(), d.rate());
+
             auto* iVol = new QTableWidgetItem(
-                formatVolume(d.volume()) + QStringLiteral(" stk."));
+                ShareSplitHint::withMarker(
+                    formatVolume(d.volume()) + QStringLiteral(" stk."), volAffected));
             iVol->setTextAlignment(Qt::AlignCenter);
+            if (!volTooltip.isEmpty())
+                iVol->setToolTip(volTooltip);
 
             auto* iDiv = new QTableWidgetItem(
                 formatMoney(d.dividendPayoutWithTaxes()) + QStringLiteral(" €"));
@@ -936,19 +951,28 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>& dividends)
 
     auto populateJahresFooter = [this, dividends, kColDate, kColRate, kColVolume,
                                   kColDividend, kColDoc](int year, QTableWidget* f) {
-        double totVol = 0.0, totDiv = 0.0;
+        double totDiv = 0.0;
         for (const DividendObject& d : dividends) {
             if (d.year() != year) continue;
-            totVol += d.volume();
             totDiv += d.dividendPayoutWithTaxes();
         }
         auto* iLabel = new QTableWidgetItem(tr("Gesamt:"));
         iLabel->setTextAlignment(Qt::AlignCenter);
         auto* iRate  = new QTableWidgetItem(QStringLiteral("-"));
         iRate->setTextAlignment(Qt::AlignCenter);
-        auto* iVol   = new QTableWidgetItem(
-            formatVolume(totVol) + QStringLiteral(" stk."));
+
+        // Anteile-Summe bewusst "-" statt einer Zahl (Nessies Entscheidung
+        // 11.08.2026, Phase 3c). "Anteile am Auszahlungstag" bezieht sich auf
+        // je einen Stichtag; die Summe über mehrere Ausschüttungen beschreibt
+        // keinen Bestand, den es je gab. Anders als bei Käufen und Verkäufen
+        // hilft hier auch eine Umrechnung auf heutige Skala nicht weiter — sie
+        // würde aus einer bedeutungslosen Zahl nur eine andere machen.
+        // Der Dividendensatz daneben steht aus demselben Grund schon immer
+        // auf "-".
+        auto* iVol   = new QTableWidgetItem(QStringLiteral("-"));
         iVol->setTextAlignment(Qt::AlignCenter);
+        iVol->setToolTip(tr("Anteile beziehen sich auf verschiedene "
+                            "Auszahlungstage und lassen sich nicht summieren."));
         auto* iDiv   = new QTableWidgetItem(
             formatMoney(totDiv) + QStringLiteral(" €"));
         iDiv->setTextAlignment(Qt::AlignCenter);

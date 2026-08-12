@@ -84,6 +84,61 @@ QString ShareSplitHint::tooltipText(const QList<ShareSplitObject>& splits,
     return lines.join(QLatin1Char('\n'));
 }
 
+// ── marker / withMarker ───────────────────────────────────────────────────────
+
+QString ShareSplitHint::marker()
+{
+    return QStringLiteral("*");
+}
+
+QString ShareSplitHint::withMarker(const QString& cellText, bool affected)
+{
+    if (!affected)
+        return cellText;
+    return cellText + QLatin1Char(' ') + marker();
+}
+
+// ── overviewRowTooltip ────────────────────────────────────────────────────────
+
+QString ShareSplitHint::overviewRowTooltip(const QList<ShareSplitObject>& splits,
+                                           const QDate& date,
+                                           double volume,
+                                           double price)
+{
+    if (!hasSplitAfter(splits, date))
+        return {};
+
+    // Erste Zeile ist derselbe Satz wie die Fusszeile der Editier-Dialoge —
+    // dieselbe Aussage soll auch dieselben Worte haben.
+    QString text = QCoreApplication::translate(
+                       "ShareSplitHint", "Stückzahl laut Beleg. %1")
+                       .arg(footerText(splits, date, volume, price));
+
+    // Bei genau einem Split nennt footerText() ihn bereits vollständig; die
+    // Liste würde die Zeile nur wiederholen.
+    const QString list = tooltipText(splits, date);
+    if (list.contains(QLatin1Char('\n')))
+        text += QLatin1Char('\n') + list;
+
+    return text;
+}
+
+// ── overviewAggregateTooltip ──────────────────────────────────────────────────
+
+QString ShareSplitHint::overviewAggregateTooltip(const QList<ShareSplitObject>& splits,
+                                                 const QDate& earliestDate)
+{
+    if (!hasSplitAfter(splits, earliestDate))
+        return {};
+
+    return QCoreApplication::translate(
+               "ShareSplitHint",
+               "Summe über Belege unterschiedlicher Stückelung — auf heutige "
+               "Stücke umgerechnet.")
+           + QLatin1Char('\n')
+           + tooltipText(splits, earliestDate);
+}
+
 // ── describeSplit / formatRatioPart ───────────────────────────────────────────
 
 QString ShareSplitHint::describeSplit(const ShareSplitObject& split)

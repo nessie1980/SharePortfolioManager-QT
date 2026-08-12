@@ -90,8 +90,9 @@ public:
     void onParseFinished()                                      override;
 
     // ── Overview / PDF / buttons ──────────────────────────────────────────
-    void populateOverview(const QList<BuyObject>&       buys,
-                          const QList<BrokerageObject>& brokerages) override;
+    void populateOverview(const QList<BuyObject>&        buys,
+                          const QList<BrokerageObject>&  brokerages,
+                          const QList<ShareSplitObject>& splits) override;
     void openPdfPreview(const QString& pdfPath)   override;
     void clearPdfPreview()                         override;
     void showOverviewTab()                         override;

@@ -29,6 +29,13 @@ QList<BrokerageObject> ModelShareDetails::loadBrokerages(const QString& shareGui
     return m_brokerageRepo.findByShare(shareGuid);
 }
 
+QList<ShareSplitObject> ModelShareDetails::loadSplits(const QString& shareGuid) const
+{
+    // findByShare() liefert bereits aufsteigend nach Datum — ShareSplitHint
+    // setzt diese Reihenfolge voraus, um den jüngsten Split zu benennen.
+    return m_splitRepo.findByShare(shareGuid);
+}
+
 QDate ModelShareDetails::latestDailyValueDate(const QString& shareGuid) const
 {
     return m_dailyValuesRepo.latestDate(shareGuid);

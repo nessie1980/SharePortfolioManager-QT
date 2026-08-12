@@ -19,6 +19,7 @@
 #include <QDateTime>
 
 #include "../../app/forms/ShareDetailsForm/PresenterShareDetails.h"
+#include "../../app/models/ShareSplitObject.h"
 
 // ── Fake View ──────────────────────────────────────────────────────────────
 
@@ -46,6 +47,10 @@ public:
     QList<BrokerageObject> brokerageRows;
     bool                    kostenCalled = false;
 
+    // Phase 3c (11.08.2026): zuletzt übergebene Splits je Tab.
+    QList<ShareSplitObject> gewinneVerlusteSplits;
+    QList<ShareSplitObject> dividendenSplits;
+
     QString errorMessage;
     bool    closed = false;
 
@@ -59,14 +64,19 @@ public:
     void populateVortagBox(const CalculationRows& rows) override { vortagRows = rows; }
     void populateAktuelleBox(const CalculationRows& rows) override { aktuelleRows = rows; }
 
-    void populateGewinneVerluste(const QList<SaleObject>& sales) override
+    void populateGewinneVerluste(const QList<SaleObject>&       sales,
+                                 const QList<ShareSplitObject>& splits) override
     {
         saleRows = sales;
+        // Phase 3c (11.08.2026): die Splits kommen als Parameter herein.
+        gewinneVerlusteSplits = splits;
         gewinneVerlusteCalled = true;
     }
-    void populateDividenden(const QList<DividendObject>& dividends) override
+    void populateDividenden(const QList<DividendObject>&   dividends,
+                            const QList<ShareSplitObject>& splits) override
     {
         dividendRows = dividends;
+        dividendenSplits = splits;
         dividendenCalled = true;
     }
     void populateKosten(const QList<BrokerageObject>& brokerages) override
@@ -99,6 +109,7 @@ public:
     QList<SaleObject>      sales;
     QList<DividendObject>  dividends;
     QList<BrokerageObject> brokerages;
+    QList<ShareSplitObject> splits;   // Phase 3c (11.08.2026)
     QDate                   latestDailyValueDateResult; // default invalid -> "keine Tageswerte"
 
     ShareObject loadShare(const QString&) const override { return share; }
@@ -111,6 +122,7 @@ public:
     QList<SaleObject> loadSales(const QString&) const override { return sales; }
     QList<DividendObject> loadDividends(const QString&) const override { return dividends; }
     QList<BrokerageObject> loadBrokerages(const QString&) const override { return brokerages; }
+    QList<ShareSplitObject> loadSplits(const QString&) const override { return splits; }
 
     QDate latestDailyValueDate(const QString&) const override { return latestDailyValueDateResult; }
 };
@@ -576,6 +588,75 @@ private slots:
         QCOMPARE(view.saleRows.size(), 2);
         QVERIFY(view.dividendRows.isEmpty());
         QVERIFY(view.brokerageRows.isEmpty());
+    }
+
+    // ── Split-Übergabe an die Übersichts-Tabs (Phase 3c, 11.08.2026) ──────
+
+    void test_loadAndDisplay_depotwertMode_passesSplitsToGewinneVerlusteAndDividenden()
+    {
+        // Die Splits gehen als Parameter an die View, nicht über einen
+        // eigenen Setter — sonst entstünde eine unsichtbare Reihenfolge-
+        // Abhängigkeit zwischen zwei View-Aufrufen.
+        FakeViewShareDetails  view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("sp1"), QStringLiteral("WKN020"),
+                                  QStringLiteral("ISIN0000020"), QStringLiteral("Split AG"));
+        model.sales     = { SaleObject() };
+        model.dividends = { DividendObject() };
+        model.splits    = { ShareSplitObject(QStringLiteral("split-1"),
+                                             QStringLiteral("sp1"),
+                                             QDate(2022, 7, 18), 20.0, 1.0) };
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("sp1"));
+        QVERIFY(presenter.loadAndDisplay());
+
+        QCOMPARE(view.gewinneVerlusteSplits.size(), 1);
+        QCOMPARE(view.gewinneVerlusteSplits.first().ratioNew(), 20.0);
+        QCOMPARE(view.dividendenSplits.size(), 1);
+        QCOMPARE(view.dividendenSplits.first().ratioNew(), 20.0);
+    }
+
+    void test_loadAndDisplay_marketValueMode_passesSplitsToGewinneVerluste()
+    {
+        // Der Gewinne/Verluste-Tab existiert in beiden Modi und bekommt in
+        // beiden dieselben Splits — die Stückzahlen sind identisch, nur die
+        // Geldbeträge unterscheiden sich (brokeragefrei im Marktwert-Modus,
+        // Nessies Vorgabe 11.08.2026).
+        FakeViewShareDetails  view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("sp2"), QStringLiteral("WKN021"),
+                                  QStringLiteral("ISIN0000021"), QStringLiteral("Split AG"));
+        model.sales  = { SaleObject() };
+        model.splits = { ShareSplitObject(QStringLiteral("split-1"),
+                                          QStringLiteral("sp2"),
+                                          QDate(2022, 7, 18), 20.0, 1.0) };
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("sp2"),
+                                        /*marketValueMode=*/true);
+        QVERIFY(presenter.loadAndDisplay());
+
+        QVERIFY(view.gewinneVerlusteCalled);
+        QCOMPARE(view.gewinneVerlusteSplits.size(), 1);
+        // Dividenden-Tab existiert im Marktwert-Modus nicht.
+        QVERIFY(!view.dividendenCalled);
+        QVERIFY(view.dividendenSplits.isEmpty());
+    }
+
+    void test_loadAndDisplay_withoutSplits_passesEmptySplitList()
+    {
+        FakeViewShareDetails  view;
+        FakeModelShareDetails model;
+        model.share = ShareObject(QStringLiteral("sp3"), QStringLiteral("WKN022"),
+                                  QStringLiteral("ISIN0000022"), QStringLiteral("Ohne AG"));
+        model.sales     = { SaleObject() };
+        model.dividends = { DividendObject() };
+
+        PresenterShareDetails presenter(view, model, QStringLiteral("sp3"));
+        QVERIFY(presenter.loadAndDisplay());
+
+        QVERIFY(view.gewinneVerlusteCalled);
+        QVERIFY(view.gewinneVerlusteSplits.isEmpty());
+        QVERIFY(view.dividendenSplits.isEmpty());
     }
 
     void test_loadAndDisplay_depotwertMode_populatesGewinneVerlusteDividendenKosten()
