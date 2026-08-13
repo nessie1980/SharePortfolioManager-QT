@@ -88,6 +88,7 @@ private slots:
 private:
     void       setupUi();
     QGroupBox* createSplitDataGroup();
+    QGroupBox* createDocumentGroup();
     QWidget*   createButtonBar();
     QGroupBox* createOverviewGroup();
     QWidget*   createPreviewPanel();
@@ -103,7 +104,12 @@ private:
     QLineEdit* m_factorPreview  = nullptr;  ///< read-only; Notationshinweis als Tooltip
     QCheckBox* m_pricesAdjusted = nullptr;
     QLineEdit* m_comment        = nullptr;
-    QLineEdit* m_documentPath   = nullptr;
+
+    // ── Dokument ──────────────────────────────────────────────────────────
+    // Eigene Groupbox seit 13.08.2026, read-only wie bei den anderen fünf
+    // Dialogen — der Pfad kommt nur noch über den Dateidialog, nicht mehr
+    // per Handeingabe.
+    QLineEdit*   m_documentPath = nullptr;
     QPushButton* m_btnBrowseDoc = nullptr;
 
     // ── Buttons ───────────────────────────────────────────────────────────

@@ -3596,14 +3596,29 @@ kamen deshalb noch am selben Tag nach, siehe den folgenden Absatz.
 Die Split-GUID hängt an jeder Zelle als `Qt::UserRole`, damit die Auswahl
 unabhängig von der angeklickten Spalte auflösbar ist.
 
-**Dokument und Vorschau (08.08.2026).** Ein Split trägt einen Beleg wie Kauf,
-Verkauf, Dividende und Kosten auch: Pfadfeld plus `…`-Button links,
-`DocumentPreviewPanel` rechts, Dialogbreite entsprechend auf 1100 × 680 wie bei
-`ViewBrokerageEdit`. Der Dateidialog lässt nur PDF zu und prüft den gewählten
-Pfad über `DocumentRootMigrator::isPathWithinRoot()` — beides identisch zu den
-anderen fünf Dialogen. Ein Zeilenklick in der Übersicht lädt den Beleg mit in
-die Vorschau. Die Dokument-Spalte der Tabelle ist 36 px breit und ohne
+**Dokument und Vorschau (08.08.2026; Feld auf Kauf/Verkauf-Optik angeglichen
+13.08.2026).** Ein Split trägt einen Beleg wie Kauf, Verkauf, Dividende und
+Kosten auch: eigene `QGroupBox("  Dokument")` (`createDocumentGroup()`) links
+zwischen Splitdaten und Buttonleiste, `DocumentPreviewPanel` rechts,
+Dialogbreite entsprechend auf 1100 × 680 wie bei `ViewBrokerageEdit`. Der
+Dateidialog lässt nur PDF zu und prüft den gewählten Pfad über
+`DocumentRootMigrator::isPathWithinRoot()` — beides identisch zu den anderen
+fünf Dialogen. Ein Zeilenklick in der Übersicht lädt den Beleg mit in die
+Vorschau. Die Dokument-Spalte der Tabelle ist 36 px breit und ohne
 Überschrift, nach der Vereinheitlichung vom 17.07.2026.
+
+Ursprünglich (08.08.2026) war das Pfadfeld eine Zeile innerhalb der
+Splitdaten-Groupbox, editierbar, mit `…`-Button und Doppelbelegungs-Prüfung
+sowohl beim manuellen Eintippen (`editingFinished`) als auch bei der
+Dateiauswahl. Am 13.08.2026 (Nessies Vorgabe, nach Rückmeldung zum
+`…`-Button) auf dieselbe Optik wie bei den anderen fünf Dialogen umgestellt:
+eigene Groupbox, Ordner-Icon (`IconProvider::MenuFolderOpen16`, 36 px breit)
+statt Text-Button, Feld read-only. Der Pfad kommt seither ausschließlich über
+den Dateidialog; die `editingFinished`-Verbindung für manuelles Eintippen
+entfiel entsprechend. Die Doppelbelegungs-Prüfung selbst blieb unverändert —
+sie läuft nur noch über `onDocumentSelected()`, nicht mehr zusätzlich über
+Tastatureingabe. Regressionstest `test_view_documentPath_isReadOnly` in
+`tst_sharesplitsform.cpp` sichert die Read-only-Eigenschaft ab.
 
 Die Doppelbelegungs-Prüfung (`ModelShareSplitEdit::documentExists()`) läuft
 bewusst nur gegen `share_splits`, nicht tabellenübergreifend (Nessies

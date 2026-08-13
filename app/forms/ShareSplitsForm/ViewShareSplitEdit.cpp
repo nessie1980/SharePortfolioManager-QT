@@ -58,11 +58,6 @@ ViewShareSplitEdit::ViewShareSplitEdit(const QString& shareGuid, QWidget* parent
 
     connect(m_btnBrowseDoc, &QPushButton::clicked,
             this, &ViewShareSplitEdit::onBrowseDocument);
-
-    // Manuell eingetippter Pfad soll dieselbe Doppelbelegungs-Prüfung
-    // auslösen wie ein über den Dateidialog gewählter.
-    connect(m_documentPath, &QLineEdit::editingFinished,
-            m_presenter, &PresenterShareSplitEdit::onDocumentPathEdited);
 }
 
 // ── setupUi ───────────────────────────────────────────────────────────────────
@@ -78,6 +73,7 @@ void ViewShareSplitEdit::setupUi()
     leftColumn->setContentsMargins(0, 0, 0, 0);
     leftColumn->setSpacing(6);
     leftColumn->addWidget(createSplitDataGroup());
+    leftColumn->addWidget(createDocumentGroup());
     leftColumn->addWidget(createButtonBar());
     leftColumn->addWidget(createOverviewGroup(), 1);
 
@@ -185,27 +181,53 @@ QGroupBox* ViewShareSplitEdit::createSplitDataGroup()
     m_comment->setFixedHeight(UiConstants::kFieldHeight);
     addRow(row++, tr("Kommentar:"), m_comment);
 
-    // Dokument (08.08.2026) — Pfadfeld plus "…"-Button, wie in den anderen
-    // fünf Dialogen. Der Root-Zwang wird in onBrowseDocument() geprüft.
+    return m_splitDataGroup;
+}
+
+// ── createDocumentGroup ───────────────────────────────────────────────────────
+// Eigene Groupbox statt Zeile in createSplitDataGroup() (13.08.2026, Nessies
+// Vorgabe) — Icon und Layout jetzt 1:1 wie in ViewBuyEdit::createDocumentGroup()
+// (Ordner-Icon statt "…"-Button, read-only Pfadfeld). Der Root-Zwang wird
+// weiterhin in onBrowseDocument() geprüft, die Doppelbelegungs-Prüfung läuft
+// jetzt ausschliesslich über die Dateiauswahl (onDocumentSelected() ruft
+// PresenterShareSplitEdit::onDocumentPathEdited() bereits selbst auf) — die
+// bisherige editingFinished-Verbindung für manuelles Eintippen entfällt, das
+// Feld lässt sich nicht mehr direkt beschreiben.
+QGroupBox* ViewShareSplitEdit::createDocumentGroup()
+{
+    auto* gb   = new QGroupBox(tr("  Dokument"));
+    gb->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::MinimumExpanding);
+    auto* grid = new QGridLayout(gb);
+    grid->setColumnStretch(1, 1);
+    grid->setVerticalSpacing(4);
+    grid->setHorizontalSpacing(8);
+    grid->setContentsMargins(8, 8, 8, 10);
+
     m_documentPath = new QLineEdit;
     m_documentPath->setObjectName(QStringLiteral("documentPath"));
-    m_documentPath->setPlaceholderText(tr("Beleg der Bank (PDF)"));
+    m_documentPath->setReadOnly(true);
+    m_documentPath->setPlaceholderText(tr("Kein Dokument ausgewählt …"));
     m_documentPath->setFixedHeight(UiConstants::kFieldHeight);
 
-    m_btnBrowseDoc = new QPushButton(QStringLiteral("…"));
+    m_btnBrowseDoc = new QPushButton(IconProvider::icon(IconProvider::MenuFolderOpen16), QString());
     m_btnBrowseDoc->setObjectName(QStringLiteral("btnBrowseDocument"));
-    m_btnBrowseDoc->setFixedSize(28, UiConstants::kButtonHeight);
+    m_btnBrowseDoc->setFixedWidth(36);
+    m_btnBrowseDoc->setFixedHeight(UiConstants::kFieldHeight);
     m_btnBrowseDoc->setToolTip(tr("PDF-Dokument auswählen"));
 
-    auto* docWidget = new QWidget;
-    auto* docLayout = new QHBoxLayout(docWidget);
+    auto* docRow = new QWidget;
+    auto* docLayout = new QHBoxLayout(docRow);
     docLayout->setContentsMargins(0, 0, 0, 0);
     docLayout->setSpacing(4);
     docLayout->addWidget(m_documentPath, 1);
     docLayout->addWidget(m_btnBrowseDoc, 0);
-    addRow(row++, tr("Dokument:"), docWidget);
 
-    return m_splitDataGroup;
+    auto* label = new QLabel(tr("Dokument:"));
+    label->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    grid->addWidget(label,  0, 0);
+    grid->addWidget(docRow, 0, 1);
+
+    return gb;
 }
 
 // ── createButtonBar ───────────────────────────────────────────────────────────

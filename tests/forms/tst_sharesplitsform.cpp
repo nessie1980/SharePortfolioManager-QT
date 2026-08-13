@@ -1235,6 +1235,22 @@ private slots:
         QVERIFY(dlg.findChild<QPushButton*>(QStringLiteral("btnBrowseDocument")));
     }
 
+    // Regressionstest fuer 13.08.2026: das Feld war zuvor bewusst editierbar
+    // (Doppelbelegungs-Pruefung ueber editingFinished), seit der Angleichung
+    // an ViewBuyEdit/ViewSaleEdit (eigene Dokument-Groupbox, Ordner-Icon) ist
+    // der Pfad nur noch ueber den Dateidialog waehlbar. Ohne diesen Test
+    // wuerde ein versehentliches Zuruecksetzen auf editierbar nicht auffallen.
+    void test_view_documentPath_isReadOnly()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        auto* documentPath = dlg.findChild<QLineEdit*>(QStringLiteral("documentPath"));
+        if (!documentPath) QFAIL("documentPath not found");
+        QVERIFY(documentPath->isReadOnly());
+    }
+
     void test_view_loadSplit_populatesDocumentPath()
     {
         openMemoryDb();

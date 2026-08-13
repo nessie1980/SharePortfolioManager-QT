@@ -6,6 +6,20 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.14.2] - 2026-08-13
+
+### Changed
+
+- Dokumentfeld im Split-Dialog (`ShareSplitsForm`) auf dieselbe Optik wie bei
+  Kauf, Verkauf, Dividende, Kosten und Aktienanlage umgestellt: eigene
+  `QGroupBox("  Dokument")` statt Zeile innerhalb der Splitdaten, Ordner-Icon
+  statt `…`-Button, Feld read-only. Der Pfad kommt seither ausschließlich
+  über den Dateidialog; die bisherige Möglichkeit, ihn manuell einzutippen,
+  entfällt entsprechend. Neuer Regressionstest
+  `test_view_documentPath_isReadOnly` in `tst_sharesplitsform.cpp`. Siehe
+  `docs/architecture/ARCHITECTURE.md`, "ShareSplitsForm-Details", Abschnitt
+  "Dokument und Vorschau".
+
 ## [1.14.1] - 2026-08-13
 
 ### Added
