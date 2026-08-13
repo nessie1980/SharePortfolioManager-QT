@@ -6,6 +6,19 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.14.1] - 2026-08-13
+
+### Added
+
+- Tooltip auf dem Umrechnungs-Feld im Split-Dialog (`ShareSplitsForm`),
+  der die Bank-Notation des Zuteilungsverhältnisses ("1:19" = 19
+  zusätzliche Stücke je gehaltenem Stück) von der von der Anwendung
+  erwarteten Umrechnungs-Notation (neu:alt, im selben Beispiel 20:1)
+  abgrenzt. Hintergrund: ein realer Feldfall (Alphabet-Aktie), bei dem
+  genau diese Verwechslung zu einem Verhältnis führte, das systematisch um
+  eins zu klein war. Siehe `docs/architecture/ARCHITECTURE.md`,
+  "Split-Verhaeltnis: Notation der Bankmitteilungen".
+
 ## [1.14.0] - 2026-08-11
 
 ### Added

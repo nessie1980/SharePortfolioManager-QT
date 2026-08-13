@@ -4247,7 +4247,7 @@ angezeigt werden korrekt 9.719,00 EUR (tatsaechlicher Kurs 48,595 EUR). Weil
 die Zeile als Gleichung mit Mal- und Gleichheitszeichen aufgebaut ist, faellt
 das auf. Vier Nachkommastellen wie in der Anteile-Spalte wuerden es aufloesen.
 
-### Split-Verhaeltnis: Notation der Bankmitteilungen (11.08.2026)
+### Split-Verhaeltnis: Notation der Bankmitteilungen (11.08.2026, Hinweistext umgesetzt 13.08.2026)
 
 Bankmitteilungen zu Splits nennen ueblicherweise das Zuteilungsverhaeltnis in
 der Form "1:19" — je einem gehaltenen Stueck werden 19 ZUSAETZLICHE
@@ -4255,17 +4255,35 @@ eingebucht. Die Anwendung erwartet das Umrechnungsverhaeltnis, hier also 20.
 Im Feldfall Alphabet wurde 19 eingetragen; der Fehler ist systematisch immer
 genau eins zu klein.
 
-Drei Massnahmen sind denkbar, alle im Split-Dialog:
+Drei Massnahmen waren denkbar, alle im Split-Dialog:
 
-- Ein Hinweistext unter der Umrechnungszeile, der beide Notationen benennt.
-  Reine Textaenderung, groesster Nutzen pro Aufwand.
-- Eine Plausibilitaetspruefung gegen die eigenen Daten: Bestand vor dem Ex-Tag
-  mal Faktor gegen die Stueckzahl auf spaeteren Verkaufsbelegen. Im Feldfall
-  haette das den Fehler sofort gemeldet — Bestand 10 mal 19 ergibt 190,
-  der Verkaufsbeleg lautet auf 200. Kein Parsen noetig.
-- Warnung, wenn der Ex-Tag in der Zukunft oder auf dem heutigen Tag liegt.
-  Der Dialog schlaegt das aktuelle Datum vor; im Feldfall wurde es
+- **Umgesetzt (13.08.2026):** Ein Hinweistext, der beide Notationen benennt.
+  Erste Fassung war ein dauerhaft sichtbares Label unter der Umrechnungszeile
+  (`QLabel`, eigene Grid-Zeile in `createSplitDataGroup()`); wirkte im Dialog
+  zu aufdringlich (Nessies Einwand 13.08.2026) und wurde durch einen Tooltip
+  auf dem Umrechnungs-Feld ersetzt (`m_factorPreview->setToolTip()`), analog
+  zum bestehenden Tooltip auf "Kurshistorie" direkt darunter. Text mit
+  explizitem Zeilenumbruch nach dem ersten Satz (`\n` im `tr()`-String — Qt
+  rendert das im nativen Tooltip als Umbruch, kein Rich-Text noetig). Reine
+  Textaenderung, kein Interface- oder Modellzugriff noetig, deshalb ohne
+  eigenen Test (der Text ist statisch und immer sichtbar).
+- Offen: Eine Plausibilitaetspruefung gegen die eigenen Daten: Bestand vor
+  dem Ex-Tag mal Faktor gegen die Stueckzahl auf spaeteren Verkaufsbelegen.
+  Im Feldfall haette das den Fehler sofort gemeldet — Bestand 10 mal 19
+  ergibt 190, der Verkaufsbeleg lautet auf 200. Kein Parsen noetig.
+- Offen: Warnung, wenn der Ex-Tag in der Zukunft oder auf dem heutigen Tag
+  liegt. Der Dialog schlaegt das aktuelle Datum vor; im Feldfall wurde es
   unveraendert uebernommen und stand als 10.08.2026 in der Datenbank.
+
+Ebenfalls erwogen (13.08.2026) und bewusst zurueckgestellt: die Eingabe von
+"neu:alt" auf "alt:neu" zu drehen, um sich an die Bank-Schreibweise "1:19"
+anzunaehern. Loest das eigentliche Problem nicht — "19" in der Bankmitteilung
+ist die ZUSAETZLICHE Stueckzahl, nicht die neue Gesamtzahl; das Delta-vs-
+Gesamt-Missverstaendnis besteht unabhaengig von der Feldreihenfolge weiter.
+Ein Modell, das stattdessen "alt" + "zusaetzlich" abfragt und "neu" daraus
+berechnet, wuerde den Fehler strukturell verhindern, aendert aber
+`IViewShareSplitEdit::ratioNew()`/`ratioOld()` und damit mehr als nur den
+Hinweistext — eigenes Feature, falls gewuenscht.
 
 @note Ein Parser fuer die Split-Mitteilung haette hier nicht geholfen — im
 Dokument steht woertlich "1:19". Siehe "Parsing von Split-Mitteilungen der

@@ -145,11 +145,27 @@ QGroupBox* ViewShareSplitEdit::createSplitDataGroup()
     addRow(row++, tr("Verhältnis:"), ratioWidget);
 
     // Umrechnung (abgeleitet)
+    //
+    // Notationshinweis (11.08.2026, Feldfall Alphabet; als Tooltip statt
+    // Dauertext seit 13.08.2026, Nessies Vorgabe): Bankmitteilungen nennen
+    // ueblicherweise das Zuteilungsverhaeltnis ("1:19" = 19 ZUSAETZLICHE
+    // Stuecke je gehaltenem Stueck), die Maske erwartet aber das
+    // Umrechnungsverhaeltnis neu:alt (im selben Beispiel 20:1) — ohne diesen
+    // Hinweis wird der Faktor systematisch um genau eins zu klein
+    // eingetragen. Erste Fassung war ein dauerhaft sichtbares Label unter
+    // dieser Zeile; das wirkte im Dialog aber zu aufdringlich, deshalb jetzt
+    // ein Tooltip auf dem Umrechnungs-Feld selbst — gleiches Muster wie beim
+    // Tooltip auf "Kurshistorie" direkt darunter.
     m_factorPreview = new QLineEdit;
     m_factorPreview->setObjectName(QStringLiteral("factorPreview"));
     m_factorPreview->setReadOnly(true);
     m_factorPreview->setEnabled(false);
     m_factorPreview->setFixedHeight(UiConstants::kFieldHeight);
+    m_factorPreview->setToolTip(
+        tr("Bankmitteilungen nennen oft das Zuteilungsverhältnis, z. B. "
+           "„1:19“ = 19 zusätzliche Aktien je gehaltenem Stück.\n"
+           "Einzutragen ist hier das Umrechnungsverhältnis neu:alt (im "
+           "Beispiel 20:1)."));
     addRow(row++, tr("Umrechnung:"), m_factorPreview);
 
     // prices_adjusted

@@ -100,7 +100,7 @@ private:
     QDateEdit* m_date           = nullptr;
     QLineEdit* m_ratioNew       = nullptr;
     QLineEdit* m_ratioOld       = nullptr;
-    QLineEdit* m_factorPreview  = nullptr;  ///< read-only
+    QLineEdit* m_factorPreview  = nullptr;  ///< read-only; Notationshinweis als Tooltip
     QCheckBox* m_pricesAdjusted = nullptr;
     QLineEdit* m_comment        = nullptr;
     QLineEdit* m_documentPath   = nullptr;
