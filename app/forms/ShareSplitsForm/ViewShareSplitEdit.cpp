@@ -17,6 +17,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QDir>
+#include <QFontMetrics>
 #include <QLocale>
 #include <QSizePolicy>
 
@@ -27,6 +28,19 @@ enum Column { kColDate = 0, kColRatio, kColConversion, kColAdjusted, kColComment
 
 /// Breite der Dokument-Spalte, projektweit vereinheitlicht (17.07.2026).
 constexpr int kDocumentColumnWidth = 36;
+
+// Textfarben fuer das Pruefergebnis (14.08.2026, Nessies Vorgabe): trotz
+// vier Ergebnistypen in SplitPriceJumpDetector::Result gibt es fuers Auge
+// nur zwei Zustaende, siehe IViewShareSplitEdit::PriceJumpTone. Dieselben
+// Hex-Werte wie AppSettings' Erfolg-/Fehler-Logfarben (#388e3c / #d32f2f) —
+// laut deren Kommentar bewusst kontrastreich auf HELLEM wie DUNKLEM
+// Hintergrund (WCAG-Luminanzformel, ca. 4:1 zu Schwarz UND Weiss) statt an
+// ein bestimmtes Theme angepasst. Bewusst eine eigene Konstante statt ueber
+// AppSettings::logColorAt() bezogen: die Logfarben sind ueber
+// LoggerSettingsForm frei aenderbar, dieses Ergebnisfeld hat mit dem
+// Log-Fenster aber nichts zu tun.
+const QColor kPriceJumpAdoptedColor(QStringLiteral("#388e3c"));
+const QColor kPriceJumpManualColor(QStringLiteral("#d32f2f"));
 }
 
 // ── Constructor ───────────────────────────────────────────────────────────────
@@ -58,6 +72,9 @@ ViewShareSplitEdit::ViewShareSplitEdit(const QString& shareGuid, QWidget* parent
 
     connect(m_btnBrowseDoc, &QPushButton::clicked,
             this, &ViewShareSplitEdit::onBrowseDocument);
+
+    connect(m_btnCheckPriceJump, &QPushButton::clicked,
+            m_presenter, &PresenterShareSplitEdit::onCheckPriceJump);
 }
 
 // ── setupUi ───────────────────────────────────────────────────────────────────
@@ -94,9 +111,16 @@ QGroupBox* ViewShareSplitEdit::createSplitDataGroup()
     grid->setHorizontalSpacing(8);
     grid->setContentsMargins(8, 8, 8, 10);
 
-    const auto addRow = [&](int row, const QString& labelText, QWidget* field) {
+    // labelVAlign steuert nur, wo der LABELTEXT innerhalb seiner (die volle
+    // Zeilenhoehe ausfuellenden) Zelle sitzt — Standard vertikal zentriert,
+    // wie bei allen einzeiligen Feldern. Die "Pruefung:"-Zeile braucht
+    // AlignTop, damit Label und Pruefen-Knopf oben an der zweizeiligen
+    // Ergebnisbox ausgerichtet sind statt in deren Mitte zu "schweben"
+    // (14.08.2026, Nessies Vorgabe).
+    const auto addRow = [&](int row, const QString& labelText, QWidget* field,
+                            Qt::Alignment labelVAlign = Qt::AlignVCenter) {
         auto* lbl = new QLabel(labelText);
-        lbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        lbl->setAlignment(Qt::AlignRight | labelVAlign);
         grid->addWidget(lbl,   row, 0);
         grid->addWidget(field, row, 1);
     };
@@ -165,14 +189,80 @@ QGroupBox* ViewShareSplitEdit::createSplitDataGroup()
     addRow(row++, tr("Umrechnung:"), m_factorPreview);
 
     // prices_adjusted
+    //
+    // Tooltip erweitert (13.08.2026, Nessies Vorgabe) um die praktische
+    // Unterscheidung: betrifft nur die Kurshistorie, nicht Käufe/Verkäufe/
+    // Dividenden (die laufen immer über volumeFactor(), unabhängig von
+    // diesem Haken — siehe ShareSplitAdjuster.h). Die zwei Fälle mit
+    // Faustregel "Sprung am Ex-Tag ja/nein" sollen den Nutzer in die Lage
+    // versetzen, das selbst an der eigenen Kurshistorie abzulesen, ohne erst
+    // in ARCHITECTURE.md nachschlagen zu müssen.
     m_pricesAdjusted = new QCheckBox(
         tr("Kurshistorie vor dem Ex-Tag liegt bereits split-bereinigt vor"));
     m_pricesAdjusted->setObjectName(QStringLiteral("pricesAdjusted"));
     m_pricesAdjusted->setToolTip(
-        tr("Anhaken, wenn die Tageswerte vom Anbieter bereits in heutigen "
-           "Stücken geliefert wurden. Dann zeigt die Kurshistorie am Splittag "
-           "keinen Sprung mehr und darf nicht zusätzlich umgerechnet werden."));
+        tr("Betrifft nur die Kurshistorie (Tageswerte), nicht Käufe, Verkäufe "
+           "oder Dividenden.\n\n"
+           "Nicht angehakt (Standard): Der Kurs zeigt am Ex-Tag einen Sprung "
+           "um etwa den Split-Faktor — die App rechnet die Kurshistorie davor "
+           "selbst auf heutige Stücke um.\n\n"
+           "Angehakt: Der Anbieter lieferte die Kurshistorie bereits "
+           "bereinigt, ohne Sprung am Ex-Tag — die App lässt sie unangetastet."));
+    // Feste Höhe wie alle anderen Zeilen (14.08.2026, Nessies Vorgabe): bis
+    // zur Layout-Korrektur teilte sich diese Zeile den Platz mit dem
+    // "Prüfen"-Knopf, dessen kFieldHeight-Höhe die Zeile auf Standardmaß
+    // brachte. Jetzt steckt der Knopf in der "Prüfung:"-Zeile, und die
+    // Checkbox stünde ohne diese Zeile hier alleine mit ihrer schmaleren
+    // Sizehint-Höhe da — sichtbar kleinerer Abstand zur Zeile darüber/
+    // darunter als bei allen anderen Zeilen.
+    m_pricesAdjusted->setFixedHeight(UiConstants::kFieldHeight);
+
     addRow(row++, tr("Kurshistorie:"), m_pricesAdjusted);
+
+    // Pruefergebnis und Pruefen-Knopf (13.08.2026, Nessies Vorgabe; Layout
+    // korrigiert 14.08.2026). Erste Fassung zeigte das Ergebnis in einem
+    // QLabel unter der Checkbox — je nach Textlaenge ein- oder zweizeilig,
+    // wodurch beim Klick auf "Pruefen" (und beim Reset) alles darunter
+    // (Kommentar, Dokument, Buttons) im Dialog nach unten bzw. wieder nach
+    // oben sprang. Jetzt ein read-only Feld mit fester Zweizeilen-Hoehe,
+    // damit sich am Layout nichts mehr verschiebt, egal ob das Ergebnis
+    // ein- oder zweizeilig ist. Der Pruefen-Knopf sitzt seitdem direkt
+    // daneben statt neben der Checkbox.
+    m_priceJumpResult = new QPlainTextEdit;
+    m_priceJumpResult->setObjectName(QStringLiteral("priceJumpResult"));
+    m_priceJumpResult->setReadOnly(true);
+    m_priceJumpResult->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    m_priceJumpResult->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_priceJumpResult->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_priceJumpResult->setPlaceholderText(tr("Noch nicht geprüft …"));
+    // Zweizeilige Hoehe aus der tatsaechlichen Zeilenhoehe der Schrift
+    // ableiten (statt eines festen Pixelwerts) — bleibt so auch bei
+    // groesseren System-Schriftgroessen zweizeilig nutzbar.
+    const QFontMetrics priceJumpFm(m_priceJumpResult->font());
+    m_priceJumpResult->setFixedHeight(priceJumpFm.lineSpacing() * 2 + 14);
+    // Ausgangsfarbe sichern, BEVOR setPriceJumpHint() sie je einfärbt — siehe
+    // resetPriceJumpResult().
+    m_priceJumpDefaultPalette = m_priceJumpResult->palette();
+
+    m_btnCheckPriceJump = new QPushButton(tr("Prüfen"));
+    m_btnCheckPriceJump->setObjectName(QStringLiteral("btnCheckPriceJump"));
+    m_btnCheckPriceJump->setFixedHeight(UiConstants::kButtonHeight);
+    m_btnCheckPriceJump->setToolTip(
+        tr("Vergleicht den letzten verfügbaren Kurs vor mit dem ersten "
+           "verfügbaren Kurs nach dem Ex-Tag. Ist das Ergebnis eindeutig, "
+           "wird der Haken automatisch gesetzt bzw. entfernt."));
+
+    auto* priceJumpRow = new QWidget;
+    auto* priceJumpLayout = new QHBoxLayout(priceJumpRow);
+    priceJumpLayout->setContentsMargins(0, 0, 0, 0);
+    priceJumpLayout->setSpacing(8);
+    priceJumpLayout->addWidget(m_priceJumpResult, 1);
+    // AlignTop statt AlignVCenter (14.08.2026, Nessies Vorgabe): der Knopf
+    // ist niedriger als die zweizeilige Ergebnisbox und soll oben an ihr
+    // anliegen statt mittig zu "schweben".
+    priceJumpLayout->addWidget(m_btnCheckPriceJump, 0, Qt::AlignTop);
+    // Label ebenfalls oben ausgerichtet, aus demselben Grund — siehe addRow().
+    addRow(row++, tr("Prüfung:"), priceJumpRow, Qt::AlignTop);
 
     // Kommentar
     m_comment = new QLineEdit;
@@ -325,6 +415,7 @@ void ViewShareSplitEdit::loadSplit(const ShareSplitObject& split)
     m_ratioNew->setText(formatRatioPart(split.ratioNew()));
     m_ratioOld->setText(formatRatioPart(split.ratioOld()));
     m_pricesAdjusted->setChecked(split.pricesAdjusted());
+    resetPriceJumpResult();
     m_comment->setText(split.comment());
     m_documentPath->setText(split.document());
 }
@@ -335,6 +426,7 @@ void ViewShareSplitEdit::clearForm()
     m_ratioNew->setText(QStringLiteral("1"));
     m_ratioOld->setText(QStringLiteral("1"));
     m_pricesAdjusted->setChecked(false);
+    resetPriceJumpResult();
     m_comment->clear();
     m_documentPath->clear();
 
@@ -349,6 +441,35 @@ void ViewShareSplitEdit::setFactorPreview(const QString& text)
 void ViewShareSplitEdit::setDocumentPath(const QString& path)
 {
     m_documentPath->setText(path);
+}
+
+void ViewShareSplitEdit::setPricesAdjusted(bool value)
+{
+    m_pricesAdjusted->setChecked(value);
+}
+
+void ViewShareSplitEdit::setPriceJumpHint(const QString& text, PriceJumpTone tone)
+{
+    m_priceJumpResult->setPlainText(text);
+
+    // Palette statt Stylesheet — gleiche Konvention wie ViewShareEdit::
+    // m_updateHint und ViewShareDetails::m_updateWarningLine, damit die
+    // Farbe unabhängig vom Systemtheme wirksam bleibt. QPalette::Text statt
+    // ::WindowText, da QPlainTextEdit (anders als QLabel) diese Rolle für
+    // den angezeigten Text verwendet. Ausgangspunkt ist bewusst die
+    // gesicherte m_priceJumpDefaultPalette statt der aktuellen Palette —
+    // sonst würde ein zweiter Prüflauf die Farbe des ersten als Basis nehmen.
+    QPalette pal = m_priceJumpDefaultPalette;
+    pal.setColor(QPalette::Text, tone == PriceJumpTone::Adopted
+                                     ? kPriceJumpAdoptedColor
+                                     : kPriceJumpManualColor);
+    m_priceJumpResult->setPalette(pal);
+}
+
+void ViewShareSplitEdit::resetPriceJumpResult()
+{
+    m_priceJumpResult->clear();
+    m_priceJumpResult->setPalette(m_priceJumpDefaultPalette);
 }
 
 void ViewShareSplitEdit::openPdfPreview(const QString& path)

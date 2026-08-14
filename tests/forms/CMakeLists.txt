@@ -135,6 +135,8 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/utils/ShareSplitAdjuster.cpp
     ../../app/utils/ShareSplitHint.h
     ../../app/utils/ShareSplitHint.cpp
+    ../../app/utils/SplitPriceJumpDetector.h
+    ../../app/utils/SplitPriceJumpDetector.cpp
     ../../app/utils/SaleFifoAllocator.h
     ../../app/utils/SaleFifoAllocator.cpp
     ../../app/utils/PortfolioSeriesCalculator.cpp
@@ -366,6 +368,8 @@ qt_add_executable(tst_shareeditform tst_shareeditform.cpp
     ../../app/utils/ShareSplitAdjuster.cpp
     ../../app/utils/ShareSplitHint.h
     ../../app/utils/ShareSplitHint.cpp
+    ../../app/utils/SplitPriceJumpDetector.h
+    ../../app/utils/SplitPriceJumpDetector.cpp
     ../../app/utils/SaleFifoAllocator.h
     ../../app/utils/SaleFifoAllocator.cpp
     ../../app/utils/PdfTextExtractor.h
@@ -762,6 +766,8 @@ qt_add_executable(tst_sharesplitsform tst_sharesplitsform.cpp
     ../../app/models/BrokerageObject.cpp
     ../../app/models/ShareSplitObject.h
     ../../app/models/ShareSplitObject.cpp
+    ../../app/models/DailyValuesObject.h
+    ../../app/models/DailyValuesObject.cpp
     ../../app/repositories/ShareRepository.cpp
     ../../app/repositories/BuyRepository.cpp
     ../../app/repositories/SaleRepository.cpp
@@ -769,8 +775,12 @@ qt_add_executable(tst_sharesplitsform tst_sharesplitsform.cpp
     ../../app/repositories/BrokerageRepository.cpp
     ../../app/repositories/ShareSplitRepository.h
     ../../app/repositories/ShareSplitRepository.cpp
+    ../../app/repositories/DailyValuesRepository.h
+    ../../app/repositories/DailyValuesRepository.cpp
     ../../app/utils/ShareSplitAdjuster.h
     ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/SplitPriceJumpDetector.h
+    ../../app/utils/SplitPriceJumpDetector.cpp
     ${FORM_TEST_RESOURCES}
 )
 

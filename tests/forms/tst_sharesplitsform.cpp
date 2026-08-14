@@ -13,8 +13,12 @@
 #include <QTemporaryDir>
 #include <QSignalSpy>
 #include <QCheckBox>
+#include <QColor>
 #include <QDateEdit>
+#include <QLabel>
 #include <QLineEdit>
+#include <QPalette>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QTabWidget>
@@ -26,9 +30,11 @@
 #include "../../app/models/ShareObject.h"
 #include "../../app/models/BuyObject.h"
 #include "../../app/models/ShareSplitObject.h"
+#include "../../app/models/DailyValuesObject.h"
 #include "../../app/repositories/ShareRepository.h"
 #include "../../app/repositories/BuyRepository.h"
 #include "../../app/repositories/ShareSplitRepository.h"
+#include "../../app/utils/SplitPriceJumpDetector.h"
 
 #include "../../app/forms/ShareSplitsForm/IViewShareSplitEdit.h"
 #include "../../app/forms/ShareSplitsForm/IModelShareSplitEdit.h"
@@ -98,6 +104,17 @@ public:
     void setDocumentPath(const QString& path) override
         { lastDocumentPath = path; documentPathToReturn = path; }
 
+    bool       pricesAdjustedSetCalled = false;
+    QString    lastPriceJumpHint;
+    bool       priceJumpHintSetCalled  = false;
+    PriceJumpTone lastPriceJumpTone    = PriceJumpTone::Adopted;
+
+    void setPricesAdjusted(bool value) override
+        { pricesAdjustedSetCalled = true; pricesAdjustedToReturn = value; }
+
+    void setPriceJumpHint(const QString& text, PriceJumpTone tone) override
+        { priceJumpHintSetCalled = true; lastPriceJumpHint = text; lastPriceJumpTone = tone; }
+
     void openPdfPreview(const QString& path) override { lastPreviewPath = path; }
     void clearPdfPreview()                   override { clearPdfPreviewCalled = true; }
 
@@ -121,8 +138,9 @@ public:
 class StubModelShareSplitEdit : public IModelShareSplitEdit
 {
 public:
-    QList<ShareSplitObject> splits;
-    QList<OpenBuyLot>       lots;
+    QList<ShareSplitObject>  splits;
+    QList<OpenBuyLot>        lots;
+    QList<DailyValuesObject> dailyValuesToReturn;
     bool addResult    = true;
     bool updateResult = true;
     bool removeResult = true;
@@ -145,6 +163,13 @@ public:
         { lastDocumentExistsExclude = excludeGuid; return documentInUse; }
 
     QList<OpenBuyLot> openLots(const QString&) const override { return lots; }
+
+    mutable QDate lastDailyValuesFrom;
+    mutable QDate lastDailyValuesTo;
+
+    QList<DailyValuesObject> dailyValuesInRange(const QString&, const QDate& from,
+                                                const QDate& to) const override
+        { lastDailyValuesFrom = from; lastDailyValuesTo = to; return dailyValuesToReturn; }
 
     bool addSplit(const ShareSplitObject& split) override
         { addCalled = true; lastSaved = split; return addResult; }
@@ -651,6 +676,166 @@ private slots:
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // onCheckPriceJump (13.08.2026) — "Prüfen"-Knopf, SplitPriceJumpDetector
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_presenter_onCheckPriceJump_missingDate_showsErrorAndDoesNotDetect()
+    {
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn = QDate(2000, 1, 1);   // Sentinel = "nicht gesetzt"
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onCheckPriceJump();
+
+        QVERIFY(!view.lastError.isEmpty());
+        QVERIFY(!view.pricesAdjustedSetCalled);
+        QVERIFY(view.lastPriceJumpHint.isEmpty());
+    }
+
+    void test_presenter_onCheckPriceJump_invalidRatio_showsErrorAndDoesNotDetect()
+    {
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.ratioOldToReturn = 0.0;
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onCheckPriceJump();
+
+        QVERIFY(!view.lastError.isEmpty());
+        QVERIFY(!view.pricesAdjustedSetCalled);
+    }
+
+    void test_presenter_onCheckPriceJump_clearJump_setsCheckedAndHint()
+    {
+        // 20:1-Split, Kurs vor dem Ex-Tag ~1000, danach ~50 — eindeutiger Sprung.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 20.0;
+        view.ratioOldToReturn = 1.0;
+        model.dailyValuesToReturn << DailyValuesObject(kShareGuid, QDate(2022, 7, 18),
+                                                        1003.0, 1003.0, 1003.0, 1003.0, 0.0)
+                                   << DailyValuesObject(kShareGuid, QDate(2022, 7, 19),
+                                                        50.20, 50.20, 50.20, 50.20, 0.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onCheckPriceJump();
+
+        QVERIFY(view.pricesAdjustedSetCalled);
+        QVERIFY(!view.pricesAdjustedToReturn);   // Sprung erkannt -> Haken AUS
+        QVERIFY(!view.lastPriceJumpHint.isEmpty());
+        // Eindeutiges Ergebnis -> "übernommen", grün eingefärbt in der View.
+        QCOMPARE(view.lastPriceJumpTone, IViewShareSplitEdit::PriceJumpTone::Adopted);
+        QVERIFY(view.lastError.isEmpty());
+    }
+
+    void test_presenter_onCheckPriceJump_noJump_setsCheckedTrueAndHint()
+    {
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 20.0;
+        view.ratioOldToReturn = 1.0;
+        model.dailyValuesToReturn << DailyValuesObject(kShareGuid, QDate(2022, 7, 18),
+                                                        50.20, 50.20, 50.20, 50.20, 0.0)
+                                   << DailyValuesObject(kShareGuid, QDate(2022, 7, 19),
+                                                        50.60, 50.60, 50.60, 50.60, 0.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onCheckPriceJump();
+
+        QVERIFY(view.pricesAdjustedSetCalled);
+        QVERIFY(view.pricesAdjustedToReturn);    // kein Sprung -> Haken AN
+        QVERIFY(!view.lastPriceJumpHint.isEmpty());
+        QCOMPARE(view.lastPriceJumpTone, IViewShareSplitEdit::PriceJumpTone::Adopted);
+    }
+
+    void test_presenter_onCheckPriceJump_ambiguous_doesNotTouchCheckbox()
+    {
+        // Verhältnis liegt zwischen den Toleranzbändern — der Haken bleibt
+        // unangetastet, nur der Hinweistext informiert über die manuelle
+        // Entscheidung (Nessies Vorgabe 13.08.2026).
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 20.0;
+        view.ratioOldToReturn = 1.0;
+        model.dailyValuesToReturn << DailyValuesObject(kShareGuid, QDate(2022, 7, 18),
+                                                        100.0, 100.0, 100.0, 100.0, 0.0)
+                                   << DailyValuesObject(kShareGuid, QDate(2022, 7, 19),
+                                                        20.0, 20.0, 20.0, 20.0, 0.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onCheckPriceJump();
+
+        QVERIFY(!view.pricesAdjustedSetCalled);
+        QVERIFY(!view.lastPriceJumpHint.isEmpty());
+        // Uneindeutig -> "nicht übernommen", rot eingefärbt in der View.
+        QCOMPARE(view.lastPriceJumpTone, IViewShareSplitEdit::PriceJumpTone::ManualDecisionNeeded);
+        QVERIFY(view.lastError.isEmpty());
+    }
+
+    void test_presenter_onCheckPriceJump_insufficientData_showsHintNotError()
+    {
+        // Kein Fehler (showError), sondern ein Hinweistext im Ergebnislabel —
+        // fehlende Kursdaten sind kein Bedienfehler des Nutzers.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 20.0;
+        view.ratioOldToReturn = 1.0;
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onCheckPriceJump();
+
+        QVERIFY(!view.pricesAdjustedSetCalled);
+        QVERIFY(!view.lastPriceJumpHint.isEmpty());
+        QCOMPARE(view.lastPriceJumpTone, IViewShareSplitEdit::PriceJumpTone::ManualDecisionNeeded);
+        QVERIFY(view.lastError.isEmpty());
+    }
+
+    void test_presenter_onCheckPriceJump_passesLookbackWindowToModel()
+    {
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn = QDate(2022, 7, 18);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onCheckPriceJump();
+
+        QCOMPARE(model.lastDailyValuesFrom,
+                 QDate(2022, 7, 18).addDays(-SplitPriceJumpDetector::kDefaultMaxLookbackDays));
+        QCOMPARE(model.lastDailyValuesTo,
+                 QDate(2022, 7, 18).addDays(SplitPriceJumpDetector::kDefaultMaxLookbackDays));
+    }
+
+    void test_presenter_onCheckPriceJump_excludesOwnSplitAsNeighbor()
+    {
+        // Der gerade bearbeitete Split selbst darf das Suchfenster nicht
+        // eingrenzen, sonst würde es beim Editieren auf das eigene Datum
+        // kollabieren.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        model.splits << makeSplit(QStringLiteral("s1"), QDate(2022, 7, 18), 20.0, 1.0);
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 20.0;
+        view.ratioOldToReturn = 1.0;
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onRowSelected(QStringLiteral("s1"));
+        p.onCheckPriceJump();
+
+        // Ohne Ausnahme wuerde previousSplitDate/nextSplitDate leer bleiben —
+        // hier reicht der Nachweis, dass das volle Standardfenster verwendet
+        // wurde (kein Kollaps auf den 18.07. selbst).
+        QCOMPARE(model.lastDailyValuesFrom,
+                 QDate(2022, 7, 18).addDays(-SplitPriceJumpDetector::kDefaultMaxLookbackDays));
+        QCOMPARE(model.lastDailyValuesTo,
+                 QDate(2022, 7, 18).addDays(SplitPriceJumpDetector::kDefaultMaxLookbackDays));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // onRemove — Rückfrage und Löschfolgen
     // ─────────────────────────────────────────────────────────────────────
 
@@ -1064,6 +1249,243 @@ private slots:
         QVERIFY(dlg.findChild<QCheckBox*>(QStringLiteral("pricesAdjusted")));
         QVERIFY(dlg.findChild<QLineEdit*>(QStringLiteral("comment")));
         QVERIFY(dlg.findChild<QTableWidget*>(QStringLiteral("splitsTable")));
+    }
+
+    void test_view_hasPriceJumpCheckButtonAndResultField()
+    {
+        // 13.08.2026: "Prüfen"-Knopf und Ergebnistext des
+        // SplitPriceJumpDetector-Feature.
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        QVERIFY(dlg.findChild<QPushButton*>(QStringLiteral("btnCheckPriceJump")));
+        QVERIFY(dlg.findChild<QPlainTextEdit*>(QStringLiteral("priceJumpResult")));
+    }
+
+    void test_view_pricesAdjustedCheckbox_isFindable()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        QVERIFY(dlg.findChild<QCheckBox*>(QStringLiteral("pricesAdjusted")));
+    }
+
+    // Regressionstest fuer 14.08.2026: seit der Layout-Korrektur (Knopf zog
+    // in die eigene "Prüfung:"-Zeile um) stand die Checkbox allein in ihrer
+    // Zeile, ohne dass mehr etwas ihre Zeilenhoehe auf das uebliche Mass
+    // brachte — sichtbar kleinerer Abstand zu den Nachbarzeilen als
+    // ueberall sonst im Dialog. 24px = UiConstants::kFieldHeight, dieselbe
+    // feste Hoehe wie bei allen anderen einzeiligen Feldern dieser Maske.
+    void test_view_pricesAdjustedCheckbox_hasSameRowHeightAsOtherFields()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        auto* checkbox = dlg.findChild<QCheckBox*>(QStringLiteral("pricesAdjusted"));
+        if (!checkbox) QFAIL("pricesAdjusted not found");
+        QCOMPARE(checkbox->minimumHeight(), checkbox->maximumHeight());
+        QCOMPARE(checkbox->minimumHeight(), 24);
+    }
+
+    void test_view_setPriceJumpHint_setsResultFieldText()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        dlg.setPriceJumpHint(QStringLiteral("Kein Kurssprung erkannt."),
+                             IViewShareSplitEdit::PriceJumpTone::Adopted);
+
+        auto* field = dlg.findChild<QPlainTextEdit*>(QStringLiteral("priceJumpResult"));
+        if (!field) QFAIL("priceJumpResult not found");
+        QCOMPARE(field->toPlainText(), QStringLiteral("Kein Kurssprung erkannt."));
+    }
+
+    // 14.08.2026 (Nessies Vorgabe): trotz vier Ergebnistypen in
+    // SplitPriceJumpDetector::Result gibt es fuers Auge nur zwei Zustaende —
+    // "übernommen" (Haken automatisch gesetzt/entfernt, grün) oder "nicht
+    // übernommen" (Ergebnis uneindeutig oder Daten fehlen, rot). Dieselben
+    // Hex-Werte wie AppSettings' Erfolg-/Fehler-Logfarben, siehe
+    // ViewShareSplitEdit.cpp.
+    void test_view_setPriceJumpHint_adoptedTone_usesGreenText()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        dlg.setPriceJumpHint(QStringLiteral("Kein Kurssprung erkannt."),
+                             IViewShareSplitEdit::PriceJumpTone::Adopted);
+
+        auto* field = dlg.findChild<QPlainTextEdit*>(QStringLiteral("priceJumpResult"));
+        if (!field) QFAIL("priceJumpResult not found");
+        QCOMPARE(field->palette().color(QPalette::Text), QColor(QStringLiteral("#388e3c")));
+    }
+
+    void test_view_setPriceJumpHint_manualDecisionTone_usesRedText()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        dlg.setPriceJumpHint(QStringLiteral("Ergebnis nicht eindeutig."),
+                             IViewShareSplitEdit::PriceJumpTone::ManualDecisionNeeded);
+
+        auto* field = dlg.findChild<QPlainTextEdit*>(QStringLiteral("priceJumpResult"));
+        if (!field) QFAIL("priceJumpResult not found");
+        QCOMPARE(field->palette().color(QPalette::Text), QColor(QStringLiteral("#d32f2f")));
+    }
+
+    void test_view_setPricesAdjusted_checksCheckbox()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        dlg.setPricesAdjusted(true);
+
+        QVERIFY(dlg.pricesAdjusted());
+    }
+
+    void test_view_clearForm_clearsPriceJumpResult()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        dlg.setPriceJumpHint(QStringLiteral("Kein Kurssprung erkannt."),
+                             IViewShareSplitEdit::PriceJumpTone::Adopted);
+        dlg.clearForm();
+
+        auto* field = dlg.findChild<QPlainTextEdit*>(QStringLiteral("priceJumpResult"));
+        if (!field) QFAIL("priceJumpResult not found");
+        QVERIFY(field->toPlainText().isEmpty());
+    }
+
+    // Regressionstest fuer 14.08.2026: setPriceJumpHint() faerbt den Text
+    // ein — ein reines clear() liesse die Farbe stehen, sodass der
+    // Platzhaltertext "Noch nicht geprüft …" nach einem Reset faelschlich
+    // rot oder gruen erschiene.
+    void test_view_clearForm_resetsPriceJumpResultColor()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        auto* field = dlg.findChild<QPlainTextEdit*>(QStringLiteral("priceJumpResult"));
+        if (!field) QFAIL("priceJumpResult not found");
+        const QColor defaultColor = field->palette().color(QPalette::Text);
+
+        dlg.setPriceJumpHint(QStringLiteral("Ergebnis nicht eindeutig."),
+                             IViewShareSplitEdit::PriceJumpTone::ManualDecisionNeeded);
+        QVERIFY(field->palette().color(QPalette::Text) != defaultColor);
+
+        dlg.clearForm();
+
+        QCOMPARE(field->palette().color(QPalette::Text), defaultColor);
+    }
+
+    void test_view_loadSplit_clearsPriceJumpResult()
+    {
+        // Der Ergebnistext einer vorherigen Pruefung darf beim Wechsel auf
+        // einen anderen Split nicht stehen bleiben.
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        dlg.setPriceJumpHint(QStringLiteral("Kein Kurssprung erkannt."),
+                             IViewShareSplitEdit::PriceJumpTone::Adopted);
+        dlg.loadSplit(ShareSplitObject(QStringLiteral("s1"), guid,
+                                       QDate(2022, 7, 18), 20.0, 1.0, true,
+                                       QStringLiteral("Alphabet")));
+
+        auto* field = dlg.findChild<QPlainTextEdit*>(QStringLiteral("priceJumpResult"));
+        if (!field) QFAIL("priceJumpResult not found");
+        QVERIFY(field->toPlainText().isEmpty());
+    }
+
+    void test_view_loadSplit_resetsPriceJumpResultColor()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        auto* field = dlg.findChild<QPlainTextEdit*>(QStringLiteral("priceJumpResult"));
+        if (!field) QFAIL("priceJumpResult not found");
+        const QColor defaultColor = field->palette().color(QPalette::Text);
+
+        dlg.setPriceJumpHint(QStringLiteral("Kurssprung erkannt."),
+                             IViewShareSplitEdit::PriceJumpTone::Adopted);
+        dlg.loadSplit(ShareSplitObject(QStringLiteral("s1"), guid,
+                                       QDate(2022, 7, 18), 20.0, 1.0, true,
+                                       QStringLiteral("Alphabet")));
+
+        QCOMPARE(field->palette().color(QPalette::Text), defaultColor);
+    }
+
+    // Regressionstest fuer 14.08.2026: das Ergebnisfeld war zunaechst ein
+    // QLabel mit wordWrap, dessen Hoehe je nach Textlaenge ein- oder
+    // zweizeilig ausfiel — dadurch sprang beim Pruefen bzw. Reset alles
+    // darunter im Dialog nach unten bzw. wieder nach oben. Jetzt hat das
+    // Feld eine feste Zweizeilen-Hoehe (min == max, per setFixedHeight()),
+    // unabhaengig davon, ob der Text leer, kurz oder lang ist. Geprueft wird
+    // absichtlich min-/maxHeight statt height(), da Letzteres ohne show()
+    // vom Zeitpunkt der Layout-Aktivierung abhinge und der Test sonst auch
+    // bei einer erneut textabhaengigen Hoehe zufaellig gruen sein koennte.
+    void test_view_priceJumpResult_hasFixedHeightRegardlessOfTextLength()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        auto* field = dlg.findChild<QPlainTextEdit*>(QStringLiteral("priceJumpResult"));
+        if (!field) QFAIL("priceJumpResult not found");
+        QCOMPARE(field->minimumHeight(), field->maximumHeight());
+        const int fixedHeight = field->minimumHeight();
+        QVERIFY2(fixedHeight > 0, "priceJumpResult hat keine feste Hoehe gesetzt");
+
+        dlg.setPriceJumpHint(QStringLiteral(
+            "Kurssprung erkannt (18.07.2022: 1.003,00 → 19.07.2022: 50,20, "
+            "Faktor ≈ 20,0) — Kurshistorie scheint nicht bereinigt. "
+            "Haken entfernt."),
+            IViewShareSplitEdit::PriceJumpTone::Adopted);
+
+        QCOMPARE(field->minimumHeight(), fixedHeight);
+        QCOMPARE(field->maximumHeight(), fixedHeight);
+    }
+
+    // Regressionstest fuer 14.08.2026: Label und "Prüfen"-Knopf standen
+    // vertikal zentriert neben der zweizeiligen Ergebnisbox, wirkten dadurch
+    // gegenüber deren Oberkante "abgesackt". Beide sollen oben mit der Box
+    // abschliessen.
+    void test_view_priceJumpLabel_isTopAligned()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        QLabel* priceJumpLabel = nullptr;
+        for (auto* lbl : dlg.findChildren<QLabel*>())
+            if (lbl->text() == QStringLiteral("Prüfung:")) priceJumpLabel = lbl;
+        if (!priceJumpLabel) QFAIL("Prüfung-Label nicht gefunden");
+        QVERIFY(priceJumpLabel->alignment() & Qt::AlignTop);
+    }
+
+    void test_view_priceJumpButton_isTopAlignedInRow()
+    {
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        auto* btn = dlg.findChild<QPushButton*>(QStringLiteral("btnCheckPriceJump"));
+        if (!btn) QFAIL("btnCheckPriceJump not found");
+        auto* rowLayout = btn->parentWidget() ? btn->parentWidget()->layout() : nullptr;
+        if (!rowLayout) QFAIL("Layout des Prüfen-Knopfs nicht gefunden");
+        const int idx = rowLayout->indexOf(btn);
+        QVERIFY(idx >= 0);
+        QVERIFY(rowLayout->itemAt(idx)->alignment() & Qt::AlignTop);
     }
 
     void test_view_hasNoOverviewTabWidget()

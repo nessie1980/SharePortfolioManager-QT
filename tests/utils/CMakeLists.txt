@@ -197,3 +197,32 @@ target_link_libraries(tst_sharesplithint
 )
 
 add_test(NAME tst_sharesplithint COMMAND tst_sharesplithint)
+
+# ── SplitPriceJumpDetector tests ─────────────────────────────────────────────────
+# Heuristik fuer den "Pruefen"-Knopf im Split-Dialog (13.08.2026, siehe
+# ARCHITECTURE.md, "Split-Verhaeltnis: Notation der Bankmitteilungen"):
+# vergleicht die gespeicherte Kurshistorie um den Ex-Tag eines Splits mit dem
+# erwarteten Umrechnungsfaktor und schlaegt vor, ob
+# ShareSplitObject::pricesAdjusted() gesetzt werden sollte.
+#
+# Zustandslos und datenbankfrei, gleiche Begruendung wie bei
+# tst_sharesplitadjuster oben. DailyValuesObject.cpp wird nur wegen dessen
+# Konstruktor gebraucht (reines POCO, keine QtSql-Includes) — anders als
+# tst_sharecalculator/tst_portfolioseriescalculator braucht dieses Ziel daher
+# weder Qt6::Sql noch die Database-Bibliothek.
+qt_add_executable(tst_splitpricejumpdetector tst_splitpricejumpdetector.cpp
+    ../../app/models/DailyValuesObject.cpp
+    ../../app/utils/SplitPriceJumpDetector.cpp
+)
+
+target_include_directories(tst_splitpricejumpdetector
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_splitpricejumpdetector PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_splitpricejumpdetector
+    PRIVATE Qt6::Test
+)
+
+add_test(NAME tst_splitpricejumpdetector COMMAND tst_splitpricejumpdetector)

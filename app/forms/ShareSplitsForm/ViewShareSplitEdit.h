@@ -9,6 +9,8 @@
 #include <QLineEdit>
 #include <QCheckBox>
 #include <QLabel>
+#include <QPalette>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QGroupBox>
 #include <QGridLayout>
@@ -28,6 +30,7 @@ class DocumentPreviewPanel;
  * |  Verhaeltnis:   [neu] : [alt]            | |                         |
  * |  Umrechnung:    [read-only]              | |                         |
  * |  Kurshistorie:  [x] bereits bereinigt    | |      (PDF-Anzeige)      |
+ * |  Pruefung:      [ro, 2-zeilig] [Pruefen] | |                         |
  * |  Kommentar:     [edit]                   | |                         |
  * |  Dokument:      [edit]              [...]| |                         |
  * +------------------------------------------+ |                         |
@@ -70,6 +73,8 @@ public:
     QString documentPath()                                   const override;
     void setFactorPreview(const QString& text)                      override;
     void setDocumentPath(const QString& path)                       override;
+    void setPricesAdjusted(bool value)                              override;
+    void setPriceJumpHint(const QString& text, PriceJumpTone tone)  override;
     void openPdfPreview(const QString& path)                        override;
     void clearPdfPreview()                                          override;
     void populateOverview(const QList<ShareSplitObject>& splits)    override;
@@ -93,6 +98,17 @@ private:
     QGroupBox* createOverviewGroup();
     QWidget*   createPreviewPanel();
 
+    /**
+     * @brief Leert m_priceJumpResult und setzt seine Textfarbe auf den
+     * ungefärbten Ausgangszustand zurück.
+     *
+     * Ergänzt 14.08.2026: setPriceJumpHint() färbt den Text grün/rot ein
+     * (siehe PriceJumpTone) — ein einfaches clear() allein würde diese Farbe
+     * stehen lassen, sodass der Platzhaltertext "Noch nicht geprüft …" nach
+     * einem Reset fälschlich rot oder grün erschiene.
+     */
+    void resetPriceJumpResult();
+
     static double  parseDouble(const QString& text);
     static QString formatRatioPart(double value);
 
@@ -103,6 +119,9 @@ private:
     QLineEdit* m_ratioOld       = nullptr;
     QLineEdit* m_factorPreview  = nullptr;  ///< read-only; Notationshinweis als Tooltip
     QCheckBox* m_pricesAdjusted = nullptr;
+    QPushButton*    m_btnCheckPriceJump = nullptr;  ///< löst SplitPriceJumpDetector aus
+    QPlainTextEdit* m_priceJumpResult   = nullptr;  ///< read-only, feste Zweizeilen-Höhe
+    QPalette        m_priceJumpDefaultPalette;      ///< Ausgangsfarbe vor setPriceJumpHint()
     QLineEdit* m_comment        = nullptr;
 
     // ── Dokument ──────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "../../models/ShareSplitObject.h"
+#include "../../models/DailyValuesObject.h"
 
 #include <QDate>
 #include <QList>
@@ -73,6 +74,22 @@ public:
      */
     virtual bool documentExists(const QString& document,
                                 const QString& excludeGuid = QString()) const = 0;
+
+    /**
+     * @brief Kurshistorie der Aktie in einem Datumsbereich (inklusive).
+     *
+     * Ergänzt 13.08.2026 für `SplitPriceJumpDetector` (Prüfen-Knopf beim
+     * "Kurshistorie bereits bereinigt"-Haken, siehe ARCHITECTURE.md,
+     * "Split-Verhaeltnis: Notation der Bankmitteilungen"). Reine
+     * Weiterleitung an `DailyValuesRepository::findByShareAndDateRange()`.
+     *
+     * @param shareGuid  GUID der Aktie.
+     * @param from       Startdatum (inklusive).
+     * @param to         Enddatum (inklusive).
+     */
+    virtual QList<DailyValuesObject> dailyValuesInRange(const QString& shareGuid,
+                                                        const QDate& from,
+                                                        const QDate& to) const = 0;
 
     // ── Create / Update / Delete ──────────────────────────────────────────
 

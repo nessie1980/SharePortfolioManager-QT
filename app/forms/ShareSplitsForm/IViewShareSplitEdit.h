@@ -49,6 +49,42 @@ public:
     /// Schreibt den Dokumentpfad ins Eingabefeld.
     virtual void setDocumentPath(const QString& path) = 0;
 
+    /**
+     * @brief Setzt den "Kurshistorie bereits bereinigt"-Haken.
+     *
+     * Ergänzt 13.08.2026 für den "Prüfen"-Knopf (`SplitPriceJumpDetector`) —
+     * bislang kam der Haken nur über loadSplit() aus gespeicherten Daten,
+     * jetzt kann ihn der Presenter auch nach einer erkannten Prüfung setzen.
+     */
+    virtual void setPricesAdjusted(bool value) = 0;
+
+    /**
+     * @brief Einordnung des Prüfergebnisses für die Einfärbung von
+     * setPriceJumpHint().
+     *
+     * Ergänzt 14.08.2026 (Nessies Vorgabe): `SplitPriceJumpDetector::Result`
+     * kennt vier Ausprägungen, fürs Auge zählen aber nur zwei — entweder
+     * wurde der Haken automatisch gesetzt/entfernt ("übernommen"), oder er
+     * blieb unverändert, weil das Ergebnis uneindeutig war oder Daten
+     * fehlten ("nicht übernommen", manuelle Entscheidung nötig).
+     */
+    enum class PriceJumpTone
+    {
+        Adopted,              ///< Ergebnis eindeutig — Haken automatisch gesetzt/entfernt.
+        ManualDecisionNeeded, ///< Uneindeutig oder zu wenig Daten — Haken unverändert.
+    };
+
+    /**
+     * @brief Zeigt das Ergebnis der Split-Kurssprung-Prüfung als Text an.
+     *
+     * Ergänzt 13.08.2026. Erscheint unter dem "Kurshistorie"-Haken, egal ob
+     * die Prüfung eindeutig war oder nicht — bei Uneindeutigkeit macht der
+     * Text das explizit und der Haken bleibt unverändert.
+     * @param text  Anzuzeigender Ergebnistext.
+     * @param tone  Steuert die Einfärbung des Textes, siehe PriceJumpTone.
+     */
+    virtual void setPriceJumpHint(const QString& text, PriceJumpTone tone) = 0;
+
     /// Lädt das Dokument in die Vorschau; leerer Pfad wirkt wie clearPdfPreview().
     virtual void openPdfPreview(const QString& path) = 0;
 

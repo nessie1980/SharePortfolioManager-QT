@@ -69,6 +69,8 @@ set(APP_SOURCES
     utils/SaleFifoAllocator.cpp
     utils/ShareSplitHint.h
     utils/ShareSplitHint.cpp
+    utils/SplitPriceJumpDetector.h
+    utils/SplitPriceJumpDetector.cpp
     utils/PdfTextExtractor.h
     utils/PdfTextExtractor.cpp
     utils/DocumentClassifier.h

@@ -2,6 +2,7 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterShareSplitEdit.h"
 #include "../../utils/ShareSplitAdjuster.h"
+#include "../../utils/SplitPriceJumpDetector.h"
 
 #include <QLocale>
 #include <QUuid>
@@ -195,6 +196,92 @@ void PresenterShareSplitEdit::onDocumentPathEdited()
     if (m_model->documentExists(document, m_currentGuid)) {
         m_view->showError(QObject::tr(
             "Dieses Dokument ist bereits einem anderen Split zugeordnet."));
+    }
+}
+
+// ── onCheckPriceJump ──────────────────────────────────────────────────────────
+
+void PresenterShareSplitEdit::onCheckPriceJump()
+{
+    const QDate date = m_view->splitDate();
+    if (!date.isValid() || date <= kDateSentinel) {
+        m_view->showError(QObject::tr("Bitte zuerst den Ex-Tag angeben."));
+        return;
+    }
+
+    const double newSide = m_view->ratioNew();
+    const double oldSide = m_view->ratioOld();
+    if (newSide <= 0.0 || oldSide <= 0.0) {
+        m_view->showError(QObject::tr("Bitte zuerst ein gültiges Verhältnis angeben."));
+        return;
+    }
+    const double factor = newSide / oldSide;
+
+    // Nachbar-Splits derselben Aktie begrenzen das Suchfenster — der gerade
+    // bearbeitete Split selbst zählt dabei nicht als eigener Nachbar (sonst
+    // würde das Fenster beim Editieren auf das eigene, unter Umständen noch
+    // ungespeicherte Datum kollabieren).
+    QDate previousSplitDate;
+    QDate nextSplitDate;
+    for (const ShareSplitObject& s : std::as_const(m_splits)) {
+        if (s.guid() == m_currentGuid)
+            continue;
+        if (s.date() < date && (!previousSplitDate.isValid() || s.date() > previousSplitDate))
+            previousSplitDate = s.date();
+        if (s.date() > date && (!nextSplitDate.isValid() || s.date() < nextSplitDate))
+            nextSplitDate = s.date();
+    }
+
+    const QDate rangeStart = date.addDays(-SplitPriceJumpDetector::kDefaultMaxLookbackDays);
+    const QDate rangeEnd   = date.addDays( SplitPriceJumpDetector::kDefaultMaxLookbackDays);
+    const QList<DailyValuesObject> dailyValues =
+        m_model->dailyValuesInRange(m_shareGuid, rangeStart, rangeEnd);
+
+    const SplitPriceJumpDetector::Outcome outcome = SplitPriceJumpDetector::detect(
+        dailyValues, date, factor, previousSplitDate, nextSplitDate);
+
+    const QLocale loc;
+    switch (outcome.result) {
+    case SplitPriceJumpDetector::Result::Adjusted:
+        m_view->setPricesAdjusted(true);
+        m_view->setPriceJumpHint(QObject::tr(
+            "Kein Kurssprung erkannt (%1: %2 → %3: %4) — Kurshistorie scheint "
+            "bereits bereinigt. Haken gesetzt.")
+                .arg(loc.toString(outcome.dateBefore, QLocale::ShortFormat),
+                     loc.toString(outcome.priceBefore, 'f', 2),
+                     loc.toString(outcome.dateAfter, QLocale::ShortFormat),
+                     loc.toString(outcome.priceAfter, 'f', 2)),
+            IViewShareSplitEdit::PriceJumpTone::Adopted);
+        break;
+    case SplitPriceJumpDetector::Result::NotAdjusted:
+        m_view->setPricesAdjusted(false);
+        m_view->setPriceJumpHint(QObject::tr(
+            "Kurssprung erkannt (%1: %2 → %3: %4, Faktor ≈ %5) — Kurshistorie "
+            "scheint nicht bereinigt. Haken entfernt.")
+                .arg(loc.toString(outcome.dateBefore, QLocale::ShortFormat),
+                     loc.toString(outcome.priceBefore, 'f', 2),
+                     loc.toString(outcome.dateAfter, QLocale::ShortFormat),
+                     loc.toString(outcome.priceAfter, 'f', 2),
+                     loc.toString(outcome.observedRatio, 'f', 1)),
+            IViewShareSplitEdit::PriceJumpTone::Adopted);
+        break;
+    case SplitPriceJumpDetector::Result::Ambiguous:
+        m_view->setPriceJumpHint(QObject::tr(
+            "Ergebnis nicht eindeutig (%1: %2 → %3: %4) — bitte manuell "
+            "entscheiden, ob die Kurshistorie bereits bereinigt ist.")
+                .arg(loc.toString(outcome.dateBefore, QLocale::ShortFormat),
+                     loc.toString(outcome.priceBefore, 'f', 2),
+                     loc.toString(outcome.dateAfter, QLocale::ShortFormat),
+                     loc.toString(outcome.priceAfter, 'f', 2)),
+            IViewShareSplitEdit::PriceJumpTone::ManualDecisionNeeded);
+        break;
+    case SplitPriceJumpDetector::Result::InsufficientData:
+        m_view->setPriceJumpHint(QObject::tr(
+            "Nicht genug Kursdaten im Zeitraum um den Ex-Tag vorhanden — "
+            "bitte manuell entscheiden, ob die Kurshistorie bereits bereinigt "
+            "ist."),
+            IViewShareSplitEdit::PriceJumpTone::ManualDecisionNeeded);
+        break;
     }
 }
 

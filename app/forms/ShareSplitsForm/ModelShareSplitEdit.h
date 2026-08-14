@@ -5,6 +5,7 @@
 #include "IModelShareSplitEdit.h"
 #include "../../repositories/ShareSplitRepository.h"
 #include "../../repositories/BuyRepository.h"
+#include "../../repositories/DailyValuesRepository.h"
 
 /**
  * @brief Konkretes Model für den Dialog "Aktiensplits".
@@ -28,6 +29,9 @@ public:
     QList<OpenBuyLot> openLots(const QString& shareGuid) const override;
     bool documentExists(const QString& document,
                         const QString& excludeGuid = QString()) const override;
+    QList<DailyValuesObject> dailyValuesInRange(const QString& shareGuid,
+                                                const QDate& from,
+                                                const QDate& to) const override;
 
     bool addSplit(const ShareSplitObject& split)    override;
     bool updateSplit(const ShareSplitObject& split) override;
@@ -36,7 +40,8 @@ public:
     QString lastError() const override { return m_lastError; }
 
 private:
-    ShareSplitRepository m_splitRepo;
-    BuyRepository        m_buyRepo;
-    mutable QString      m_lastError;
+    ShareSplitRepository  m_splitRepo;
+    BuyRepository         m_buyRepo;
+    DailyValuesRepository m_dailyValuesRepo;
+    mutable QString       m_lastError;
 };

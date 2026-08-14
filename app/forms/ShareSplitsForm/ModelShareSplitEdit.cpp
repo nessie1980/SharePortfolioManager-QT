@@ -67,6 +67,13 @@ bool ModelShareSplitEdit::documentExists(const QString& document,
     return false;
 }
 
+QList<DailyValuesObject> ModelShareSplitEdit::dailyValuesInRange(const QString& shareGuid,
+                                                                  const QDate& from,
+                                                                  const QDate& to) const
+{
+    return m_dailyValuesRepo.findByShareAndDateRange(shareGuid, from, to);
+}
+
 // ── Create / Update / Delete ──────────────────────────────────────────────────
 
 bool ModelShareSplitEdit::addSplit(const ShareSplitObject& split)

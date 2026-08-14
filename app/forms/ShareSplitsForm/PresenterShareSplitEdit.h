@@ -71,6 +71,15 @@ public slots:
     /** Warnt, wenn der eingetragene Pfad schon einem anderen Split gehört. */
     void onDocumentPathEdited();
 
+    /**
+     * @brief Prüft anhand der Kurshistorie, ob sie um den eingetragenen
+     * Ex-Tag bereits split-bereinigt vorliegt (SplitPriceJumpDetector), und
+     * setzt den "Kurshistorie"-Haken bei eindeutigem Ergebnis entsprechend.
+     * Bei uneindeutigem Ergebnis bleibt der Haken unverändert, ein Hinweis
+     * erklärt warum.
+     */
+    void onCheckPriceJump();
+
 signals:
     /**
      * @brief Wird nach jeder erfolgreichen Änderung an `share_splits` gesendet.
