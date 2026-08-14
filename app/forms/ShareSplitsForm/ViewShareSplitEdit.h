@@ -27,7 +27,7 @@ class DocumentPreviewPanel;
  * @code{.unparsed}
  * +-- Split hinzufuegen ---------------------+ +-- Dokumenten-Vorschau --+
  * |  Ex-Tag:        [date]                   | |                         |
- * |  Verhaeltnis:   [neu] : [alt]            | |                         |
+ * |  Verhaeltnis:   [neu] : [alt] [Hinweis]  | |                         |
  * |  Umrechnung:    [read-only]              | |                         |
  * |  Kurshistorie:  [x] bereits bereinigt    | |      (PDF-Anzeige)      |
  * |  Pruefung:      [ro, 2-zeilig] [Pruefen] | |                         |
@@ -90,6 +90,9 @@ private slots:
     /** Öffnet den Dateidialog für den Beleg und prüft den Dokument-Root. */
     void onBrowseDocument();
 
+    /** Zeigt den Hinweis-Dialog zu Bruchstücken bei Reverse-Splits. */
+    void onShowReverseSplitHint();
+
 private:
     void       setupUi();
     QGroupBox* createSplitDataGroup();
@@ -109,6 +112,17 @@ private:
      */
     void resetPriceJumpResult();
 
+    /**
+     * @brief Baut den Text für den "Hinweis Reverse-Split"-Dialog.
+     *
+     * In sich geschlossen (14.08.2026, Nessies Vorgabe): keine Verweise auf
+     * ARCHITECTURE.md oder interne Klassennamen. Nutzt das aktuell
+     * eingetragene Verhältnis für eine konkrete Beispielrechnung, wenn es
+     * ein echtes Reverse-Split-Verhältnis ist (neu < alt, beide > 0);
+     * andernfalls ein festes 1:10-Beispiel.
+     */
+    QString reverseSplitHintMessage() const;
+
     static double  parseDouble(const QString& text);
     static QString formatRatioPart(double value);
 
@@ -117,6 +131,7 @@ private:
     QDateEdit* m_date           = nullptr;
     QLineEdit* m_ratioNew       = nullptr;
     QLineEdit* m_ratioOld       = nullptr;
+    QPushButton* m_btnReverseSplitHint = nullptr;  ///< öffnet Hinweis-Dialog zu Bruchstücken bei Reverse-Splits
     QLineEdit* m_factorPreview  = nullptr;  ///< read-only; Notationshinweis als Tooltip
     QCheckBox* m_pricesAdjusted = nullptr;
     QPushButton*    m_btnCheckPriceJump = nullptr;  ///< löst SplitPriceJumpDetector aus

@@ -43,6 +43,7 @@ ctest --output-on-failure
 ./bin/tst_sharesplitadjuster
 ./bin/tst_salefifoallocator
 ./bin/tst_sharesplithint
+./bin/tst_splitpricejumpdetector
 ./bin/tst_shareupdaterules
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
@@ -68,7 +69,9 @@ Projekts; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
 (07.08.2026, Phase 1 der Aktiensplit-Behandlung) waren es 33, seit
 `tst_salefifoallocator` (07.08.2026, Phase 2c) waren es 34, seit
 `tst_sharesplitsform` (08.08.2026, Phase 3a) waren es 35, seit
-`tst_sharesplithint` (09.08.2026, Phase 3b) sind es 36. Anlass für den
+`tst_sharesplithint` (09.08.2026, Phase 3b) waren es 36, seit
+`tst_splitpricejumpdetector` (13.08.2026, "Prüfen"-Knopf im Split-Dialog)
+sind es 37. Anlass für den
 ursprünglichen Abgleich war der Vorfall vom 05.08.2026, bei dem
 `tst_sharecalculator` hier aufgeführt war, aber in keiner `CMakeLists.txt`
 stand und deshalb nie gebaut wurde und nie mitlief. Wer ein Testziel
@@ -1216,6 +1219,32 @@ PresenterShareSplitEdit — Reset und Schliessen:
 | `test_presenter_onReset_forgetsSelection` | Speichern nach Reset | `addSplit()` statt `updateSplit()` |
 | `test_presenter_onClose_closesView` | Schliessen | `acceptAndClose()` aufgerufen |
 
+PresenterShareSplitEdit — Kurssprung-Prüfung ("Prüfen"-Knopf,
+`SplitPriceJumpDetector`, 13.08.2026, siehe ARCHITECTURE.md, "Automatische
+Erkennung split-bereinigter Kurshistorie"):
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_presenter_onCheckPriceJump_missingDate_showsErrorAndDoesNotDetect` | Ex-Tag = Sentinel (01.01.2000) | Fehlermeldung, kein `setPricesAdjusted()`, kein Hinweistext |
+| `test_presenter_onCheckPriceJump_invalidRatio_showsErrorAndDoesNotDetect` | Verhältnis-Seite = 0 | Fehlermeldung, kein `setPricesAdjusted()` |
+| `test_presenter_onCheckPriceJump_clearJump_setsCheckedAndHint` | 20:1-Split, Kurs springt von ~1.000 auf ~50 | Haken automatisch AUS, Hinweistext gesetzt, `PriceJumpTone::Adopted` |
+| `test_presenter_onCheckPriceJump_noJump_setsCheckedTrueAndHint` | Kurs bleibt über den Ex-Tag hinweg gleich | Haken automatisch AN, `PriceJumpTone::Adopted` |
+| `test_presenter_onCheckPriceJump_ambiguous_doesNotTouchCheckbox` | Verhältnis zwischen den Toleranzbändern | Haken UNVERÄNDERT, Hinweistext gesetzt, `PriceJumpTone::ManualDecisionNeeded` |
+| `test_presenter_onCheckPriceJump_insufficientData_showsHintNotError` | Keine Kursdaten vorhanden | Kein `showError()` (kein Bedienfehler), sondern Hinweistext, `PriceJumpTone::ManualDecisionNeeded` |
+| `test_presenter_onCheckPriceJump_passesLookbackWindowToModel` | Ex-Tag 18.07.2022 | Modell erhält Zeitraum ± `SplitPriceJumpDetector::kDefaultMaxLookbackDays` |
+| `test_presenter_onCheckPriceJump_excludesOwnSplitAsNeighbor` | Der gerade bearbeitete Split selbst als einziger vorhandener Split | Grenzt das Suchfenster nicht auf das eigene Datum ein |
+
+@note `test_presenter_onCheckPriceJump_insufficientData_showsHintNotError`
+hält eine bewusste Unterscheidung fest: fehlende Kursdaten sind kein
+Bedienfehler des Nutzers und laufen deshalb über das Ergebnisfeld, nicht
+über `showError()`.
+
+@note `test_presenter_onCheckPriceJump_excludesOwnSplitAsNeighbor` ist ein
+Regressionstest für einen Bearbeiten-Sonderfall: ohne den Ausschluss würde
+das Suchfenster beim Editieren eines bestehenden Splits auf dessen eigenes
+Datum kollabieren, weil `PresenterShareSplitEdit` denselben Split auch als
+"Nachbar-Split" an `SplitPriceJumpDetector::detect()` übergeben würde.
+
 ModelShareSplitEdit — gegen die echte In-Memory-Datenbank:
 
 | Test | Beschreibung | Prüft |
@@ -1299,6 +1328,39 @@ statt zu einer stillen Angleichung (siehe ARCHITECTURE.md,
 letzte Spalte. Die GUID hängt absichtlich an jeder Zelle, damit die Auswahl
 unabhängig davon auflösbar ist, welche Spalte der Benutzer angeklickt hat —
 läge sie nur an Spalte 0, wäre ein Klick auf den Kommentar wirkungslos.
+
+ViewShareSplitEdit — Kurssprung-Prüfung und Reverse-Split-Hinweis
+(13./14.08.2026):
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_view_hasPriceJumpCheckButtonAndResultField` | "Prüfen"-Knopf und Ergebnisfeld | Beide per `objectName` gefunden (`btnCheckPriceJump`, `priceJumpResult`) |
+| `test_view_hasReverseSplitHintButton` | "Hinweis Reverse-Split"-Knopf | Per `objectName` gefunden (`btnReverseSplitHint`), Text exakt, dauerhaft aktiv und nicht ausgeblendet |
+| `test_view_pricesAdjustedCheckbox_isFindable` | "Kurshistorie"-Haken | Per `objectName` gefunden (`pricesAdjusted`) |
+| `test_view_pricesAdjustedCheckbox_hasSameRowHeightAsOtherFields` | Feste Höhe wie alle anderen einzeiligen Felder | `minimumHeight() == maximumHeight() == 24` |
+| `test_view_setPriceJumpHint_setsResultFieldText` | `setPriceJumpHint()` mit Text | Ergebnisfeld übernimmt den Text unverändert |
+| `test_view_setPriceJumpHint_adoptedTone_usesGreenText` | `PriceJumpTone::Adopted` | Textfarbe `#388e3c` |
+| `test_view_setPriceJumpHint_manualDecisionTone_usesRedText` | `PriceJumpTone::ManualDecisionNeeded` | Textfarbe `#d32f2f` |
+| `test_view_setPricesAdjusted_checksCheckbox` | `setPricesAdjusted(true)` | `pricesAdjusted()` liefert true |
+| `test_view_clearForm_clearsPriceJumpResult` | Nach `clearForm()` | Ergebnisfeld leer |
+| `test_view_clearForm_resetsPriceJumpResultColor` | Eingefärbtes Ergebnis, danach `clearForm()` | Textfarbe wieder auf Ausgangswert |
+| `test_view_loadSplit_clearsPriceJumpResult` | Anderen Split geladen | Ergebnis eines vorherigen Prüflaufs bleibt nicht stehen |
+| `test_view_loadSplit_resetsPriceJumpResultColor` | Eingefärbtes Ergebnis, danach `loadSplit()` | Textfarbe wieder auf Ausgangswert |
+| `test_view_priceJumpResult_hasFixedHeightRegardlessOfTextLength` | Kurzer und langer Ergebnistext | `minimumHeight() == maximumHeight()`, unverändert vor/nach `setPriceJumpHint()` |
+| `test_view_priceJumpLabel_isTopAligned` | Label "Prüfung:" | Ausrichtung enthält `Qt::AlignTop` |
+| `test_view_priceJumpButton_isTopAlignedInRow` | "Prüfen"-Knopf in seiner Zeile | Layout-Item-Ausrichtung enthält `Qt::AlignTop` |
+
+@note `test_view_priceJumpResult_hasFixedHeightRegardlessOfTextLength`
+prüft bewusst `minimumHeight()`/`maximumHeight()` statt `height()` — ohne
+`show()` hinge Letzteres vom Zeitpunkt der Layout-Aktivierung ab, der Test
+könnte bei einer versehentlich wieder textabhängigen Höhe zufällig grün
+bleiben. Regressionstest für die ursprüngliche `QLabel`-Fassung, deren Höhe
+je nach Textlänge wechselte und dadurch beim Prüfen/Reset alles darunter im
+Dialog nach unten bzw. wieder nach oben springen liess.
+
+@note `test_view_hasReverseSplitHintButton` prüft bewusst `isHidden()`
+statt `isVisible()`: der Dialog wird in diesen headless Tests nie `show()`n,
+`isVisible()` wäre also unabhängig vom Knopf-Code immer false.
 
 ---
 
@@ -2386,10 +2448,12 @@ TestOwnMessageBox:
 | `test_critical_hasNoYesNoButtons` | Kein Ja/Nein-Button | Text ≠ "Ja", Text ≠ "Nein" |
 | `test_critical_okButtonAcceptsDialog` | OK-Klick → `Accepted` | `result()` = `QDialog::Accepted` |
 | `test_critical_hasIconLabel` | Icon-Label mit Pixmap vorhanden | `pixmap().isNull()` = false |
+| `test_critical_okButtonHasNoIcon` (14.08.2026, Nessies Vorgabe) | Ok-Knopf ohne Icon | `icon().isNull()` = true |
 | `test_critical_messageTextVisible` | Meldungstext in Label sichtbar | Label-Text = gesetzter Text |
 | `test_information_canBeConstructed` | Dialog öffnet ohne Absturz | Fenstertitel korrekt |
 | `test_information_hasSingleOkButton` | Genau ein OK-Button | `buttons.size()` = 1 |
 | `test_information_hasIconLabel` | Icon-Label mit Pixmap vorhanden | `pixmap().isNull()` = false |
+| `test_information_okButtonHasNoIcon` (14.08.2026, Nessies Vorgabe) | Ok-Knopf ohne Icon | `icon().isNull()` = true |
 | `test_question_canBeConstructed` | Dialog öffnet ohne Absturz | Fenstertitel korrekt |
 | `test_question_hasTwoButtons` | Genau zwei Buttons vorhanden | `buttons.size()` = 2 |
 | `test_question_hasYesAndNoButtons` | Ja- und Nein-Button vorhanden | Labels enthalten "Ja" und "Nein" |
@@ -2405,6 +2469,12 @@ TestOwnMessageBox:
 | `test_isModal` | Dialog ist modal | `isModal()` = true |
 | `test_longMessageText_doesNotCrash` | 500 Zeichen Meldungstext | Kein Absturz, Text korrekt |
 | `test_multilineMessage_doesNotCrash` | Mehrzeiliger Meldungstext | Kein Absturz |
+
+@note `test_critical_okButtonHasNoIcon`/`test_information_okButtonHasNoIcon`
+(14.08.2026, Nessies Vorgabe): der Ok-Knopf trug zuvor das
+`ButtonSave`-Icon (Diskette) — irreführend, da der Knopf nur den Dialog
+schließt und nichts speichert. Betrifft nur Critical/Information; Ja/Nein
+im Question-Typ behalten ihre Icons, ungetestet blieb das schon vorher.
 
 ---
 
@@ -2693,6 +2763,72 @@ Reihenfolge den falschen Splittag.
 eigentlichen Zweck des Hinweises festhält. Stückzahl mal Preis muss über einen
 Split hinweg gleich bleiben; würde nur die Stückzahl umgerechnet, sähe der
 Nutzer eine scheinbare Wertvervielfachung.
+
+---
+
+### SplitPriceJumpDetector (tests/utils/tst_splitpricejumpdetector.cpp)
+
+Executable: `tst_splitpricejumpdetector`
+Klasse unter Test: `SplitPriceJumpDetector` — zustandsloser, DB-freier
+Heuristik-Helfer hinter dem "Prüfen"-Knopf im Split-Dialog (13.08.2026,
+siehe ARCHITECTURE.md, "Automatische Erkennung split-bereinigter
+Kurshistorie"). Fixture-Werte lehnen sich lose an den Alphabet-Fall an
+(20:1-Split, Ex-Tag 18.07.2022).
+
+@note Kein `QCoreApplication` in `main()` — gleiche Bauweise wie
+`tst_sharesplitadjuster`/`tst_sharesplithint`: der Helfer ist zustandslos
+und greift nicht auf Qt SQL zu.
+
+Sprung erkannt (`Result::NotAdjusted`):
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_detect_clearJump_returnsNotAdjusted` | Kurs springt vor/nach dem Ex-Tag um ~Faktor 20 |
+| `test_detect_reverseSplit_smallFactor_stillDetectsJump` | Reverse-Split 1:10 (Faktor 0,1): Kurs steigt statt zu fallen |
+
+Kein Sprung (`Result::Adjusted`):
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_detect_noJump_returnsAdjusted` | Kurs bleibt über den Ex-Tag hinweg im selben Bereich |
+
+Uneindeutig (`Result::Ambiguous`):
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_detect_ratioBetweenBands_returnsAmbiguous` | Verhältnis 5,0 liegt weder nah bei 1,0 noch nah beim Faktor 20 |
+| `test_detect_smallFactor_overlappingBands_returnsAmbiguous` | Faktor 1,25 (5:4): Toleranzbänder um 1,0 (±15 %) und um 1,25 (±20 %) überlappen sich |
+
+Nicht genug Daten (`Result::InsufficientData`):
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_detect_noDataAtAll_returnsInsufficientData` | Leere Kurshistorie |
+| `test_detect_onlyDataBefore_returnsInsufficientData` | Nur ein Kurs vor dem Ex-Tag, keiner danach |
+| `test_detect_onlyDataAfter_returnsInsufficientData` | Nur ein Kurs nach dem Ex-Tag, keiner davor |
+| `test_detect_dataOutsideLookbackWindow_ignored` | Kurs weit außerhalb des Standardfensters (15 Tage) zählt nicht |
+| `test_detect_invalidExDate_returnsInsufficientData` | Ungültiges Ex-Tag-Datum |
+| `test_detect_zeroFactor_returnsInsufficientData` | Faktor 0,0 |
+
+Ex-Tag und Nachbar-Splits als Fenstergrenzen:
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_detect_priceOnExDateItself_countsAsBefore` | Ein Kurs GENAU am Ex-Tag zählt als "davor" — dieselbe Konvention wie `ShareSplitAdjuster::volumeFactor()` |
+| `test_detect_previousSplitDate_boundsWindowStart` | Ein früherer Nachbar-Split begrenzt das Suchfenster nach hinten |
+| `test_detect_nextSplitDate_boundsWindowEnd_inclusive` | Ein Kurs genau am späteren Nachbar-Split zählt noch mit (inklusive) |
+| `test_detect_dataAfterNextSplitDate_excluded` | Ein Kurs nach dem späteren Nachbar-Split zählt nicht mehr |
+
+Nächstgelegener Kurs:
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_detect_picksNearestPriceOnEachSide` | Wählt den jeweils nächstgelegenen Kurs vor/nach dem Ex-Tag, nicht irgendeinen aus dem Fenster |
+
+@note `test_detect_priceOnExDateItself_countsAsBefore` sichert dieselbe
+Randregel wie `ShareSplitAdjuster::volumeFactor()` — siehe auch
+"Bruchstücke bei Reverse-Splits nicht abgedeckt" in ARCHITECTURE.md, wo
+genau diese Regel die Grundlage für das dortige Vorgehen ist.
 
 ---
 

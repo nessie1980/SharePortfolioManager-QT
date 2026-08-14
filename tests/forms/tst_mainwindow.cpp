@@ -9635,6 +9635,19 @@ private slots:
         QVERIFY(hasIcon);
     }
 
+    void test_critical_okButtonHasNoIcon()
+    {
+        // 14.08.2026, Nessies Vorgabe: das bisherige ButtonSave-Icon
+        // (Diskette) suggerierte fälschlich ein Speichern, obwohl Ok hier
+        // nur den Dialog schließt.
+        OwnMessageBox dlg(OwnMessageBox::Type::Critical,
+                          QStringLiteral("Fehler"),
+                          QStringLiteral("Fehlermeldung"));
+        const auto buttons = dlg.findChildren<QPushButton*>();
+        if (buttons.isEmpty()) QFAIL("No button found");
+        QVERIFY(buttons.first()->icon().isNull());
+    }
+
     void test_critical_messageTextVisible()
     {
         const QString msg = QStringLiteral("Datenbankfehler aufgetreten.");
@@ -9679,6 +9692,17 @@ private slots:
             if (!l->pixmap().isNull()) { hasIcon = true; break; }
         }
         QVERIFY(hasIcon);
+    }
+
+    void test_information_okButtonHasNoIcon()
+    {
+        // 14.08.2026, Nessies Vorgabe — siehe test_critical_okButtonHasNoIcon().
+        OwnMessageBox dlg(OwnMessageBox::Type::Information,
+                          QStringLiteral("Info"),
+                          QStringLiteral("Hinweistext"));
+        const auto buttons = dlg.findChildren<QPushButton*>();
+        if (buttons.isEmpty()) QFAIL("No button found");
+        QVERIFY(buttons.first()->icon().isNull());
     }
 
     // ── Question ──────────────────────────────────────────────────────────────

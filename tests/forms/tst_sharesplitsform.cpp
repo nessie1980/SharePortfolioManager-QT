@@ -1263,6 +1263,29 @@ private slots:
         QVERIFY(dlg.findChild<QPlainTextEdit*>(QStringLiteral("priceJumpResult")));
     }
 
+    void test_view_hasReverseSplitHintButton()
+    {
+        // 14.08.2026, Nessies Vorgabe: Knopf neben den Verhältnis-Feldern,
+        // öffnet einen in sich geschlossenen Hinweis-Dialog zu Bruchstücken
+        // bei Reverse-Splits (ersetzt einen ersten Tooltip-Anlauf, der auf
+        // ARCHITECTURE.md verwies — darauf hat der Benutzer keinen Zugriff).
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        auto* btn = dlg.findChild<QPushButton*>(QStringLiteral("btnReverseSplitHint"));
+        QVERIFY(btn);
+        QCOMPARE(btn->text(), QStringLiteral("Hinweis Reverse-Split"));
+        // Immer sichtbar/aktiv (Nessies Vorgabe), unabhängig vom
+        // eingetragenen Verhältnis — nicht erst bei erkanntem Reverse-Split.
+        // isHidden() statt isVisible(): der Dialog wird in diesen headless
+        // Tests nie show()n, isVisible() wäre also unabhängig vom
+        // Knopf-Code immer false — isHidden() prüft dagegen nur, ob der
+        // Knopf selbst je explizit hide() bekommen hat.
+        QVERIFY(btn->isEnabled());
+        QVERIFY(!btn->isHidden());
+    }
+
     void test_view_pricesAdjustedCheckbox_isFindable()
     {
         openMemoryDb();

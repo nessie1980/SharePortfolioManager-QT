@@ -69,8 +69,10 @@ void OwnMessageBox::setupUi(const QString& message)
     btnRow->addStretch();
 
     if (m_type == Type::Critical || m_type == Type::Information) {
+        // Kein Icon auf dem Ok-Knopf (14.08.2026, Nessies Vorgabe): das
+        // bisherige ButtonSave-Icon (Diskette) suggerierte fälschlich ein
+        // Speichern — Ok schließt hier nur den Hinweis-/Fehlerdialog.
         m_btnOk = new QPushButton(tr("Ok"), this);
-        m_btnOk->setIcon(IconProvider::icon(IconProvider::ButtonSave));
         m_btnOk->setFixedHeight(UiConstants::kButtonHeight);
         m_btnOk->setMinimumWidth(110);
         m_btnOk->setDefault(true);

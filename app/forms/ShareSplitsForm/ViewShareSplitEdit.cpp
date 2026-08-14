@@ -75,6 +75,9 @@ ViewShareSplitEdit::ViewShareSplitEdit(const QString& shareGuid, QWidget* parent
 
     connect(m_btnCheckPriceJump, &QPushButton::clicked,
             m_presenter, &PresenterShareSplitEdit::onCheckPriceJump);
+
+    connect(m_btnReverseSplitHint, &QPushButton::clicked,
+            this, &ViewShareSplitEdit::onShowReverseSplitHint);
 }
 
 // ── setupUi ───────────────────────────────────────────────────────────────────
@@ -161,6 +164,24 @@ QGroupBox* ViewShareSplitEdit::createSplitDataGroup()
     ratioLayout->addWidget(new QLabel(QStringLiteral(":")));
     ratioLayout->addWidget(m_ratioOld);
     ratioLayout->addWidget(new QLabel(tr("(neu : alt)")));
+
+    // Hinweis-Knopf zu Bruchstücken bei Reverse-Splits (14.08.2026, Nessies
+    // Vorgabe — ersetzt einen ersten Anlauf mit Tooltip: der Tooltip
+    // verschwand beim Wegbewegen der Maus wieder und verwies auf
+    // ARCHITECTURE.md, auf das der Benutzer gar keinen Zugriff hat. Öffnet
+    // stattdessen einen ausführlichen, in sich geschlossenen Hinweis-Dialog
+    // — siehe reverseSplitHintMessage(). Bewusst dauerhaft sichtbar statt
+    // nur bei erkanntem Reverse-Split (neu < alt): die Erklärung soll auch
+    // VOR dem Eintragen des Verhältnisses auffindbar sein.
+    m_btnReverseSplitHint = new QPushButton(tr("Hinweis Reverse-Split"));
+    m_btnReverseSplitHint->setObjectName(QStringLiteral("btnReverseSplitHint"));
+    m_btnReverseSplitHint->setFixedHeight(UiConstants::kButtonHeight);
+    m_btnReverseSplitHint->setToolTip(
+        tr("Zeigt, wie Bruchstücke aus einem Reverse-Split (von der Bank "
+           "bar ausgezahlte Spitzen) erfasst werden."));
+    ratioLayout->addSpacing(12);
+    ratioLayout->addWidget(m_btnReverseSplitHint);
+
     ratioLayout->addStretch(1);
     addRow(row++, tr("Verhältnis:"), ratioWidget);
 
@@ -613,6 +634,17 @@ void ViewShareSplitEdit::onBrowseDocument()
     m_presenter->onDocumentSelected(path);
 }
 
+// ── onShowReverseSplitHint ───────────────────────────────────────────────────
+// Reine View-Angelegenheit ohne Presenter-/Model-Beteiligung (wie
+// onBrowseDocument()) — es wird nichts gespeichert oder validiert, nur ein
+// Hinweistext angezeigt.
+
+void ViewShareSplitEdit::onShowReverseSplitHint()
+{
+    OwnMessageBox::information(this, tr("Reverse-Split mit Bruchstücken"),
+                               reverseSplitHintMessage());
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 double ViewShareSplitEdit::parseDouble(const QString& text)
@@ -637,4 +669,57 @@ QString ViewShareSplitEdit::formatRatioPart(double value)
     if (qAbs(value - rounded) < 1e-9)
         return loc.toString(qRound(value));
     return loc.toString(value, 'f', 2);
+}
+
+// ── reverseSplitHintMessage ───────────────────────────────────────────────────
+//
+// Text bewusst in sich geschlossen (14.08.2026, Nessies Vorgabe): keine
+// Verweise auf ARCHITECTURE.md oder interne Klassennamen — der Benutzer hat
+// darauf keinen Zugriff. Nutzt, wenn im Formular ein echtes
+// Reverse-Split-Verhältnis eingetragen ist (neu < alt, beide > 0), dessen
+// Zahlen für eine konkrete Beispielrechnung; sonst ein festes Beispiel
+// (1:10). Das illustrative "1 altes Stück übrig" im dynamischen Fall ist
+// bewusst gewählt, weil es unabhängig vom tatsächlichen Bestand immer genau
+// einen Rest ergibt — Ziel ist die Rechenmethode, nicht der eigene Bestand.
+QString ViewShareSplitEdit::reverseSplitHintMessage() const
+{
+    const QString intro = tr(
+        "Bei einem Reverse-Split zahlt die Bank oft Bruchstücke bar aus — "
+        "Stücke, die sich nicht glatt zu neuen Aktien zusammenlegen lassen. "
+        "Dafür brauchen Sie keinen Sonderfall: Erfassen Sie die Bruchstücke "
+        "einfach als ganz normalen Verkauf.");
+
+    const QString steps = tr(
+        "1. Verkauf anlegen mit Datum = Ex-Tag dieses Splits.\n"
+        "2. Menge im NEUEN (Nach-Split-) Maßstab eintragen, nicht im "
+        "alten.\n"
+        "3. Kurs = von der Bank ausgezahlter Betrag ÷ diese Menge.\n\n"
+        "Den Split selbst tragen Sie wie gewohnt ein — ob zuerst der "
+        "Verkauf oder zuerst der Split, spielt keine Rolle.");
+
+    const double newRatio = ratioNew();
+    const double oldRatio = ratioOld();
+    const bool hasReverseSplitRatio = oldRatio > 0.0 && newRatio > 0.0
+                                       && newRatio < oldRatio;
+
+    QString example;
+    if (hasReverseSplitRatio) {
+        const double factor = newRatio / oldRatio;
+        example = tr(
+            "Beispiel mit dem hier eingetragenen Verhältnis %1:%2: Legen "
+            "sich %2 alte Stücke glatt zu %1 neuen zusammen, bleibt bei "
+            "einem Bestand von %3 alten Stücken genau 1 altes Stück als "
+            "Bruchstück übrig. Verkauf: Menge = 1 × %1/%2 = %4, Kurs = "
+            "Auszahlungsbetrag ÷ %4.")
+            .arg(formatRatioPart(newRatio), formatRatioPart(oldRatio),
+                 formatRatioPart(oldRatio + 1.0), formatRatioPart(factor));
+    } else {
+        example = tr(
+            "Beispiel bei einem Verhältnis von 1:10 und 105 alten Stücken: "
+            "100 alte Stücke legen sich glatt zu 10 neuen zusammen, 5 alte "
+            "Stücke sind das Bruchstück. Verkauf: Menge = 5 × 0,1 = 0,5, "
+            "Kurs = Auszahlungsbetrag ÷ 0,5.");
+    }
+
+    return intro + QStringLiteral("\n\n") + steps + QStringLiteral("\n\n") + example;
 }

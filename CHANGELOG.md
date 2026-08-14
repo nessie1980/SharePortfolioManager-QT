@@ -6,6 +6,27 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.14.4] - 2026-08-14
+
+### Added
+
+- Knopf "Hinweis Reverse-Split" neben den Verhältnis-Feldern im Split-Dialog
+  (`ShareSplitsForm`): öffnet einen Hinweis-Dialog, der erklärt, wie
+  Bruchstücke aus einem Reverse-Split (von der Bank bar ausgezahlte
+  Spitzen) ohne eigenes Feature abgebildet werden — als normaler Verkauf,
+  datiert auf den Ex-Tag des Splits, mit der Menge im neuen
+  (Nach-Split-)Maßstab statt der alten. Ist im Formular bereits ein echtes
+  Reverse-Split-Verhältnis eingetragen, rechnet der Hinweistext mit genau
+  diesem Verhältnis; sonst mit einem festen Beispiel. Kein neuer Fachcode
+  nötig, siehe `docs/architecture/ARCHITECTURE.md`, "Bruchstücke bei
+  Reverse-Splits nicht abgedeckt".
+
+### Changed
+
+- Ok-Knopf in `OwnMessageBox` (Fehler- und Hinweis-Dialoge, projektweit)
+  ohne Icon: das bisherige Disketten-Icon suggerierte fälschlich ein
+  Speichern, obwohl der Knopf nur den Dialog schließt.
+
 ## [1.14.3] - 2026-08-14
 
 ### Added

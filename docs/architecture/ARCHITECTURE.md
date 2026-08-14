@@ -4129,8 +4129,9 @@ bereinigt liefert, ist je Anbieter unterschiedlich.
    siehe "Spin-offs und Kapitalmaßnahmen mit Barkomponente nicht
    abgedeckt" unten.
 5. Bruchstücke aus Reverse-Splits (Barauszahlung von Spitzen durch die
-   Bank) werden nicht abgebildet — siehe "Bruchstücke bei Reverse-Splits
-   nicht abgedeckt" unten.
+   Bank) werden nicht als eigenes Feature abgebildet — lassen sich aber
+   ohne neuen Code über einen normalen Verkauf erfassen, siehe
+   "Bruchstücke bei Reverse-Splits nicht abgedeckt" unten.
 
 **Phasenplan:**
 
@@ -4399,14 +4400,59 @@ Ob die Luecke im heutigen Code noch besteht, ist nicht abschliessend geprueft
 — der Feldfall entstand aus fehlerhaften Split-Daten, nicht zwingend aus
 einem Programmfehler.
 
-### Bruchstücke bei Reverse-Splits nicht abgedeckt (07.08.2026)
+### Bruchstücke bei Reverse-Splits nicht abgedeckt (07.08.2026, Lösung ohne neuen Code gefunden 14.08.2026)
 
 Bewusst aus "Aktiensplits werden nicht behandelt" ausgeklammert (Nessies
 Entscheidung 07.08.2026, Punkt 5 dort): bei einem Reverse-Split zahlt die
 Bank Bruchstücke (Spitzen, die sich nicht glatt zusammenlegen lassen) bar
 aus. `ShareSplitAdjuster` bildet nur die glatte Umrechnung ab; eine solche
-Barkomponente lässt sich mit dem aktuellen Modell nicht abbilden. Eigenes
-Feature, falls der Fall in einem realen Depot auftritt.
+Barkomponente lässt sich mit dem aktuellen Modell nicht abbilden.
+
+**Nessies Gegenfrage (14.08.2026):** Braucht es dafür wirklich ein eigenes
+Feature (eine vollständige, FIFO-basierte Abbildung der Bruchstücks-
+Teilveräußerung), oder reicht es, die Bruchstücke als ganz normalen Verkauf
+zu erfassen und den Split separat einzutragen?
+
+**Antwort: Ja, das reicht — kein neuer Code nötig.** Ausschlaggebend ist die
+Randregel in `ShareSplitAdjuster::volumeFactor()`: ein Beleg, der EXAKT AUF
+dem Split-Stichtag datiert ist, wird von genau diesem Split nicht mehr
+mitgerechnet (`split.date() > date`, echt größer) — er gilt bereits als im
+NEUEN (Nach-Split-)Maßstab erfasst. Ein auf den Stichtag datierter Verkauf
+für die Bruchstücke ist damit automatisch korrekt vom Split entkoppelt,
+sofern seine Menge im neuen statt im alten Maßstab eingetragen wird.
+
+**Vorgehen:**
+
+1. Verkauf erfassen: Datum = Ex-Tag des Splits, Menge = Bruchstücke im
+   NEUEN Maßstab (alte Bruchstücks-Stückzahl × Split-Faktor), Kurs =
+   Auszahlungsbetrag der Bank ÷ diese Menge.
+2. Den Split wie gewohnt erfassen (Verhältnis, Ex-Tag). Die Reihenfolge der
+   Erfassung (Verkauf zuerst oder Split zuerst) spielt keine Rolle, da
+   `ShareSplitAdjuster`/`SaleFifoAllocator` beide Datensätze bei jeder
+   Anzeige aus der Datenbank neu berechnen, nicht inkrementell fortschreiben.
+
+**Beispielrechnung** (105 alte Stücke, Reverse-Split 1:10, Faktor 0,1):
+100 alte Stücke legen sich glatt zu 10 neuen zusammen; 5 alte Stücke sind
+das Bruchstück. Verkauf: Datum = Stichtag, Menge = 5 × 0,1 = 0,5, Kurs =
+Auszahlungsbetrag ÷ 0,5. Nachgerechnet über `SaleFifoAllocator::allocate()`:
+die Kauf-Reste (105 alt) werden auf 10,5 heutige Stücke skaliert, der
+Verkauf (0,5, wegen Stichtag-Datum nicht nochmal skaliert) wird abgezogen →
+10,0 verbleiben, zurückgerechnet auf die Beleg-Skala der Käufe = 100 alte
+Stücke. Stimmt mit der erwarteten Aufteilung überein.
+
+**Umsetzung (14.08.2026):** Da kein neuer Fachcode nötig ist, bleibt es bei
+dieser Dokumentation plus einem eigenen Hinweis-Knopf im Split-Dialog.
+Ein erster Anlauf mit einem Tooltip auf den Verhältnis-Feldern wurde
+verworfen (Nessies Feedback): der Tooltip verschwand beim Wegbewegen der
+Maus wieder und verwies auf diese Datei, auf die der Benutzer keinen
+Zugriff hat. Stattdessen jetzt der Knopf "Hinweis Reverse-Split" direkt in
+der Verhältnis-Zeile (`ViewShareSplitEdit::createSplitDataGroup()`,
+`m_btnReverseSplitHint`), dauerhaft sichtbar. Er öffnet einen
+`OwnMessageBox::information()`-Dialog mit dem obigen Vorgehen in
+Klartext — bewusst ohne Verweis auf diese Datei oder auf interne
+Klassennamen (`reverseSplitHintMessage()`). Ist im Formular ein echtes
+Reverse-Split-Verhältnis eingetragen (neu < alt, beide > 0), rechnet der
+Text mit genau diesem Verhältnis statt mit dem festen 1:10-Beispiel oben.
 
 ### Diagnose-Knopf hinter einen Debug-Modus legen (06.08.2026)
 
