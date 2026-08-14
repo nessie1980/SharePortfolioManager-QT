@@ -6,6 +6,31 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.14.3] - 2026-08-14
+
+### Added
+
+- "Prüfen"-Knopf im Split-Dialog (`ShareSplitsForm`): vergleicht auf
+  Nutzeraktion hin die gespeicherte Kurshistorie um den Ex-Tag eines Splits
+  mit dem eingetragenen Umrechnungsverhältnis (neue, zustandslose Klasse
+  `SplitPriceJumpDetector` in `app/utils/`) und setzt bei eindeutigem
+  Ergebnis automatisch den "Kurshistorie bereits bereinigt"-Haken — bewusst
+  kein automatischer/stiller Hintergrundlauf, sondern nur auf explizite
+  Nutzeraktion (Nessies Vorgabe). Das Ergebnis erscheint in einem read-only
+  Zweizeilen-Feld neben dem Knopf, grün eingefärbt bei automatisch
+  übernommenem, rot bei uneindeutigem Ergebnis (dann ist weiterhin eine
+  manuelle Entscheidung nötig). Neues Testziel `tst_splitpricejumpdetector`
+  (16 Testfälle) sowie ergänzende Presenter- und View-Tests in
+  `tst_sharesplitsform.cpp`. Siehe `docs/architecture/ARCHITECTURE.md`,
+  "Automatische Erkennung split-bereinigter Kurshistorie".
+
+### Changed
+
+- Tooltip auf dem "Kurshistorie"-Haken im Split-Dialog erweitert: benennt
+  jetzt explizit, dass der Haken nur die Kurshistorie betrifft (nicht
+  Käufe, Verkäufe oder Dividenden), und beschreibt beide Zustände in
+  Klartext.
+
 ## [1.14.2] - 2026-08-13
 
 ### Changed
