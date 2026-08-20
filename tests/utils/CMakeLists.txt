@@ -226,3 +226,34 @@ target_link_libraries(tst_splitpricejumpdetector
 )
 
 add_test(NAME tst_splitpricejumpdetector COMMAND tst_splitpricejumpdetector)
+
+# ── SplitAdjustmentAudit tests ───────────────────────────────────────────────────
+# Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene Punkte",
+# "Aktiensplits werden nicht behandelt"): "Automatische Nachprüfung des
+# prices_adjusted-Zustands nach jedem Tageswert-Abruf (Kurssprung um den
+# Splittag vergleichen) + Startmeldung bei Widerspruch, analog
+# warnAboutSharesWithoutDailyValues()". SplitAdjustmentAudit vergleicht dafür
+# je Split das gespeicherte ShareSplitObject::pricesAdjusted() mit dem
+# Ergebnis von SplitPriceJumpDetector::detect() und meldet Widersprüche —
+# schreibt selbst nichts in die Datenbank.
+#
+# Zustandslos und datenbankfrei, gleiche Begründung wie bei
+# tst_splitpricejumpdetector oben.
+qt_add_executable(tst_splitadjustmentaudit tst_splitadjustmentaudit.cpp
+    ../../app/models/DailyValuesObject.cpp
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/utils/SplitPriceJumpDetector.cpp
+    ../../app/utils/SplitAdjustmentAudit.cpp
+)
+
+target_include_directories(tst_splitadjustmentaudit
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_splitadjustmentaudit PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_splitadjustmentaudit
+    PRIVATE Qt6::Test
+)
+
+add_test(NAME tst_splitadjustmentaudit COMMAND tst_splitadjustmentaudit)

@@ -30,6 +30,7 @@
 #include "../../utils/ShareCalculator.h"
 #include "../../utils/ShareUpdateRules.h"
 #include "../../utils/PdfTextExtractor.h"
+#include "../../utils/SplitAdjustmentAudit.h"
 
 #include <QList>
 #include <QQueue>
@@ -226,6 +227,40 @@ public:
      */
     static QString buildDailyValuesWarningMessage(
         const QList<ShareUpdateRules::ShareState>& shares);
+
+    /**
+     * @brief Ein Split, dessen gespeicherter `prices_adjusted`-Zustand der
+     * aus der Kurshistorie erkannten Bereinigung widerspricht, angereichert
+     * um Aktienname/WKN für die Meldung.
+     *
+     * Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene
+     * Punkte"). `SplitAdjustmentAudit::Discrepancy` selbst kennt nur den
+     * Split (siehe dort) — Name und WKN sind hier ergänzt, damit
+     * buildSplitAdjustmentWarningMessage() sie für den Text verwenden kann,
+     * ohne dafür je Zeile erneut die Datenbank abzufragen.
+     */
+    struct SplitAdjustmentWarning
+    {
+        QString shareName;
+        QString wkn;
+        SplitAdjustmentAudit::Discrepancy discrepancy;
+    };
+
+    /**
+     * @brief Baut den Text der Start-Meldung über Splits mit abweichendem
+     * Bereinigungs-Zustand.
+     *
+     * Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene
+     * Punkte", "Aktiensplits werden nicht behandelt"). Als `public static`
+     * herausgezogen, gleiche Begründung wie bei
+     * buildDailyValuesWarningMessage() oben: der Meldungstext bleibt damit
+     * ohne MainWindow und ohne modalen Dialog prüfbar.
+     *
+     * @param warnings  Splits, deren gespeicherter Zustand widerspricht.
+     * @return Fertiger Meldungstext, oder ein leerer String bei leerer Liste.
+     */
+    static QString buildSplitAdjustmentWarningMessage(
+        const QList<SplitAdjustmentWarning>& warnings);
 
     /**
      * @brief Restore the main window to the foreground.
@@ -713,6 +748,56 @@ private:
     void warnAboutSharesWithoutDailyValues();
 
     /**
+     * @brief Füllt m_splitAdjustmentWarnings neu, über alle Aktien mit
+     * mindestens einem Split.
+     *
+     * Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene
+     * Punkte"). Läuft einmal je Programmstart (analog
+     * warnAboutSharesWithoutDailyValues()) — anders als
+     * m_sharesMissingDailyValues braucht das Ergebnis hier je Aktie mit
+     * Splits einen eigenen Datenbankzugriff (Splits + komplette
+     * Kurshistorie), daher bewusst NICHT Teil von populatePortfolioTables()
+     * (das bei jeder Tabellen-Neuaufbau läuft, auch nach einzelnen
+     * Beleg-Änderungen ohne jeden Bezug zu Splits).
+     *
+     * @see refreshSplitAdjustmentWarningsForShare() für die gezielte
+     * Aktualisierung einer einzelnen Aktie nach ihrem Tageswert-Abruf.
+     */
+    void populateSplitAdjustmentWarnings();
+
+    /**
+     * @brief Prüft eine einzelne Aktie erneut und aktualisiert ihren Anteil
+     * an m_splitAdjustmentWarnings.
+     *
+     * Phase 4 der Aktiensplit-Behandlung — "automatische Nachprüfung des
+     * prices_adjusted-Zustands nach jedem Tageswert-Abruf" (siehe
+     * ARCHITECTURE.md, "Offene Punkte"). Aufgerufen aus
+     * onDailyValuesUpdated() nach jedem erfolgreichen Abruf, unabhängig
+     * davon, ob dabei neue Tageswerte hinzukamen — ein Split kann auch ohne
+     * neuen Tageswert-Abruf zwischenzeitlich angelegt oder geändert worden
+     * sein. Schreibt nichts in die Datenbank, siehe SplitAdjustmentAudit.h.
+     *
+     * @param shareGuid  GUID der geprüften Aktie.
+     * @param shareName  Name der Aktie, für die Statusmeldung.
+     * @param wkn        WKN der Aktie, für eine spätere Startmeldung.
+     * @return Anzahl der für diese Aktie gefundenen Widersprüche.
+     */
+    int refreshSplitAdjustmentWarningsForShare(const QString& shareGuid,
+                                               const QString& shareName,
+                                               const QString& wkn);
+
+    /**
+     * @brief Weist beim Start auf Splits mit abweichendem
+     * Bereinigungs-Zustand hin.
+     *
+     * Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene
+     * Punkte"), analog warnAboutSharesWithoutDailyValues() oben.
+     *
+     * @see m_splitAdjustmentWarnings
+     */
+    void warnAboutSplitAdjustmentDiscrepancies();
+
+    /**
      * @brief Refresh the summary footer rows for both portfolio tabs.
      *
      * Called after populatePortfolioTables() and after any single-share
@@ -850,6 +935,13 @@ private:
      *  populatePortfolioTables() neu gefüllt, ausgewertet von
      *  warnAboutSharesWithoutDailyValues(). */
     QList<ShareUpdateRules::ShareState> m_sharesMissingDailyValues;
+
+    /** Splits mit abweichendem Bereinigungs-Zustand — von
+     *  populateSplitAdjustmentWarnings() (Programmstart) bzw.
+     *  refreshSplitAdjustmentWarningsForShare() (je Tageswert-Abruf)
+     *  gefüllt, ausgewertet von warnAboutSplitAdjustmentDiscrepancies().
+     *  Phase 4 der Aktiensplit-Behandlung, siehe ARCHITECTURE.md. */
+    QList<SplitAdjustmentWarning> m_splitAdjustmentWarnings;
 
     /**
      * @brief Dürfen beim Start modale Hinweis-Dialoge erscheinen?

@@ -16,9 +16,11 @@
 #include "../ApiSettingsForm/ApiSettingsForm.h"
 #include "../../repositories/ShareRepository.h"
 #include "../../repositories/DailyValuesRepository.h"
+#include "../../repositories/ShareSplitRepository.h"
 #include "../../models/ShareObject.h"
 #include "../../utils/ShareCalculator.h"
 #include "../../utils/DocumentClassifier.h"
+#include "../../utils/ShareSplitHint.h"
 #include "../../IconProvider.h"
 #include "../../widgets/GridStyle.h"
 
@@ -150,6 +152,12 @@ void MainWindow::initialize()
         updateStatusBarPortfolio(portfolioPath);
         populatePortfolioTables();
 
+        // Splits mit abweichendem Bereinigungs-Zustand (Phase 4 der
+        // Aktiensplit-Behandlung, siehe ARCHITECTURE.md, "Offene Punkte").
+        // Bewusst ein eigener Durchlauf statt Teil von
+        // populatePortfolioTables() — siehe populateSplitAdjustmentWarnings().
+        populateSplitAdjustmentWarnings();
+
         // Hinweis auf Aktien ohne Tageswert-Historie (06.08.2026). Verzögert
         // per singleShot(0), damit das Hauptfenster erst fertig gezeichnet
         // ist — sonst erscheint der modale Dialog vor einem noch leeren
@@ -158,6 +166,7 @@ void MainWindow::initialize()
         if (m_showStartupWarnings) {
             QTimer::singleShot(0, this, [this]() {
                 warnAboutSharesWithoutDailyValues();
+                warnAboutSplitAdjustmentDiscrepancies();
             });
         }
     }
@@ -1489,6 +1498,120 @@ void MainWindow::warnAboutSharesWithoutDailyValues()
     // des Dialogs nicht spurlos verschwindet.
     addStatusMessage(tr("%n Aktie(n) mit Bestand rufen keine Tageswerte ab und fehlen "
                         "im Depotwert-Chart.", nullptr, m_sharesMissingDailyValues.size()),
+                     MessageType::Warning);
+}
+
+// ── buildSplitAdjustmentWarningMessage ────────────────────────────────────────
+
+QString MainWindow::buildSplitAdjustmentWarningMessage(
+    const QList<SplitAdjustmentWarning>& warnings)
+{
+    if (warnings.isEmpty())
+        return QString();
+
+    const QLocale locale;
+    QStringList lines;
+    lines.reserve(warnings.size());
+    for (const SplitAdjustmentWarning& w : warnings) {
+        const SplitAdjustmentAudit::Discrepancy& d = w.discrepancy;
+        const QString storedLabel = d.split.pricesAdjusted()
+            ? tr("gespeichert: bereinigt")
+            : tr("gespeichert: unbereinigt");
+        const QString detectedLabel =
+            (d.outcome.result == SplitPriceJumpDetector::Result::Adjusted)
+                ? tr("erkannt: bereinigt")
+                : tr("erkannt: unbereinigt");
+
+        lines.append(tr("• %1 (%2), Split %3 — %4, aber %5 (%6: %7 → %8: %9)")
+                     .arg(w.shareName, w.wkn, ShareSplitHint::describeSplit(d.split))
+                     .arg(storedLabel, detectedLabel)
+                     .arg(locale.toString(d.outcome.dateBefore, QLocale::ShortFormat),
+                          locale.toString(d.outcome.priceBefore, 'f', 2))
+                     .arg(locale.toString(d.outcome.dateAfter, QLocale::ShortFormat),
+                          locale.toString(d.outcome.priceAfter, 'f', 2)));
+    }
+
+    return tr("Bei den folgenden Splits weicht der gespeicherte "
+              "Bereinigungs-Zustand von dem ab, was die aktuelle "
+              "Kurshistorie um den Ex-Tag zeigt:\n\n%1\n\n"
+              "Das kann bedeuten, dass die Kursquelle die Historie inzwischen "
+              "anders liefert als beim Erfassen des Splits. Bitte im "
+              "Split-Dialog der jeweiligen Aktie (Stift-Button \"Splits\") "
+              "mit \"Prüfen\" gegenchecken und bei Bedarf korrigieren — "
+              "automatisch geändert wird hier nichts.")
+        .arg(lines.join(QStringLiteral("\n")));
+}
+
+// ── populateSplitAdjustmentWarnings ───────────────────────────────────────────
+
+void MainWindow::populateSplitAdjustmentWarnings()
+{
+    m_splitAdjustmentWarnings.clear();
+
+    ShareRepository shareRepo;
+    ShareSplitRepository splitRepo;
+    DailyValuesRepository dvRepo;
+
+    for (const ShareObject& share : shareRepo.findAll()) {
+        const QList<ShareSplitObject> splits = splitRepo.findByShare(share.guid());
+        if (splits.isEmpty())
+            continue; // Aktien ohne Split sind für diese Prüfung irrelevant.
+
+        const QList<DailyValuesObject> dailyValues = dvRepo.findByShare(share.guid());
+        const QList<SplitAdjustmentAudit::Discrepancy> found =
+            SplitAdjustmentAudit::check(splits, dailyValues);
+
+        for (const SplitAdjustmentAudit::Discrepancy& d : found) {
+            m_splitAdjustmentWarnings.append(
+                SplitAdjustmentWarning{ share.name(), share.wkn(), d });
+        }
+    }
+}
+
+// ── refreshSplitAdjustmentWarningsForShare ────────────────────────────────────
+
+int MainWindow::refreshSplitAdjustmentWarningsForShare(const QString& shareGuid,
+                                                        const QString& shareName,
+                                                        const QString& wkn)
+{
+    // Vorherige Einträge dieser Aktie entfernen — sie könnten durch den
+    // gerade abgeschlossenen Tageswert-Abruf überholt sein (Widerspruch
+    // behoben oder neu entstanden).
+    for (int i = m_splitAdjustmentWarnings.size() - 1; i >= 0; --i) {
+        if (m_splitAdjustmentWarnings.at(i).discrepancy.split.shareGuid() == shareGuid)
+            m_splitAdjustmentWarnings.removeAt(i);
+    }
+
+    ShareSplitRepository splitRepo;
+    const QList<ShareSplitObject> splits = splitRepo.findByShare(shareGuid);
+    if (splits.isEmpty())
+        return 0;
+
+    DailyValuesRepository dvRepo;
+    const QList<DailyValuesObject> dailyValues = dvRepo.findByShare(shareGuid);
+    const QList<SplitAdjustmentAudit::Discrepancy> found =
+        SplitAdjustmentAudit::check(splits, dailyValues);
+
+    for (const SplitAdjustmentAudit::Discrepancy& d : found)
+        m_splitAdjustmentWarnings.append(SplitAdjustmentWarning{ shareName, wkn, d });
+
+    return found.size();
+}
+
+// ── warnAboutSplitAdjustmentDiscrepancies ─────────────────────────────────────
+
+void MainWindow::warnAboutSplitAdjustmentDiscrepancies()
+{
+    // Bewusst dünn gehalten, gleiche Begründung wie
+    // warnAboutSharesWithoutDailyValues() oben.
+    const QString message = buildSplitAdjustmentWarningMessage(m_splitAdjustmentWarnings);
+    if (message.isEmpty())
+        return;
+
+    OwnMessageBox::information(this, tr("Split-Bereinigung prüfen"), message);
+
+    addStatusMessage(tr("%n Split(s) mit abweichendem Bereinigungs-Zustand gefunden.",
+                        nullptr, m_splitAdjustmentWarnings.size()),
                      MessageType::Warning);
 }
 
@@ -2825,6 +2948,26 @@ void MainWindow::onDailyValuesUpdated(const ParserLib::ParserInfoState& state)
                 tr("Tageswerte: Keine neuen Einträge für \"%1\"")
                     .arg(m_refreshShare.name()),
                 MessageType::Info);
+        }
+
+        // Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene
+        // Punkte"): nach jedem Tageswert-Abruf erneut prüfen, ob der
+        // gespeicherte prices_adjusted-Zustand der Splits dieser Aktie noch
+        // zur (jetzt ggf. frisch aktualisierten) Kurshistorie passt. Läuft
+        // unabhängig davon, ob dvList oben neue Zeilen brachte — siehe
+        // refreshSplitAdjustmentWarningsForShare(). Schreibt nichts in die
+        // Datenbank; die eigentliche Korrektur bleibt dem ShareSplitsForm
+        // überlassen.
+        const int splitIssues = refreshSplitAdjustmentWarningsForShare(
+            m_refreshShare.guid(), m_refreshShare.name(), m_refreshShare.wkn());
+        if (splitIssues > 0) {
+            addStatusMessage(
+                tr("Tageswerte: \"%1\" — %2 Split(s) mit abweichendem "
+                   "Bereinigungs-Zustand erkannt, bitte im Split-Dialog "
+                   "prüfen.")
+                    .arg(m_refreshShare.name())
+                    .arg(splitIssues),
+                MessageType::Warning);
         }
 
         m_dailyDone = true;

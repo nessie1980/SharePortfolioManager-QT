@@ -71,6 +71,8 @@ set(APP_SOURCES
     utils/ShareSplitHint.cpp
     utils/SplitPriceJumpDetector.h
     utils/SplitPriceJumpDetector.cpp
+    utils/SplitAdjustmentAudit.h
+    utils/SplitAdjustmentAudit.cpp
     utils/PdfTextExtractor.h
     utils/PdfTextExtractor.cpp
     utils/DocumentClassifier.h

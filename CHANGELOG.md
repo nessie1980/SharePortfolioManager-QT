@@ -6,6 +6,25 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.14.5] - 2026-08-20
+
+### Added
+
+- Automatische Nachprüfung des "Kurshistorie bereits bereinigt"-Zustands
+  (`prices_adjusted`) nach jedem Tageswert-Abruf, plus Startmeldung bei
+  Widerspruch — Phase 4b der Aktiensplit-Behandlung, am 13.08.2026 zunächst
+  zugunsten des "Prüfen"-Knopfs zurückgestellt, jetzt nachgezogen (neue
+  zustandslose Klasse `SplitAdjustmentAudit` in `app/utils/`, baut auf
+  `SplitPriceJumpDetector` auf). Schreibt nichts automatisch in die
+  Datenbank — reine Lese-Prüfung, dieselbe Zurückhaltung wie beim
+  "Prüfen"-Knopf: nur eine Statusmeldung nach dem betroffenen Tageswert-Abruf
+  sowie ein modaler Startup-Hinweis, analog
+  `warnAboutSharesWithoutDailyValues()`. Die eigentliche Korrektur bleibt dem
+  "Prüfen"-Knopf im Split-Dialog überlassen. Neues Testziel
+  `tst_splitadjustmentaudit` sowie ergänzende Tests in `tst_mainwindow.cpp`.
+  Siehe `docs/architecture/ARCHITECTURE.md`, "Automatische Nachprüfung nach
+  Tageswert-Abruf".
+
 ## [1.14.4] - 2026-08-14
 
 ### Added

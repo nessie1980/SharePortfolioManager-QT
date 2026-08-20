@@ -137,6 +137,8 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/utils/ShareSplitHint.cpp
     ../../app/utils/SplitPriceJumpDetector.h
     ../../app/utils/SplitPriceJumpDetector.cpp
+    ../../app/utils/SplitAdjustmentAudit.h
+    ../../app/utils/SplitAdjustmentAudit.cpp
     ../../app/utils/SaleFifoAllocator.h
     ../../app/utils/SaleFifoAllocator.cpp
     ../../app/utils/PortfolioSeriesCalculator.cpp

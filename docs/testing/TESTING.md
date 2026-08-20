@@ -44,6 +44,7 @@ ctest --output-on-failure
 ./bin/tst_salefifoallocator
 ./bin/tst_sharesplithint
 ./bin/tst_splitpricejumpdetector
+./bin/tst_splitadjustmentaudit
 ./bin/tst_shareupdaterules
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
@@ -71,7 +72,8 @@ Projekts; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
 `tst_sharesplitsform` (08.08.2026, Phase 3a) waren es 35, seit
 `tst_sharesplithint` (09.08.2026, Phase 3b) waren es 36, seit
 `tst_splitpricejumpdetector` (13.08.2026, "Prüfen"-Knopf im Split-Dialog)
-sind es 37. Anlass für den
+waren es 37, seit `tst_splitadjustmentaudit` (20.08.2026, Phase 4b —
+automatische Nachprüfung nach Tageswert-Abruf) sind es 38. Anlass für den
 ursprünglichen Abgleich war der Vorfall vom 05.08.2026, bei dem
 `tst_sharecalculator` hier aufgeführt war, aber in keiner `CMakeLists.txt`
 stand und deshalb nie gebaut wurde und nie mitlief. Wer ein Testziel
@@ -785,13 +787,23 @@ Text der Start-Meldung (`MainWindow`, statische Helfer):
 | `test_buildDailyValuesWarningMessage_containsNameWknAndType` | Eine Aktie | Name, WKN und Update-Typ stehen im Text |
 | `test_buildDailyValuesWarningMessage_listsAllSharesInOrder` | Zwei Aktien | Beide genannt, Reihenfolge des Grids erhalten |
 | `test_buildDailyValuesWarningMessage_explainsConsequenceAndUrgency` | Eine Aktie | Text nennt "Depotwert-Chart" und "dauerhaft verloren" |
+| `test_buildSplitAdjustmentWarningMessage_emptyList_returnsEmpty` | Leere Liste | Leerer String — belegt den Frühausstieg, ohne Widerspruch geht kein Dialog auf (Phase 4b, 20.08.2026) |
+| `test_buildSplitAdjustmentWarningMessage_containsNameWknAndSplitDescription` | Ein Widerspruch | Aktienname, WKN und Split-Beschreibung (`ShareSplitHint::describeSplit()`) stehen im Text |
+| `test_buildSplitAdjustmentWarningMessage_listsAllWarningsInOrder` | Zwei Widersprüche | Beide genannt, Reihenfolge der Eingabeliste erhalten |
+| `test_buildSplitAdjustmentWarningMessage_explainsNoAutomaticChange` | Ein Widerspruch | Text stellt klar, dass nichts automatisch geändert wird, und verweist auf den "Prüfen"-Knopf |
 
-@note Der letzte Test wirkt zunächst wie eine Prüfung auf Wortlaut, ist aber
-der eigentliche Zweck der Meldung: ohne die Folge (Ausschluss aus dem Chart)
-und ohne die Dringlichkeit (rückwirkend nicht mehr abrufbare Historie) wäre
-sie eine folgenlose Notiz, die der Nutzer wegklickt. Fiele einer der beiden
-Teile bei einer späteren Textänderung heraus, bliebe das sonst unbemerkt —
-eine Meldung erscheint ja weiterhin.
+@note Der letzte Test der ersten Gruppe wirkt zunächst wie eine Prüfung auf
+Wortlaut, ist aber der eigentliche Zweck der Meldung: ohne die Folge
+(Ausschluss aus dem Chart) und ohne die Dringlichkeit (rückwirkend nicht mehr
+abrufbare Historie) wäre sie eine folgenlose Notiz, die der Nutzer wegklickt.
+Fiele einer der beiden Teile bei einer späteren Textänderung heraus, bliebe
+das sonst unbemerkt — eine Meldung erscheint ja weiterhin. Bei
+`buildSplitAdjustmentWarningMessage()` gilt dieselbe Überlegung für
+`test_buildSplitAdjustmentWarningMessage_explainsNoAutomaticChange`: die
+Zusicherung "automatisch geändert wird hier nichts" ist der Kern von Phase
+4b (siehe ARCHITECTURE.md, "Automatische Nachprüfung nach
+Tageswert-Abruf") — ohne sie könnte der Nutzer die Meldung für eine bereits
+erfolgte Korrektur halten.
 
 @note Zwei Anpassungen an den Stubs waren dafür nötig (06.08.2026).
 `StubViewShareEdit::updateType()` lieferte fest `ShareUpdateType::None` und
@@ -2832,6 +2844,43 @@ genau diese Regel die Grundlage für das dortige Vorgehen ist.
 
 ---
 
+### SplitAdjustmentAudit (tests/utils/tst_splitadjustmentaudit.cpp)
+
+Executable: `tst_splitadjustmentaudit`
+Klasse unter Test: `SplitAdjustmentAudit` — zustandsloser, DB-freier
+Helfer hinter Phase 4b der Aktiensplit-Behandlung (20.08.2026, siehe
+ARCHITECTURE.md, "Automatische Nachprüfung nach Tageswert-Abruf"). Baut auf
+`SplitPriceJumpDetector` auf: `check(splits, dailyValues)` vergleicht dessen
+Ergebnis je Split gegen das gespeicherte `ShareSplitObject::pricesAdjusted()`
+und meldet Widersprüche, schreibt selbst nichts. Fixture-Werte teils
+identisch mit `tst_splitpricejumpdetector` (Alphabet-Fall, 20:1-Split,
+Ex-Tag 18.07.2022).
+
+@note Kein `QCoreApplication` in `main()`, gleiche Bauweise wie
+`tst_splitpricejumpdetector`.
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_check_noSplits_returnsEmpty` | Leere Split-Liste -> leeres Ergebnis |
+| `test_check_storedNotAdjusted_detectedAdjusted_reportsDiscrepancy` | Gespeichert unbereinigt, aber kein Kurssprung erkannt -> Widerspruch |
+| `test_check_storedAdjusted_detectedNotAdjusted_reportsDiscrepancy` | Gespeichert bereinigt, aber Kurssprung um den Faktor erkannt -> Widerspruch |
+| `test_check_storedNotAdjusted_detectedNotAdjusted_noDiscrepancy` | Gespeicherter Zustand passt zur Historie -> kein Widerspruch |
+| `test_check_storedAdjusted_detectedAdjusted_noDiscrepancy` | Gespeicherter Zustand passt zur Historie -> kein Widerspruch |
+| `test_check_ambiguousResult_neverReportsDiscrepancy` | `Ambiguous`-Ergebnis zählt nie als Widerspruch, unabhängig vom gespeicherten Zustand |
+| `test_check_insufficientData_neverReportsDiscrepancy` | `InsufficientData`-Ergebnis zählt nie als Widerspruch, unabhängig vom gespeicherten Zustand |
+| `test_check_multipleSplits_onlyContradictingOneReported` | Von zwei Splits landet nur der tatsächlich widersprechende im Ergebnis |
+| `test_check_neighborSplit_boundsWindow_perSplit` | Nachbar-Splits begrenzen das Suchfenster je geprüftem Split — dieselbe Logik wie `PresenterShareSplitEdit::onCheckPriceJump()` |
+| `test_check_resultOrder_matchesInputOrder` | Mehrere Widersprüche erscheinen in der Reihenfolge der Eingabeliste |
+
+@note `test_check_ambiguousResult_neverReportsDiscrepancy` und
+`test_check_insufficientData_neverReportsDiscrepancy` sind der eigentliche
+Kern der Klasse: falscher Alarm bei unsicherer Datenlage wäre schädlicher
+als ein übersehener echter Widerspruch, weil er das Vertrauen in die
+Startmeldung untergräbt (dieselbe Vorsicht wie beim "Prüfen"-Knopf, siehe
+`tst_splitpricejumpdetector` oben).
+
+---
+
 ### SaleFifoAllocator (tests/utils/tst_salefifoallocator.cpp)
 
 Executable: `tst_salefifoallocator`
@@ -2916,6 +2965,7 @@ Geschäftslogik.
 | `test_onRefreshShare_dailyValuesOnly_upsertsIntoDailyValuesRepository_viaFakeNetwork` | Einzel-Aktie, `ShareUpdateType::DailyValues`, Yahoo-History mit 2 Handelstagen | `DailyValuesRepository::findByShare()` liefert 2 Einträge (aufsteigend nach Datum, closingPrice 141.5 / 143.0); Statusmeldung "Tageswerte aktualisiert: ... 2 Einträge geholt (Eingefügt: 2 / Aktualisiert: 0 / Unverändert: 0)" erscheint im Status-Log |
 | `test_onRefreshAll_dailyValuesQueue_chainsAcrossTwoShares_viaFakeNetwork` | 2-Aktien-Queue, beide `DailyValues`-only | Reentrante Verkettung analog zu den `MarketPrice`-Queue-Tests (`m_marketDone` ist bei `DailyValues`-only von vornherein `true`, sodass `onDailyValuesUpdated()` allein `onRefreshShareFinished()` auslöst); `requestCount() == 2`; Selektion springt danach via `selectFirstShareRow()` auf Zeile 0; beide Aktien haben je 2 Tageswerte-Einträge |
 | `test_onRefreshShare_bothUpdateType_updatesMarketPriceAndDailyValues_viaFakeNetwork` | Einzel-Aktie, `ShareUpdateType::Both` (OnVista-Realtime + Yahoo-History gleichzeitig) | Beide Parser laufen unabhängig; `onRefreshShareFinished()` (sichtbar über `finaliseRefresh()`/Re-Enable der Action) feuert erst nachdem **beide** `m_marketDone` und `m_dailyDone` `true` sind; `ShareObject::curPrice()` UND `DailyValuesRepository`-Einträge sind beide aktualisiert |
+| `test_onRefreshShare_dailyValuesOnly_splitAdjustmentDiscrepancy_addsStatusMessage_viaFakeNetwork` | Einzel-Aktie mit einem `ShareSplitObject` (Ex-Tag 15.01.2024, 20:1, `pricesAdjusted=false`), dieselbe Yahoo-History-Fixture wie oben (141.5 am 15.01. / 143.0 am 16.01.) | `refreshSplitAdjustmentWarningsForShare()` (Phase 4b, siehe ARCHITECTURE.md "Automatische Nachprüfung nach Tageswert-Abruf") erkennt den Widerspruch — kein Kurssprung, aber als unbereinigt gespeichert — direkt nach dem Abruf; Statusmeldung "... — 1 Split(s) mit abweichendem Bereinigungs-Zustand erkannt" erscheint im Status-Log |
 
 Da für frisch angelegte Aktien noch keine `daily_values` existieren, löst
 `buildDailyValuesUrl()` für `ApiYahoo` deterministisch immer den

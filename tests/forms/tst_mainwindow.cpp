@@ -81,6 +81,8 @@
 #include "../../app/models/ShareSplitObject.h"
 #include "../../app/utils/ShareSplitHint.h"
 #include "../../app/repositories/ShareSplitRepository.h"
+#include "../../app/utils/SplitPriceJumpDetector.h"
+#include "../../app/utils/SplitAdjustmentAudit.h"
 #include <QDateEdit>
 #include <QTimeEdit>
 #include <QProgressBar>
@@ -2566,6 +2568,69 @@ private slots:
                  qPrintable(te->toPlainText()));
     }
 
+    // Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene
+    // Punkte"): "automatische Nachprüfung des prices_adjusted-Zustands nach
+    // jedem Tageswert-Abruf". Wiederverwendet dieselbe Fixture wie oben
+    // (yahooDailyHistoryJson(), Referenzwerte 141.5 am 15.01.2024 / 143.0 am
+    // 16.01.2024) — der Split liegt genau auf den Ex-Tag des ersten Eintrags,
+    // sodass der Kurs vom 15.01. laut SplitPriceJumpDetector-Konvention noch
+    // als "davor" zählt. 141.5 -> 143.0 zeigt keinen Kurssprung, die
+    // Kurshistorie wirkt also bereits bereinigt — im Widerspruch zum absichtlich
+    // als unbereinigt gespeicherten Split.
+    void test_onRefreshShare_dailyValuesOnly_splitAdjustmentDiscrepancy_addsStatusMessage_viaFakeNetwork()
+    {
+        const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshDailyValuesSplitMismatch.db");
+        QFile::remove(dbPath);
+        Database::instance().open(dbPath);
+
+        const QString guid = QStringLiteral("g-daily-split-mismatch");
+        ShareObject share(guid, QStringLiteral("DV02"),
+                          QStringLiteral("DE000DV00002"), QStringLiteral("SplitMismatch AG"));
+        share.setUpdateType(ShareUpdateType::DailyValues);
+        share.setDailyValuesParsingType(ShareParsingType::ApiYahoo);
+        share.setDailyValuesUrl(
+            QStringLiteral("https://example.com/yahoo-daily/") + guid +
+            QStringLiteral("?range=%1"));
+        share.setDailyValuesEncoding(QStringLiteral("UTF-8"));
+        ShareRepository().insert(share);
+        insertTestBuy(guid, QStringLiteral("depot1"),
+                      QStringLiteral("2020-01-01T00:00:00"), 5.0, 100.0);
+        AppSettings::instance().setPortfolioPath(dbPath);
+
+        QVERIFY(ShareSplitRepository().insert(ShareSplitObject(
+            QStringLiteral("split-mismatch-1"), guid, QDate(2024, 1, 15),
+            /*ratioNew=*/20.0, /*ratioOld=*/1.0, /*pricesAdjusted=*/false)));
+
+        ParserTestUtils::FakeNetworkAccessManager fakeNam;
+        fakeNam.setResponse(
+            QUrl(QStringLiteral("https://example.com/yahoo-daily/%1?range=20y").arg(guid)),
+            yahooDailyHistoryJson());
+
+        MainWindow window(&fakeNam);
+        QApplication::processEvents();
+
+        QTableWidget* finalTbl = findFinalTable(window, 1);
+        if (!finalTbl) QFAIL("Depotwert-Datentabelle nicht gefunden");
+        finalTbl->setCurrentCell(0, 0);
+
+        QAction* actionRefresh = findActionByStatusTip(window,
+            QStringLiteral("Kurs der ausgewählten Aktie aktualisieren"));
+        QVERIFY(actionRefresh);
+
+        QMetaObject::invokeMethod(&window, "onRefreshShare", Qt::DirectConnection);
+
+        QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
+                 "Einzel-Refresh (DailyValues) hat nicht beendet "
+                 "(finaliseRefresh() nicht erreicht).");
+
+        const auto* te = window.findChild<QTextEdit*>();
+        QVERIFY(te);
+        QVERIFY2(te->toPlainText().contains(
+                     QStringLiteral("SplitMismatch AG\" — 1 Split(s) mit abweichendem "
+                                    "Bereinigungs-Zustand erkannt")),
+                 qPrintable(te->toPlainText()));
+    }
+
     void test_onRefreshAll_dailyValuesQueue_chainsAcrossTwoShares_viaFakeNetwork()
     {
         const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshDailyValuesQueue.db");
@@ -5037,6 +5102,104 @@ private slots:
 
         QVERIFY(msg.contains(QStringLiteral("Depotwert-Chart")));
         QVERIFY(msg.contains(QStringLiteral("dauerhaft verloren")));
+    }
+
+    // ── buildSplitAdjustmentWarningMessage() ────────────────────────────────────
+    // Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene
+    // Punkte"). Public static aus demselben Grund wie
+    // buildDailyValuesWarningMessage() oben.
+
+    static SplitPriceJumpDetector::Outcome makeOutcome(
+        SplitPriceJumpDetector::Result result,
+        const QDate& dateBefore, double priceBefore,
+        const QDate& dateAfter,  double priceAfter)
+    {
+        SplitPriceJumpDetector::Outcome o;
+        o.result       = result;
+        o.dateBefore   = dateBefore;
+        o.priceBefore  = priceBefore;
+        o.dateAfter    = dateAfter;
+        o.priceAfter   = priceAfter;
+        o.observedRatio = (priceAfter != 0.0) ? priceBefore / priceAfter : 0.0;
+        return o;
+    }
+
+    void test_buildSplitAdjustmentWarningMessage_emptyList_returnsEmpty()
+    {
+        // Belegt den Frühausstieg: ohne Widersprüche darf kein Dialog aufgehen.
+        QVERIFY(MainWindow::buildSplitAdjustmentWarningMessage({}).isEmpty());
+    }
+
+    void test_buildSplitAdjustmentWarningMessage_containsNameWknAndSplitDescription()
+    {
+        const ShareSplitObject s(QStringLiteral("split-1"), QStringLiteral("share-1"),
+                                 QDate(2022, 7, 18), 20.0, 1.0, /*pricesAdjusted=*/false);
+        const auto outcome = makeOutcome(SplitPriceJumpDetector::Result::Adjusted,
+                                         QDate(2022, 7, 15), 49.80,
+                                         QDate(2022, 7, 19), 50.60);
+        MainWindow::SplitAdjustmentWarning w;
+        w.shareName = QStringLiteral("Alphabet Inc.");
+        w.wkn       = QStringLiteral("A14Y6H");
+        w.discrepancy = SplitAdjustmentAudit::Discrepancy{ s, outcome };
+
+        const QString msg = MainWindow::buildSplitAdjustmentWarningMessage({ w });
+
+        QVERIFY(msg.contains(QStringLiteral("Alphabet Inc.")));
+        QVERIFY(msg.contains(QStringLiteral("A14Y6H")));
+        QVERIFY(msg.contains(ShareSplitHint::describeSplit(s)));
+    }
+
+    void test_buildSplitAdjustmentWarningMessage_listsAllWarningsInOrder()
+    {
+        const ShareSplitObject sa(QStringLiteral("split-a"), QStringLiteral("share-a"),
+                                  QDate(2022, 7, 18), 20.0, 1.0, false);
+        const ShareSplitObject sb(QStringLiteral("split-b"), QStringLiteral("share-b"),
+                                  QDate(2021, 1, 4), 2.0, 1.0, true);
+        const auto outcomeA = makeOutcome(SplitPriceJumpDetector::Result::Adjusted,
+                                          QDate(2022, 7, 15), 49.80,
+                                          QDate(2022, 7, 19), 50.60);
+        const auto outcomeB = makeOutcome(SplitPriceJumpDetector::Result::NotAdjusted,
+                                          QDate(2021, 1, 4), 200.0,
+                                          QDate(2021, 1, 5), 100.0);
+
+        MainWindow::SplitAdjustmentWarning wa;
+        wa.shareName = QStringLiteral("Erste AG");
+        wa.wkn       = QStringLiteral("AAA111");
+        wa.discrepancy = SplitAdjustmentAudit::Discrepancy{ sa, outcomeA };
+
+        MainWindow::SplitAdjustmentWarning wb;
+        wb.shareName = QStringLiteral("Zweite AG");
+        wb.wkn       = QStringLiteral("BBB222");
+        wb.discrepancy = SplitAdjustmentAudit::Discrepancy{ sb, outcomeB };
+
+        const QString msg = MainWindow::buildSplitAdjustmentWarningMessage({ wa, wb });
+
+        QVERIFY(msg.contains(QStringLiteral("Erste AG")));
+        QVERIFY(msg.contains(QStringLiteral("Zweite AG")));
+        // Reihenfolge bleibt die der Eingabeliste.
+        QVERIFY(msg.indexOf(QStringLiteral("Erste AG"))
+                < msg.indexOf(QStringLiteral("Zweite AG")));
+    }
+
+    void test_buildSplitAdjustmentWarningMessage_explainsNoAutomaticChange()
+    {
+        // Zentrale Zusicherung der Meldung: sie liest nur, sie schreibt
+        // nichts — siehe SplitAdjustmentAudit.h. Ohne diesen Hinweis könnte
+        // der Nutzer annehmen, der Haken sei bereits korrigiert worden.
+        const ShareSplitObject s(QStringLiteral("split-1"), QStringLiteral("share-1"),
+                                 QDate(2022, 7, 18), 20.0, 1.0, false);
+        const auto outcome = makeOutcome(SplitPriceJumpDetector::Result::Adjusted,
+                                         QDate(2022, 7, 15), 49.80,
+                                         QDate(2022, 7, 19), 50.60);
+        MainWindow::SplitAdjustmentWarning w;
+        w.shareName = QStringLiteral("Alphabet Inc.");
+        w.wkn       = QStringLiteral("A14Y6H");
+        w.discrepancy = SplitAdjustmentAudit::Discrepancy{ s, outcome };
+
+        const QString msg = MainWindow::buildSplitAdjustmentWarningMessage({ w });
+
+        QVERIFY(msg.contains(QStringLiteral("automatisch geändert wird hier nichts")));
+        QVERIFY(msg.contains(QStringLiteral("Prüfen")));
     }
 
     // ── onDeleteShare ─────────────────────────────────────────────────────────

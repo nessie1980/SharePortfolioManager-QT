@@ -4145,7 +4145,7 @@ bereinigt liefert, ist je Anbieter unterschiedlich.
 | 3b | Split-Hinweis in den Editier-Dialogen `ViewBuyEdit`/`ViewSaleEdit` | ✅ umgesetzt 09.08.2026 |
 | 3c | Übersichtstabellen: Split-Marker je Zeile, Korrektur der Stückzahl-Summenzeile in `ViewBuyEdit`, `ViewSaleEdit`, `ViewDividendEdit` und `ViewShareDetails` (Gewinne/Verluste + Dividenden); Anteile-Summe der Dividenden-Fusszeile als "-"; Split-Hinweis der Editier-Dialoge in Orange | ✅ umgesetzt 11.08.2026 |
 | 4a | "Prüfen"-Knopf im Split-Dialog (`SplitPriceJumpDetector`): vergleicht auf Nutzeraktion hin die Kurshistorie um den Ex-Tag, setzt bei eindeutigem Ergebnis automatisch den `prices_adjusted`-Haken. Siehe "Automatische Erkennung split-bereinigter Kurshistorie" unten. | ✅ umgesetzt 14.08.2026 |
-| 4b | Automatische Nachprüfung des `prices_adjusted`-Zustands nach jedem Tageswert-Abruf (Kurssprung um den Splittag vergleichen) + Startmeldung bei Widerspruch, analog `warnAboutSharesWithoutDailyValues()` — bewusst NICHT umgesetzt zugunsten von 4a, siehe dort | zurückgestellt |
+| 4b | Automatische Nachprüfung des `prices_adjusted`-Zustands nach jedem Tageswert-Abruf (Kurssprung um den Splittag vergleichen) + Startmeldung bei Widerspruch, analog `warnAboutSharesWithoutDailyValues()`. Ursprünglich zugunsten von 4a zurückgestellt (13.08.2026) — auf Nessies Wunsch 20.08.2026 doch umgesetzt, siehe "Automatische Nachprüfung nach Tageswert-Abruf" unten für die Begründung, warum das der ursprünglichen Zurückhaltung nicht widerspricht. | ✅ umgesetzt 20.08.2026 |
 
 ### Plausibilitätsprüfung der Dividenden-Stückzahl (09.08.2026)
 
@@ -4318,17 +4318,21 @@ ShareSplitAdjuster" oben) musste bislang von Hand eingeschätzt werden.
 Nessies Vorschlag 13.08.2026: die App soll selbst in den gespeicherten
 Tageswerten nachsehen, ob rund um den Ex-Tag ein Kurssprung erkennbar ist.
 
-**Bewusst kein automatischer/stiller Lauf.** Erwogen war, die Prüfung
-automatisch nach jedem Tageswert-Abruf laufen zu lassen und bei Widerspruch
-eine Startmeldung zu zeigen (siehe Phase 4b im Phasenplan oben,
-zurückgestellt). Umgesetzt wurde stattdessen ein expliziter "Prüfen"-Knopf im
-Split-Dialog, den der Nutzer selbst betätigt — dieselbe Zurückhaltung
-gegenüber stillen Korrekturen gespeicherter Daten wie bei `ShareUpdateRules`
-(siehe dort). Nessies eigene Spezifikation vom 13.08.2026: "Wenn alle Daten
-für eine Ermittlung vorhanden sind und die Ermittlung eindeutig ist, wird der
-Hinweis angezeigt und der Haken gesetzt. Sollte es nicht eindeutig sein, kommt
-der Hinweis, dass der Haken nicht automatisch gesetzt werden konnte und ein
-manuelles Setzen nötig ist."
+**Bewusst kein automatischer/stiller SCHREIBender Lauf.** Erwogen war
+13.08.2026, die Prüfung automatisch nach jedem Tageswert-Abruf laufen zu
+lassen und bei Widerspruch eine Startmeldung zu zeigen (Phase 4b im
+Phasenplan oben) — zunächst zugunsten dieses expliziten "Prüfen"-Knopfs
+zurückgestellt, den der Nutzer selbst betätigt. Grund war dieselbe
+Zurückhaltung gegenüber stillen Korrekturen gespeicherter Daten wie bei
+`ShareUpdateRules` (siehe dort). Nessies eigene Spezifikation vom 13.08.2026:
+"Wenn alle Daten für eine Ermittlung vorhanden sind und die Ermittlung
+eindeutig ist, wird der Hinweis angezeigt und der Haken gesetzt. Sollte es
+nicht eindeutig sein, kommt der Hinweis, dass der Haken nicht automatisch
+gesetzt werden konnte und ein manuelles Setzen nötig ist."
+
+Phase 4b wurde am 20.08.2026 doch noch nachgezogen — als reine LESE-Prüfung,
+die diese Zurückhaltung fortsetzt statt ihr zu widersprechen: siehe
+"Automatische Nachprüfung nach Tageswert-Abruf" unten.
 
 **Algorithmus (`SplitPriceJumpDetector`, `app/utils/`).** Zustandslos und
 datenbankfrei wie `ShareSplitAdjuster`/`ShareSplitHint` — die Kurshistorie
@@ -4385,6 +4389,57 @@ mit dem Log-Fenster nichts zu tun. Beim Zurücksetzen der Maske bzw. beim
 Laden eines anderen Splits wird die Farbe mit auf den ungefärbten
 Ausgangszustand zurückgesetzt (`resetPriceJumpResult()`), sonst bliebe der
 Platzhaltertext "Noch nicht geprüft …" fälschlich rot oder grün gefärbt.
+
+### Automatische Nachprüfung nach Tageswert-Abruf (Phase 4b, 20.08.2026)
+
+Phase 4b des Phasenplans oben — am 13.08.2026 zugunsten des "Prüfen"-Knopfs
+zurückgestellt (siehe "Automatische Erkennung split-bereinigter
+Kurshistorie" oben) — auf Nessies Wunsch am 20.08.2026 doch nachgezogen.
+
+**Warum das der Zurückhaltung vom 13.08.2026 nicht widerspricht.** Die
+damalige Entscheidung richtete sich gegen ein stilles SCHREIBEN von
+`prices_adjusted` ohne Nutzeraktion — dieselbe Linie wie `ShareUpdateRules`.
+Phase 4b schreibt nichts: sie LIEST nach jedem Tageswert-Abruf nach, ob der
+gespeicherte Haken noch zur (jetzt ggf. aktualisierten) Kurshistorie passt,
+und macht bei einem Widerspruch lediglich sichtbar darauf aufmerksam — exakt
+die gleiche Holschuld-Umkehr wie bei `warnAboutSharesWithoutDailyValues()`
+(siehe dort): der Nutzer wird informiert, die eigentliche Korrektur bleibt
+ihm im Split-Dialog (dem "Prüfen"-Knopf von Phase 4a) überlassen. Der
+"Prüfen"-Knopf bleibt damit der einzige Weg, wie `prices_adjusted`
+tatsächlich verändert wird — Phase 4b ist ein zusätzliches Sicherheitsnetz
+für Fälle, die der Nutzer nicht von sich aus erneut prüft (typischerweise:
+die Kursquelle liefert die Historie zu einem späteren Abrufzeitpunkt anders
+bereinigt als beim Erfassen des Splits).
+
+**`SplitAdjustmentAudit` (`app/utils/`).** Zustandslos und datenbankfrei wie
+`SplitPriceJumpDetector`, auf dem es direkt aufbaut: `check(splits,
+dailyValues)` prüft für jeden übergebenen Split, ob dessen
+`SplitPriceJumpDetector::detect()`-Ergebnis dem gespeicherten
+`pricesAdjusted()` widerspricht — Nachbar-Splits derselben Aktie begrenzen je
+geprüftem Split das Suchfenster, exakt dieselbe Logik wie
+`PresenterShareSplitEdit::onCheckPriceJump()` (der geprüfte Split zählt nicht
+als eigener Nachbar). `Ambiguous`- und `InsufficientData`-Ergebnisse zählen
+NIE als Widerspruch — dieselbe Vorsicht wie beim "Prüfen"-Knopf: ein
+Verdachtsfall, den der Nutzer ohnehin nicht auflösen könnte, soll nicht als
+Meldung erscheinen.
+
+**Verdrahtung in `MainWindow`.**
+
+| Zeitpunkt | Methode | Wirkung |
+| --- | --- | --- |
+| Jeder abgeschlossene Tageswert-Abruf (`onDailyValuesUpdated()`, Zweig `Finished`) | `refreshSplitAdjustmentWarningsForShare()` | Prüft NUR die gerade aktualisierte Aktie neu (ersetzt ihre vorherigen Einträge in `m_splitAdjustmentWarnings`); bei ≥ 1 Widerspruch sofort eine Statusmeldung, kein modaler Dialog — ein "Alle aktualisieren"-Lauf über N Aktien soll nicht N Dialoge auslösen. Läuft unabhängig davon, ob der Abruf neue Tageswert-Zeilen brachte: ein Split kann auch ohne neuen Abruf zwischenzeitlich angelegt/geändert worden sein. |
+| Programmstart, nach `populatePortfolioTables()` | `populateSplitAdjustmentWarnings()` | Baut `m_splitAdjustmentWarnings` komplett neu auf, über alle Aktien mit mindestens einem Split — deckt auch Widersprüche ab, die während der letzten Sitzung entstanden sind, ohne dass die betroffene Aktie danach erneut aktualisiert wurde. |
+| Programmstart, verzögert per `QTimer::singleShot(0, …)` | `warnAboutSplitAdjustmentDiscrepancies()` | Modaler Hinweis, analog `warnAboutSharesWithoutDailyValues()` — nur wenn `m_showStartupWarnings` (Produktivkonstruktor), aus demselben Grund untestbar (siehe dort). |
+
+`buildSplitAdjustmentWarningMessage()` ist `public static`, gleiche
+Begründung wie `buildDailyValuesWarningMessage()`: der Meldungstext bleibt
+ohne `MainWindow` und ohne modalen Dialog prüfbar. `populateSplitAdjustmentWarnings()`
+ist bewusst NICHT Teil von `populatePortfolioTables()`
+— anders als `m_sharesMissingDailyValues` (das ohne zusätzlichen
+Datenbankzugriff aus der ohnehin laufenden Schleife mitfällt) bräuchte das
+hier je Aktie mit Splits einen eigenen Zugriff auf Splits UND komplette
+Kurshistorie; `populatePortfolioTables()` läuft aber bei jeder
+Tabellen-Neuaufbau, auch nach Beleg-Änderungen ganz ohne Split-Bezug.
 
 ### Skalenbewusste Mengenpruefung im Verkaufsformular (11.08.2026)
 
