@@ -183,12 +183,25 @@ private slots:
 
     void init()
     {
-        // Delete in FK-safe order: child / referencing tables first.
-        // brokerage.buy_guid -> buys.guid and sales.brokerage_guid -> brokerage.guid,
-        // so buys must be cleared AFTER brokerage.
+        // Delete in FK-safe order: child / referencing tables first, parents
+        // last. Per Database.cpp's CREATE TABLE statements, the real FKs are
+        // sale_buy_details.sale_guid/buy_guid -> sales/buys.guid and
+        // brokerage.buy_guid/sale_guid -> buys/sales.guid (sales.brokerage_guid
+        // is a plain, constraint-free column — NOT the FK direction, despite
+        // the misleading comment this replaces). brokerage can reference BOTH
+        // sales and buys, so it must be cleared before either of them.
+        //
+        // Corrected 20.08.2026 (Footer-Lücke-Fix, see ARCHITECTURE.md):
+        // before that fix, addSale()'s linked brokerage row always had an
+        // empty sale_guid, so "DELETE FROM sales" before "DELETE FROM
+        // brokerage" never actually violated the FK (NULL never matches in a
+        // foreign key check) — the bug in this ordering was latent. Now that
+        // addSale() sets sale_guid correctly, the old order breaks with
+        // "FOREIGN KEY constraint failed" on every test after the first one
+        // that inserts a sale with linked brokerage.
         Database::instance().execute(QStringLiteral("DELETE FROM sale_buy_details"));
-        Database::instance().execute(QStringLiteral("DELETE FROM sales"));
         Database::instance().execute(QStringLiteral("DELETE FROM brokerage"));
+        Database::instance().execute(QStringLiteral("DELETE FROM sales"));
         Database::instance().execute(QStringLiteral("DELETE FROM buys"));
         Database::instance().execute(QStringLiteral("DELETE FROM dividends"));
         Database::instance().execute(QStringLiteral("DELETE FROM share_splits"));
