@@ -20,6 +20,10 @@
 //     brokerage — Rabatt is a discount on brokerage costs, so it belongs
 //     together with "Kosten" and was previously still subtracted even
 //     though brokerage itself was already excluded.
+//   - (20.08.2026) freestanding brokerage/cost entries (no buyGuid/saleGuid,
+//     from the standalone Kosten-Verwaltung UI) fold into completePurchase
+//     — and therefore into "Komplette Entwicklung" on BOTH tabs — but never
+//     into completePurchaseMarket (Footer-Lücke bug, 05.08.2026).
 
 #include <QtTest>
 #include <QSqlDatabase>
@@ -104,6 +108,20 @@ private:
                                    brokGuid,             // brokerageGuid -> JOIN source
                                    0.0, 0.0, 0.0,        // provision/fees (ignored on insert)
                                    0.0));                // reduction (ignored on insert; from brokerage)
+    }
+
+    // Insert a freestanding brokerage/cost entry (neither buyGuid nor
+    // saleGuid set — created via the standalone Kosten-Verwaltung UI).
+    // Used to cover the Footer-Lücke fix (Bug, 05.08.2026, siehe
+    // ARCHITECTURE.md "Footer-Lücke bei freistehenden Kosteneinträgen").
+    QString addFreestandingCost(double brokerage, double reduction,
+                                const QString& dateTime = QStringLiteral("2024-02-01T10:00:00"))
+    {
+        BrokerageRepository brokRepo;
+        const QString guid = newGuid();
+        brokRepo.insert(BrokerageObject(guid, k_shareGuid, QString(), QString(),
+                                        dateTime, brokerage, 0.0, 0.0, reduction));
+        return guid;
     }
 
     // Insert a split for the test share (Phase 2 der Aktiensplit-Behandlung,
@@ -477,6 +495,64 @@ private slots:
         const ShareValues v = ShareCalculator::compute(k_shareGuid, 55.0, 55.0);
 
         CMP_MONEY(v.purchaseValueFinal, 3012.00);
+    }
+
+    // ── Footer-Lücke bei freistehenden Kosteneinträgen (Bug, 05.08.2026,
+    // fixed 20.08.2026, siehe ARCHITECTURE.md "Offene Punkte") ────────────
+    //
+    // A freestanding brokerage/cost entry (buyGuid and saleGuid both empty,
+    // created via the standalone Kosten-Verwaltung UI) must fold into
+    // completePurchase — like a buy-linked entry does — but must NOT touch
+    // completePurchaseMarket, which stays brokerage-free by design.
+
+    void test_freestandingCost_addedToCompletePurchaseOnly()
+    {
+        addBuy(10.0, 0.0, 100.0, 0.0, 0.0);
+        addFreestandingCost(15.0, 5.0); // brokerageReduction() = 15 - 5 = 10.00
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 100.0, 100.0);
+
+        // completePurchase (Depotwert, WITH brokerage) gains the freestanding
+        // entry's brokerageReduction().
+        CMP_MONEY(v.completePurchase, 1010.00);
+        // completePurchaseMarket stays brokerage-free — unaffected by design.
+        CMP_MONEY(v.completePurchaseMarket, 1000.00);
+        // totalBrokerage already summed freestanding entries before this fix
+        // (it is a display-only aggregate over ALL brokerage records) — pinned
+        // here too so the fix does not double count it anywhere else.
+        CMP_MONEY(v.totalBrokerage, 15.00);
+    }
+
+    void test_freestandingCost_reducesCompleteEntwicklungBothTabs()
+    {
+        addBuy(10.0, 0.0, 100.0, 0.0, 0.0);
+        addFreestandingCost(15.0, 5.0); // brokerageReduction() = 10.00
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 100.0, 100.0);
+
+        // Before the fix this freestanding entry flowed only into
+        // totalBrokerage (display), never into completePurchase — so
+        // "Komplette Entwicklung" was 10.00 € too high in BOTH tabs (both
+        // completeProfitLossMarket and completeProfitLoss derive from
+        // realizedProfitLossWithFees, which derives from completePurchase).
+        // Without the freestanding entry both values would be 0.00.
+        CMP_MONEY(v.completeProfitLossMarket, -10.00);
+        CMP_MONEY(v.completeProfitLoss,       -10.00);
+    }
+
+    void test_freestandingCost_doesNotDoubleCountLinkedBrokerage()
+    {
+        // Same core-scenario fixture as test_marktwert_coreScenario — only
+        // buy-/sale-linked brokerage, nothing freestanding. Pins that the
+        // freestanding-cost loop leaves completePurchase unchanged when
+        // findByShare() has nothing with empty buyGuid/saleGuid to find.
+        addBuy(10.0, 4.0, 100.0, 9.90, 0.0);
+        addBuy(5.0, 0.0, 120.0, 5.00, 2.00);
+        addSale(4.0, 130.0, 7.0, 0.0, 3.0, {});
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 125.0, 120.0);
+
+        CMP_MONEY(v.completePurchase, 1612.90); // unchanged from test_marktwert_coreScenario
     }
 };
 

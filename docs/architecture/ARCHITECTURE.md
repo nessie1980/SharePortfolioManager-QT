@@ -3489,16 +3489,19 @@ fällt der gehaltene Kaufwert auf null; mit ihm als Nenner spränge der
 Prozentwert auf 0 %, obwohl die Linie noch den realisierten Gewinn zeigt.
 Guard `> 0.0` vor der Division, gleiches Muster wie in `ShareCalculator`.
 
-### Bewusste Abweichung vom Depotwert-Footer
+### Ehemalige Abweichung vom Depotwert-Footer (behoben 20.08.2026)
 
 Der Kosten-Term umfasst alle Brokerage-Einträge einer Aktie, also auch
-freistehende Kosteneinträge ohne Bezug zu einem Kauf oder Verkauf. Genau die
-fallen im Footer heraus: `ShareCalculator::compute()` berücksichtigt sie in
-`totalBrokerage`, nicht aber in `completePurchase` oder `salePayoutFinal`.
-Die Spalte "Komplette Entwicklung" ist dadurch um diesen Betrag zu hoch, der
-Chart rechnet an dieser Stelle korrekter. Von Nessie am 05.08.2026
-bestätigt: der Chart bleibt korrekt, der Footer-Fix folgt separat (siehe
-"Offene Punkte"), danach stimmen beide automatisch überein.
+freistehende Kosteneinträge ohne Bezug zu einem Kauf oder Verkauf. Bis zum
+20.08.2026 fielen genau die im Footer heraus: `ShareCalculator::compute()`
+berücksichtigte sie nur in `totalBrokerage`, nicht aber in `completePurchase`
+oder `salePayoutFinal` — die Spalte "Komplette Entwicklung" war dadurch um
+diesen Betrag zu hoch, während der Chart hier bereits korrekt rechnete. Von
+Nessie am 05.08.2026 bestätigt und als "Footer-Lücke bei freistehenden
+Kosteneinträgen" in "Erledigt / Archiv" gefixt — seither summiert
+`ShareCalculator::compute()` freistehende Einträge genauso wie
+`ModelPortfolioChart::loadPortfolioInput()`, Footer und Chart stimmen jetzt
+automatisch überein.
 
 ### Aufbau
 
@@ -4539,17 +4542,6 @@ Datenbasis ist dieselbe, nur die Aggregation unterscheidet sich —
 sinnvollerweise später als per Checkbox umschaltbare zweite Serie im selben
 Chart.
 
-### Footer-Lücke bei freistehenden Kosteneinträgen (Bug, 05.08.2026)
-
-`ShareCalculator::compute()` berücksichtigt freistehende Brokerage-Einträge
-(weder `buy_guid` noch `sale_guid` gesetzt, angelegt über die
-Kosten-Verwaltung) nur in `totalBrokerage`, nicht in `completePurchase` oder
-`salePayoutFinal`. Die Spalte "Komplette Entwicklung" ist dadurch um deren
-Betrag zu hoch — im Grid, im Footer und in `ShareDetailsForm`. Der
-Depotwert-Chart rechnet an dieser Stelle bereits korrekt und weicht deshalb
-bis zum Fix vom Footer ab (siehe "PortfolioChartForm-Details"). Nach dem Fix
-stimmen beide automatisch überein. Wird in einem eigenen Chat behandelt.
-
 ### Verwaistes Verzeichnis tests/widgets entfernen (05.08.2026)
 
 `tests/widgets/` enthält `tst_overviewtabwidget.cpp`, hat aber keine
@@ -4677,6 +4669,34 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 ---
 
 ## Erledigt / Archiv
+
+### Footer-Lücke bei freistehenden Kosteneinträgen (Bug, 05.08.2026, gefixt 20.08.2026)
+
+`ShareCalculator::compute()` berücksichtigte freistehende Brokerage-Einträge
+(weder `buy_guid` noch `sale_guid` gesetzt, angelegt über die
+Kosten-Verwaltung) nur in `totalBrokerage`, nicht in `completePurchase` oder
+`salePayoutFinal`. Die Spalte "Komplette Entwicklung" war dadurch um deren
+Betrag zu hoch — im Grid, im Footer und in `ShareDetailsForm`, sowohl im
+Marktwert- als auch im Depotwert-Tab (beide hängen über
+`realizedProfitLossWithFees` von `completePurchase` ab). Der Depotwert-Chart
+rechnete an dieser Stelle bereits korrekt (`ModelPortfolioChart::
+loadPortfolioInput()`, summiert `findByShare()` vollständig inklusive der
+freistehenden Einträge) und wich deshalb bis zum Fix vom Footer ab (siehe
+"PortfolioChartForm-Details").
+
+**Fix (20.08.2026):** In `ShareCalculator::compute()` wird nach der
+Käufe-Schleife zusätzlich über `brokerageRepo.findByShare(guid)` iteriert;
+Einträge mit leerem `buyGuid()` UND leerem `saleGuid()` addieren ihre
+`brokerageReduction()` zu `completePurchase`. `completePurchaseMarket` bleibt
+bewusst unverändert — der Marktwert-Zweig schließt grundsätzlich jede
+Brokerage aus, unabhängig davon, ob sie kauf-, verkaufs- oder freistehend
+gebunden ist. Damit ist der Fix exakt symmetrisch zur bereits bestehenden
+Behandlung kauf-/verkaufsgebundener Brokerage-Einträge weiter oben in
+derselben Funktion, und Grid/Footer stimmen jetzt automatisch mit dem
+Depotwert-Chart überein. Tests: `tst_sharecalculator.cpp`,
+`test_freestandingCost_addedToCompletePurchaseOnly`,
+`test_freestandingCost_reducesCompleteEntwicklungBothTabs`,
+`test_freestandingCost_doesNotDoubleCountLinkedBrokerage`.
 
 ### Tageswert-Historie bei Bestand > 0 erzwingen (Feature, 06.08.2026)
 

@@ -118,6 +118,22 @@ ShareValues ShareCalculator::compute(const QString& guid,
         }
     }
 
+    // Freestanding brokerage entries (Bug, 05.08.2026 — siehe ARCHITECTURE.md
+    // "Footer-Lücke bei freistehenden Kosteneinträgen"): Kosten-Einträge ohne
+    // buy_guid/sale_guid, angelegt über die Kosten-Verwaltung. Sie waren
+    // bislang nur in v.totalBrokerage (Anzeige) enthalten, nicht aber in
+    // completePurchase — dadurch war "Komplette Entwicklung" (Depotwert UND
+    // Marktwert, beide hängen von realizedProfitLossWithFees ab) um ihren
+    // Betrag zu hoch. completePurchaseMarket bleibt bewusst unverändert, da
+    // der Marktwert-Zweig grundsätzlich jede Brokerage ausschließt — exakt
+    // dasselbe Muster wie bei den kauf-/verkaufsgebundenen Einträgen oben.
+    // Analog zur bereits korrekten Kosten-Aggregation in
+    // ModelPortfolioChart::loadPortfolioInput() (Depotwert-Chart).
+    for (const BrokerageObject& brokerage : brokerageRepo.findByShare(guid)) {
+        if (brokerage.buyGuid().isEmpty() && brokerage.saleGuid().isEmpty())
+            completePurchase += brokerage.brokerageReduction();
+    }
+
     const double curValue = roundAway(netVolume * curPrice);
 
     // -- Realized sale figures --------------------------------------------

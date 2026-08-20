@@ -53,9 +53,14 @@
  * - purchaseValueFinal = held basis: sum(round(remVol x price) + brokeragePart - reductionPart)
  * - profitLossFinal     = curValue - purchaseValueFinal          [Aktuelle Entwicklung EUR]
  * - profitLossPctFinal  = profitLossFinal / purchaseValueFinal x 100
- * - totalBrokerage      = all brokerage entries (buy + sale)
+ * - totalBrokerage      = all brokerage entries (buy + sale + freestanding)
  * - totalDividend       = dividends after tax
  * - completePurchase    = all buys: sum(round(vol x price) + brokerage - reduction)
+ *                         + freestanding brokerage entries (no buyGuid/saleGuid,
+ *                         angelegt über die Kosten-Verwaltung; fixed 20.08.2026 —
+ *                         see ARCHITECTURE.md "Footer-Lücke bei freistehenden
+ *                         Kosteneinträgen"). completePurchaseMarket stays
+ *                         brokerage-free by design and is NOT affected.
  * - completeCurValue    = curValue + sum(sale payout incl. brokerage/reduction) + totalDividend
  * - completeProfitLoss  = completeCurValue - completePurchase
  * - completeProfitPct   = completeProfitLoss / completePurchase x 100

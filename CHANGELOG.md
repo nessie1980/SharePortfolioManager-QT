@@ -6,6 +6,21 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.14.6] - 2026-08-20
+
+### Fixed
+
+- Footer-Lücke bei freistehenden Kosteneinträgen: `ShareCalculator::compute()`
+  berücksichtigte Brokerage-/Kosteneinträge ohne Kauf- oder Verkaufsbezug
+  (angelegt über die Kosten-Verwaltung) bisher nur in `totalBrokerage`, nicht
+  in `completePurchase` — die Spalte "Komplette Entwicklung" war dadurch im
+  Grid, im Footer und in `ShareDetailsForm` um deren Betrag zu hoch, sowohl im
+  Marktwert- als auch im Depotwert-Tab. Der Depotwert-Chart rechnete an dieser
+  Stelle bereits korrekt; Footer und Chart stimmen jetzt automatisch überein.
+  `completePurchaseMarket` bleibt unverändert brokerage-frei. Neue Tests in
+  `tst_sharecalculator.cpp`. Siehe `docs/architecture/ARCHITECTURE.md`,
+  "Footer-Lücke bei freistehenden Kosteneinträgen" (Erledigt / Archiv).
+
 ## [1.14.5] - 2026-08-20
 
 ### Added

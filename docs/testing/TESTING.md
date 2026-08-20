@@ -2611,6 +2611,20 @@ Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
 | `test_split_reverseSplit_scalesDownHeldVolume` | Reverse-Split 1:10 (100 Stück à 5,00 € → 10 Stück à 50,00 €) | `volume` (10,0), `curValue`/`purchaseValue` (500,00) |
 | `test_split_realizedAndHeldValuesUseTodayScale` | Kauf vor dem Split (teilverkauft in Beleg-Skala), Verkauf danach — Bestands- **und** realisierte Seite in einer split-übergreifenden Position | `volume` (60,0), `curValue` (3.300,00), `purchaseValue` (3.000,00), `profitLoss` (300,00), `saleProfitLoss` (400,00), `completePurchaseMarket` (5.000,00), `completeProfitLossMarket` (700,00), `completeCurValueMarket` (5.700,00) |
 | `test_split_brokerageStaysUnscaled` | Brokerage ist ein Geldbetrag, nicht stückbezogen — nur die Pro-Lot-Fraktion nutzt die split-bereinigten Stückzahlen | `purchaseValueFinal` (3.012,00 = heldBuyValue 3.000,00 + heldBrokerage round(20,00×0,6)=12,00) |
+| `test_freestandingCost_addedToCompletePurchaseOnly` | Footer-Lücke-Fix (20.08.2026): freistehender Kosteneintrag (kein `buyGuid`/`saleGuid`), `addFreestandingCost(15,00, 5,00)` | `completePurchase` (1.010,00, +10,00 gegenüber ohne Eintrag), `completePurchaseMarket` unverändert (1.000,00), `totalBrokerage` (15,00) |
+| `test_freestandingCost_reducesCompleteEntwicklungBothTabs` | Gleiche Fixture — Auswirkung auf beide Tabs | `completeProfitLossMarket` UND `completeProfitLoss` je -10,00 (ohne den Eintrag wären beide 0,00) |
+| `test_freestandingCost_doesNotDoubleCountLinkedBrokerage` | Regression: Kernfixture ohne freistehende Einträge, nur kauf-/verkaufsgebundene Brokerage | `completePurchase` unverändert (1.612,90, wie in `test_marktwert_coreScenario`) |
+
+@note **Bugfix Footer-Lücke bei freistehenden Kosteneinträgen (20.08.2026,
+siehe ARCHITECTURE.md "Erledigt / Archiv"):** Kosteneinträge ohne Kauf- oder
+Verkaufsbezug (`buy_guid`/`sale_guid` beide leer, angelegt über die
+Kosten-Verwaltung) flossen bislang nur in `totalBrokerage` ein, nicht in
+`completePurchase` — "Komplette Entwicklung" war dadurch in beiden Tabs um
+den Betrag der freistehenden Einträge zu hoch. Neuer Helfer
+`addFreestandingCost()` legt einen `BrokerageObject`-Datensatz mit leerem
+`buyGuid`/`saleGuid` an; die drei Tests oben decken Zugehörigkeit
+(`completePurchase` ja, `completePurchaseMarket` nein), Auswirkung auf beide
+"Komplette Entwicklung"-Felder sowie die Abwesenheit von Doppelzählung ab.
 
 @note **Rückwärtskompatibilität:** Alle Tests oberhalb dieser Zeile legen
 keine Splits an und decken damit ab, dass `ShareCalculator::compute()` ohne
