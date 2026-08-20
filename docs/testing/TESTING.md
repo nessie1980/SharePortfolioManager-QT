@@ -2615,6 +2615,27 @@ Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
 | `test_freestandingCost_reducesCompleteEntwicklungBothTabs` | Gleiche Fixture — Auswirkung auf beide Tabs | `completeProfitLossMarket` UND `completeProfitLoss` je -10,00 (ohne den Eintrag wären beide 0,00) |
 | `test_freestandingCost_doesNotDoubleCountLinkedBrokerage` | Regression: Kernfixture ohne freistehende Einträge, nur kauf-/verkaufsgebundene Brokerage | `completePurchase` unverändert (1.612,90, wie in `test_marktwert_coreScenario`) |
 
+@note **Test-Fixture-Bug in `addSale()` aufgedeckt durch den Footer-Lücke-Fix
+(20.08.2026, CI-Lauf nach dem ursprünglichen Fix schlug in 6 von 20 Tests
+fehl):** Der Helfer `addSale()` legte den verkaufsgebundenen
+`BrokerageObject`-Datensatz bislang mit leerem `saleGuid` an — abweichend von
+der Produktion (`ModelSaleEdit::addSale()` setzt dort immer `sale.guid()`).
+Vor dem Footer-Lücke-Fix fiel das nie auf, weil nichts `brokerage.saleGuid()`
+auswertete. Der neue freistehende-Kosten-Zweig in `ShareCalculator::compute()`
+erkennt "freistehend" aber genau an `buyGuid().isEmpty() &&
+saleGuid().isEmpty()` — mit dem alten Helfer sah dadurch jede verkaufs-
+gebundene Brokerage wie ein freistehender Eintrag aus und wurde doppelt
+gezählt (einmal über `sale.brokerage()`, einmal über den neuen Zweig).
+Betraf `test_marktwert_coreScenario`, `test_depotwert_finalFields`,
+`test_marktwert_emptyDetails_sameResult`, `test_marktwert_fullySold`,
+`test_depotwert_saleProfitLossFinal_matchesRealizedWhenFullySold` und
+`test_freestandingCost_doesNotDoubleCountLinkedBrokerage` — alle mit
+Verkaufs-Brokerage > 0. Fix: `addSale()` übergibt jetzt `saleGuid` an den
+`BrokerageObject`-Konstruktor, wie die Produktion es tut; an
+`SaleRepository`s eigenem JOIN über `sales.brokerage_guid` (unverändert das,
+was `loadSales()`/`findByShare()` tatsächlich zum Anzeigen nutzen) ändert
+sich dadurch nichts.
+
 @note **Bugfix Footer-Lücke bei freistehenden Kosteneinträgen (20.08.2026,
 siehe ARCHITECTURE.md "Erledigt / Archiv"):** Kosteneinträge ohne Kauf- oder
 Verkaufsbezug (`buy_guid`/`sale_guid` beide leer, angelegt über die

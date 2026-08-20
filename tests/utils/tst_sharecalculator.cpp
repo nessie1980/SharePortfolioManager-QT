@@ -95,9 +95,16 @@ private:
         const QString saleGuid = newGuid();
         const QString brokGuid = newGuid();
 
-        // sale_guid stays empty: the sale references this record via
-        // brokerage_guid, which is what findByShare JOINs on.
-        brokRepo.insert(BrokerageObject(brokGuid, k_shareGuid, QString(), QString(),
+        // sale_guid IS set here, mirroring production (ModelSaleEdit::
+        // addSale()): SaleRepository's own JOIN for loading a sale's
+        // brokerage always goes forward via sales.brokerage_guid, never via
+        // brokerage.sale_guid — but brokerage.sale_guid is still populated
+        // on insert and is exactly what ShareCalculator::compute() now uses
+        // (20.08.2026, Footer-Lücke-Fix) to tell a sale-/buy-linked
+        // brokerage entry apart from a freestanding one via findByShare().
+        // Leaving it empty here (as before the fix) made every sale-linked
+        // entry look freestanding and silently double-counted its brokerage.
+        brokRepo.insert(BrokerageObject(brokGuid, k_shareGuid, QString(), saleGuid,
                                         dateTime,
                                         brokerage, 0.0, 0.0, reduction));
 
