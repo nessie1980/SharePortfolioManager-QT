@@ -95,6 +95,22 @@ private:
         const QString saleGuid = newGuid();
         const QString brokGuid = newGuid();
 
+        // Insert order matters: brokerage.sale_guid has an SQL FK to
+        // sales(guid) (sales.brokerage_guid, by contrast, has none — see
+        // Database.cpp), so the sale row must exist BEFORE the brokerage row
+        // that references it, exactly as ModelSaleEdit::addSale() does it
+        // (1. insert sale, 2. insert brokerage with sale.guid(), 2b. update
+        // sales.brokerage_guid). Doing it the other way round, as this
+        // helper did until 20.08.2026, throws "FOREIGN KEY constraint
+        // failed" on the brokerage insert.
+        saleRepo.insert(SaleObject(saleGuid, k_shareGuid, QString(), newGuid(),
+                                   dateTime,
+                                   volume, salePrice, details,
+                                   tax, 0.0, 0.0,        // taxAtSource / capitalGains / solidarity
+                                   brokGuid,             // brokerageGuid -> JOIN source
+                                   0.0, 0.0, 0.0,        // provision/fees (ignored on insert)
+                                   0.0));                // reduction (ignored on insert; from brokerage)
+
         // sale_guid IS set here, mirroring production (ModelSaleEdit::
         // addSale()): SaleRepository's own JOIN for loading a sale's
         // brokerage always goes forward via sales.brokerage_guid, never via
@@ -107,14 +123,6 @@ private:
         brokRepo.insert(BrokerageObject(brokGuid, k_shareGuid, QString(), saleGuid,
                                         dateTime,
                                         brokerage, 0.0, 0.0, reduction));
-
-        saleRepo.insert(SaleObject(saleGuid, k_shareGuid, QString(), newGuid(),
-                                   dateTime,
-                                   volume, salePrice, details,
-                                   tax, 0.0, 0.0,        // taxAtSource / capitalGains / solidarity
-                                   brokGuid,             // brokerageGuid -> JOIN source
-                                   0.0, 0.0, 0.0,        // provision/fees (ignored on insert)
-                                   0.0));                // reduction (ignored on insert; from brokerage)
     }
 
     // Insert a freestanding brokerage/cost entry (neither buyGuid nor
