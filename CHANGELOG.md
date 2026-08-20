@@ -6,6 +6,25 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.14.7] - 2026-08-20
+
+### Fixed
+
+- Skalenbewusste Mengenprüfung im Verkaufsformular: `SaleFifoAllocator::
+  allocate()` deckelte eine zu hohe Verkaufsmenge bislang still auf das
+  verfügbare Volumen, statt einen Fehler zu melden — im Feldfall zeigte das
+  Formular dadurch grüne Haken und eine vollständige Gewinnermittlung,
+  obwohl 3.800 Stück angefordert, aber nur 190 verfügbar waren (beides auf
+  heutiger Skala). Neue, skalenbewusste Prüfung (`SaleFifoAllocator::
+  isSaleVolumeCovered()`/`totalAvailableVolumeToday()`) verhindert das
+  Speichern jetzt mit einer Meldung, die angeforderte und verfügbare Menge
+  konkret beziffert, plus Live-Fehler-Icon auf dem Mengenfeld. Ein älterer,
+  nicht-jüngster Verkauf (nur das Dokument editierbar) bleibt bewusst
+  ausgenommen. Neue Tests in `tst_salefifoallocator.cpp` und
+  `tst_mainwindow.cpp` (`TestSalesForm`). Siehe
+  `docs/architecture/ARCHITECTURE.md`, "Skalenbewusste Mengenprüfung im
+  Verkaufsformular" (Erledigt / Archiv).
+
 ## [1.14.6] - 2026-08-20
 
 ### Fixed

@@ -304,7 +304,11 @@ void PresenterSaleEdit::onOrderNumberEdited()
 
 void PresenterSaleEdit::onVolumeOrPriceEdited()
 {
-    if (m_view->volume() > 0.0)
+    // Bugfix (siehe ARCHITECTURE.md, "Skalenbewusste Mengenprüfung im
+    // Verkaufsformular", 11.08.2026): eine Menge > 0, die die verfügbaren
+    // Käufe übersteigt, zeigte bisher trotzdem einen grünen Haken —
+    // SaleFifoAllocator::allocate() deckelte die Zuteilung still nach unten.
+    if (m_view->volume() > 0.0 && isRequestedVolumeCovered())
         m_view->setFieldOk(QStringLiteral("volume"), QString());
     else
         m_view->setFieldError(QStringLiteral("volume"));
@@ -858,6 +862,27 @@ QString PresenterSaleEdit::validateInput() const
             "Die fehlenden Felder sind in der Maske rot markiert.");
     }
 
+    // Bugfix (siehe ARCHITECTURE.md, "Skalenbewusste Mengenprüfung im
+    // Verkaufsformular", 11.08.2026): SaleFifoAllocator::allocate() deckelte
+    // eine zu hohe Verkaufsmenge bislang still auf das verfügbare Volumen,
+    // statt das Speichern abzulehnen. Die Prüfung erfolgt hier zusätzlich
+    // zum Live-Icon in onVolumeOrPriceEdited() — jenes läuft nur bei
+    // editingFinished und kann z. B. durch eine geänderte Depot-Auswahl
+    // danach wieder veralten.
+    if (!isRequestedVolumeCovered()) {
+        const QDate saleDate = QDateTime::fromString(m_view->dateTime(), Qt::ISODate).date();
+        const QList<BuyObject> available = currentAvailableBuys();
+        const double saleToday  = ShareSplitAdjuster::adjustedVolume(
+            m_view->volume(), m_splits, saleDate);
+        const double availToday = SaleFifoAllocator::totalAvailableVolumeToday(
+            available, m_splits);
+        return QObject::tr(
+            "Die Verkaufsmenge (%1 Stk., heutige Skala) übersteigt die im "
+            "gewählten Depot verfügbare Menge (%2 Stk.).")
+            .arg(QLocale().toString(saleToday, 'f', 4),
+                 QLocale().toString(availToday, 'f', 4));
+    }
+
     if (m_model->orderNumberExists(m_shareGuid,
                                    m_view->orderNumber().trimmed(),
                                    m_currentSaleGuid)) {
@@ -872,6 +897,34 @@ QString PresenterSaleEdit::validateInput() const
     }
 
     return QString();
+}
+
+// ── currentAvailableBuys ──────────────────────────────────────────────────────
+
+QList<BuyObject> PresenterSaleEdit::currentAvailableBuys() const
+{
+    return m_currentSaleGuid.isEmpty()
+        ? m_model->loadAvailableBuysForDepot(m_shareGuid, m_view->depotNumber())
+        : m_model->loadAvailableBuysForDepotExcludingSale(
+              m_shareGuid, m_view->depotNumber(), m_currentSaleGuid);
+}
+
+// ── isRequestedVolumeCovered ──────────────────────────────────────────────────
+
+bool PresenterSaleEdit::isRequestedVolumeCovered() const
+{
+    // Ein älterer, nicht-jüngster Verkauf ist bis auf das Dokument gesperrt
+    // (ViewSaleEdit::setButtonStates(), readOnlyMode) — onSave() speichert
+    // dort ausschließlich s.setDocument(), die Menge bleibt unverändert.
+    // Die Prüfung wäre hier auch inhaltlich nicht belastbar:
+    // loadAvailableBuysForDepotExcludingSale() bucht nur DIESEN einen
+    // Verkauf zurück, nicht die FIFO-Historie zwischen ihm und heute.
+    if (!m_currentSaleGuid.isEmpty() && !m_isLastSale)
+        return true;
+
+    const QDate saleDate = QDateTime::fromString(m_view->dateTime(), Qt::ISODate).date();
+    return SaleFifoAllocator::isSaleVolumeCovered(
+        m_view->volume(), saleDate, currentAvailableBuys(), m_splits);
 }
 
 // ── isLatestSale ──────────────────────────────────────────────────────────────

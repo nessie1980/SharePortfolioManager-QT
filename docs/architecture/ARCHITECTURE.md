@@ -4444,20 +4444,6 @@ hier je Aktie mit Splits einen eigenen Zugriff auf Splits UND komplette
 Kurshistorie; `populatePortfolioTables()` läuft aber bei jeder
 Tabellen-Neuaufbau, auch nach Beleg-Änderungen ganz ohne Split-Bezug.
 
-### Skalenbewusste Mengenpruefung im Verkaufsformular (11.08.2026)
-
-Waehrend der Analyse des Feldfalls zeigte das Verkaufsformular gruene Haken
-und eine vollstaendige Gewinnermittlung, obwohl die angeforderte Menge die
-verfuegbare deutlich ueberstieg (3.800 angefordert gegen 190 verfuegbar,
-beides auf heutiger Skala). `SaleFifoAllocator` deckelt still nach unten,
-statt einen Fehler zu melden. Dass das Ergebnis trotzdem stimmte, lag daran,
-dass zufaellig die gesamte Position verkauft wurde; bei einem Teilverkauf
-waere es stillschweigend falsch gewesen.
-
-Ob die Luecke im heutigen Code noch besteht, ist nicht abschliessend geprueft
-— der Feldfall entstand aus fehlerhaften Split-Daten, nicht zwingend aus
-einem Programmfehler.
-
 ### Bruchstücke bei Reverse-Splits nicht abgedeckt (07.08.2026, Lösung ohne neuen Code gefunden 14.08.2026)
 
 Bewusst aus "Aktiensplits werden nicht behandelt" ausgeklammert (Nessies
@@ -4669,6 +4655,52 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 ---
 
 ## Erledigt / Archiv
+
+### Skalenbewusste Mengenprüfung im Verkaufsformular (Bug, 11.08.2026, gefixt 20.08.2026)
+
+Während der Analyse eines Feldfalls zeigte das Verkaufsformular grüne Haken
+und eine vollständige Gewinnermittlung, obwohl die angeforderte Menge
+(3.800) die verfügbare (190) deutlich überstieg, beides auf heutiger Skala.
+`SaleFifoAllocator::allocate()` deckelte die Zuteilung still nach unten,
+statt einen Fehler zu melden. Dass das damalige Ergebnis trotzdem stimmte,
+war Zufall — weil die gesamte Position verkauft wurde; bei einem
+Teilverkauf wäre es stillschweigend falsch gewesen. Der Punkt stand deshalb
+zunächst offen: der Feldfall selbst entstand aus fehlerhaften Split-Daten,
+nicht zwingend aus einem Programmfehler, und ob die Lücke im Code
+tatsächlich noch bestand, war nicht abschließend geprüft.
+
+**Prüfergebnis (20.08.2026):** Ja, die Lücke bestand weiterhin —
+`PresenterSaleEdit` fragte vor dem Speichern an keiner Stelle ab, ob die
+verfügbaren Käufe die eingegebene Verkaufsmenge überhaupt decken. Weder das
+Live-Feld (`onVolumeOrPriceEdited()`, prüft nur `volume() > 0.0`) noch
+`validateInput()` (Pflichtfelder, doppelte Auftragsnummer, doppeltes
+Dokument) sahen einen entsprechenden Vergleich vor.
+
+**Fix (20.08.2026):** Zwei neue statische Methoden in `SaleFifoAllocator`
+— `totalAvailableVolumeToday()` (Summe der verfügbaren Käufe, skalenbewusst
+auf heutige Skala umgerechnet, wie schon intern in `allocate()`) und darauf
+aufbauend `isSaleVolumeCovered()` — machen die bislang implizite Deckelung
+explizit prüfbar, ohne das bestehende (weiterhin genutzte) Verhalten von
+`allocate()` selbst zu ändern. `PresenterSaleEdit` nutzt beide neu an zwei
+Stellen: im Live-Icon (`onVolumeOrPriceEdited()`, läuft bei
+`editingFinished`) und zusätzlich blockierend in `validateInput()`
+unmittelbar vor dem eigentlichen Speichern — mit einer Meldung, die
+angeforderte und verfügbare Menge konkret in Stück beziffert, statt nur
+allgemein auf einen Fehler hinzuweisen. Für einen älteren, nicht-jüngsten
+Verkauf greift die Prüfung bewusst nicht (neuer private Helfer
+`isRequestedVolumeCovered()` gibt dort unbedingt `true` zurück): die
+Mengenfelder sind für diesen Fall gesperrt (nur das Dokument ist editierbar,
+siehe `ViewSaleEdit::setButtonStates()`, `readOnlyMode`), und
+`loadAvailableBuysForDepotExcludingSale()` bucht ohnehin nur den einen
+bearbeiteten Verkauf zurück, nicht die vollständige FIFO-Historie zwischen
+ihm und heute — eine Prüfung wäre dort weder nötig noch belastbar.
+
+Tests: `tst_salefifoallocator.cpp` (u. a. der Feldfall selbst — 3.800 gegen
+190 — sowie ein skalenbewusster Split-Fall zwischen Kauf- und
+Verkaufsdatum) und `tst_mainwindow.cpp` (`TestSalesForm`: Live-Icon bei zu
+hoher Menge, blockiertes `onSave()` samt Fehlertext, Grenzfall exakte
+Deckung bleibt erlaubt, Dokument-only-Edit eines älteren Verkaufs bleibt
+unberührt).
 
 ### Footer-Lücke bei freistehenden Kosteneinträgen (Bug, 05.08.2026, gefixt 20.08.2026)
 

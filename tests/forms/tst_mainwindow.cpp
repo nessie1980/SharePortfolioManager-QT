@@ -197,7 +197,18 @@ class StubModelSaleEdit : public IModelSaleEdit
 public:
     // Configurable return values
     QList<SaleObject>  sales;
-    QList<BuyObject>   availableBuys;
+    // Default: eine großzügig bemessene, alte Position — die meisten Tests
+    // hier interessieren sich nicht für die Mengenprüfung und würden sonst
+    // an der neuen Prüfung in PresenterSaleEdit::validateInput()/
+    // onVolumeOrPriceEdited() scheitern (Bugfix, siehe ARCHITECTURE.md
+    // "Skalenbewusste Mengenprüfung im Verkaufsformular", 11.08.2026, gefixt
+    // 20.08.2026). Tests, die genau diese Prüfung testen oder eine konkrete
+    // FIFO-Zuteilung erwarten, überschreiben availableBuys gezielt.
+    QList<BuyObject>   availableBuys = {
+        BuyObject(QStringLiteral("default-buy"), QStringLiteral("share-1"),
+                 QStringLiteral("depot1"), QString(),
+                 QStringLiteral("2000-01-01T00:00:00"), 1000000.0, 0.0, 100.0)
+    };
     QList<ShareSplitObject> splits;
     BrokerageObject    brokerage;
     bool               addResult    = true;
@@ -6739,6 +6750,178 @@ private slots:
         // 1500 - 0 + 0 - 1000 - 12 + 2 - 0 = 490
         QVERIFY2(qAbs(view.lastGewinnVerlust - 490.0) < 1e-9,
                  qPrintable(QStringLiteral("lastGewinnVerlust=%1").arg(view.lastGewinnVerlust)));
+    }
+
+    // ── Skalenbewusste Mengenprüfung (Bugfix, siehe ARCHITECTURE.md
+    // "Erledigt / Archiv", "Skalenbewusste Mengenprüfung im
+    // Verkaufsformular", 11.08.2026, gefixt 20.08.2026) ────────────────────
+    //
+    // SaleFifoAllocator::allocate() deckelte eine zu hohe Verkaufsmenge
+    // bislang still auf das verfügbare Volumen, statt einen Fehler zu
+    // melden — im Feldfall zeigte das Formular dadurch grüne Haken und eine
+    // vollständige Gewinnermittlung, obwohl 3.800 Stück angefordert, aber
+    // nur 190 verfügbar waren.
+
+    void test_presenterSaleEdit_onVolumeOrPriceEdited_exceedsAvailable_setsError()
+    {
+        StubModelSaleEdit model;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                     QStringLiteral("depot1"), QString(),
+                     QStringLiteral("2024-01-01T10:00:00"), 190.0, 0.0, 50.0)
+        };
+
+        bool errorSet = false;
+        struct SpyView : public StubViewSaleEdit {
+            bool* called;
+            void setFieldError(const QString& f) override
+                { if (f == QLatin1String("volume")) *called = true; }
+        } spyView;
+        spyView.called   = &errorSet;
+        spyView.m_volume = 3800.0;   // Feldfall aus ARCHITECTURE.md
+
+        PresenterSaleEdit p(&spyView, &model, QStringLiteral("share-1"), nullptr);
+        p.onVolumeOrPriceEdited();
+
+        QVERIFY(errorSet);
+    }
+
+    void test_presenterSaleEdit_onVolumeOrPriceEdited_withinAvailable_setsOk()
+    {
+        StubModelSaleEdit model;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                     QStringLiteral("depot1"), QString(),
+                     QStringLiteral("2024-01-01T10:00:00"), 190.0, 0.0, 50.0)
+        };
+
+        bool okSet = false;
+        struct SpyView : public StubViewSaleEdit {
+            bool* called;
+            void setFieldOk(const QString& f, const QString&) override
+                { if (f == QLatin1String("volume")) *called = true; }
+        } spyView;
+        spyView.called   = &okSet;
+        spyView.m_volume = 190.0;   // exakt gedeckt
+
+        PresenterSaleEdit p(&spyView, &model, QStringLiteral("share-1"), nullptr);
+        p.onVolumeOrPriceEdited();
+
+        QVERIFY(okSet);
+    }
+
+    void test_presenterSaleEdit_onSave_exceedsAvailable_showsErrorAndBlocksSave()
+    {
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                     QStringLiteral("depot1"), QString(),
+                     QStringLiteral("2024-01-01T10:00:00"), 190.0, 0.0, 50.0)
+        };
+        view.m_volume = 3800.0;
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onSave();
+
+        QVERIFY(!view.lastError.isEmpty());
+        QVERIFY(!model.addSaleCalled);
+    }
+
+    void test_presenterSaleEdit_onSave_exceedsAvailable_errorNamesBothQuantities()
+    {
+        // Die Meldung muss beide Zahlen konkret benennen, sonst weiss der
+        // Nutzer nicht, was zu tun ist (vgl. das Verhalten vor dem Bugfix:
+        // gar keine Meldung, obwohl die Menge nicht gedeckt war).
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                     QStringLiteral("depot1"), QString(),
+                     QStringLiteral("2024-01-01T10:00:00"), 190.0, 0.0, 50.0)
+        };
+        view.m_volume = 3800.0;
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onSave();
+
+        QVERIFY2(view.lastError.contains(QLocale().toString(3800.0, 'f', 4)),
+                 qPrintable(view.lastError));
+        QVERIFY2(view.lastError.contains(QLocale().toString(190.0, 'f', 4)),
+                 qPrintable(view.lastError));
+    }
+
+    void test_presenterSaleEdit_onSave_exactMatch_isAccepted()
+    {
+        // Grenzfall: die komplette verfügbare Menge zu verkaufen muss
+        // weiterhin funktionieren (das war im Feldfall zufällig der Grund,
+        // warum das falsche Verhalten nicht auffiel).
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                     QStringLiteral("depot1"), QString(),
+                     QStringLiteral("2024-01-01T10:00:00"), 190.0, 0.0, 50.0)
+        };
+        view.m_volume = 190.0;
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onSave();
+
+        QVERIFY(model.addSaleCalled);
+        QVERIFY(view.lastError.isEmpty());
+    }
+
+    void test_presenterSaleEdit_onSave_scaleAware_splitBetweenBuyAndSale()
+    {
+        // Kauf von 5 Beleg-Stück vor einem 20:1-Split (avail heute = 100),
+        // Verkauf von 101 heutigen Stücken darf NICHT durchgehen — der
+        // unskalierte Vergleich (5 Beleg-Stück vs. 101 heutige) wäre falsch
+        // und würde die zu hohe Menge übersehen.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                     QStringLiteral("depot1"), QString(),
+                     QStringLiteral("2020-01-01T10:00:00"), 5.0, 0.0, 1000.0)
+        };
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2021, 1, 1), 20.0, 1.0);
+        view.m_dateTime = QStringLiteral("2022-01-01T10:00:00");
+        view.m_volume   = 101.0;
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onSave();
+
+        QVERIFY(!view.lastError.isEmpty());
+        QVERIFY(!model.addSaleCalled);
+    }
+
+    void test_presenterSaleEdit_onSave_nonLatestSaleDocOnlyEdit_skipsVolumeCheck()
+    {
+        // Bei einem älteren, nicht-jüngsten Verkauf ist die Menge gesperrt
+        // (nur das Dokument ist editierbar, siehe ViewSaleEdit::
+        // setButtonStates()) — die Mengenprüfung darf ein reines
+        // Dokument-Update nicht blockieren, selbst wenn das Formularfeld
+        // (hier ungenutzt) einen zu hohen Wert trüge.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        model.availableBuys.clear();   // nichts verfügbar
+        const SaleObject older = makeSale(QStringLiteral("s-old"),
+                                          QStringLiteral("share-1"), 2023);
+        const SaleObject newer = makeSale(QStringLiteral("s-new"),
+                                          QStringLiteral("share-1"), 2024);
+        model.sales = { older, newer };
+        view.m_volume = 999999.0;   // gesperrtes Feld, würde sonst blockieren
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onRowSelected(QStringLiteral("s-old"));   // non-latest
+
+        p.onSave();
+
+        QVERIFY(view.lastError.isEmpty());
+        QVERIFY(model.updateSaleCalled);
+        QVERIFY(!model.addSaleCalled);
     }
 
     // ── Split-Marker in der Verkaufs-Übersicht (Phase 3c) ─────────────────

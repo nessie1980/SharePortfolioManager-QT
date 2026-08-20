@@ -209,6 +209,90 @@ private slots:
         CMP_MONEY(rows.at(0).volume, 5.0);
         CMP_MONEY(rows.at(1).volume, 2.0);
     }
+
+    // ── Mengenprüfung (Bugfix, siehe ARCHITECTURE.md "Erledigt / Archiv",
+    // "Skalenbewusste Mengenprüfung im Verkaufsformular", 11.08.2026,
+    // gefixt 20.08.2026) ────────────────────────────────────────────────
+
+    void test_isSaleVolumeCovered_exactMatch_isCovered()
+    {
+        const QList<BuyObject> buys = { makeBuy("b1", d(2024, 1, 1), 10.0, 0.0, 100.0) };
+        QVERIFY(SaleFifoAllocator::isSaleVolumeCovered(10.0, d(2024, 6, 1), buys, {}));
+    }
+
+    void test_isSaleVolumeCovered_belowAvailable_isCovered()
+    {
+        const QList<BuyObject> buys = { makeBuy("b1", d(2024, 1, 1), 10.0, 0.0, 100.0) };
+        QVERIFY(SaleFifoAllocator::isSaleVolumeCovered(5.0, d(2024, 6, 1), buys, {}));
+    }
+
+    void test_isSaleVolumeCovered_aboveAvailable_isNotCovered()
+    {
+        // Feldfall aus ARCHITECTURE.md: 3.800 angefordert, 190 verfügbar,
+        // beides bereits auf heutiger Skala (keine Splits).
+        const QList<BuyObject> buys = { makeBuy("b1", d(2024, 1, 1), 190.0, 0.0, 50.0) };
+        QVERIFY(!SaleFifoAllocator::isSaleVolumeCovered(3800.0, d(2024, 6, 1), buys, {}));
+    }
+
+    void test_allocate_stillCapsSilently_documentsWhyCheckIsNeeded()
+    {
+        // Demonstriert die Lücke, die diesen Bugfix ausgelöst hat:
+        // allocate() liefert trotz zu hoher Menge nur die gedeckelte Zeile
+        // zurück, ohne jeden Hinweis auf den offenen Rest — Aufrufer MÜSSEN
+        // isSaleVolumeCovered() zusätzlich und VORHER prüfen.
+        const QList<BuyObject> buys = { makeBuy("b1", d(2024, 1, 1), 190.0, 0.0, 50.0) };
+
+        QVERIFY(!SaleFifoAllocator::isSaleVolumeCovered(3800.0, d(2024, 6, 1), buys, {}));
+
+        const QList<FifoAllocationRow> rows =
+            SaleFifoAllocator::allocate(3800.0, d(2024, 6, 1), buys, {});
+        QCOMPARE(rows.size(), 1);
+        CMP_MONEY(rows.first().volume, 190.0); // weiterhin gedeckelt, kein Fehler
+    }
+
+    void test_isSaleVolumeCovered_emptyAvailableBuys_onlyZeroIsCovered()
+    {
+        QVERIFY(!SaleFifoAllocator::isSaleVolumeCovered(1.0, d(2024, 6, 1), {}, {}));
+        QVERIFY(SaleFifoAllocator::isSaleVolumeCovered(0.0, d(2024, 6, 1), {}, {}));
+    }
+
+    void test_isSaleVolumeCovered_scaleAware_splitBetweenBuyAndSale()
+    {
+        // Gleiche Fixture wie test_allocate_splitBetweenBuyAndSale_*: Kauf
+        // vom 01.01.2020 (5 Stück Beleg-Skala, 2 bereits verkauft -> 3
+        // verfügbar), 20:1-Split am 01.01.2021 -> availToday = 3 x 20 = 60.
+        // Ein Verkauf von 60 heutigen Stücken ist exakt gedeckt, 61 nicht
+        // mehr — der unskalierte Vergleich (3 Beleg-Stück vs. 60 bzw. 61
+        // heutige Stück) wäre hier falsch.
+        const QList<BuyObject> buys = { makeBuy("b1", d(2020, 1, 1), 5.0, 2.0, 1000.0) };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2021, 1, 1), 20.0, 1.0) };
+
+        QVERIFY(SaleFifoAllocator::isSaleVolumeCovered(60.0, d(2022, 1, 1), buys, splits));
+        QVERIFY(!SaleFifoAllocator::isSaleVolumeCovered(61.0, d(2022, 1, 1), buys, splits));
+    }
+
+    void test_totalAvailableVolumeToday_summsAcrossBuys()
+    {
+        const QList<BuyObject> buys = {
+            makeBuy("b1", d(2024, 1, 1), 10.0, 4.0, 100.0), // avail 6
+            makeBuy("b2", d(2024, 2, 1), 8.0,  0.0, 110.0), // avail 8
+        };
+        CMP_MONEY(SaleFifoAllocator::totalAvailableVolumeToday(buys, {}), 14.0);
+    }
+
+    void test_totalAvailableVolumeToday_ignoresFullyConsumedBuys()
+    {
+        const QList<BuyObject> buys = {
+            makeBuy("used-up", d(2024, 1, 1), 10.0, 10.0, 100.0), // avail = 0
+            makeBuy("open",    d(2024, 2, 1), 10.0, 0.0,  105.0),
+        };
+        CMP_MONEY(SaleFifoAllocator::totalAvailableVolumeToday(buys, {}), 10.0);
+    }
+
+    void test_totalAvailableVolumeToday_emptyList_returnsZero()
+    {
+        CMP_MONEY(SaleFifoAllocator::totalAvailableVolumeToday({}, {}), 0.0);
+    }
 };
 
 QTEST_MAIN(TestSaleFifoAllocator)

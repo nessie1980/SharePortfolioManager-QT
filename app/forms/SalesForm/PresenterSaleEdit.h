@@ -97,6 +97,32 @@ private:
     bool    isLatestSale(const QString& saleGuid) const;
 
     /**
+     * @brief Verfügbare Käufe für die aktuelle Formular-Auswahl (Depot,
+     * abzüglich des gerade bearbeiteten Verkaufs, falls vorhanden).
+     *
+     * Dieselbe Fallunterscheidung wie in onSave()/refreshDerivedValues()/
+     * buildBuyDetailSummary() (Phase 2c, 07.08.2026), hier für die
+     * Mengenprüfung (siehe isRequestedVolumeCovered()) wiederverwendet,
+     * statt sie ein weiteres Mal zu duplizieren.
+     */
+    QList<BuyObject> currentAvailableBuys() const;
+
+    /**
+     * @brief Prüft, ob die eingegebene Verkaufsmenge durch die aktuell
+     * verfügbaren Käufe gedeckt ist (skalenbewusst über
+     * `SaleFifoAllocator::isSaleVolumeCovered()`).
+     *
+     * Bugfix: `SaleFifoAllocator::allocate()` deckelte eine zu hohe
+     * Verkaufsmenge bislang still auf das verfügbare Volumen, statt einen
+     * Fehler zu melden — im Feldfall zeigte das Formular dadurch grüne
+     * Haken und eine vollständige Gewinnermittlung, obwohl die angeforderte
+     * Menge (3.800) die verfügbare (190) deutlich überstieg. Siehe
+     * ARCHITECTURE.md, "Skalenbewusste Mengenprüfung im Verkaufsformular"
+     * (11.08.2026).
+     */
+    bool isRequestedVolumeCovered() const;
+
+    /**
      * @brief Anteilige Kauf-Nebenkosten einer FIFO-Zuteilungszeile.
      *
      * Bugfix (siehe ARCHITECTURE.md): beim Umbau auf `SaleFifoAllocator`

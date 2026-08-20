@@ -49,3 +49,35 @@ QList<FifoAllocationRow> SaleFifoAllocator::allocate(
 
     return rows;
 }
+
+// -- totalAvailableVolumeToday ----------------------------------------------------
+
+double SaleFifoAllocator::totalAvailableVolumeToday(
+    const QList<BuyObject>& availableBuysOldestFirst,
+    const QList<ShareSplitObject>& splits)
+{
+    double sum = 0.0;
+
+    for (const BuyObject& buy : availableBuysOldestFirst) {
+        const double availBeleg = buy.volume() - buy.volumeSold(); // Beleg-Skala des Kaufs
+        if (availBeleg <= 1e-9)
+            continue;
+
+        sum += ShareSplitAdjuster::adjustedVolume(availBeleg, splits, buy.date());
+    }
+
+    return sum;
+}
+
+// -- isSaleVolumeCovered -----------------------------------------------------------
+
+bool SaleFifoAllocator::isSaleVolumeCovered(
+    double saleVolume, const QDate& saleDate,
+    const QList<BuyObject>& availableBuysOldestFirst,
+    const QList<ShareSplitObject>& splits)
+{
+    const double saleToday = ShareSplitAdjuster::adjustedVolume(saleVolume, splits, saleDate);
+    const double availToday = totalAvailableVolumeToday(availableBuysOldestFirst, splits);
+
+    return saleToday <= availToday + 1e-9;
+}

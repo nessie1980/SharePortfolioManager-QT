@@ -79,4 +79,55 @@ public:
         double saleVolume, const QDate& saleDate,
         const QList<BuyObject>& availableBuysOldestFirst,
         const QList<ShareSplitObject>& splits);
+
+    /**
+     * @brief Summe des verfügbaren Volumens aller @p availableBuysOldestFirst,
+     * umgerechnet auf die heutige Skala.
+     *
+     * Öffentlich für Aufrufer, die im Fehlerfall den konkreten Fehlbetrag in
+     * einer Meldung ausweisen wollen (siehe `isSaleVolumeCovered()`,
+     * `PresenterSaleEdit::validateInput()`).
+     *
+     * @param availableBuysOldestFirst Verfügbare Käufe (Restvolumen > 0).
+     * @param splits                   Alle Splits der betroffenen Aktie.
+     * @return Summe von `buy.volume() - buy.volumeSold()` je Kauf, jeweils
+     *         über `ShareSplitAdjuster::adjustedVolume()` auf die heutige
+     *         Skala umgerechnet.
+     */
+    static double totalAvailableVolumeToday(
+        const QList<BuyObject>& availableBuysOldestFirst,
+        const QList<ShareSplitObject>& splits);
+
+    /**
+     * @brief Prüft, ob @p saleVolume durch @p availableBuysOldestFirst gedeckt ist.
+     *
+     * `allocate()` deckelt eine zu hohe Verkaufsmenge bislang still auf das
+     * verfügbare Volumen — der nicht zuteilbare Rest bleibt unzugeteilt, ohne
+     * dass das nach außen sichtbar wird. Im Feldfall, der zur Aufnahme dieses
+     * Punkts führte, zeigte das Verkaufsformular dadurch grüne Haken und eine
+     * vollständige Gewinnermittlung, obwohl 3.800 Stück angefordert, aber nur
+     * 190 verfügbar waren (beides auf heutiger Skala) — siehe ARCHITECTURE.md,
+     * "Offene Punkte"/"Erledigt", "Skalenbewusste Mengenprüfung im
+     * Verkaufsformular" (11.08.2026). Aufrufer sollen diese Methode VOR dem
+     * Aufruf von `allocate()` nutzen, um eine zu hohe Menge explizit
+     * abzuweisen, statt sich auf eine zufällig passende Gesamtsumme zu
+     * verlassen (z. B. weil ohnehin die komplette Position verkauft wird).
+     *
+     * Beide Seiten werden vor dem Vergleich auf die heutige Skala
+     * umgerechnet, genau wie in `allocate()` — ein direkter Vergleich
+     * unskalierter Werte wäre bei einem Split zwischen Kauf- und
+     * Verkaufsdatum falsch.
+     *
+     * @param saleVolume               Verkaufsmenge, Beleg-Skala des Verkaufsdatums.
+     * @param saleDate                 Datum des Verkaufs.
+     * @param availableBuysOldestFirst Verfügbare Käufe (Restvolumen > 0).
+     * @param splits                   Alle Splits der betroffenen Aktie.
+     * @return true, wenn saleVolume (heutige Skala, Toleranz 1e-9) durch die
+     *         Summe der verfügbaren Käufe (ebenfalls heutige Skala) gedeckt
+     *         ist.
+     */
+    static bool isSaleVolumeCovered(
+        double saleVolume, const QDate& saleDate,
+        const QList<BuyObject>& availableBuysOldestFirst,
+        const QList<ShareSplitObject>& splits);
 };
