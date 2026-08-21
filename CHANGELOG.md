@@ -6,6 +6,41 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [1.14.8] - 2026-08-21
+
+### Fixed
+
+- Dokumentenpfad nach Drag&Drop nicht im Eingabe-Dialog übernommen
+  (Nessies Bugreport, Dividenden-Dialog, per Screenshot belegt): Wird ein
+  Dokument per Drag&Drop auf "Direkte Dokumentenerfassung" abgelegt, öffnet
+  `MainWindow::openCaptureDialog()` den passenden Dialog und ruft direkt
+  `dlg.presenter()->onDocumentSelected(pdfPath)` auf — der Code in
+  `onBrowseDocument()`, der beim manuellen "…"-Klick sonst
+  `m_documentPath->setText(path)` setzt, wird dabei nie durchlaufen. Die
+  vier Presenter (`PresenterBuyEdit`, `PresenterSaleEdit`,
+  `PresenterDividendEdit`, `PresenterShareAdd`) schrieben den Pfad bislang
+  selbst nie in die View zurück, sodass das Feld trotz erfolgreich
+  geparster Werte auf "Kein Dokument ausgewählt …" stehen blieb — betraf
+  alle vier PDF-Erfassungsdialoge identisch, nicht nur Dividenden.
+  `PresenterShareSplitEdit::onDocumentSelected()` hatte das Problem nicht,
+  da es dort schon immer `m_view->setDocumentPath(path)` aufrief; die
+  übrigen vier Presenter folgen jetzt demselben Muster. Neue Methode
+  `setDocumentPath()` in `IViewBuyEdit`/`IViewSaleEdit`/
+  `IViewDividendEdit`/`IViewShareAdd` (analog `IViewShareSplitEdit`);
+  `onBrowseDocument()` aller vier Views ruft sie jetzt selbst auch nur noch
+  über den Presenter auf, statt den Dokumentpfad doppelt zu setzen — ein
+  einziger Codepfad für Browse-Klick und Drag&Drop. Vier neue
+  Regressionstests, je einer pro Dialog —
+  `test_presenterBuyEdit_onDocumentSelected_writesPathIntoView`
+  (`tst_buysform.cpp`),
+  `test_presenterSaleEdit_onDocumentSelected_writesPathIntoView`,
+  `test_presenterDividendEdit_onDocumentSelected_writesPathIntoView`,
+  `test_presenterShareAdd_onDocumentSelected_writesPathIntoView` (alle drei
+  in `tst_mainwindow.cpp`); Stub-Views in
+  `tst_buysform.cpp`/`tst_mainwindow.cpp` um `setDocumentPath()` ergänzt.
+  Siehe `docs/architecture/ARCHITECTURE.md`, "Dokumentenpfad nach Drag&Drop
+  nicht im Eingabe-Dialog übernommen", sowie `docs/testing/TESTING.md`.
+
 ## [1.14.7] - 2026-08-20
 
 ### Fixed

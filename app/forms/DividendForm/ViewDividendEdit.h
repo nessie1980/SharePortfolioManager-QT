@@ -94,6 +94,7 @@ public:
     void setFieldOk(const QString& field, const QString& value,
                     const QString& tooltip = QString()) override;
     void setFieldError(const QString& field)                    override;
+    void setDocumentPath(const QString& path)                   override;
     void setDocumentPreview(const QString& text)                override;
 
     void setParseProgress(int percent, const QString& status)   override;

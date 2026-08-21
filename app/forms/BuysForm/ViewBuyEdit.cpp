@@ -691,6 +691,11 @@ void ViewBuyEdit::setFieldError(const QString& field)
     lbl->setVisible(true);
 }
 
+void ViewBuyEdit::setDocumentPath(const QString& path)
+{
+    m_documentPath->setText(path);
+}
+
 void ViewBuyEdit::setDocumentPreview(const QString& /*text*/)
 {
     // Plain text is only used internally by the parser.
@@ -1166,8 +1171,10 @@ void ViewBuyEdit::onBrowseDocument()
         return;
     }
 
-    m_documentPath->setText(path);
-    m_presenter->onDocumentPathEdited();   // validate duplicate before parsing
+    // onDocumentSelected() now writes the path into the view and validates
+    // it itself (same as PresenterShareSplitEdit::onDocumentSelected()), so
+    // both this manual browse path and a document dropped onto "Direkte
+    // Dokumentenerfassung" go through the identical single code path.
     m_presenter->onDocumentSelected(path);
 }
 

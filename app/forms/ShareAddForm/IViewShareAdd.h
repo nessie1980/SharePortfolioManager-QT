@@ -74,6 +74,19 @@ public:
     virtual void setFieldError(const QString& field) = 0;
 
     /**
+     * @brief Write @p path into the document path field (and, where present,
+     * update the type-fallback icon and the PDF preview).
+     *
+     * Called by the presenter so both entry paths — the manual "…"-Browse
+     * click (ViewShareAdd::onBrowseDocument()) and a document dropped onto
+     * "Direkte Dokumentenerfassung" (MainWindow::openCaptureDialog() →
+     * dlg.presenter()->onDocumentSelected()) — end up showing the same
+     * document path in the dialog. Bugfix 21.08.2026, see IViewBuyEdit.h /
+     * ARCHITECTURE.md.
+     */
+    virtual void setDocumentPath(const QString& path) = 0;
+
+    /**
      * @brief Show a PDF preview text in the document preview panel.
      * @param text  Plain text extracted from the PDF.
      */

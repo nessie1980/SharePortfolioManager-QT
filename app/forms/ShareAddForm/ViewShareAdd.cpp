@@ -474,23 +474,10 @@ void ViewShareAdd::onBrowseDocument()
         return;
     }
 
-    m_documentPath->setText(path);
-
-    // Fallback-Icon je nach Dateiendung — siehe createDocumentGroup().
-    const QString ext = QFileInfo(path).suffix().toLower();
-    IconProvider::IconName iconName;
-    if (ext == QStringLiteral("pdf"))
-        iconName = IconProvider::DocPdfImage16;
-    else if (ext == QStringLiteral("doc") || ext == QStringLiteral("docx"))
-        iconName = IconProvider::DocWordImage16;
-    else if (ext == QStringLiteral("xls") || ext == QStringLiteral("xlsx"))
-        iconName = IconProvider::DocExcelImage16;
-    else
-        iconName = IconProvider::SearchFailed2;
-    m_docTypeIcon->setPixmap(IconProvider::icon(iconName).pixmap(16, 16));
-    m_docTypeIcon->setToolTip(path);
-
-    m_previewPanel->showDocument(path);
+    // onDocumentSelected() now writes the path (+ type icon + preview) into
+    // the view itself (same as PresenterShareSplitEdit::onDocumentSelected()),
+    // so both this manual browse path and a document dropped onto "Direkte
+    // Dokumentenerfassung" go through the identical single code path.
     m_presenter->onDocumentSelected(path);
 }
 
@@ -693,6 +680,27 @@ void ViewShareAdd::setUiBusy(bool busy)
         if (m_formPanel) m_formPanel->update();
         update();
     }
+}
+
+void ViewShareAdd::setDocumentPath(const QString& path)
+{
+    m_documentPath->setText(path);
+
+    // Fallback-Icon je nach Dateiendung — siehe createDocumentGroup()/onBrowseDocument().
+    const QString ext = QFileInfo(path).suffix().toLower();
+    IconProvider::IconName iconName;
+    if (ext == QStringLiteral("pdf"))
+        iconName = IconProvider::DocPdfImage16;
+    else if (ext == QStringLiteral("doc") || ext == QStringLiteral("docx"))
+        iconName = IconProvider::DocWordImage16;
+    else if (ext == QStringLiteral("xls") || ext == QStringLiteral("xlsx"))
+        iconName = IconProvider::DocExcelImage16;
+    else
+        iconName = IconProvider::SearchFailed2;
+    m_docTypeIcon->setPixmap(IconProvider::icon(iconName).pixmap(16, 16));
+    m_docTypeIcon->setToolTip(path);
+
+    m_previewPanel->showDocument(path);
 }
 
 void ViewShareAdd::setDocumentPreview(const QString& /*text*/)

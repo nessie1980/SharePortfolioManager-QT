@@ -32,6 +32,15 @@ void PresenterShareAdd::onDocumentSelected(const QString& filePath)
         return;
 
     m_pendingPdfPath = filePath;
+    // Bugfix 21.08.2026: write the path (+ type icon + preview) into the view
+    // here, same as ViewShareAdd::onBrowseDocument() already did — this call
+    // is the ONLY path taken when a document is dropped onto "Direkte
+    // Dokumentenerfassung" (MainWindow::openCaptureDialog() calls
+    // dlg.presenter()->onDocumentSelected() directly, bypassing
+    // onBrowseDocument() entirely). Without it the field stayed on "Kein
+    // Dokument ausgewählt …" even though parsing succeeded. See
+    // ARCHITECTURE.md.
+    m_view->setDocumentPath(filePath);
     m_pdfExtractor.extract(filePath);
 }
 

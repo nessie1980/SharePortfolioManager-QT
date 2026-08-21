@@ -68,6 +68,17 @@ public:
     virtual void setFieldError(const QString& field) = 0;
 
     // ── Document ──────────────────────────────────────────────────────────
+    /**
+     * @brief Write @p path into the document path field.
+     *
+     * Called by the presenter so both entry paths — the manual "…"-Browse
+     * click (ViewDividendEdit::onBrowseDocument()) and a document dropped
+     * onto "Direkte Dokumentenerfassung" (MainWindow::handleDroppedDocument()
+     * → dlg.presenter()->onDocumentSelected()) — end up showing the same
+     * document path in the dialog. Bugfix 21.08.2026, see IViewBuyEdit.h /
+     * ARCHITECTURE.md.
+     */
+    virtual void setDocumentPath(const QString& path) = 0;
     virtual void setDocumentPreview(const QString& text) = 0;
 
     // ── Parse status bar ──────────────────────────────────────────────────

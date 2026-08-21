@@ -87,6 +87,7 @@ public:
     // ── IViewShareAdd write methods ───────────────────────────────────────
     void setFieldOk(const QString& field, const QString& value) override;
     void setFieldError(const QString& field)                    override;
+    void setDocumentPath(const QString& path)                   override;
     void setDocumentPreview(const QString& text)                override;
     void showError(const QString& message)                      override;
     void setParseProgress(int percent, const QString& status)   override;

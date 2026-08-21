@@ -5487,6 +5487,25 @@ PDF-Anhang auf `m_documentCaptureGroup`:
   `pdftotext`-Aufruf) — eine bewusst in Kauf genommene kleine Redundanz,
   um die vier Presenter nicht zusätzlich um eine "Text bereits vorhanden"-
   Variante erweitern zu müssen.
+
+  @note **Bugfix (21.08.2026, Nessies Bugreport):** "exakt derselbe Aufruf,
+  den auch der manuelle '…'-Browse-Klick auslöst" stimmte nur für den
+  `onDocumentSelected(pdfPath)`-Aufruf selbst — nicht für sein Ergebnis.
+  `onBrowseDocument()` schrieb den gewählten Pfad zusätzlich direkt per
+  `m_documentPath->setText(path)` in die View, *bevor* es den Presenter
+  rief; `dlg.presenter()->onDocumentSelected(pdfPath)` von hier aus tat das
+  nicht. Ein per Drag+Drop erfasstes Dokument wurde dadurch zwar korrekt
+  geparst (alle Formularfelder befüllt), das Feld "Dokument:" selbst blieb
+  aber auf "Kein Dokument ausgewählt …" stehen — in allen vier Dialogen
+  gleichermaßen (`ViewShareAdd`, `ViewBuyEdit`, `ViewSaleEdit`,
+  `ViewDividendEdit`). `IViewBuyEdit`/`IViewSaleEdit`/`IViewDividendEdit`/
+  `IViewShareAdd` bekamen deshalb eine neue `setDocumentPath(path)`-Methode
+  (analog zu `IViewShareSplitEdit`, das den Pfad schon immer korrekt über
+  den Presenter setzte); die vier `onDocumentSelected()`-Implementierungen
+  rufen sie jetzt selbst auf, `onBrowseDocument()` verlässt sich seinerseits
+  nur noch auf `onDocumentSelected()` statt den Pfad doppelt zu setzen — ein
+  einziger Codepfad für Browse-Klick und Drag&Drop. Siehe CHANGELOG.md
+  [1.14.8].
 - **`ViewShareAdd::presenter()` ergänzt:** war der einzige der vier
   Editier-Dialoge ohne den sonst überall vorhandenen `presenter()`-
   Accessor (`ViewBuyEdit`/`ViewSaleEdit`/`ViewDividendEdit` hatten ihn

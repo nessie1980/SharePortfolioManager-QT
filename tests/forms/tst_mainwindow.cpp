@@ -177,6 +177,7 @@ public:
 
     void setFieldOk(const QString& f, const QString& v) override { fieldOkValues[f] = v; }
     void setFieldError(const QString& f)                override { fieldErrors << f; }
+    void setDocumentPath(const QString& path)           override { m_docPath = path; }
     void setDocumentPreview(const QString&)             override {}
     void showError(const QString& msg)                  override { lastError = msg; }
     void setParseProgress(int, const QString&)          override {}
@@ -350,6 +351,7 @@ public:
 
     void setFieldOk(const QString&, const QString&) override {}
     void setFieldError(const QString&)              override {}
+    void setDocumentPath(const QString& path)       override { m_docPath = path; }
     void setDocumentPreview(const QString&)         override {}
 
     void setParseProgress(int, const QString&)      override {}
@@ -3227,6 +3229,25 @@ private slots:
 
         QVERIFY(!view.closed);
         QVERIFY(!view.lastError.isEmpty());
+    }
+
+    void test_presenterShareAdd_onDocumentSelected_writesPathIntoView()
+    {
+        // Regression 21.08.2026 (Nessies Bugreport): analog zu
+        // test_presenterBuyEdit_onDocumentSelected_writesPathIntoView in
+        // tst_buysform.cpp — MainWindow ruft für ein per Drag&Drop erfasstes
+        // Dokument dlg.presenter()->onDocumentSelected() direkt auf,
+        // ViewShareAdd::onBrowseDocument() (das früher als einziges
+        // m_documentPath->setText() setzte) wird dabei nie durchlaufen.
+        openMemoryDb();
+
+        StubViewShareAdd  view;
+        StubModelShareAdd model;
+        PresenterShareAdd presenter(&view, &model, &m_docsConfig);
+
+        presenter.onDocumentSelected(QStringLiteral("/tmp/dropped.pdf"));
+
+        QCOMPARE(view.documentPath(), QStringLiteral("/tmp/dropped.pdf"));
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -8233,6 +8254,25 @@ private slots:
         QVERIFY(okSet);
     }
 
+    void test_presenterSaleEdit_onDocumentSelected_writesPathIntoView()
+    {
+        // Regression 21.08.2026 (Nessies Bugreport): analog zu
+        // test_presenterBuyEdit_onDocumentSelected_writesPathIntoView in
+        // tst_buysform.cpp — MainWindow ruft für ein per Drag&Drop erfasstes
+        // Dokument dlg.presenter()->onDocumentSelected() direkt auf,
+        // ViewSaleEdit::onBrowseDocument() (das früher als einziges
+        // m_documentPath->setText() setzte) wird dabei nie durchlaufen.
+        openMemoryDb();
+
+        StubViewSaleEdit view;
+        StubModelSaleEdit model;
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        p.onDocumentSelected(QStringLiteral("/tmp/dropped.pdf"));
+
+        QCOMPARE(view.documentPath(), QStringLiteral("/tmp/dropped.pdf"));
+    }
+
     void test_presenterSaleEdit_onDocumentSelected_newMode_doesNotEarlyReturn()
     {
         // In new-sale mode (no selection) a document selection must NOT be blocked:
@@ -8639,6 +8679,7 @@ public:
             m_priceAtPayday = value.toDouble();
     }
     void setFieldError(const QString&)              override {}
+    void setDocumentPath(const QString& path)       override { m_docPath = path; }
     void setDocumentPreview(const QString&)         override {}
 
     void setParseProgress(int, const QString&)      override {}
@@ -9059,6 +9100,25 @@ private slots:
         PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
         p.onDocumentPathEdited();
         QVERIFY(true);  // No crash = ok path executed
+    }
+
+    void test_presenterDividendEdit_onDocumentSelected_writesPathIntoView()
+    {
+        // Regression 21.08.2026 (Nessies Bugreport): analog zu
+        // test_presenterBuyEdit_onDocumentSelected_writesPathIntoView in
+        // tst_buysform.cpp — MainWindow ruft für ein per Drag&Drop erfasstes
+        // Dokument dlg.presenter()->onDocumentSelected() direkt auf,
+        // ViewDividendEdit::onBrowseDocument() (das früher als einziges
+        // m_documentPath->setText() setzte) wird dabei nie durchlaufen.
+        openMemoryDb();
+
+        StubViewDividendEdit view;
+        StubModelDividendEdit model;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onDocumentSelected(QStringLiteral("/tmp/dropped.pdf"));
+
+        QCOMPARE(view.documentPath(), QStringLiteral("/tmp/dropped.pdf"));
     }
 
     // ── ViewDividendEdit (Widget-Tests) ───────────────────────────────────

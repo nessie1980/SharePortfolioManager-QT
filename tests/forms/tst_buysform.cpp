@@ -157,6 +157,8 @@ public:
 
     void setFieldOk(const QString&, const QString&) override {}
     void setFieldError(const QString&)              override {}
+    void setDocumentPath(const QString& path)        override
+        { m_docPath = path; }
     void setDocumentPreview(const QString&)          override {}
 
     void setParseProgress(int, const QString&)       override {}
@@ -978,6 +980,27 @@ private slots:
 
         QVERIFY(!view.lastError.isEmpty());
         QVERIFY(!model.addBuyCalled);
+    }
+
+    void test_presenterBuyEdit_onDocumentSelected_writesPathIntoView()
+    {
+        // Regression 21.08.2026 (Nessies Bugreport): a document dropped onto
+        // "Direkte Dokumentenerfassung" reaches the dialog exclusively via
+        // MainWindow calling dlg.presenter()->onDocumentSelected() directly
+        // — ViewBuyEdit::onBrowseDocument() (which used to be the only place
+        // writing m_documentPath->setText()) is never involved. Before the
+        // fix the field stayed on "Kein Dokument ausgewählt …" even though
+        // parsing succeeded. onDocumentSelected() must therefore write the
+        // path into the view itself.
+        openMemoryDb();
+
+        StubViewBuyEdit view;
+        StubModelBuyEdit model;
+        PresenterBuyEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        p.onDocumentSelected(QStringLiteral("/tmp/dropped.pdf"));
+
+        QCOMPARE(view.documentPath(), QStringLiteral("/tmp/dropped.pdf"));
     }
 
     void test_presenterBuyEdit_onDocumentSelected_newMode_doesNotEarlyReturn()

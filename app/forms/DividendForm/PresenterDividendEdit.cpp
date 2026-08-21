@@ -258,7 +258,17 @@ void PresenterDividendEdit::onDocumentSelected(const QString& path)
     if (path.isEmpty()) return;
 
     m_pendingPdfPath = path;
+    // Bugfix 21.08.2026: write the path into the view's document field here,
+    // same as ViewDividendEdit::onBrowseDocument() already did — this call is
+    // the ONLY path taken when a document is dropped onto "Direkte
+    // Dokumentenerfassung" (MainWindow::openCaptureDialog() calls
+    // dlg.presenter()->onDocumentSelected() directly, bypassing
+    // onBrowseDocument() entirely). Without it the field stayed on "Kein
+    // Dokument ausgewählt …" even though parsing succeeded — this was
+    // Nessies' original bug report. See ARCHITECTURE.md.
+    m_view->setDocumentPath(path);
     m_view->openPdfPreview(path);
+    onDocumentPathEdited();
 
     // Parse the document to pre-fill form fields.
     m_pdfExtractor.extract(path);

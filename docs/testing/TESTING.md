@@ -576,6 +576,22 @@ Methode ist von außen schlicht nicht erreichbar) und braucht nur
 `ShareRepository` gegen eine echte Test-DB, kein `pdftotext` und keinen
 `MainWindow`-Instanz — Tests siehe oben.
 
+**Ergänzung 21.08.2026 (Nessies Bugreport, siehe CHANGELOG.md [1.14.8]):**
+Der eigentliche Übergabepunkt — `dlg.presenter()->onDocumentSelected(pdfPath)`
+in `openCaptureDialog()` — schrieb den Pfad bislang in keinem der vier
+Presenter (`PresenterBuyEdit`, `PresenterSaleEdit`, `PresenterDividendEdit`,
+`PresenterShareAdd`) selbst in die View zurück, sodass das Dokument-Feld nach
+einem Drag&Drop leer blieb, obwohl geparst wurde. Jetzt durch je einen
+Regressionstest pro Dialog abgedeckt:
+`test_presenterBuyEdit_onDocumentSelected_writesPathIntoView`
+(`tst_buysform.cpp`),
+`test_presenterSaleEdit_onDocumentSelected_writesPathIntoView`,
+`test_presenterDividendEdit_onDocumentSelected_writesPathIntoView`,
+`test_presenterShareAdd_onDocumentSelected_writesPathIntoView` (alle drei in
+`tst_mainwindow.cpp`) — jeder ruft `onDocumentSelected()` direkt am Presenter
+auf (ohne `onBrowseDocument()`, exakt der Drag&Drop-Codepfad) und prüft
+`view.documentPath()` gegen den übergebenen Pfad.
+
 **Bewusst weiterhin ungetestet:**
 - `MainWindow::handleDroppedDocument()` — jetzt `private slot` (analog
   `selectShareRow()`/`selectFirstShareRow()`, testbar per
@@ -687,6 +703,7 @@ PresenterShareAdd (via StubView + StubModel):
 | `test_presenterShareAdd_onSave_duplicateIsin_showsError` | Doppelte ISIN → Fehler | `view.lastError` nicht leer |
 | `test_presenterShareAdd_onSave_modelError_showsError` | DB-Fehler → Fehler | `view.lastError` nicht leer |
 | `test_presenterShareAdd_onSave_invalidDateTime_showsError` | Ungültiges Datum → Fehler | `view.lastError` nicht leer |
+| `test_presenterShareAdd_onDocumentSelected_writesPathIntoView` | Regression 21.08.2026 (Nessies Bugreport): Drag&Drop ruft `onDocumentSelected()` direkt auf, ohne über `onBrowseDocument()` zu laufen | `view.documentPath()` = übergebener Pfad |
 
 ViewShareAdd:
 | Test | Beschreibung | Prüft |
@@ -902,6 +919,7 @@ PresenterBuyEdit (via StubView + StubModel):
 | `test_presenterBuyEdit_onDocumentPathEdited_unique_setsOk` | Eindeutiges Dokument → Ok-Icon | `setFieldOk("document")` aufgerufen |
 | `test_presenterBuyEdit_onDocumentSelected_newMode_doesNotEarlyReturn` | Neu-Modus → Vorschau wird geöffnet | `openPdfPreview()` aufgerufen |
 | `test_presenterBuyEdit_onDocumentSelected_nonLatestBuy_earlyReturn` | Nicht-letzter Kauf → kein Parse | `setUiBusy(true)` nicht aufgerufen (pdftotext wird nicht gestartet) |
+| `test_presenterBuyEdit_onDocumentSelected_writesPathIntoView` | Regression 21.08.2026 (Nessies Bugreport): Drag&Drop ruft `onDocumentSelected()` direkt auf, ohne über `onBrowseDocument()` zu laufen | `view.documentPath()` = übergebener Pfad |
 
 ---
 
@@ -2010,6 +2028,7 @@ PresenterSaleEdit (via StubView + StubModel):
 | `test_presenterSaleEdit_onDocumentPathEdited_duplicate_setsError` | Duplikat-Dokument → Fehler-Icon | `setFieldError("document")` aufgerufen |
 | `test_presenterSaleEdit_onDocumentPathEdited_unique_setsOk` | Eindeutiges Dokument → Ok-Icon | `setFieldOk("document")` aufgerufen |
 | `test_presenterSaleEdit_onOrderNumberEdited_valid_setsOk` | Gültige Ordernummer → Ok-Icon | `setFieldOk("orderNumber")` aufgerufen |
+| `test_presenterSaleEdit_onDocumentSelected_writesPathIntoView` | Regression 21.08.2026 (Nessies Bugreport): Drag&Drop ruft `onDocumentSelected()` direkt auf, ohne über `onBrowseDocument()` zu laufen | `view.documentPath()` = übergebener Pfad |
 | `test_presenterSaleEdit_onDocumentSelected_newMode_doesNotEarlyReturn` | Neu-Modus → Vorschau wird geöffnet | `openPdfPreview()` aufgerufen |
 | `test_presenterSaleEdit_onDocumentSelected_nonLatestSale_earlyReturn` | Nicht-letzter Verkauf → kein Parse | `setUiBusy(true)` nicht aufgerufen |
 | `test_presenterSaleEdit_onSave_nonLatestSale_resetsButtonLabel` | Nicht-letzter Verkauf gespeichert → Button zurückgesetzt | `canRemove=false`, `isLastSale=false` |
@@ -2213,6 +2232,7 @@ PresenterDividendEdit (via StubView + StubModel):
 | `test_presenterDividendEdit_onReset_jumpsToOverviewTab` | Reset → Übersicht-Tab | `showOverviewTab()` aufgerufen |
 | `test_presenterDividendEdit_onDocumentPathEdited_duplicate_setsError` | Duplikat-Dokument → Fehler-Icon | kein Absturz, Error-Pfad ausgeführt |
 | `test_presenterDividendEdit_onDocumentPathEdited_unique_setsOk` | Eindeutiges Dokument → Ok-Icon | kein Absturz, Ok-Pfad ausgeführt |
+| `test_presenterDividendEdit_onDocumentSelected_writesPathIntoView` | Regression 21.08.2026 (Nessies Bugreport): Drag&Drop ruft `onDocumentSelected()` direkt auf, ohne über `onBrowseDocument()` zu laufen | `view.documentPath()` = übergebener Pfad |
 | `test_presenterDividendEdit_onClose_closesView` | `onClose()` → View geschlossen | `view.closed` = true |
 | `test_presenterDividendEdit_onForeignCurrencyToggled_callsView` | FC-Toggle → kein Absturz | true/false beide ohne Fehler |
 

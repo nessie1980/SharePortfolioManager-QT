@@ -800,6 +800,11 @@ void ViewSaleEdit::setFieldError(const QString& field)
     lbl->setVisible(true);
 }
 
+void ViewSaleEdit::setDocumentPath(const QString& path)
+{
+    m_documentPath->setText(path);
+}
+
 void ViewSaleEdit::setDocumentPreview(const QString& /*text*/) {}
 
 // ── Parse status bar ──────────────────────────────────────────────────────────
@@ -1231,8 +1236,10 @@ void ViewSaleEdit::onBrowseDocument()
         return;
     }
 
-    m_documentPath->setText(path);
-    m_presenter->onDocumentPathEdited();
+    // onDocumentSelected() now writes the path into the view and validates
+    // it itself (same as PresenterShareSplitEdit::onDocumentSelected()), so
+    // both this manual browse path and a document dropped onto "Direkte
+    // Dokumentenerfassung" go through the identical single code path.
     m_presenter->onDocumentSelected(path);
 }
 

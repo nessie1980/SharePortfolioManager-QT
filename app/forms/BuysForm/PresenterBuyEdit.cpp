@@ -292,7 +292,17 @@ void PresenterBuyEdit::onDocumentSelected(const QString& path)
     if (path.isEmpty()) return;
 
     m_pendingPdfPath = path;
+    // Bugfix 21.08.2026: write the path into the view's document field here,
+    // same as ViewBuyEdit::onBrowseDocument() already did — this call is the
+    // ONLY path taken when a document is dropped onto "Direkte
+    // Dokumentenerfassung" (MainWindow::openCaptureDialog() calls
+    // dlg.presenter()->onDocumentSelected() directly, bypassing
+    // onBrowseDocument() entirely). Without it the field stayed on "Kein
+    // Dokument ausgewählt …" even though parsing succeeded. See
+    // ARCHITECTURE.md.
+    m_view->setDocumentPath(path);
     m_view->openPdfPreview(path);
+    onDocumentPathEdited();   // validate duplicate before parsing
 
     // For non-latest buys only the document path is updated — no re-parse.
     // In new-buy mode (no selection) parsing is always allowed.
