@@ -59,6 +59,8 @@ ctest --output-on-failure
 ./bin/tst_buysform
 ./bin/tst_dividendform
 ./bin/tst_salesform
+./bin/tst_ownmessagebox
+./bin/tst_backupform
 ./bin/tst_backupsettingsform
 ./bin/tst_traysettingsform
 ./bin/tst_documentssettingsform
@@ -86,7 +88,11 @@ ausgelieferte Documents.xml gegen echte Belegauszüge) 40 und seit
 `tst_mainwindow` — kein neuer Test, nur ein neues Ziel für 127 vorhandene)
 waren es 42; seit `tst_salesform` (22.08.2026, Auslagerung von
 `TestSalesForm` aus derselben Datei — ebenfalls kein neuer Test, ein neues
-Ziel für 123 vorhandene) sind es 43. Anlass für den
+Ziel für 123 vorhandene) waren es 43, und seit `tst_ownmessagebox`/
+`tst_backupform` (22.08.2026, Auslagerung der letzten zwei Klassen
+`TestOwnMessageBox`/`TestBackupForm` aus `tst_mainwindow` — wieder kein
+neuer Test, zwei neue Ziele für 26 bzw. 14 vorhandene) sind es 45.
+`tst_mainwindow.cpp` enthält damit wieder nur noch `TestMainWindow`. Anlass für den
 ursprünglichen Abgleich war der Vorfall vom 05.08.2026, bei dem
 `tst_sharecalculator` hier aufgeführt war, aber in keiner `CMakeLists.txt`
 stand und deshalb nie gebaut wurde und nie mitlief. Wer ein Testziel
@@ -477,20 +483,25 @@ muss losgelöst von allen dreien prüfbar bleiben. Siehe ARCHITECTURE.md,
 
 ### tests/forms/ — Forms Unit-Tests
 
-#### tst_mainwindow — MainWindow + ShareAddForm + ShareEditForm + SalesForm + BrokeragesForm + OwnMessageBox + BackupProgressForm
+#### tst_mainwindow — MainWindow + ShareAddForm + ShareEditForm + BrokeragesForm
 
 Executable: `tst_mainwindow`  
 Klassen unter Test: `MainWindow`, `Database`, `ModelShareAdd`, `PresenterShareAdd`,
 `ViewShareAdd`, `ModelShareEdit`, `PresenterShareEdit`,
-`ModelSaleEdit`, `PresenterSaleEdit`, `ViewSaleEdit`,
-`ModelBrokerageEdit`, `PresenterBrokerageEdit`, `ViewBrokerageEdit`,
-`OwnMessageBox`, `BackupWorker`, `BackupProgressDialog`
+`ModelBrokerageEdit`, `PresenterBrokerageEdit`, `ViewBrokerageEdit`
 
 @note `ModelBuyEdit`/`PresenterBuyEdit`/`ViewBuyEdit` sind weiterhin als
 Produktionsquellen Teil von `tst_mainwindow` (Compile-Abhängigkeit über
 `ViewShareEdit`), werden dort aber nicht mehr getestet — siehe `tst_buysform`.
 Seit 22.08.2026 gilt dasselbe für `ModelDividendEdit`/`PresenterDividendEdit`/
-`ViewDividendEdit` — siehe `tst_dividendform`.
+`ViewDividendEdit` (siehe `tst_dividendform`), `ModelSaleEdit`/
+`PresenterSaleEdit`/`ViewSaleEdit` (siehe `tst_salesform`) und für
+`OwnMessageBox`/`BackupWorker`/`BackupProgressDialog` (siehe `tst_ownmessagebox`
+bzw. `tst_backupform`, beide ebenfalls seit 22.08.2026) — alle vier bleiben
+Compile-Abhängigkeit von `MainWindow.cpp`, werden aber in `tst_mainwindow`
+nicht mehr getestet. `tst_mainwindow.cpp` enthält damit nur noch
+`TestMainWindow` — die ursprünglich fünf Testklassen dieser Datei sind
+vollständig auf eigene Ziele verteilt.
 `ViewShareEdit` wurde in `tst_shareeditform` ausgelagert.
 
 @note Stub-Pattern: Für Presenter-Tests werden `StubView*` und `StubModel*`
@@ -2528,6 +2539,9 @@ file-globale Klassen vor `TestMainWindow` definiert.
 
 ### tests/forms/ — OwnMessageBox
 
+Executable: `tst_ownmessagebox` (eigenes Ziel seit 22.08.2026, zuvor Teil von
+`tst_mainwindow`)
+
 @note Stub-Pattern: Kein Stub nötig — `OwnMessageBox` hat keine externe
 Abhängigkeit zu Datenbank oder komplexen Interfaces. Alle Tests arbeiten
 direkt mit dem Widget.
@@ -2577,6 +2591,12 @@ im Question-Typ behalten ihre Icons, ungetestet blieb das schon vorher.
 ---
 
 ### tests/forms/ — BackupProgressForm
+
+Executable: `tst_backupform` (eigenes Ziel seit 22.08.2026, zuvor Teil von
+`tst_mainwindow`). Die drei `test_createBackup_*`-Fälle konstruieren dabei
+weiterhin ein echtes `MainWindow` — `createBackup()` ist eine private
+`MainWindow`-Methode, siehe `tst_backupsettingsform` für die Begründung,
+warum das nicht dort getestet wird.
 
 @note Zu BackupWorker-Tests: `BackupWorker::run()` wird in den Tests synchron direkt
 aufgerufen — kein Thread nötig. Signals werden via `QSignalSpy` geprüft.

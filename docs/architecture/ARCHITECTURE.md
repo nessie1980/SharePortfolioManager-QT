@@ -133,6 +133,8 @@ tst_mainwindow          ← alle ShareEditForm-, ShareAddForm-, BuysForm- (Compi
 tst_buysform            ← BuysForm (ModelBuyEdit, PresenterBuyEdit, ViewBuyEdit) + BuyRepository, BrokerageRepository, ShareRepository
 tst_dividendform        ← DividendForm (ModelDividendEdit, PresenterDividendEdit, ViewDividendEdit) + alle Repositories inkl. DailyValuesRepository + DividendVolumeChecker, ShareSplitAdjuster, ShareSplitHint (ohne Qt6::Charts/Multimedia)
 tst_salesform           ← SalesForm (ModelSaleEdit, PresenterSaleEdit, ViewSaleEdit) + BuyRepository, BrokerageRepository, SaleRepository, ShareRepository
+tst_ownmessagebox       ← OwnMessageBox + IconProvider (kein DB-/MainWindow-Bezug)
+tst_backupform          ← BackupWorker, BackupProgressDialog UND eine echte MainWindow-Konstruktion (createBackup() ist privat) — Quellenliste spiegelt deshalb tst_mainwindow, minus FakeNetworkAccessManager
 tst_shareeditform       ← ViewShareEdit + alle vier Sub-Form-Trios als Compile-Dep. (BuysForm, SalesForm, DividendForm, BrokeragesForm) + alle Repositories
 tst_backupsettingsform  ← BackupSettingsForm + AppSettings, IconProvider (kein DB-/MainWindow-Bezug)
 tst_sharedetailsform    ← PresenterShareDetails über Fake-View/Fake-Model (IViewShareDetails, IModelShareDetails) — keine DB, keine Qt-Widgets, kein ShareCalculator
@@ -169,17 +171,23 @@ tst_xmlportfolioparser / tst_portfoliovalidator / tst_portfolioimporter  ← too
 `tst_splitpricejumpdetector` (13.08.2026) 37, seit
 `tst_splitadjustmentaudit` (20.08.2026, Phase 4b) 38 und seit
 `tst_dividendvolumechecker` (21.08.2026, Phase 3 der Ex-Tag-Behandlung) 39,
-seit `tst_documentsxml` (21.08.2026, Phase 5) 40 und seit `tst_dividendform` (22.08.2026, Auslagerung aus `tst_mainwindow`) und `tst_salesform` (22.08.2026, Auslagerung aus `tst_mainwindow`) sind es 43. Die vollständige Startbefehl-Liste steht in TESTING.md,
+seit `tst_documentsxml` (21.08.2026, Phase 5) 40, seit `tst_dividendform` (22.08.2026, Auslagerung aus `tst_mainwindow`) und `tst_salesform` (22.08.2026, Auslagerung aus `tst_mainwindow`) waren es 43 und seit `tst_ownmessagebox` und `tst_backupform` (22.08.2026, beide Auslagerung aus `tst_mainwindow`) sind es 45. Die vollständige Startbefehl-Liste steht in TESTING.md,
 "Einzelnen Test direkt starten".
 
 @note Korrektur 22.08.2026: 
 1. Die Kette oben zählte um eins zu niedrig — `tst_documentfieldvalue` wurde 
-   nie mitgezählt. Nachgezählt sind es 42 Ziele. Mit `tst_salesform` sind es 43.
+   nie mitgezählt. Nachgezählt sind es 42 Ziele. Mit `tst_salesform` waren es 43.
 2. Die Aufstellung im Block oben ist jetzt vollständig aktualisiert — alle 
    fehlenden Tests (`tst_documentfieldvalue`, `tst_documentsxml`, 
    `tst_sharesplithint`, `tst_sharesplitsform`, `tst_splitadjustmentaudit`, 
    `tst_splitpricejumpdetector`) wurden hinzugefügt. Die Startbefehl-Liste in 
    TESTING.md ist vollständig und in beide Richtungen abgeglichen.
+
+@note Umzug `TestOwnMessageBox`/`TestBackupForm` (22.08.2026): letzte zwei
+Klassen aus `tst_mainwindow.cpp` herausgelöst, `tst_mainwindow.cpp` ist damit
+wieder auf eine einzige Testklasse (`TestMainWindow`) zurückgeschnitten — 43
+Ziele + diese beiden neuen sind 45. Details siehe Abschnitt
+"tst_mainwindow.cpp in eigene Testdateien aufteilen" weiter unten.
 
 ---
 
@@ -4938,26 +4946,29 @@ brüchig (ohne Doppelpunkt gewinnt die DKB). Der Punkt steht bewusst weiter
 oben unter "Bankerkennung: Mehrdeutigkeit über die Depotnummer", weil die
 Ursache allgemein ist und nicht an Consors hängt.
 
-### tst_mainwindow.cpp in eigene Testdateien aufteilen (09.08.2026, DividendForm und SalesForm erledigt 22.08.2026)
+### tst_mainwindow.cpp in eigene Testdateien aufteilen (09.08.2026, abgeschlossen 22.08.2026)
 
 `tests/forms/tst_mainwindow.cpp` war auf **11.273 Zeilen** mit fünf
 Testklassen gewachsen, obwohl TESTING.md ein Testziel je Form vorsieht. Nach
-der Auslagerung von `TestDividendForm` und `TestSalesForm` sind es **6.464
-Zeilen** und drei Klassen; die Konvention wird noch zweifach gebrochen:
+der Auslagerung aller vier Klassen sind es **5.823 Zeilen** und wieder eine
+einzige Klasse — die Konvention "ein Testziel je Form" gilt jetzt für die
+ganze Datei:
 
 | Klasse | gehört nach | Stand |
 | --- | --- | --- |
 | `TestMainWindow` | bleibt in `tst_mainwindow.cpp` | — |
 | `TestDividendForm` | `tst_dividendform.cpp` | **erledigt 22.08.2026** — 127 Testmethoden, eigenes CMake-Ziel `tst_dividendform` |
 | `TestSalesForm` | `tst_salesform.cpp` | **erledigt 22.08.2026** — 123 Testmethoden, eigenes CMake-Ziel `tst_salesform` |
-| `TestOwnMessageBox` | `tst_ownmessagebox.cpp` | offen, gering |
-| `TestBackupForm` | `tst_backupform.cpp` | offen, gering |
+| `TestOwnMessageBox` | `tst_ownmessagebox.cpp` | **erledigt 22.08.2026** — 26 Testmethoden, eigenes CMake-Ziel `tst_ownmessagebox` |
+| `TestBackupForm` | `tst_backupform.cpp` | **erledigt 22.08.2026** — 14 Testmethoden, eigenes CMake-Ziel `tst_backupform` |
 
-Praktisch heisst das: wer eine Änderung an OwnMessageBox oder der
-BackupProgressForm testet, baut und lädt weiterhin eine 6.500-Zeilen-Datei
-mit, und ein Fehlschlag irgendwo in der Mitte ist schwer zuzuordnen — der
-Absturz vom 08.08.2026 in `tst_portfoliochartform` hat genau diese Sorte
-Verwechslung vorgeführt.
+Testmethoden-Bilanz der Auslagerung insgesamt: 250 (`TestMainWindow`,
+verbleibend) + 127 (`TestDividendForm`) + 123 (`TestSalesForm`) + 26
+(`TestOwnMessageBox`) + 14 (`TestBackupForm`) = 540 Testmethoden, die zu
+irgendeinem Zeitpunkt in `tst_mainwindow.cpp` standen. Für den letzten
+Schritt dieser Session allein galt: 290 (Stand vor der Auslagerung von
+`TestOwnMessageBox`/`TestBackupForm`) = 250 + 26 + 14 — keine verloren, keine
+doppelt.
 
 @note Das Muster steht: `tst_buysform.cpp` ist genau so aus dieser
 Datei herausgelöst worden und war die Vorlage für `tst_dividendform.cpp` —
@@ -4975,8 +4986,25 @@ wurden `StubModelSaleEdit`, `StubViewSaleEdit` und der Dateihelfer
 ausschliesslich von dieser Klasse benutzt. Gegenüber `tst_dividendform`
 kommt `SaleFifoAllocator` in die Quellenliste (PresenterSaleEdit rechnet die
 FIFO-Zuteilung des jüngsten Verkaufs live nach); `DailyValuesRepository` und
-`DividendVolumeChecker` entfallen. Für `TestOwnMessageBox` und
-`TestBackupForm` gilt dasselbe Muster.
+`DividendVolumeChecker` entfallen.
+
+@note Umzug `TestOwnMessageBox`/`TestBackupForm` (22.08.2026), letzte zwei
+Klassen: anders als bei `TestSalesForm`/`TestDividendForm` gab es hier keine
+eigenen Stub-Klassen und keine Klassen-Helfer außerhalb der jeweiligen Klasse
+— beide Blöcke waren bereits vollständig in sich geschlossen, reine
+Kopie ohne Extraktion zusätzlicher Symbole.
+`TestBackupForm` ist der Sonderfall: drei seiner 14 Tests
+(`test_createBackup_*`) konstruieren ein echtes `MainWindow`, weil
+`createBackup()` eine private Methode von `MainWindow` ist (siehe
+Begründung in `tst_backupsettingsform.cpp`, die dort bewusst nur die
+BackupSettingsForm-UI testet, nicht die Backup-Erstellung selbst). Die
+Quellenliste von `tst_backupform` in `tests/forms/CMakeLists.txt` ist deshalb
+praktisch identisch mit der von `tst_mainwindow` — einzige Ausnahme:
+`FakeNetworkAccessManager`, das nur `TestMainWindow` selbst braucht, nicht
+`MainWindow.cpp` und nicht `TestBackupForm`. `TestOwnMessageBox` ist dagegen
+der leichteste aller fünf Umzüge — weder Datenbank noch `MainWindow`, nur
+`OwnMessageBox` + `IconProvider` (fürs Icon-Label), `QTEST_MAIN` statt
+eigenem `main()`, da keine formatierten Beträge verglichen werden.
 
 @note Lehre aus dem DividendForm-Umzug (22.08.2026): Der gemeinsame `main()`
 von `tst_mainwindow.cpp` setzt `QLocale::setDefault(QLocale::German)`, bevor

@@ -1020,3 +1020,234 @@ add_custom_command(TARGET tst_salesform POST_BUILD
     COMMENT "Copying config files to ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 )
 
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_ownmessagebox — OwnMessageBox (Critical/Information/Question-Dialoge)
+# Aus tst_mainwindow.cpp herausgelöst (22.08.2026) — analog tst_buysform/
+# tst_dividendform/tst_salesform. Braucht weder Datenbank noch MainWindow, ein
+# schlanker eigener Test reicht (analog tst_backupsettingsform/
+# tst_traysettingsform). IconProvider.cpp + FORM_TEST_RESOURCES sind nötig,
+# weil OwnMessageBox darüber sein Icon-Label befüllt
+# (test_critical_hasIconLabel() u. Ä. prüfen ein nicht-leeres QPixmap).
+# ─────────────────────────────────────────────────────────────────────────────
+
+qt_add_executable(tst_ownmessagebox tst_ownmessagebox.cpp
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
+    ../../app/IconProvider.cpp
+    ${FORM_TEST_RESOURCES}
+)
+
+target_include_directories(tst_ownmessagebox
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/OwnMessageBoxForm
+)
+
+set_target_properties(tst_ownmessagebox PROPERTIES
+    AUTOMOC ON
+    AUTORCC ON
+)
+
+target_link_libraries(tst_ownmessagebox
+    PRIVATE Qt6::Test Qt6::Widgets
+)
+
+add_test(NAME tst_ownmessagebox COMMAND tst_ownmessagebox)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_backupform — BackupWorker, BackupProgressDialog und die
+# createBackup()-Regression über eine echte MainWindow-Konstruktion.
+# Aus tst_mainwindow.cpp herausgelöst (22.08.2026). createBackup() ist eine
+# private Methode von MainWindow (siehe Kommentar in tst_backupsettingsform.cpp
+# oben) — die Quellenliste spiegelt deshalb bewusst die von tst_mainwindow
+# (gleiche MainWindow.cpp-Abhängigkeiten), minus FakeNetworkAccessManager, das
+# nur TestMainWindow selbst benutzt, nicht MainWindow.cpp oder TestBackupForm.
+# Ebenfalls NICHT mitgenommen: ${CMAKE_BINARY_DIR}/app (Version.h) — den
+# Fenstertitel-Versionstest hat nur tst_mainwindow.
+# ─────────────────────────────────────────────────────────────────────────────
+
+qt_add_executable(tst_backupform tst_backupform.cpp
+    ../../app/forms/MainForm/MainWindow.cpp
+    ../../app/forms/LoggerSettingsForm/LoggerSettingsForm.cpp
+    ../../app/forms/SoundSettingsForm/SoundSettingsForm.cpp
+    ../../app/forms/BackupSettingsForm/BackupSettingsForm.h
+    ../../app/forms/BackupSettingsForm/BackupSettingsForm.cpp
+    ../../app/forms/DocumentsSettingsForm/DocumentsSettingsForm.h
+    ../../app/forms/DocumentsSettingsForm/DocumentsSettingsForm.cpp
+    ../../app/forms/TraySettingsForm/TraySettingsForm.h
+    ../../app/forms/TraySettingsForm/TraySettingsForm.cpp
+    ../../app/forms/AboutForm/AboutForm.cpp
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
+    ../../app/forms/BackupProgressForm/BackupWorker.h
+    ../../app/forms/BackupProgressForm/BackupWorker.cpp
+    ../../app/forms/BackupProgressForm/BackupProgressDialog.h
+    ../../app/forms/BackupProgressForm/BackupProgressDialog.cpp
+    ../../app/forms/ApiSettingsForm/ApiSettingsForm.cpp
+    ../../app/forms/ShareAddForm/ModelShareAdd.cpp
+    ../../app/forms/ShareAddForm/PresenterShareAdd.cpp
+    ../../app/forms/ShareAddForm/ViewShareAdd.cpp
+    ../../app/forms/ShareEditForm/IViewShareEdit.h
+    ../../app/forms/ShareEditForm/IModelShareEdit.h
+    ../../app/forms/ShareEditForm/ModelShareEdit.h
+    ../../app/forms/ShareEditForm/ModelShareEdit.cpp
+    ../../app/forms/ShareEditForm/PresenterShareEdit.h
+    ../../app/forms/ShareEditForm/PresenterShareEdit.cpp
+    ../../app/forms/ShareEditForm/ViewShareEdit.h
+    ../../app/forms/ShareEditForm/ViewShareEdit.cpp
+    ../../app/forms/ShareSplitsForm/IViewShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/IModelShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/ModelShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/ModelShareSplitEdit.cpp
+    ../../app/forms/ShareSplitsForm/PresenterShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/PresenterShareSplitEdit.cpp
+    ../../app/forms/ShareSplitsForm/ViewShareSplitEdit.h
+    ../../app/forms/ShareSplitsForm/ViewShareSplitEdit.cpp
+    ../../app/forms/ShareDetailsForm/IViewShareDetails.h
+    ../../app/forms/ShareDetailsForm/IModelShareDetails.h
+    ../../app/forms/ShareDetailsForm/ModelShareDetails.h
+    ../../app/forms/ShareDetailsForm/ModelShareDetails.cpp
+    ../../app/forms/ShareDetailsForm/PresenterShareDetails.h
+    ../../app/forms/ShareDetailsForm/PresenterShareDetails.cpp
+    ../../app/forms/ShareDetailsForm/ViewShareDetails.h
+    ../../app/forms/ShareDetailsForm/ViewShareDetails.cpp
+    ../../app/widgets/OverviewTabWidget.h
+    ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/widgets/DocumentPreviewPanel.h
+    ../../app/widgets/DocumentPreviewPanel.cpp
+    ../../app/forms/ChartForm/ChartTypes.h
+    ../../app/forms/ChartForm/IViewChart.h
+    ../../app/forms/ChartForm/IModelChart.h
+    ../../app/forms/ChartForm/ModelChart.h
+    ../../app/forms/ChartForm/ModelChart.cpp
+    ../../app/forms/ChartForm/PresenterChart.h
+    ../../app/forms/ChartForm/PresenterChart.cpp
+    ../../app/forms/ChartForm/ViewChart.h
+    ../../app/forms/ChartForm/ViewChart.cpp
+    ../../app/forms/ChartForm/ChartPopup.h
+    ../../app/forms/ChartForm/ChartPopup.cpp
+    ../../app/forms/PortfolioChartForm/PortfolioChartTypes.h
+    ../../app/forms/PortfolioChartForm/IViewPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/IModelPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/ModelPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/ModelPortfolioChart.cpp
+    ../../app/forms/PortfolioChartForm/PresenterPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/PresenterPortfolioChart.cpp
+    ../../app/forms/PortfolioChartForm/ViewPortfolioChart.h
+    ../../app/forms/PortfolioChartForm/ViewPortfolioChart.cpp
+    ../../app/forms/BuysForm/IViewBuyEdit.h
+    ../../app/forms/BuysForm/IModelBuyEdit.h
+    ../../app/forms/BuysForm/ModelBuyEdit.h
+    ../../app/forms/BuysForm/ModelBuyEdit.cpp
+    ../../app/forms/BuysForm/PresenterBuyEdit.h
+    ../../app/forms/BuysForm/PresenterBuyEdit.cpp
+    ../../app/forms/BuysForm/ViewBuyEdit.h
+    ../../app/forms/BuysForm/ViewBuyEdit.cpp
+    ../../app/forms/SalesForm/IViewSaleEdit.h
+    ../../app/forms/SalesForm/IModelSaleEdit.h
+    ../../app/forms/SalesForm/ModelSaleEdit.h
+    ../../app/forms/SalesForm/ModelSaleEdit.cpp
+    ../../app/forms/SalesForm/PresenterSaleEdit.h
+    ../../app/forms/SalesForm/PresenterSaleEdit.cpp
+    ../../app/forms/SalesForm/ViewSaleEdit.h
+    ../../app/forms/SalesForm/ViewSaleEdit.cpp
+    ../../app/forms/DividendForm/IViewDividendEdit.h
+    ../../app/forms/DividendForm/IModelDividendEdit.h
+    ../../app/forms/DividendForm/ModelDividendEdit.h
+    ../../app/forms/DividendForm/ModelDividendEdit.cpp
+    ../../app/forms/DividendForm/PresenterDividendEdit.h
+    ../../app/forms/DividendForm/PresenterDividendEdit.cpp
+    ../../app/forms/DividendForm/ViewDividendEdit.h
+    ../../app/forms/DividendForm/ViewDividendEdit.cpp
+    ../../app/forms/BrokeragesForm/IModelBrokerageEdit.h
+    ../../app/forms/BrokeragesForm/IViewBrokerageEdit.h
+    ../../app/forms/BrokeragesForm/ModelBrokerageEdit.h
+    ../../app/forms/BrokeragesForm/ModelBrokerageEdit.cpp
+    ../../app/forms/BrokeragesForm/PresenterBrokerageEdit.h
+    ../../app/forms/BrokeragesForm/PresenterBrokerageEdit.cpp
+    ../../app/forms/BrokeragesForm/ViewBrokerageEdit.h
+    ../../app/forms/BrokeragesForm/ViewBrokerageEdit.cpp
+    ../../app/config/AppSettings.cpp
+    ../../app/config/WebSitesConfig.cpp
+    ../../app/config/DocumentsConfig.cpp
+    ../../app/AppStartup.cpp
+    ../../app/IconProvider.cpp
+    ../../app/models/ShareObject.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/DividendObject.cpp
+    ../../app/models/BrokerageObject.cpp
+    ../../app/models/DailyValuesObject.cpp
+    ../../app/repositories/ShareRepository.cpp
+    ../../app/repositories/BuyRepository.cpp
+    ../../app/repositories/SaleRepository.cpp
+    ../../app/repositories/DividendRepository.cpp
+    ../../app/repositories/BrokerageRepository.cpp
+    ../../app/repositories/DailyValuesRepository.cpp
+    ../../app/core/DocumentRootMigrator.h
+    ../../app/core/DocumentRootMigrator.cpp
+    ../../app/models/ShareSplitObject.h
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/ShareSplitRepository.h
+    ../../app/repositories/ShareSplitRepository.cpp
+    ../../app/utils/ShareCalculator.cpp
+    ../../app/utils/ShareSplitAdjuster.h
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/DividendVolumeChecker.h
+    ../../app/utils/DividendVolumeChecker.cpp
+    ../../app/utils/ShareSplitHint.h
+    ../../app/utils/ShareSplitHint.cpp
+    ../../app/utils/SplitPriceJumpDetector.h
+    ../../app/utils/SplitPriceJumpDetector.cpp
+    ../../app/utils/SplitAdjustmentAudit.h
+    ../../app/utils/SplitAdjustmentAudit.cpp
+    ../../app/utils/SaleFifoAllocator.h
+    ../../app/utils/SaleFifoAllocator.cpp
+    ../../app/utils/PortfolioSeriesCalculator.cpp
+    ../../app/utils/PdfTextExtractor.h
+    ../../app/utils/PdfTextExtractor.cpp
+    ../../app/utils/DocumentClassifier.h
+    ../../app/utils/DocumentClassifier.cpp
+    ${FORM_TEST_RESOURCES}
+)
+
+target_include_directories(tst_backupform
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/ShareEditForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/BuysForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/SalesForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/DividendForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/BrokeragesForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/ShareSplitsForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/OwnMessageBoxForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/BackupProgressForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../libs/logger/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../libs/parser/src
+)
+
+set_target_properties(tst_backupform PROPERTIES
+    AUTOMOC ON
+    AUTORCC ON
+)
+
+target_link_libraries(tst_backupform
+    PRIVATE Qt6::Test Qt6::Sql Qt6::Widgets Qt6::Multimedia Qt6::Network Qt6::Charts Database Logger Parser
+)
+
+if(Qt6PdfWidgets_FOUND)
+    target_link_libraries(tst_backupform PRIVATE Qt6::Pdf Qt6::PdfWidgets)
+    target_compile_definitions(tst_backupform PRIVATE SPM_HAVE_QTPDF)
+endif()
+
+add_test(NAME tst_backupform COMMAND tst_backupform)
+
+# Copy config files so tests can find them next to the test executable
+add_custom_command(TARGET tst_backupform POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../app/config/WebSites.xml
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/WebSites.xml
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../app/config/Documents.xml
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Documents.xml
+    COMMENT "Copying config files to ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+

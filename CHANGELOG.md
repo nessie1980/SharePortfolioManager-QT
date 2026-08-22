@@ -56,6 +56,23 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   `tst_mainwindow` und `tst_shareeditform` (über `MainWindow` bzw.
   `ViewShareEdit`), werden dort aber nicht mehr getestet. Offen bleiben
   `TestOwnMessageBox` und `TestBackupForm`.
+- Die OwnMessageBox- und BackupProgressForm-Tests haben eigene Testziele
+  `tst_ownmessagebox` und `tst_backupform` (Dateien
+  `tests/forms/tst_ownmessagebox.cpp` und `tests/forms/tst_backupform.cpp`).
+  Letzter Schritt derselben Aufteilung: `tst_mainwindow.cpp` schrumpft damit
+  von 6.464 auf 5.823 Zeilen und enthält nur noch eine Testklasse
+  (`TestMainWindow`) statt ursprünglich fünf — die Konvention "ein Testziel
+  je Form" gilt jetzt für die ganze Datei. Reine Umstrukturierung ohne
+  Verhaltensänderung: die 26 (`TestOwnMessageBox`) bzw. 14
+  (`TestBackupForm`) Testmethoden sind unverändert übernommen, es kam keine
+  Prüfung dazu und es fiel keine weg. Anders als bei DividendForm/SalesForm
+  gab es hier keine eigenen Stub-Klassen. `TestBackupForm` bleibt der
+  Sonderfall unter den fünf Umzügen: drei seiner Tests konstruieren ein
+  echtes `MainWindow` (`createBackup()` ist privat), weshalb die
+  CMake-Quellenliste von `tst_backupform` praktisch die von `tst_mainwindow`
+  spiegelt. Die OwnMessageBox-/BackupProgressForm-Quellen bleiben Compile-
+  Abhängigkeit von `tst_mainwindow` (über `MainWindow`), werden dort aber
+  nicht mehr getestet.
 
 ### Fixed
 
