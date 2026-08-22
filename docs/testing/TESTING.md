@@ -58,6 +58,7 @@ ctest --output-on-failure
 ./bin/tst_overviewtabwidget
 ./bin/tst_buysform
 ./bin/tst_dividendform
+./bin/tst_salesform
 ./bin/tst_backupsettingsform
 ./bin/tst_traysettingsform
 ./bin/tst_documentssettingsform
@@ -83,7 +84,9 @@ Dividenden) 39, seit `tst_documentsxml` (21.08.2026, Phase 5 — prüft die
 ausgelieferte Documents.xml gegen echte Belegauszüge) 40 und seit
 `tst_dividendform` (22.08.2026, Auslagerung von `TestDividendForm` aus
 `tst_mainwindow` — kein neuer Test, nur ein neues Ziel für 127 vorhandene)
-sind es 42. Anlass für den
+waren es 42; seit `tst_salesform` (22.08.2026, Auslagerung von
+`TestSalesForm` aus derselben Datei — ebenfalls kein neuer Test, ein neues
+Ziel für 123 vorhandene) sind es 43. Anlass für den
 ursprünglichen Abgleich war der Vorfall vom 05.08.2026, bei dem
 `tst_sharecalculator` hier aufgeführt war, aber in keiner `CMakeLists.txt`
 stand und deshalb nie gebaut wurde und nie mitlief. Wer ein Testziel
@@ -97,7 +100,8 @@ Startbefehl-Liste eingetragen, aber nie in dieser Fortschreibung mitgezählt.
 Der Abgleich in beide Richtungen wurde am 22.08.2026 wiederholt: 42
 `qt_add_executable(tst_…)`-Ziele über alle neun `tests/`-Unterverzeichnisse,
 42 Einträge in der Liste oben, deckungsgleich. Die Liste selbst war also nie
-falsch, nur die Prosa-Zahl daneben.
+falsch, nur die Prosa-Zahl daneben. Mit `tst_salesform` (noch am selben Tag)
+sind es 43.
 
 ---
 
@@ -1907,12 +1911,32 @@ eigentliche Logik trägt) abgedeckt ist.
 
 ### tests/forms/ — SalesForm
 
-@note Zur Teststruktur: Da `QTEST_MAIN` nur eine Testklasse unterstützt,
-läuft `TestSalesForm` in einer eigenen `QObject`-Unterklasse. Ein gemeinsamer
-`main()`-Einstiegspunkt ruft `QTest::qExec` für alle Klassen nacheinander auf
-(aktuell: `TestMainWindow`, `TestSalesForm`, `TestOwnMessageBox`, `TestBackupForm`
-— `TestDividendForm` ist am 22.08.2026 nach `tst_dividendform` umgezogen und
-hat dort ein eigenes `main()`).
+Executable: `tst_salesform` (Datei `tests/forms/tst_salesform.cpp`)  
+Klassen unter Test: `ModelSaleEdit`, `PresenterSaleEdit`, `ViewSaleEdit`
+
+@note Zur Auslagerung (22.08.2026): `TestSalesForm` lief bis dahin in
+`tst_mainwindow` mit und ist mit seinen beiden Stubs
+(`StubModelSaleEdit`, `StubViewSaleEdit`) und dem Dateihelfer `makeSale()`
+unverändert nach `tst_salesform.cpp` umgezogen — 123 Testmethoden, keine
+neue, keine weggefallene. Vorlage waren `tst_buysform` und
+`tst_dividendform`, die genauso aus derselben Datei herausgelöst wurden. Die
+SalesForm-Quellen bleiben in den Quellenlisten von `tst_mainwindow` und
+`tst_shareeditform`, weil `MainWindow`/`ViewShareEdit` sie zur Compile-Zeit
+brauchen; getestet werden sie dort nicht mehr. Das eigene `main()` setzt
+`QLocale::setDefault(QLocale::German)` vor der `QApplication` — die Tests
+vergleichen formatierte Beträge und liefen zuvor unter der Locale-Vorgabe
+von `tst_mainwindow`. Statt `QTEST_MAIN` steht dort ein handgeschriebenes
+`main()`, das genau eine Klasse ausführt.
+
+@note Quellenliste: wie `tst_dividendform`, mit drei Unterschieden —
+`SaleFifoAllocator` kommt hinzu (`PresenterSaleEdit` rechnet die
+FIFO-Zuteilung des jüngsten Verkaufs live nach); `DailyValuesRepository`
+und `DividendVolumeChecker` entfallen, weil sie nur die DividendForm
+braucht; `DividendRepository`/`DividendObject` bleiben trotzdem in der
+Liste, weil `DocumentRootMigrator::collectAllDocuments()` die Belege ALLER
+Buchungsarten einsammelt und sonst der Linker bricht.
+`ShareSplitAdjuster`/`ShareSplitHint` bleiben: die Übersichts-Tabs
+markieren split-bereinigte Stückzahlen.
 
 @note Stub-Pattern: `StubViewSaleEdit` und `StubModelSaleEdit` implementieren
 die jeweiligen Interfaces ohne echte UI oder Datenbank.
@@ -2366,8 +2390,6 @@ Keine Letzter-Eintrag-Einschränkung:
 In BuysForm/SalesForm würde dieselbe Konstellation (`isLastBuy=false, isEdit=true`)
 den `readOnlyMode` auslösen — im DividendForm gibt es diesen Modus nicht.
 
----
-
 ### tests/forms/ — BrokeragesForm
 
 @note Stub-Pattern: `StubViewBrokerageEdit` und `StubModelBrokerageEdit` implementieren
@@ -2495,8 +2517,8 @@ dass bei `readOnly=true` alle Gebührenfelder und Datum/Uhrzeit deaktiviert werd
 Im Gegensatz zu BuysForm/SalesForm (wo `readOnlyMode` über `isLastBuy` gesteuert wird)
 kommt der `readOnly`-Parameter hier direkt von der Linked-Record-Erkennung im Presenter.
 
-@note Zur Testklasse: Anders als SalesForm (eigene `TestSalesForm` in derselben
-Datei) und DividendForm (seit 22.08.2026 eigenes Testziel `tst_dividendform`)
+@note Zur Testklasse: Anders als SalesForm und DividendForm (beide seit
+22.08.2026 mit eigenem Testziel, `tst_salesform` bzw. `tst_dividendform`)
 laufen alle BrokeragesForm-Tests in `TestMainWindow`, da
 BrokeragesForm zusammen mit BuysForm im selben `tst_mainwindow`-Abschnitt geführt wird.
 `StubViewBrokerageEdit` und `StubModelBrokerageEdit` sind entsprechend dort als

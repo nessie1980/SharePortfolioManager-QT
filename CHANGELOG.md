@@ -42,9 +42,20 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   bleiben Compile-Abhängigkeit von `tst_mainwindow` und `tst_shareeditform`
   (über `MainWindow` bzw. `ViewShareEdit`), werden dort aber nicht mehr
   getestet — dasselbe Muster wie bei `tst_buysform`. Offen bleiben
-  `TestSalesForm`, `TestOwnMessageBox` und `TestBackupForm`, siehe
+  `TestOwnMessageBox` und `TestBackupForm`, siehe
   `docs/architecture/ARCHITECTURE.md`, "tst_mainwindow.cpp in eigene
   Testdateien aufteilen".
+- Die SalesForm-Tests haben ein eigenes Testziel `tst_salesform` (Datei
+  `tests/forms/tst_salesform.cpp`). Zweiter Schritt derselben Aufteilung wie
+  beim DividendForm-Umzug am selben Tag: mit ihm sind es 6.464 Zeilen und
+  drei Klassen in `tst_mainwindow.cpp`. Reine Umstrukturierung ohne
+  Verhaltensänderung — die 123 Testmethoden, die beiden Stubs
+  (`StubModelSaleEdit`, `StubViewSaleEdit`) und der Dateihelfer `makeSale()`
+  sind unverändert übernommen, es kam keine Prüfung dazu und es fiel keine
+  weg. Die SalesForm-Quellen bleiben Compile-Abhängigkeit von
+  `tst_mainwindow` und `tst_shareeditform` (über `MainWindow` bzw.
+  `ViewShareEdit`), werden dort aber nicht mehr getestet. Offen bleiben
+  `TestOwnMessageBox` und `TestBackupForm`.
 
 ### Fixed
 

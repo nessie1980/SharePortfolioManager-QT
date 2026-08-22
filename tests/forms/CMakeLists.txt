@@ -913,3 +913,110 @@ add_custom_command(TARGET tst_dividendform POST_BUILD
         ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Documents.xml
     COMMENT "Copying config files to ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_salesform — SalesForm MVP triad (ModelSaleEdit, PresenterSaleEdit,
+# ViewSaleEdit).
+# Aus tst_mainwindow herausgelöst (22.08.2026, gleiche Begründung wie
+# tst_buysform/tst_dividendform): tst_mainwindow.cpp war auf über 11.000
+# Zeilen mit fünf Testklassen gewachsen, die Konvention „ein Testziel je Form"
+# wird damit wiederhergestellt.
+# Quellenliste = die von tst_dividendform (DividendForm gegen SalesForm
+# getauscht) mit zwei Unterschieden:
+#   • SaleFifoAllocator kommt hinzu — PresenterSaleEdit rechnet die
+#     FIFO-Zuteilung des jüngsten Verkaufs live nach,
+#   • DailyValuesRepository/DailyValuesObject und DividendVolumeChecker
+#     entfallen; beide braucht nur die DividendForm.
+# MainWindow, ShareEditForm, Chart- und Portfolio-Chart-Form werden hier NICHT
+# gebraucht; deshalb entfallen Qt6::Charts, Qt6::Multimedia und Qt6::Network
+# ebenso wie ${CMAKE_BINARY_DIR}/app (Version.h) — den Fenstertitel-Versionstest
+# hat nur tst_mainwindow.
+# ─────────────────────────────────────────────────────────────────────────────
+
+qt_add_executable(tst_salesform tst_salesform.cpp
+    ../../app/models/ShareSplitObject.h
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/ShareSplitRepository.h
+    ../../app/repositories/ShareSplitRepository.cpp
+    ../../app/forms/SalesForm/IViewSaleEdit.h
+    ../../app/forms/SalesForm/IModelSaleEdit.h
+    ../../app/forms/SalesForm/SaleBuyDetailRow.h
+    ../../app/forms/SalesForm/ModelSaleEdit.h
+    ../../app/forms/SalesForm/ModelSaleEdit.cpp
+    ../../app/forms/SalesForm/PresenterSaleEdit.h
+    ../../app/forms/SalesForm/PresenterSaleEdit.cpp
+    ../../app/forms/SalesForm/ViewSaleEdit.h
+    ../../app/forms/SalesForm/ViewSaleEdit.cpp
+    ../../app/widgets/OverviewTabWidget.h
+    ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/widgets/DocumentPreviewPanel.h
+    ../../app/widgets/DocumentPreviewPanel.cpp
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
+    ../../app/config/AppSettings.cpp
+    ../../app/config/DocumentsConfig.cpp
+    ../../app/core/DocumentRootMigrator.h
+    ../../app/core/DocumentRootMigrator.cpp
+    ../../app/IconProvider.cpp
+    ../../app/models/ShareObject.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/BrokerageObject.cpp
+    ../../app/models/DividendObject.cpp
+    ../../app/repositories/ShareRepository.cpp
+    ../../app/repositories/BuyRepository.cpp
+    ../../app/repositories/SaleRepository.cpp
+    ../../app/repositories/BrokerageRepository.cpp
+    # DividendRepository/DividendObject werden von den SalesForm-Tests selbst
+    # nicht gebraucht, wohl aber von DocumentRootMigrator::collectAllDocuments(),
+    # das die Belege ALLER Buchungsarten einsammelt und deshalb gegen jedes
+    # Repository linkt. Ohne diese beiden Zeilen bricht der Linker mit
+    # "undefined reference to DividendRepository::findByShare".
+    ../../app/repositories/DividendRepository.cpp
+    ../../app/utils/ShareSplitAdjuster.h
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/ShareSplitHint.h
+    ../../app/utils/ShareSplitHint.cpp
+    ../../app/utils/SaleFifoAllocator.h
+    ../../app/utils/SaleFifoAllocator.cpp
+    ../../app/utils/PdfTextExtractor.h
+    ../../app/utils/PdfTextExtractor.cpp
+    ../../app/utils/DocumentClassifier.h
+    ../../app/utils/DocumentClassifier.cpp
+    ${FORM_TEST_RESOURCES}
+)
+
+target_include_directories(tst_salesform
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/SalesForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/OwnMessageBoxForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../libs/logger/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../libs/parser/src
+)
+
+set_target_properties(tst_salesform PROPERTIES
+    AUTOMOC ON
+    AUTORCC ON
+)
+
+target_link_libraries(tst_salesform
+    PRIVATE Qt6::Test Qt6::Sql Qt6::Widgets Database Logger Parser
+)
+
+if(Qt6PdfWidgets_FOUND)
+    target_link_libraries(tst_salesform PRIVATE Qt6::Pdf Qt6::PdfWidgets)
+    target_compile_definitions(tst_salesform PRIVATE SPM_HAVE_QTPDF)
+endif()
+
+add_test(NAME tst_salesform COMMAND tst_salesform)
+
+add_custom_command(TARGET tst_salesform POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../app/config/WebSites.xml
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/WebSites.xml
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../app/config/Documents.xml
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Documents.xml
+    COMMENT "Copying config files to ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)
+

@@ -129,15 +129,17 @@ tst_brokeragerepository|
 tst_dailyvaluesrepository|
 tst_sharesplitrepository/
 tst_database            ← Database, Qt6::Sql
-tst_mainwindow          ← alle ShareEditForm-, ShareAddForm-, BuysForm- (Compile-Dep.), SalesForm-, DividendForm- (Compile-Dep. seit 22.08.2026), BrokeragesForm-, OwnMessageBox-, BackupProgressForm-Quelldateien + alle Repositories + ShareCalculator
+tst_mainwindow          ← alle ShareEditForm-, ShareAddForm-, BuysForm- (Compile-Dep.), SalesForm- (Compile-Dep. seit 22.08.2026), DividendForm- (Compile-Dep. seit 22.08.2026), BrokeragesForm-, OwnMessageBox-, BackupProgressForm-Quelldateien + alle Repositories + ShareCalculator
 tst_buysform            ← BuysForm (ModelBuyEdit, PresenterBuyEdit, ViewBuyEdit) + BuyRepository, BrokerageRepository, ShareRepository
 tst_dividendform        ← DividendForm (ModelDividendEdit, PresenterDividendEdit, ViewDividendEdit) + alle Repositories inkl. DailyValuesRepository + DividendVolumeChecker, ShareSplitAdjuster, ShareSplitHint (ohne Qt6::Charts/Multimedia)
+tst_salesform           ← SalesForm (ModelSaleEdit, PresenterSaleEdit, ViewSaleEdit) + BuyRepository, BrokerageRepository, SaleRepository, ShareRepository
 tst_shareeditform       ← ViewShareEdit + alle vier Sub-Form-Trios als Compile-Dep. (BuysForm, SalesForm, DividendForm, BrokeragesForm) + alle Repositories
 tst_backupsettingsform  ← BackupSettingsForm + AppSettings, IconProvider (kein DB-/MainWindow-Bezug)
 tst_sharedetailsform    ← PresenterShareDetails über Fake-View/Fake-Model (IViewShareDetails, IModelShareDetails) — keine DB, keine Qt-Widgets, kein ShareCalculator
 tst_chartform           ← PresenterChart über Fake-View/Fake-Model (IViewChart, IModelChart) — keine DB, keine Qt-Widgets, keine Qt-Charts-Instanziierung
 tst_shareupdaterules    ← nur Qt6::Test + ShareObject (Enums) — header-only Regelmodul, keine DB, keine Widgets, kein QApplication
 tst_documentclassifier  ← DocumentsConfig + DocumentClassifier, linkt Parser
+tst_documentfieldvalue  ← DocumentFieldValue, linkt Parser
 tst_sharecalculator     \
 tst_portfolioseriescalculator| ← alle Repositories + ShareCalculator, Database, Qt6::Sql
 tst_sharesplitadjuster  ← nur Qt6::Test + ShareSplitObject — zustandslos, datenbankfrei, kein QApplication
@@ -146,8 +148,13 @@ tst_dividendvolumechecker ← nur Qt6::Test + BuyObject, SaleObject, ShareSplitO
 tst_overviewtabwidget   ← nur OverviewTabWidget, keine DB, kein ShareCalculator (korrigiert 07.08.2026)
 tst_portfoliochartform  ← PortfolioChartForm-Trio + ModelPortfolioChart + PortfolioSeriesCalculator + alle Repositories (zwei Testklassen seit Phase 2b, 07.08.2026 — TestPortfolioChartForm + TestModelPortfolioChart, eigener main() statt QTEST_MAIN)
 tst_documentssettingsform ← DocumentsSettingsForm + DocumentRootMigrator + AppSettings
+tst_documentsxml        ← DocumentsConfig + echte Belege (Phase 5, 21.08.2026, Regression-Prüfung für Documents.xml)
 tst_traysettingsform    ← TraySettingsForm + AppSettings, IconProvider
 tst_appstartup / tst_iconprovider / tst_singleinstanceguard  ← AppStartup, IconProvider bzw. SingleInstanceGuard
+tst_sharesplitsform     ← ShareSplitsForm MVP (ModelShareSplitEdit, PresenterShareSplitEdit, ViewShareSplitEdit) — Phase 3a, 08.08.2026
+tst_sharesplithint      ← ShareSplitHint Hilfsklasse (Phase 3b, 09.08.2026)
+tst_splitpricejumpdetector ← SplitPriceJumpDetector (Phase 4c, 13.08.2026)
+tst_splitadjustmentaudit ← SplitAdjustmentAudit (Phase 4b, 20.08.2026)
 tst_websitesconfig / tst_documentsconfig  ← WebSitesConfig bzw. DocumentsConfig, linken Parser
 tst_xmlportfolioparser / tst_portfoliovalidator / tst_portfolioimporter  ← tools/xml-importer + Repositories
 @endcode
@@ -162,18 +169,17 @@ tst_xmlportfolioparser / tst_portfoliovalidator / tst_portfolioimporter  ← too
 `tst_splitpricejumpdetector` (13.08.2026) 37, seit
 `tst_splitadjustmentaudit` (20.08.2026, Phase 4b) 38 und seit
 `tst_dividendvolumechecker` (21.08.2026, Phase 3 der Ex-Tag-Behandlung) 39,
-seit `tst_documentsxml` (21.08.2026, Phase 5) 40 und seit `tst_dividendform`
-(22.08.2026, Auslagerung aus `tst_mainwindow`) sind es 42. Die vollständige Startbefehl-Liste steht in TESTING.md,
+seit `tst_documentsxml` (21.08.2026, Phase 5) 40 und seit `tst_dividendform` (22.08.2026, Auslagerung aus `tst_mainwindow`) und `tst_salesform` (22.08.2026, Auslagerung aus `tst_mainwindow`) sind es 43. Die vollständige Startbefehl-Liste steht in TESTING.md,
 "Einzelnen Test direkt starten".
 
-@note Korrektur 22.08.2026: Die Kette oben zählte um eins zu niedrig —
-`tst_documentfieldvalue` wurde nie mitgezählt. Nachgezählt sind es 42 Ziele.
-Unabhängig davon ist die Aufstellung im Block oben nicht vollständig: es
-fehlen `tst_documentfieldvalue`, `tst_documentsxml`, `tst_sharesplithint`,
-`tst_sharesplitsform`, `tst_splitadjustmentaudit` und
-`tst_splitpricejumpdetector`. Die Startbefehl-Liste in TESTING.md ist
-vollständig und in beide Richtungen abgeglichen — diese Aufstellung hier ist
-es nicht.
+@note Korrektur 22.08.2026: 
+1. Die Kette oben zählte um eins zu niedrig — `tst_documentfieldvalue` wurde 
+   nie mitgezählt. Nachgezählt sind es 42 Ziele. Mit `tst_salesform` sind es 43.
+2. Die Aufstellung im Block oben ist jetzt vollständig aktualisiert — alle 
+   fehlenden Tests (`tst_documentfieldvalue`, `tst_documentsxml`, 
+   `tst_sharesplithint`, `tst_sharesplitsform`, `tst_splitadjustmentaudit`, 
+   `tst_splitpricejumpdetector`) wurden hinzugefügt. Die Startbefehl-Liste in 
+   TESTING.md ist vollständig und in beide Richtungen abgeglichen.
 
 ---
 
@@ -4932,23 +4938,23 @@ brüchig (ohne Doppelpunkt gewinnt die DKB). Der Punkt steht bewusst weiter
 oben unter "Bankerkennung: Mehrdeutigkeit über die Depotnummer", weil die
 Ursache allgemein ist und nicht an Consors hängt.
 
-### tst_mainwindow.cpp in eigene Testdateien aufteilen (09.08.2026, DividendForm erledigt 22.08.2026)
+### tst_mainwindow.cpp in eigene Testdateien aufteilen (09.08.2026, DividendForm und SalesForm erledigt 22.08.2026)
 
 `tests/forms/tst_mainwindow.cpp` war auf **11.273 Zeilen** mit fünf
 Testklassen gewachsen, obwohl TESTING.md ein Testziel je Form vorsieht. Nach
-der Auslagerung von `TestDividendForm` sind es **9.273 Zeilen** und vier
-Klassen; die Konvention wird noch dreifach gebrochen:
+der Auslagerung von `TestDividendForm` und `TestSalesForm` sind es **6.464
+Zeilen** und drei Klassen; die Konvention wird noch zweifach gebrochen:
 
 | Klasse | gehört nach | Stand |
 | --- | --- | --- |
 | `TestMainWindow` | bleibt in `tst_mainwindow.cpp` | — |
 | `TestDividendForm` | `tst_dividendform.cpp` | **erledigt 22.08.2026** — 127 Testmethoden, eigenes CMake-Ziel `tst_dividendform` |
-| `TestSalesForm` | `tst_salesform.cpp` | offen, mittel |
+| `TestSalesForm` | `tst_salesform.cpp` | **erledigt 22.08.2026** — 123 Testmethoden, eigenes CMake-Ziel `tst_salesform` |
 | `TestOwnMessageBox` | `tst_ownmessagebox.cpp` | offen, gering |
 | `TestBackupForm` | `tst_backupform.cpp` | offen, gering |
 
-Praktisch heisst das: wer eine
-Änderung an SalesForm testet, baut und lädt weiterhin eine 9.000-Zeilen-Datei
+Praktisch heisst das: wer eine Änderung an OwnMessageBox oder der
+BackupProgressForm testet, baut und lädt weiterhin eine 6.500-Zeilen-Datei
 mit, und ein Fehlschlag irgendwo in der Mitte ist schwer zuzuordnen — der
 Absturz vom 08.08.2026 in `tst_portfoliochartform` hat genau diese Sorte
 Verwechslung vorgeführt.
@@ -4963,11 +4969,14 @@ Klassen-Helfer (`tst_dividendform.cpp`: `makeShareGuid()`, `makeDividend()`,
 @note Nessies Vorgabe 22.08.2026: als eigenes Vorhaben in einem separaten
 Chat.
 
-Der Umzug ist überschaubar: `TestSalesForm` bringt `openMemoryDb()` und
-`insertTestShare()` bereits als eigene Kopien mit, greift also nicht auf
-`TestMainWindow` zu. `StubModelSaleEdit`/`StubViewSaleEdit` stehen zwar oben
-bei den übrigen Stubs, gehören aber ausschliesslich zu ihr. Es ist weitgehend
-Ausschneiden, Einfügen und je ein neues CMake-Ziel — kein Umbau.
+@note Umzug `TestSalesForm` (22.08.2026): 123 Testmethoden, mitgenommen
+wurden `StubModelSaleEdit`, `StubViewSaleEdit` und der Dateihelfer
+`makeSale()` — alle drei standen in `tst_mainwindow.cpp` und wurden
+ausschliesslich von dieser Klasse benutzt. Gegenüber `tst_dividendform`
+kommt `SaleFifoAllocator` in die Quellenliste (PresenterSaleEdit rechnet die
+FIFO-Zuteilung des jüngsten Verkaufs live nach); `DailyValuesRepository` und
+`DividendVolumeChecker` entfallen. Für `TestOwnMessageBox` und
+`TestBackupForm` gilt dasselbe Muster.
 
 @note Lehre aus dem DividendForm-Umzug (22.08.2026): Der gemeinsame `main()`
 von `tst_mainwindow.cpp` setzt `QLocale::setDefault(QLocale::German)`, bevor
@@ -5473,10 +5482,10 @@ ihm und heute — eine Prüfung wäre dort weder nötig noch belastbar.
 
 Tests: `tst_salefifoallocator.cpp` (u. a. der Feldfall selbst — 3.800 gegen
 190 — sowie ein skalenbewusster Split-Fall zwischen Kauf- und
-Verkaufsdatum) und `tst_mainwindow.cpp` (`TestSalesForm`: Live-Icon bei zu
+Verkaufsdatum) und `tst_salesform.cpp` (`TestSalesForm`: Live-Icon bei zu
 hoher Menge, blockiertes `onSave()` samt Fehlertext, Grenzfall exakte
 Deckung bleibt erlaubt, Dokument-only-Edit eines älteren Verkaufs bleibt
-unberührt).
+unberührt; bis zum 22.08.2026 in `tst_mainwindow.cpp`).
 
 ### Footer-Lücke bei freistehenden Kosteneinträgen (Bug, 05.08.2026, gefixt 20.08.2026)
 
