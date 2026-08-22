@@ -123,6 +123,33 @@ private:
     bool isRequestedVolumeCovered() const;
 
     /**
+     * @brief Deutet eine festgestellte Mengen-Unterdeckung als möglichen
+     * Fehler im Split-Verhältnis und liefert den Zusatztext der Fehlermeldung.
+     *
+     * Liegt zwischen den verfügbaren Käufen und dem Verkaufsdatum ein Split,
+     * ist ein falsch erfasstes Verhältnis die wahrscheinlichere Ursache als
+     * eine falsche Verkaufsmenge — und ohne diesen Hinweis liegt nahe, die
+     * Menge auf dem Beleg zu "korrigieren" statt den Split zu berichtigen.
+     * Genau das ist im Feldfall Alphabet fast passiert (10 Stück × Faktor 19
+     * ergeben 190, der Verkaufsbeleg lautet auf 200; richtig wäre 20:1
+     * gewesen). Siehe ARCHITECTURE.md, "Plausibilitätsprüfung des
+     * Split-Verhältnisses".
+     *
+     * Die eigentliche Deutung macht `SplitRatioChecker` — zustandslos und
+     * datenbankfrei, damit sie ohne Formular prüfbar bleibt und für die
+     * weiteren Prüfzeitpunkte (Split-Dialog, Nachprüfung beim Start) ohne
+     * zweite Kopie wiederverwendbar ist.
+     *
+     * @param requiredVolumeToday Verkaufsmenge auf heutiger Skala.
+     * @param saleDate            Datum des Verkaufs.
+     * @param availableBuys       Verfügbare Käufe des gewählten Depots.
+     * @return Zusatztext, oder leer, wenn kein Split als Ursache in Frage kommt.
+     */
+    QString splitRatioHint(double                  requiredVolumeToday,
+                           const QDate&            saleDate,
+                           const QList<BuyObject>& availableBuys) const;
+
+    /**
      * @brief Anteilige Kauf-Nebenkosten einer FIFO-Zuteilungszeile.
      *
      * Bugfix (siehe ARCHITECTURE.md): beim Umbau auf `SaleFifoAllocator`

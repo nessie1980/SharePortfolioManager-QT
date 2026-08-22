@@ -258,6 +258,36 @@ target_link_libraries(tst_splitadjustmentaudit
 
 add_test(NAME tst_splitadjustmentaudit COMMAND tst_splitadjustmentaudit)
 
+# ── SplitRatioChecker tests ──────────────────────────────────────────────────────
+# Punkt 1 der Split-Plausibilitätsprüfung (22.08.2026, siehe ARCHITECTURE.md,
+# "Plausibilitätsprüfung des Split-Verhältnisses"): deutet eine bereits von
+# SaleFifoAllocator::isSaleVolumeCovered() festgestellte Mengen-Unterdeckung
+# als möglichen Fehler im Split-Verhältnis und rechnet zurück, welches
+# Verhältnis die Rechnung aufgehen liesse.
+#
+# Zustandslos und datenbankfrei, gleiche Begründung wie bei
+# tst_sharesplitadjuster oben. BuyObject.cpp wird nur wegen dessen Konstruktor
+# gebraucht — wie bei tst_salefifoallocator, mit dem dieses Ziel den
+# Eingabe-Zuschnitt (verfügbare Käufe + Splits) teilt.
+qt_add_executable(tst_splitratiochecker tst_splitratiochecker.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/SplitRatioChecker.cpp
+)
+
+target_include_directories(tst_splitratiochecker
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_splitratiochecker PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_splitratiochecker
+    PRIVATE Qt6::Test
+)
+
+add_test(NAME tst_splitratiochecker COMMAND tst_splitratiochecker)
+
 # ── DividendVolumeChecker tests ──────────────────────────────────────────────────
 # Phase 3 der Ex-Tag-Behandlung bei Dividenden (21.08.2026, siehe
 # ARCHITECTURE.md, "Plausibilitätsprüfung der Dividenden-Stückzahl"): prüft die

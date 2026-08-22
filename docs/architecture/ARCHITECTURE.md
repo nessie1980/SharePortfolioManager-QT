@@ -4113,6 +4113,126 @@ vermerkt, siehe unten.
 
 ---
 
+## Plausibilitaetspruefung des Split-Verhaeltnisses (Punkt 1, 22.08.2026)
+
+Ein falsch erfasstes Split-Verhaeltnis ist der gefaehrlichste Fehler dieser
+Anwendung: er ist unsichtbar, er wirkt rueckwirkend auf jede Bestands-,
+Chart- und FIFO-Rechnung der betroffenen Aktie, und er hat eine bekannte,
+systematische Ursache. Bankmitteilungen nennen das Zuteilungsverhaeltnis als
+"1:19" — je einem gehaltenen Stueck 19 ZUSAETZLICHE. Die Anwendung erwartet
+das Umrechnungsverhaeltnis, hier 20:1. Der Fehler ist damit immer genau eins
+zu klein (siehe "Split-Verhaeltnis: Notation der Bankmitteilungen" unter
+"Offene Punkte", sowie die dortige Arbeitsliste fuer die uebrigen
+Pruefzeitpunkte).
+
+### Warum die Pruefung am Verkauf haengt und nicht am Split
+
+Naheliegend waere, beim Speichern des Splits zu pruefen. Im normalen Ablauf
+geht das nicht: gekauft wird zuerst, dann kommt der Split, der Verkauf folgt
+spaeter. Zum Zeitpunkt der Split-Erfassung existiert noch keine Zahl, gegen
+die sich das Verhaeltnis halten liesse.
+
+Die Gegenprobe trifft erst beim Verkauf ein — und dort passiert seit dem
+20.08.2026 bereits etwas: die skalenbewusste Mengenpruefung
+(`SaleFifoAllocator::isSaleVolumeCovered()`, siehe "Erledigt / Archiv")
+blockiert den Verkauf ueber 200 Stueck, weil rechnerisch nur 190 verfuegbar
+sind. Was fehlte, war nicht die Pruefung, sondern die DEUTUNG: die Meldung
+zeigte auf den Verkauf, und der naheliegende Ausweg waere gewesen, die 200
+auf 190 zu "korrigieren". Damit waere der Beleg verfaelscht und der
+eigentliche Fehler zementiert worden.
+
+### SplitRatioChecker (app/utils)
+
+Zustandslos und datenbankfrei wie `ShareSplitAdjuster`, `SaleFifoAllocator`,
+`SplitPriceJumpDetector` und `DividendVolumeChecker` daneben. Die Klasse
+stellt die Unterdeckung NICHT selbst fest — das bleibt bei
+`isSaleVolumeCovered()`. Sie beantwortet nur die Anschlussfrage: liegt ein
+Split dazwischen, und welches Verhaeltnis wuerde die Rechnung aufgehen
+lassen.
+
+`diagnose(requiredVolumeToday, referenceDate, availableBuys, splits)` liefert
+ein `SplitRatioSuspicion` mit drei Aussagen: ob ueberhaupt ein Split als
+Ursache in Frage kommt, welche Splits das sind, und ob ein konkretes
+Ersatz-Verhaeltnis genannt werden darf.
+
+Welche Splits ueberhaupt zaehlen, ergibt sich aus
+`ShareSplitAdjuster::volumeFactor()`: gezaehlt werden nur Splits ECHT NACH
+dem aeltesten offenen Kauf und bis einschliesslich zum Stichtag. Ein Split
+davor wirkt auf keinen der verfuegbaren Kaeufe; ein Split danach skaliert
+Kaeufe und angeforderte Menge gleichermassen auf heutige Skala und kuerzt
+sich im Vergleich heraus. Beides kann die Unterdeckung nicht erklaeren.
+
+Die Rueckrechnung: die verfuegbare Menge auf heutiger Skala ist
+`A_vor * f + A_nach`, mit `A_vor` als Beitrag der Kaeufe vor dem Split, `f`
+als eingetragenem Faktor und `A_nach` als Beitrag der Kaeufe ab dem
+Splittag. Gesucht ist das `f'`, fuer das die Summe genau der angeforderten
+Menge entspricht: `f' = f * (requiredVolumeToday - A_nach) / A_vor`. Im
+Feldfall `19 * 200 / 190 = 20`, exakt.
+
+### Warum die Vorschlagsregel bewusst eng ist
+
+Das ist der heikelste Teil und der Grund, warum die Regel so aussieht, wie
+sie aussieht. Dieselbe Formel liefert naemlich auch dann ein formal sauberes
+Ergebnis, wenn gar kein Split-Fehler vorliegt: tippt jemand 2.000 statt 200
+Stueck, kommt `f' = 190` heraus — ein astreines Verhaeltnis 190:1, das den
+Benutzer auf eine voellig falsche Faehrte fuehrte. Ein Vorschlag entsteht
+deshalb nur, wenn alle vier Bedingungen zutreffen (Nessies Vorgabe,
+22.08.2026):
+
+1. Genau ein Split liegt zwischen Kaeufen und Stichtag. Bei mehreren ist
+   nicht zuzuordnen, welcher gemeint waere.
+2. Dessen alte Seite ist 1 — nur so entsteht die Delta-vs-Gesamt-
+   Verwechslung der Bankmitteilung ueberhaupt.
+3. Es ist kein Reverse-Split. Dort gibt es die Verwechslung nicht.
+4. `f'` ist exakt die eingetragene neue Seite plus eins.
+
+Trifft eine davon nicht zu, werden die dazwischenliegenden Splits nur
+genannt, ohne eine Zahl zu behaupten. Lieber kein Vorschlag als ein
+irrefuehrender. Die Regel liegt als eigener, zusammenhaengender Block in
+`diagnose()` — sie spaeter weiter zu fassen ist eine Stelle.
+
+### Anbindung
+
+Kein Interface aendert sich. `PresenterSaleEdit` haelt `m_splits` und
+`currentAvailableBuys()` bereits; die Diagnose haengt allein im bestehenden
+Unterdeckungs-Zweig von `validateInput()`, ueber den neuen privaten Helfer
+`splitRatioHint()`. Der Text wird an die bisherige Meldung ANGEHAENGT, nicht
+ersetzt — beide Mengen stehen weiterhin konkret darin. Das Live-Icon in
+`onVolumeOrPriceEdited()` bleibt unberuehrt: es zeigt ein Symbol, keinen
+Text.
+
+Formatiert wird ueber `ShareSplitHint::describeSplit()` und
+`formatRatioPart()` statt ueber eine eigene Kopie. Die Schreibweise
+"20:1 am 18.07.2022" steht bereits in den Fusszeilen der Editier-Dialoge und
+in den Tooltips der Uebersichtstabellen; zwei Kopien derselben Formatierung
+driften auseinander.
+
+Meldung im Feldfall, an die Mengenzeile angehaengt:
+
+@code{.unparsed}
+Zwischen Kauf und Verkauf liegt der Split 19:1 am 18.07.2022. Mit dem
+Verhaeltnis 20:1 ergaeben sich genau 200,0000 Stk., die Verkaufsmenge ginge
+dann exakt auf.
+Bankmitteilungen nennen das Zuteilungsverhaeltnis haeufig als "1:19" — das
+sind die ZUSAETZLICHEN Stuecke je gehaltenem Stueck, nicht das von der
+Anwendung erwartete Umrechnungsverhaeltnis. Bitte das Verhaeltnis im Dialog
+"Aktiensplits" gegen die Bankmitteilung pruefen.
+@endcode
+
+### Was diese Stufe nicht leistet
+
+Ein ZU GROSSES Verhaeltnis faellt hier nicht auf. Wer 21 statt 20 eintraegt,
+hat mehr Bestand als noetig, es entsteht keine Unterdeckung und damit kein
+Anlass zu pruefen. Dafuer ist Punkt 3 der Arbeitsliste zustaendig (Gegenprobe
+aus der Kurshistorie) — die einzige Pruefung, die auch ohne Unterdeckung
+greift.
+
+Tests: `tst_splitratiochecker.cpp` (Feldfall, Rueckrechnung, alle vier
+Bedingungen der Vorschlagsregel einzeln, Tippfehler-Abwehr) sowie vier
+Presenter-Tests in `tst_salesform.cpp`.
+
+---
+
 ## Offene Punkte
 
 ### Aktiensplits werden nicht behandelt (wichtig, 06.08.2026, Umsetzung begonnen 07.08.2026)
@@ -5100,14 +5220,18 @@ Drei Massnahmen waren denkbar, alle im Split-Dialog:
   rendert das im nativen Tooltip als Umbruch, kein Rich-Text noetig). Reine
   Textaenderung, kein Interface- oder Modellzugriff noetig, deshalb ohne
   eigenen Test (der Text ist statisch und immer sichtbar).
-- Offen: Eine Plausibilitaetspruefung gegen die eigenen Daten: Bestand vor
-  dem Ex-Tag mal Faktor gegen die Stueckzahl auf spaeteren Verkaufsbelegen.
-  Im Feldfall haette das den Fehler sofort gemeldet — Bestand 10 mal 19
-  ergibt 190, der Verkaufsbeleg lautet auf 200. Kein Parsen noetig. Verwandt,
-  aber NICHT dasselbe wie der "Prüfen"-Knopf (`SplitPriceJumpDetector`, siehe
-  "Automatische Erkennung split-bereinigter Kurshistorie" unten): dieser
-  prueft die Kurshistorie gegen den eingetragenen Faktor, nicht den Bestand
-  gegen spaetere Verkaufsbelege — bleibt weiterhin offen.
+- **Teilweise umgesetzt (22.08.2026):** Eine Plausibilitaetspruefung gegen die
+  eigenen Daten: Bestand vor dem Ex-Tag mal Faktor gegen die Stueckzahl auf
+  spaeteren Verkaufsbelegen. Im Feldfall haette das den Fehler sofort
+  gemeldet — Bestand 10 mal 19 ergibt 190, der Verkaufsbeleg lautet auf 200.
+  Kein Parsen noetig. Verwandt, aber NICHT dasselbe wie der "Prüfen"-Knopf
+  (`SplitPriceJumpDetector`, siehe "Automatische Erkennung split-bereinigter
+  Kurshistorie" unten): dieser prueft die Kurshistorie gegen den
+  eingetragenen Faktor, nicht den Bestand gegen spaetere Verkaufsbelege.
+  Umgesetzt ist bisher der Pruefzeitpunkt "beim Speichern eines Verkaufs"
+  (`SplitRatioChecker`, siehe "Plausibilitaetspruefung des
+  Split-Verhaeltnisses" weiter oben); die uebrigen Zeitpunkte stehen in der
+  Arbeitsliste unmittelbar unter diesem Abschnitt.
 - Offen: Warnung, wenn der Ex-Tag in der Zukunft oder auf dem heutigen Tag
   liegt. Der Dialog schlaegt das aktuelle Datum vor; im Feldfall wurde es
   unveraendert uebernommen und stand als 10.08.2026 in der Datenbank.
@@ -5125,6 +5249,56 @@ Hinweistext — eigenes Feature, falls gewuenscht.
 @note Ein Parser fuer die Split-Mitteilung haette hier nicht geholfen — im
 Dokument steht woertlich "1:19". Siehe "Parsing von Split-Mitteilungen der
 Banken pruefen".
+
+### Split-Plausibilitaet: Arbeitsliste (22.08.2026)
+
+Ein falsches Split-Verhaeltnis laesst sich nur dort bemerken, wo eine
+Gegenprobe vorliegt — und die trifft je nach Erfassungsreihenfolge zu
+unterschiedlichen Zeitpunkten ein. Beim Speichern des Splits selbst gibt es
+im normalen Ablauf (Kauf, dann Split, dann Verkauf) noch gar nichts zu
+vergleichen; erst der spaetere Verkaufsbeleg liefert die Zahl, an der sich
+der Fehler zeigt. Nachtraeglich erfasst — so entstand der Feldfall Alphabet —
+liegt die Gegenprobe dagegen schon beim Speichern des Splits vor.
+
+Daraus die Reihenfolge der Umsetzung, festgehalten fuer nachfolgende
+Sessions.
+
+| Nr. | Punkt | Pruefzeitpunkt | Stand |
+| --- | --- | --- | --- |
+| 1 | Rechenkern `SplitRatioChecker` + Diagnose in der Verkaufs-Mengenpruefung | beim Speichern eines Verkaufs | umgesetzt 22.08.2026 |
+| 2 | Derselbe Kern beim Speichern eines Splits | beim Speichern eines Splits | offen |
+| 3 | Verhaeltnis-Gegenprobe aus der Kurshistorie | "Pruefen"-Knopf im Split-Dialog | offen |
+| 4 | Nachpruefung im Hintergrund | Programmstart / nach Tageswert-Abruf | offen |
+| 5 | Warnung bei Ex-Tag heute oder in der Zukunft | beim Speichern eines Splits | offen |
+
+Zu den einzelnen Punkten:
+
+**2** greift, wenn nach dem Ex-Tag bereits Verkaeufe erfasst sind — also bei
+nachtraeglicher Erfassung. Im chronologischen Ablauf meldet er nichts. Teilt
+sich den Rechenkern mit Punkt 1; die Eingabe ist dort allerdings die
+vollstaendige Kauf- und Verkaufshistorie statt einer einzelnen Verkaufsmenge,
+noetig ist also eine zweite Einstiegsmethode, kein zweiter Kern. Nessies
+Vorgaben dazu bereits getroffen (22.08.2026): Blockade statt Rueckfrage,
+Bestandsfuehrung je Depot.
+
+**3** nutzt `SplitPriceJumpDetector::detect()`, das den Kurssprung um den
+Ex-Tag ohnehin misst (`observedRatio`, im Feldfall 1003,00 auf 50,20, also
+rund 19,98 gegen eingetragene 19). Es ist die einzige Gegenprobe, die zum
+Zeitpunkt der Split-Erfassung vorliegt — und die einzige, die ein ZU GROSSES
+Verhaeltnis ueberhaupt bemerken kann, denn ein solches erzeugt nie eine
+Unterdeckung. Einschraenkung: 19 gegen 20 sind gut 5 % Unterschied,
+Schlusskurse zweier aufeinanderfolgender Tage schwanken fuer sich schon um
+ein bis zwei Prozent. Also ein Hinweis, nie eine Blockade, und bei
+uneindeutiger Messung schweigt er.
+
+**4** waere eine reine Lese-Pruefung ueber alle Aktien mit Splits, gebaut wie
+`SplitAdjustmentAudit`. Faengt auch das ab, was bereits fehlerhaft in der
+Datenbank steht und von sich aus nie wieder angefasst wird.
+
+**5** ist der zweite offene Punkt aus dem Abschnitt darueber. Zukuenftige
+Ex-Tage bleiben ausdruecklich erlaubt (Nessies Entscheidung 08.08.2026), es
+waere also nur ein Hinweis. Steht bewusst am Ende: kleinster Nutzen, kein
+Bezug zum Rechenkern.
 
 ### Automatische Erkennung split-bereinigter Kurshistorie ("Prüfen"-Knopf, 13.08.2026, Layout korrigiert 14.08.2026)
 

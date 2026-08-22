@@ -48,6 +48,7 @@ ctest --output-on-failure
 ./bin/tst_sharesplithint
 ./bin/tst_splitpricejumpdetector
 ./bin/tst_splitadjustmentaudit
+./bin/tst_splitratiochecker
 ./bin/tst_shareupdaterules
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
@@ -91,7 +92,9 @@ waren es 42; seit `tst_salesform` (22.08.2026, Auslagerung von
 Ziel für 123 vorhandene) waren es 43, und seit `tst_ownmessagebox`/
 `tst_backupform` (22.08.2026, Auslagerung der letzten zwei Klassen
 `TestOwnMessageBox`/`TestBackupForm` aus `tst_mainwindow` — wieder kein
-neuer Test, zwei neue Ziele für 26 bzw. 14 vorhandene) sind es 45.
+neuer Test, zwei neue Ziele für 26 bzw. 14 vorhandene) waren es 45, und
+seit `tst_splitratiochecker` (22.08.2026, Punkt 1 der
+Split-Plausibilitätsprüfung) sind es 46.
 `tst_mainwindow.cpp` enthält damit wieder nur noch `TestMainWindow`. Anlass für den
 ursprünglichen Abgleich war der Vorfall vom 05.08.2026, bei dem
 `tst_sharecalculator` hier aufgeführt war, aber in keiner `CMakeLists.txt`
@@ -3127,6 +3130,70 @@ Anlass sind zwei Feldfälle desselben Tages:
 | `test_forNumericField_dotBecomesComma` | Bei ZAHLENfeldern ist der Punkt sehr wohl der Dezimaltrenner |
 | `test_forNumericField_germanValueUnchanged` | Deutsche Schreibweise bleibt unangetastet |
 | `test_forNumericField_thousandsSeparatorIsRemoved` | "1.234,56" → "1234,56"; vorher wurde daraus 0,00 |
+
+---
+
+### SplitRatioChecker (tests/utils/tst_splitratiochecker.cpp)
+
+Executable: `tst_splitratiochecker`
+Klasse unter Test: `SplitRatioChecker` — zustandsloser, DB-freier Rechenkern
+hinter Punkt 1 der Split-Plausibilitätsprüfung (22.08.2026, siehe
+ARCHITECTURE.md, "Plausibilitätsprüfung des Split-Verhältnisses"). Deutet
+eine bereits von `SaleFifoAllocator::isSaleVolumeCovered()` festgestellte
+Mengen-Unterdeckung als möglichen Fehler im Split-Verhältnis und rechnet
+zurück, welches Verhältnis die Rechnung aufgehen liesse.
+
+Wie `tst_sharesplitadjuster` zustandslos und datenbankfrei — `BuyObject.cpp`
+wird nur wegen dessen Konstruktor gebraucht, weder `Qt6::Sql` noch die
+Database-Bibliothek.
+
+Bezugsfall aller Tests ist der Feldfall Alphabet: 10 Stück gekauft, Split am
+18.07.2022 aus der Bank-Schreibweise "1:19" fälschlich als 19:1 erfasst,
+Verkaufsbeleg über 200 Stück. Richtig wäre 20:1 gewesen.
+
+Zwei Gruppen tragen die Klasse:
+
+- **Welche Splits überhaupt zählen.** Nur Splits echt NACH dem ältesten
+  offenen Kauf und bis einschliesslich zum Stichtag. Ein Split davor wirkt
+  auf keinen der verfügbaren Käufe, ein Split danach skaliert beide Seiten
+  des Vergleichs gleich und kürzt sich heraus.
+- **Wann ein Verhältnis vorgeschlagen werden darf.** Bewusst eng: genau ein
+  Split dazwischen, alte Seite 1, kein Reverse-Split, und das
+  zurückgerechnete Verhaeltnis exakt eins groesser als das eingetragene.
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_diagnose_noSplits_noSuspicion` | Ohne Split ist die Unterdeckung schlicht eine zu hohe Menge |
+| `test_diagnose_noOpenBuys_noSuspicion` | Vollständig verkaufter Kauf → kein Bezugspunkt |
+| `test_diagnose_splitBeforeAllBuys_noSuspicion` | Split vor dem Kauf kann nichts erklären |
+| `test_diagnose_splitOnBuyDay_noSuspicion` | Split AM Kauftag wirkt auf diesen Kauf nicht mehr |
+| `test_diagnose_splitAfterReferenceDate_noSuspicion` | Split nach dem Verkauf kürzt sich im Vergleich heraus |
+| `test_diagnose_invalidReferenceDate_noSuspicion` | Ungültiger Stichtag → keine Rechnung |
+| `test_diagnose_fieldCase_proposesRatioTwentyToOne` | Feldfall: 19:1 eingetragen → Vorschlag 20:1 |
+| `test_diagnose_fieldCase_proposedVolumeMatchesRequested` | Die genannte Stückzahl trifft die angeforderte exakt |
+| `test_diagnose_correctRatio_stillSuspicionButNoProposal` | Richtiges 20:1, echter Mengenfehler → Nennung ohne Zahl |
+| `test_diagnose_typoInVolume_doesNotProposeAbsurdRatio` | 2.000 statt 200 → Rückrechnung 190:1 wird NICHT vorgeschlagen |
+| `test_diagnose_partiallySoldBuy_usesRemainingVolume` | Gerechnet wird mit dem Restbestand, nicht mit `volume()` |
+| `test_diagnose_buyAfterSplit_countedWithoutFactor` | Kauf nach dem Split trägt den Faktor nicht |
+| `test_diagnose_twoSplitsBetween_namesThemWithoutProposal` | Bei mehreren Splits ist nicht zuzuordnen, welcher gemeint ist |
+| `test_diagnose_splitsBetween_sortedByDateAscending` | Sortierung ist Zusage — der Text nennt den jüngsten Split |
+| `test_diagnose_reverseSplit_namesItWithoutProposal` | Reverse-Split 1:10 → alte Seite ist nicht 1 |
+| `test_diagnose_ratioOldNotOne_namesItWithoutProposal` | Verhältnis 19:2 → Bank-Notation greift nicht |
+| `test_diagnose_reverseSplitAsFraction_namesItWithoutProposal` | Reverse als 0,1:1 → neue Seite kleiner 1 |
+| `test_diagnose_soldOutBuyBeforeSplit_isNotTheReference` | Nur der älteste OFFENE Kauf zählt als Bezugspunkt |
+
+@note `test_diagnose_typoInVolume_doesNotProposeAbsurdRatio` ist der
+wichtigste Test der Datei. Dieselbe Rückrechnung liefert auch bei einem
+reinen Tippfehler ein formal sauberes Verhältnis (190:1), das den Benutzer
+auf eine völlig falsche Fährte führte — lieber kein Vorschlag als ein
+irreführender. Siehe ARCHITECTURE.md, "Warum die Vorschlagsregel bewusst eng
+ist".
+
+Die Anbindung an das Verkaufsformular prüfen vier Tests in
+`tst_salesform.cpp`, Abschnitt "Split-Diagnose in der Unterdeckungs-Meldung":
+Vorschlag im Feldfall inklusive Bank-Schreibweise, Erhalt der bisherigen
+Mengenzeile, kein Split-Hinweis ohne Split, und Nennung ohne Zahl beim
+Tippfehler.
 
 ---
 

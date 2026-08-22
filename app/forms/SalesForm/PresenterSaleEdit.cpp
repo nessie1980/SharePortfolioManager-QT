@@ -2,6 +2,7 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterSaleEdit.h"
 #include "../../utils/ShareSplitHint.h"
+#include "../../utils/SplitRatioChecker.h"
 #include "../../utils/DocumentClassifier.h"
 
 #include <QTimer>
@@ -886,11 +887,19 @@ QString PresenterSaleEdit::validateInput() const
             m_view->volume(), m_splits, saleDate);
         const double availToday = SaleFifoAllocator::totalAvailableVolumeToday(
             available, m_splits);
-        return QObject::tr(
+        QString message = QObject::tr(
             "Die Verkaufsmenge (%1 Stk., heutige Skala) übersteigt die im "
             "gewählten Depot verfügbare Menge (%2 Stk.).")
             .arg(QLocale().toString(saleToday, 'f', 4),
                  QLocale().toString(availToday, 'f', 4));
+
+        // Liegt ein Split dazwischen, ist er die wahrscheinlichere Ursache
+        // als eine falsche Verkaufsmenge — siehe splitRatioHint().
+        const QString hint = splitRatioHint(saleToday, saleDate, available);
+        if (!hint.isEmpty())
+            message += QStringLiteral("\n\n") + hint;
+
+        return message;
     }
 
     if (m_model->orderNumberExists(m_shareGuid,
@@ -917,6 +926,65 @@ QList<BuyObject> PresenterSaleEdit::currentAvailableBuys() const
         ? m_model->loadAvailableBuysForDepot(m_shareGuid, m_view->depotNumber())
         : m_model->loadAvailableBuysForDepotExcludingSale(
               m_shareGuid, m_view->depotNumber(), m_currentSaleGuid);
+}
+
+// ── splitRatioHint ────────────────────────────────────────────────────────────
+
+QString PresenterSaleEdit::splitRatioHint(double                  requiredVolumeToday,
+                                          const QDate&            saleDate,
+                                          const QList<BuyObject>& availableBuys) const
+{
+    const SplitRatioSuspicion suspicion = SplitRatioChecker::diagnose(
+        requiredVolumeToday, saleDate, availableBuys, m_splits);
+
+    if (!suspicion.hasSuspicion)
+        return QString();
+
+    // Formatierung über ShareSplitHint, nicht über eine eigene Kopie: die
+    // Schreibweise "20:1 am 18.07.2022" steht bereits in den Fusszeilen der
+    // Editier-Dialoge und in den Tooltips der Übersichtstabellen. Zwei
+    // Kopien derselben Formatierung driften auseinander (dieselbe Begründung
+    // wie bei der Auslagerung von ShareSplitHint selbst).
+    if (!suspicion.hasProposal) {
+        if (suspicion.splitsBetween.size() == 1) {
+            return QObject::tr(
+                "Zwischen Kauf und Verkauf liegt der Split %1. Falls die "
+                "Verkaufsmenge stimmt, bitte das Verhältnis im Dialog "
+                "\"Aktiensplits\" gegen die Bankmitteilung prüfen.")
+                .arg(ShareSplitHint::describeSplit(suspicion.splitsBetween.first()));
+        }
+        return QObject::tr(
+            "Zwischen Kauf und Verkauf liegen %1 Splits (zuletzt %2). Falls "
+            "die Verkaufsmenge stimmt, bitte die Verhältnisse im Dialog "
+            "\"Aktiensplits\" gegen die Bankmitteilungen prüfen.")
+            .arg(suspicion.splitsBetween.size())
+            .arg(ShareSplitHint::describeSplit(suspicion.splitsBetween.constLast()));
+    }
+
+    const QString proposed =
+        ShareSplitHint::formatRatioPart(suspicion.proposedRatioNew)
+        + QStringLiteral(":")
+        + ShareSplitHint::formatRatioPart(suspicion.proposedRatioOld);
+
+    // Bank-Schreibweise: alte Seite zu ZUSÄTZLICHEN Stücken, im Beispiel
+    // "1:19" für das Umrechnungsverhältnis 20:1.
+    const QString bankNotation =
+        ShareSplitHint::formatRatioPart(suspicion.proposedRatioOld)
+        + QStringLiteral(":")
+        + ShareSplitHint::formatRatioPart(suspicion.proposedRatioNew
+                                          - suspicion.proposedRatioOld);
+
+    return QObject::tr(
+        "Zwischen Kauf und Verkauf liegt der Split %1. Mit dem Verhältnis %2 "
+        "ergäben sich genau %3 Stk., die Verkaufsmenge ginge dann exakt auf.\n"
+        "Bankmitteilungen nennen das Zuteilungsverhältnis häufig als \"%4\" — "
+        "das sind die ZUSÄTZLICHEN Stücke je gehaltenem Stück, nicht das von "
+        "der Anwendung erwartete Umrechnungsverhältnis. Bitte das Verhältnis "
+        "im Dialog \"Aktiensplits\" gegen die Bankmitteilung prüfen.")
+        .arg(ShareSplitHint::describeSplit(suspicion.splitsBetween.first()),
+             proposed,
+             QLocale().toString(suspicion.proposedAvailableToday, 'f', 4),
+             bankNotation);
 }
 
 // ── isRequestedVolumeCovered ──────────────────────────────────────────────────

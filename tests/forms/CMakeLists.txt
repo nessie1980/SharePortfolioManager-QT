@@ -143,6 +143,8 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/utils/SplitAdjustmentAudit.cpp
     ../../app/utils/SaleFifoAllocator.h
     ../../app/utils/SaleFifoAllocator.cpp
+    ../../app/utils/SplitRatioChecker.h
+    ../../app/utils/SplitRatioChecker.cpp
     ../../app/utils/PortfolioSeriesCalculator.cpp
     ../../app/utils/PdfTextExtractor.h
     ../../app/utils/PdfTextExtractor.cpp
@@ -378,6 +380,8 @@ qt_add_executable(tst_shareeditform tst_shareeditform.cpp
     ../../app/utils/SplitPriceJumpDetector.cpp
     ../../app/utils/SaleFifoAllocator.h
     ../../app/utils/SaleFifoAllocator.cpp
+    ../../app/utils/SplitRatioChecker.h
+    ../../app/utils/SplitRatioChecker.cpp
     ../../app/utils/PdfTextExtractor.h
     ../../app/utils/PdfTextExtractor.cpp
     ../../app/utils/DocumentClassifier.h
@@ -979,6 +983,8 @@ qt_add_executable(tst_salesform tst_salesform.cpp
     ../../app/utils/ShareSplitHint.cpp
     ../../app/utils/SaleFifoAllocator.h
     ../../app/utils/SaleFifoAllocator.cpp
+    ../../app/utils/SplitRatioChecker.h
+    ../../app/utils/SplitRatioChecker.cpp
     ../../app/utils/PdfTextExtractor.h
     ../../app/utils/PdfTextExtractor.cpp
     ../../app/utils/DocumentClassifier.h
@@ -1202,6 +1208,8 @@ qt_add_executable(tst_backupform tst_backupform.cpp
     ../../app/utils/SplitAdjustmentAudit.cpp
     ../../app/utils/SaleFifoAllocator.h
     ../../app/utils/SaleFifoAllocator.cpp
+    ../../app/utils/SplitRatioChecker.h
+    ../../app/utils/SplitRatioChecker.cpp
     ../../app/utils/PortfolioSeriesCalculator.cpp
     ../../app/utils/PdfTextExtractor.h
     ../../app/utils/PdfTextExtractor.cpp

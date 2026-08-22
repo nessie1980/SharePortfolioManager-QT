@@ -1219,6 +1219,117 @@ private slots:
         QVERIFY(!model.addSaleCalled);
     }
 
+    // ── Split-Diagnose in der Unterdeckungs-Meldung ───────────────────────
+    // Punkt 1 der Split-Plausibilitätsprüfung (22.08.2026, siehe
+    // ARCHITECTURE.md, "Plausibilitätsprüfung des Split-Verhältnisses").
+    // Die Mengenprüfung blockierte bereits, zeigte aber nur auf den Verkauf.
+    // Naheliegend — und falsch — wäre dann, die Menge auf dem Beleg zu
+    // "korrigieren", statt das Split-Verhältnis zu berichtigen.
+
+    void test_presenterSaleEdit_onSave_splitBetween_errorNamesProposedRatio()
+    {
+        // Feldfall Alphabet: 10 Stück gekauft, Split am 18.07.2022 aus der
+        // Bank-Schreibweise "1:19" fälschlich als 19:1 erfasst (-> 190 Stück
+        // heute), Verkaufsbeleg über 200. Richtig wäre 20:1 gewesen.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                      QStringLiteral("depot1"), QString(),
+                      QStringLiteral("2021-03-18T10:00:00"), 10.0, 0.0, 971.90)
+        };
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 19.0, 1.0);
+        view.m_dateTime = QStringLiteral("2022-12-05T10:00:00");
+        view.m_volume   = 200.0;
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onSave();
+
+        QVERIFY(!model.addSaleCalled);
+        QVERIFY2(view.lastError.contains(QStringLiteral("20:1")),
+                 qPrintable(view.lastError));
+        // Die Bank-Schreibweise gehört mit in den Text — ohne sie bleibt
+        // unklar, WARUM 19 statt 20 im Formular stand.
+        QVERIFY2(view.lastError.contains(QStringLiteral("1:19")),
+                 qPrintable(view.lastError));
+    }
+
+    void test_presenterSaleEdit_onSave_splitBetween_keepsOriginalQuantityMessage()
+    {
+        // Die Diagnose kommt HINZU, sie ersetzt nichts: beide Mengen müssen
+        // weiterhin konkret in der Meldung stehen.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                      QStringLiteral("depot1"), QString(),
+                      QStringLiteral("2021-03-18T10:00:00"), 10.0, 0.0, 971.90)
+        };
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 19.0, 1.0);
+        view.m_dateTime = QStringLiteral("2022-12-05T10:00:00");
+        view.m_volume   = 200.0;
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onSave();
+
+        QVERIFY2(view.lastError.contains(QLocale().toString(200.0, 'f', 4)),
+                 qPrintable(view.lastError));
+        QVERIFY2(view.lastError.contains(QLocale().toString(190.0, 'f', 4)),
+                 qPrintable(view.lastError));
+    }
+
+    void test_presenterSaleEdit_onSave_noSplit_errorMentionsNoSplit()
+    {
+        // Ohne Split dazwischen ist die Unterdeckung schlicht eine zu hohe
+        // Menge — ein Split-Hinweis wäre hier irreführend.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                      QStringLiteral("depot1"), QString(),
+                      QStringLiteral("2024-01-01T10:00:00"), 190.0, 0.0, 50.0)
+        };
+        view.m_volume = 3800.0;
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onSave();
+
+        QVERIFY(!view.lastError.isEmpty());
+        QVERIFY2(!view.lastError.contains(QStringLiteral("Split")),
+                 qPrintable(view.lastError));
+    }
+
+    void test_presenterSaleEdit_onSave_volumeTypo_namesSplitButProposesNoRatio()
+    {
+        // 2.000 statt 200 getippt. Die Rückrechnung ergäbe formal ein
+        // sauberes Verhältnis (190:1), das aber vollkommen irreführend wäre.
+        // Der Split darf genannt werden, eine Zahl nicht.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        model.availableBuys = {
+            BuyObject(QStringLiteral("b1"), QStringLiteral("share-1"),
+                      QStringLiteral("depot1"), QString(),
+                      QStringLiteral("2021-03-18T10:00:00"), 10.0, 0.0, 971.90)
+        };
+        model.splits << ShareSplitObject(QStringLiteral("s1"), QStringLiteral("share-1"),
+                                         QDate(2022, 7, 18), 19.0, 1.0);
+        view.m_dateTime = QStringLiteral("2022-12-05T10:00:00");
+        view.m_volume   = 2000.0;
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onSave();
+
+        QVERIFY(!model.addSaleCalled);
+        QVERIFY2(view.lastError.contains(QStringLiteral("19:1")),
+                 qPrintable(view.lastError));
+        QVERIFY2(!view.lastError.contains(QStringLiteral("190:1")),
+                 qPrintable(view.lastError));
+        QVERIFY2(!view.lastError.contains(QStringLiteral("Zuteilungsverhältnis")),
+                 qPrintable(view.lastError));
+    }
+
     // ── Split-Marker in der Verkaufs-Übersicht (Phase 3c) ─────────────────
 
     void test_presenterSaleEdit_populateOverview_passesSplitsAsParameter()

@@ -10,6 +10,25 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Added
 
+- Plausibilitätsprüfung des Split-Verhältnisses, erster von fünf
+  Prüfzeitpunkten (siehe `docs/architecture/ARCHITECTURE.md`,
+  "Plausibilitätsprüfung des Split-Verhältnisses" sowie die Arbeitsliste
+  unter "Offene Punkte"). Blockiert das Verkaufsformular eine zu hohe
+  Menge und liegt zwischen Käufen und Verkauf ein Split, nennt die Meldung
+  jetzt diesen Split als wahrscheinlichere Ursache — und, wo die
+  Rückrechnung eindeutig ist, das Verhältnis, mit dem die Rechnung exakt
+  aufginge. Ohne diese Deutung lag nahe, die Stückzahl auf dem Beleg zu
+  "korrigieren" statt das Verhältnis zu berichtigen; genau das wäre im
+  Feldfall Alphabet fast passiert (10 Stück mal Faktor 19 ergeben 190, der
+  Verkaufsbeleg lautet auf 200, richtig gewesen wäre 20:1). Neue Klasse
+  `SplitRatioChecker` mit eigenem Testziel `tst_splitratiochecker`; die
+  Mengenprüfung selbst und ihre bisherige Meldung bleiben unverändert.
+
+  Ein Verhältnis wird bewusst nur bei genau einem dazwischenliegenden
+  Split, alter Seite 1, keinem Reverse-Split und einer Rückrechnung auf
+  exakt eins mehr als eingetragen vorgeschlagen. Dieselbe Formel liefert
+  sonst auch bei einem reinen Tippfehler ein formal sauberes, aber völlig
+  irreführendes Ergebnis.
 - Cortal Consors: Depotnummer und Währung werden aus der
   Dividendengutschrift gelesen (Beleg nachgereicht am 21.08.2026, siehe
   `docs/architecture/ARCHITECTURE.md`, "Nachtrag Cortal Consors").
