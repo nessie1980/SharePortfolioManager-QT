@@ -30,6 +30,22 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Bank und die vier unterstützten Belegarten. Neues Feld
   `DocumentClassifier::Result::bankMatched`.
 
+### Changed
+
+- Die DividendForm-Tests haben ein eigenes Testziel `tst_dividendform`
+  (Datei `tests/forms/tst_dividendform.cpp`). `tst_mainwindow.cpp` war auf
+  11.273 Zeilen mit fünf Testklassen gewachsen, obwohl die Konvention ein
+  Testziel je Form vorsieht; mit dem Umzug sind es 9.273 Zeilen und vier
+  Klassen. Reine Umstrukturierung ohne Verhaltensänderung: die 127
+  Testmethoden, die beiden Stubs und die Helfer sind unverändert übernommen,
+  es kam keine Prüfung dazu und es fiel keine weg. Die DividendForm-Quellen
+  bleiben Compile-Abhängigkeit von `tst_mainwindow` und `tst_shareeditform`
+  (über `MainWindow` bzw. `ViewShareEdit`), werden dort aber nicht mehr
+  getestet — dasselbe Muster wie bei `tst_buysform`. Offen bleiben
+  `TestSalesForm`, `TestOwnMessageBox` und `TestBackupForm`, siehe
+  `docs/architecture/ARCHITECTURE.md`, "tst_mainwindow.cpp in eigene
+  Testdateien aufteilen".
+
 ### Fixed
 
 - **Die Ordernummer wurde verfälscht** (Nessies Bugreport 22.08.2026). Der

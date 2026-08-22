@@ -57,6 +57,7 @@ ctest --output-on-failure
 ./bin/tst_portfoliochartform
 ./bin/tst_overviewtabwidget
 ./bin/tst_buysform
+./bin/tst_dividendform
 ./bin/tst_backupsettingsform
 ./bin/tst_traysettingsform
 ./bin/tst_documentssettingsform
@@ -78,14 +79,25 @@ Projekts; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
 waren es 37, seit `tst_splitadjustmentaudit` (20.08.2026, Phase 4b —
 automatische Nachprüfung nach Tageswert-Abruf) 38 und seit
 `tst_dividendvolumechecker` (21.08.2026, Phase 3 der Ex-Tag-Behandlung bei
-Dividenden) 39 und seit `tst_documentsxml` (21.08.2026, Phase 5 — prüft die
-ausgelieferte Documents.xml gegen echte Belegauszüge) sind es 40. Anlass für den
+Dividenden) 39, seit `tst_documentsxml` (21.08.2026, Phase 5 — prüft die
+ausgelieferte Documents.xml gegen echte Belegauszüge) 40 und seit
+`tst_dividendform` (22.08.2026, Auslagerung von `TestDividendForm` aus
+`tst_mainwindow` — kein neuer Test, nur ein neues Ziel für 127 vorhandene)
+sind es 42. Anlass für den
 ursprünglichen Abgleich war der Vorfall vom 05.08.2026, bei dem
 `tst_sharecalculator` hier aufgeführt war, aber in keiner `CMakeLists.txt`
 stand und deshalb nie gebaut wurde und nie mitlief. Wer ein Testziel
 hinzufügt, trägt es bitte auch hier nach; ein Eintrag ohne zugehöriges Ziel
 ist der gefährlichere der beiden Fehler, weil er Abdeckung vortäuscht, die
 es nicht gibt.
+
+@note Korrektur der laufenden Zahl (22.08.2026): Die Kette oben zählte um eins
+zu niedrig — `tst_documentfieldvalue` wurde beim Anlegen zwar in die
+Startbefehl-Liste eingetragen, aber nie in dieser Fortschreibung mitgezählt.
+Der Abgleich in beide Richtungen wurde am 22.08.2026 wiederholt: 42
+`qt_add_executable(tst_…)`-Ziele über alle neun `tests/`-Unterverzeichnisse,
+42 Einträge in der Liste oben, deckungsgleich. Die Liste selbst war also nie
+falsch, nur die Prosa-Zahl daneben.
 
 ---
 
@@ -461,19 +473,20 @@ muss losgelöst von allen dreien prüfbar bleiben. Siehe ARCHITECTURE.md,
 
 ### tests/forms/ — Forms Unit-Tests
 
-#### tst_mainwindow — MainWindow + ShareAddForm + ShareEditForm + SalesForm + DividendForm + BrokeragesForm + OwnMessageBox + BackupProgressForm
+#### tst_mainwindow — MainWindow + ShareAddForm + ShareEditForm + SalesForm + BrokeragesForm + OwnMessageBox + BackupProgressForm
 
 Executable: `tst_mainwindow`  
 Klassen unter Test: `MainWindow`, `Database`, `ModelShareAdd`, `PresenterShareAdd`,
 `ViewShareAdd`, `ModelShareEdit`, `PresenterShareEdit`,
 `ModelSaleEdit`, `PresenterSaleEdit`, `ViewSaleEdit`,
-`ModelDividendEdit`, `PresenterDividendEdit`, `ViewDividendEdit`,
 `ModelBrokerageEdit`, `PresenterBrokerageEdit`, `ViewBrokerageEdit`,
 `OwnMessageBox`, `BackupWorker`, `BackupProgressDialog`
 
 @note `ModelBuyEdit`/`PresenterBuyEdit`/`ViewBuyEdit` sind weiterhin als
 Produktionsquellen Teil von `tst_mainwindow` (Compile-Abhängigkeit über
 `ViewShareEdit`), werden dort aber nicht mehr getestet — siehe `tst_buysform`.
+Seit 22.08.2026 gilt dasselbe für `ModelDividendEdit`/`PresenterDividendEdit`/
+`ViewDividendEdit` — siehe `tst_dividendform`.
 `ViewShareEdit` wurde in `tst_shareeditform` ausgelagert.
 
 @note Stub-Pattern: Für Presenter-Tests werden `StubView*` und `StubModel*`
@@ -598,9 +611,10 @@ einem Drag&Drop leer blieb, obwohl geparst wurde. Jetzt durch je einen
 Regressionstest pro Dialog abgedeckt:
 `test_presenterBuyEdit_onDocumentSelected_writesPathIntoView`
 (`tst_buysform.cpp`),
-`test_presenterSaleEdit_onDocumentSelected_writesPathIntoView`,
-`test_presenterDividendEdit_onDocumentSelected_writesPathIntoView`,
-`test_presenterShareAdd_onDocumentSelected_writesPathIntoView` (alle drei in
+`test_presenterDividendEdit_onDocumentSelected_writesPathIntoView`
+(`tst_dividendform.cpp`, seit der Auslagerung am 22.08.2026),
+`test_presenterSaleEdit_onDocumentSelected_writesPathIntoView` und
+`test_presenterShareAdd_onDocumentSelected_writesPathIntoView` (beide in
 `tst_mainwindow.cpp`) — jeder ruft `onDocumentSelected()` direkt am Presenter
 auf (ohne `onBrowseDocument()`, exakt der Drag&Drop-Codepfad) und prüft
 `view.documentPath()` gegen den übergebenen Pfad.
@@ -1896,7 +1910,9 @@ eigentliche Logik trägt) abgedeckt ist.
 @note Zur Teststruktur: Da `QTEST_MAIN` nur eine Testklasse unterstützt,
 läuft `TestSalesForm` in einer eigenen `QObject`-Unterklasse. Ein gemeinsamer
 `main()`-Einstiegspunkt ruft `QTest::qExec` für alle Klassen nacheinander auf
-(aktuell: `TestMainWindow`, `TestSalesForm`, `TestDividendForm`, `TestOwnMessageBox`, `TestBackupForm`).
+(aktuell: `TestMainWindow`, `TestSalesForm`, `TestOwnMessageBox`, `TestBackupForm`
+— `TestDividendForm` ist am 22.08.2026 nach `tst_dividendform` umgezogen und
+hat dort ein eigenes `main()`).
 
 @note Stub-Pattern: `StubViewSaleEdit` und `StubModelSaleEdit` implementieren
 die jeweiligen Interfaces ohne echte UI oder Datenbank.
@@ -2176,6 +2192,20 @@ versehentlich die Stückzahl statt des Preises umgerechnet würde.
 ---
 
 ### tests/forms/ — DividendForm
+
+Executable: `tst_dividendform` (Datei `tests/forms/tst_dividendform.cpp`)  
+Klassen unter Test: `ModelDividendEdit`, `PresenterDividendEdit`, `ViewDividendEdit`
+
+@note Zur Auslagerung (22.08.2026): `TestDividendForm` lief bis dahin in
+`tst_mainwindow` mit und ist mit seinen beiden Stubs unverändert nach
+`tst_dividendform.cpp` umgezogen — 127 Testmethoden, keine neue, keine
+weggefallene. Vorlage war `tst_buysform`, das genauso aus derselben Datei
+herausgelöst wurde. Die DividendForm-Quellen bleiben in den Quellenlisten von
+`tst_mainwindow` und `tst_shareeditform`, weil `MainWindow`/`ViewShareEdit` sie
+zur Compile-Zeit brauchen; getestet werden sie dort nicht mehr.
+Das eigene `main()` setzt `QLocale::setDefault(QLocale::German)` vor der
+`QApplication` — die Tests vergleichen formatierte Beträge (`"1,50"`,
+`"0,0000 %"`) und liefen zuvor unter der Locale-Vorgabe von `tst_mainwindow`.
 
 @note Stub-Pattern: `StubViewDividendEdit` und `StubModelDividendEdit` implementieren
 die jeweiligen Interfaces ohne echte UI oder Datenbank.
@@ -2465,8 +2495,9 @@ dass bei `readOnly=true` alle Gebührenfelder und Datum/Uhrzeit deaktiviert werd
 Im Gegensatz zu BuysForm/SalesForm (wo `readOnlyMode` über `isLastBuy` gesteuert wird)
 kommt der `readOnly`-Parameter hier direkt von der Linked-Record-Erkennung im Presenter.
 
-@note Zur Testklasse: Anders als SalesForm/DividendForm (eigene `TestSalesForm` /
-`TestDividendForm`) laufen alle BrokeragesForm-Tests in `TestMainWindow`, da
+@note Zur Testklasse: Anders als SalesForm (eigene `TestSalesForm` in derselben
+Datei) und DividendForm (seit 22.08.2026 eigenes Testziel `tst_dividendform`)
+laufen alle BrokeragesForm-Tests in `TestMainWindow`, da
 BrokeragesForm zusammen mit BuysForm im selben `tst_mainwindow`-Abschnitt geführt wird.
 `StubViewBrokerageEdit` und `StubModelBrokerageEdit` sind entsprechend dort als
 file-globale Klassen vor `TestMainWindow` definiert.
@@ -3636,6 +3667,28 @@ target_link_libraries(tst_buysform
 
 add_test(NAME tst_buysform COMMAND tst_buysform)
 
+# Dasselbe Muster für DividendForm (ausgelagert 22.08.2026). Zusätzlich zur
+# tst_buysform-Liste: DailyValuesRepository/DailyValuesObject (Kurs am Zahltag)
+# und DividendVolumeChecker (Stückzahl-Plausibilität am Ex-Tag).
+
+qt_add_executable(tst_dividendform tst_dividendform.cpp
+    ../../app/forms/DividendForm/ModelDividendEdit.cpp
+    ../../app/forms/DividendForm/PresenterDividendEdit.cpp
+    ../../app/forms/DividendForm/ViewDividendEdit.cpp
+    ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
+    ../../app/repositories/DailyValuesRepository.cpp
+    ../../app/models/DailyValuesObject.cpp
+    ../../app/utils/DividendVolumeChecker.cpp
+    # ... übrige Repositories, Models, Config, IconProvider wie tst_buysform
+)
+
+target_link_libraries(tst_dividendform
+    PRIVATE Qt6::Test Qt6::Sql Qt6::Widgets Database Logger Parser
+)
+
+add_test(NAME tst_dividendform COMMAND tst_dividendform)
+
 # ViewShareEdit zieht alle vier Sub-Form-Trios als Compile-Abhängigkeit rein:
 
 qt_add_executable(tst_shareeditform tst_shareeditform.cpp
@@ -3969,5 +4022,10 @@ Datenbankzugriff zu einer bis dahin reinen Fake-Datei dazukommt, muss die
 `QCoreApplication` mitkommen. `QTEST_MAIN` erzeugt sie automatisch — genau
 diese Absicherung entfällt beim Handschreiben von `main()`. Betroffen sind
 davon `tst_mainwindow.cpp`, `tst_shareeditform.cpp`, `tst_sharesplitsform.cpp`,
-`tst_documentssettingsform.cpp` und `tst_portfoliochartform.cpp`; alle ausser
-der letzten hatten ihre `QApplication` von Anfang an.
+`tst_buysform.cpp`, `tst_sharesplithint.cpp`, `tst_portfoliochartform.cpp` und
+seit 22.08.2026 `tst_dividendform.cpp`; alle ausser `tst_portfoliochartform.cpp`
+hatten ihre `QApplication` von Anfang an.
+
+@note Korrektur 22.08.2026: `tst_documentssettingsform.cpp` stand hier, nutzt
+aber `QTEST_MAIN` und schreibt sein `main()` gar nicht selbst;
+`tst_buysform.cpp` und `tst_sharesplithint.cpp` fehlten.

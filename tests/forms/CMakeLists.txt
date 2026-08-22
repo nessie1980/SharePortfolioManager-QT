@@ -811,3 +811,105 @@ if(Qt6PdfWidgets_FOUND)
 endif()
 
 add_test(NAME tst_sharesplitsform COMMAND tst_sharesplitsform)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_dividendform — DividendForm MVP triad (ModelDividendEdit,
+# PresenterDividendEdit, ViewDividendEdit).
+# Aus tst_mainwindow herausgelöst (22.08.2026, gleiche Begründung wie
+# tst_buysform/tst_shareeditform): tst_mainwindow.cpp war auf über 11.000
+# Zeilen mit fünf Testklassen gewachsen, die Konvention „ein Testziel je Form"
+# ist damit wiederhergestellt.
+# Quellenliste = die von tst_buysform (BuysForm gegen DividendForm getauscht)
+# plus drei Ergänzungen, die nur die DividendForm braucht:
+#   • DailyValuesRepository/DailyValuesObject — die Tests legen Tageswerte an,
+#     um den Kurs am Zahltag zu prüfen,
+#   • DividendVolumeChecker — Stückzahl-Plausibilitätsprüfung am Ex-Tag
+#     (Phase 3, 21.08.2026), von PresenterDividendEdit aufgerufen.
+# MainWindow, ShareEditForm, Chart- und Portfolio-Chart-Form werden hier NICHT
+# gebraucht; deshalb entfallen Qt6::Charts, Qt6::Multimedia und Qt6::Network
+# ebenso wie ${CMAKE_BINARY_DIR}/app (Version.h) — den Fenstertitel-Versionstest
+# hat nur tst_mainwindow.
+# ─────────────────────────────────────────────────────────────────────────────
+
+qt_add_executable(tst_dividendform tst_dividendform.cpp
+    ../../app/models/ShareSplitObject.h
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/ShareSplitRepository.h
+    ../../app/repositories/ShareSplitRepository.cpp
+    ../../app/forms/DividendForm/IViewDividendEdit.h
+    ../../app/forms/DividendForm/IModelDividendEdit.h
+    ../../app/forms/DividendForm/ModelDividendEdit.h
+    ../../app/forms/DividendForm/ModelDividendEdit.cpp
+    ../../app/forms/DividendForm/PresenterDividendEdit.h
+    ../../app/forms/DividendForm/PresenterDividendEdit.cpp
+    ../../app/forms/DividendForm/ViewDividendEdit.h
+    ../../app/forms/DividendForm/ViewDividendEdit.cpp
+    ../../app/widgets/OverviewTabWidget.h
+    ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/widgets/DocumentPreviewPanel.h
+    ../../app/widgets/DocumentPreviewPanel.cpp
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
+    ../../app/config/AppSettings.cpp
+    ../../app/config/DocumentsConfig.cpp
+    ../../app/core/DocumentRootMigrator.h
+    ../../app/core/DocumentRootMigrator.cpp
+    ../../app/IconProvider.cpp
+    ../../app/models/ShareObject.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/DividendObject.cpp
+    ../../app/models/BrokerageObject.cpp
+    ../../app/models/DailyValuesObject.cpp
+    ../../app/repositories/ShareRepository.cpp
+    ../../app/repositories/BuyRepository.cpp
+    ../../app/repositories/SaleRepository.cpp
+    ../../app/repositories/DividendRepository.cpp
+    ../../app/repositories/BrokerageRepository.cpp
+    ../../app/repositories/DailyValuesRepository.cpp
+    ../../app/utils/ShareSplitAdjuster.h
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/ShareSplitHint.h
+    ../../app/utils/ShareSplitHint.cpp
+    ../../app/utils/DividendVolumeChecker.h
+    ../../app/utils/DividendVolumeChecker.cpp
+    ../../app/utils/PdfTextExtractor.h
+    ../../app/utils/PdfTextExtractor.cpp
+    ../../app/utils/DocumentClassifier.h
+    ../../app/utils/DocumentClassifier.cpp
+    ${FORM_TEST_RESOURCES}
+)
+
+target_include_directories(tst_dividendform
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/DividendForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/OwnMessageBoxForm
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../libs/logger/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../libs/parser/src
+)
+
+set_target_properties(tst_dividendform PROPERTIES
+    AUTOMOC ON
+    AUTORCC ON
+)
+
+target_link_libraries(tst_dividendform
+    PRIVATE Qt6::Test Qt6::Sql Qt6::Widgets Database Logger Parser
+)
+
+if(Qt6PdfWidgets_FOUND)
+    target_link_libraries(tst_dividendform PRIVATE Qt6::Pdf Qt6::PdfWidgets)
+    target_compile_definitions(tst_dividendform PRIVATE SPM_HAVE_QTPDF)
+endif()
+
+add_test(NAME tst_dividendform COMMAND tst_dividendform)
+
+add_custom_command(TARGET tst_dividendform POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../app/config/WebSites.xml
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/WebSites.xml
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../app/config/Documents.xml
+        ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Documents.xml
+    COMMENT "Copying config files to ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
+)

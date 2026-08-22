@@ -129,8 +129,9 @@ tst_brokeragerepository|
 tst_dailyvaluesrepository|
 tst_sharesplitrepository/
 tst_database            ← Database, Qt6::Sql
-tst_mainwindow          ← alle ShareEditForm-, ShareAddForm-, BuysForm- (Compile-Dep.), SalesForm-, DividendForm-, BrokeragesForm-, OwnMessageBox-, BackupProgressForm-Quelldateien + alle Repositories + ShareCalculator
+tst_mainwindow          ← alle ShareEditForm-, ShareAddForm-, BuysForm- (Compile-Dep.), SalesForm-, DividendForm- (Compile-Dep. seit 22.08.2026), BrokeragesForm-, OwnMessageBox-, BackupProgressForm-Quelldateien + alle Repositories + ShareCalculator
 tst_buysform            ← BuysForm (ModelBuyEdit, PresenterBuyEdit, ViewBuyEdit) + BuyRepository, BrokerageRepository, ShareRepository
+tst_dividendform        ← DividendForm (ModelDividendEdit, PresenterDividendEdit, ViewDividendEdit) + alle Repositories inkl. DailyValuesRepository + DividendVolumeChecker, ShareSplitAdjuster, ShareSplitHint (ohne Qt6::Charts/Multimedia)
 tst_shareeditform       ← ViewShareEdit + alle vier Sub-Form-Trios als Compile-Dep. (BuysForm, SalesForm, DividendForm, BrokeragesForm) + alle Repositories
 tst_backupsettingsform  ← BackupSettingsForm + AppSettings, IconProvider (kein DB-/MainWindow-Bezug)
 tst_sharedetailsform    ← PresenterShareDetails über Fake-View/Fake-Model (IViewShareDetails, IModelShareDetails) — keine DB, keine Qt-Widgets, kein ShareCalculator
@@ -160,9 +161,19 @@ tst_xmlportfolioparser / tst_portfoliovalidator / tst_portfolioimporter  ← too
 `tst_sharesplithint` (09.08.2026, Phase 3b) 36, seit
 `tst_splitpricejumpdetector` (13.08.2026) 37, seit
 `tst_splitadjustmentaudit` (20.08.2026, Phase 4b) 38 und seit
-`tst_dividendvolumechecker` (21.08.2026, Phase 3 der Ex-Tag-Behandlung) 39
-und seit `tst_documentsxml` (21.08.2026, Phase 5) sind es 40. Die vollständige Startbefehl-Liste steht in TESTING.md,
+`tst_dividendvolumechecker` (21.08.2026, Phase 3 der Ex-Tag-Behandlung) 39,
+seit `tst_documentsxml` (21.08.2026, Phase 5) 40 und seit `tst_dividendform`
+(22.08.2026, Auslagerung aus `tst_mainwindow`) sind es 42. Die vollständige Startbefehl-Liste steht in TESTING.md,
 "Einzelnen Test direkt starten".
+
+@note Korrektur 22.08.2026: Die Kette oben zählte um eins zu niedrig —
+`tst_documentfieldvalue` wurde nie mitgezählt. Nachgezählt sind es 42 Ziele.
+Unabhängig davon ist die Aufstellung im Block oben nicht vollständig: es
+fehlen `tst_documentfieldvalue`, `tst_documentsxml`, `tst_sharesplithint`,
+`tst_sharesplitsform`, `tst_splitadjustmentaudit` und
+`tst_splitpricejumpdetector`. Die Startbefehl-Liste in TESTING.md ist
+vollständig und in beide Richtungen abgeglichen — diese Aufstellung hier ist
+es nicht.
 
 ---
 
@@ -4921,28 +4932,33 @@ brüchig (ohne Doppelpunkt gewinnt die DKB). Der Punkt steht bewusst weiter
 oben unter "Bankerkennung: Mehrdeutigkeit über die Depotnummer", weil die
 Ursache allgemein ist und nicht an Consors hängt.
 
-### tst_mainwindow.cpp in eigene Testdateien aufteilen (09.08.2026, Stand 22.08.2026)
+### tst_mainwindow.cpp in eigene Testdateien aufteilen (09.08.2026, DividendForm erledigt 22.08.2026)
 
-`tests/forms/tst_mainwindow.cpp` ist auf **11.273 Zeilen** gewachsen und
-enthält fünf Testklassen, obwohl TESTING.md ein Testziel je Form vorsieht:
+`tests/forms/tst_mainwindow.cpp` war auf **11.273 Zeilen** mit fünf
+Testklassen gewachsen, obwohl TESTING.md ein Testziel je Form vorsieht. Nach
+der Auslagerung von `TestDividendForm` sind es **9.273 Zeilen** und vier
+Klassen; die Konvention wird noch dreifach gebrochen:
 
-| Klasse | gehört nach | Dringlichkeit |
+| Klasse | gehört nach | Stand |
 | --- | --- | --- |
 | `TestMainWindow` | bleibt in `tst_mainwindow.cpp` | — |
-| `TestDividendForm` | `tst_dividendform.cpp` | **hoch** — allein die fünf Ex-Tag-Phasen haben hier rund 40 Testfälle ergänzt |
-| `TestSalesForm` | `tst_salesform.cpp` | mittel |
-| `TestOwnMessageBox` | `tst_ownmessagebox.cpp` | gering |
-| `TestBackupForm` | `tst_backupform.cpp` | gering |
+| `TestDividendForm` | `tst_dividendform.cpp` | **erledigt 22.08.2026** — 127 Testmethoden, eigenes CMake-Ziel `tst_dividendform` |
+| `TestSalesForm` | `tst_salesform.cpp` | offen, mittel |
+| `TestOwnMessageBox` | `tst_ownmessagebox.cpp` | offen, gering |
+| `TestBackupForm` | `tst_backupform.cpp` | offen, gering |
 
-Die Konvention wird damit viermal gebrochen. Praktisch heisst das: wer eine
-Änderung an SalesForm testet, baut und lädt eine 11.000-Zeilen-Datei mit, und
-ein Fehlschlag irgendwo in der Mitte ist schwer zuzuordnen — der Absturz vom
-08.08.2026 in `tst_portfoliochartform` hat genau diese Sorte Verwechslung
-vorgeführt.
+Praktisch heisst das: wer eine
+Änderung an SalesForm testet, baut und lädt weiterhin eine 9.000-Zeilen-Datei
+mit, und ein Fehlschlag irgendwo in der Mitte ist schwer zuzuordnen — der
+Absturz vom 08.08.2026 in `tst_portfoliochartform` hat genau diese Sorte
+Verwechslung vorgeführt.
 
-@note Das Muster steht bereits: `tst_buysform.cpp` ist genau so aus dieser
-Datei herausgelöst worden und dient als Vorlage — eigenes CMake-Ziel, eigene
-Kopien von `openMemoryDb()`/`insertTestShare()`, eigene Stubs.
+@note Das Muster steht: `tst_buysform.cpp` ist genau so aus dieser
+Datei herausgelöst worden und war die Vorlage für `tst_dividendform.cpp` —
+eigenes CMake-Ziel, eigene Kopie von `openMemoryDb()`, eigene
+Klassen-Helfer (`tst_dividendform.cpp`: `makeShareGuid()`, `makeDividend()`,
+`makeDepotBuy()`), eigene Stubs. `insertTestShare()` gibt es nur in
+`tst_shareeditform.cpp`, nicht in den beiden anderen.
 
 @note Nessies Vorgabe 22.08.2026: als eigenes Vorhaben in einem separaten
 Chat.
@@ -4952,6 +4968,16 @@ Der Umzug ist überschaubar: `TestSalesForm` bringt `openMemoryDb()` und
 `TestMainWindow` zu. `StubModelSaleEdit`/`StubViewSaleEdit` stehen zwar oben
 bei den übrigen Stubs, gehören aber ausschliesslich zu ihr. Es ist weitgehend
 Ausschneiden, Einfügen und je ein neues CMake-Ziel — kein Umbau.
+
+@note Lehre aus dem DividendForm-Umzug (22.08.2026): Der gemeinsame `main()`
+von `tst_mainwindow.cpp` setzt `QLocale::setDefault(QLocale::German)`, bevor
+die `QApplication` entsteht. Jede herausgelöste Datei braucht diese Zeile in
+ihrem eigenen `main()`, sonst schlagen alle Vergleiche gegen formatierte
+Beträge (`"1,50"`, `"0,0000 %"`) auf einem Runner mit englischer System-Locale
+fehl — `tst_buysform` kommt ohne sie aus, weil es keine solchen Vergleiche
+enthält. `Version.h`/`SPM_VERSION_STRING` und `${CMAKE_BINARY_DIR}/app` gehören
+dagegen NICHT mit übernommen; die braucht nur der Fenstertitel-Versionstest in
+`TestMainWindow`.
 
 @note Bewusst NICHT zusammen mit einem Feature erledigen. Eine reine
 Umstrukturierung ohne sichtbaren Nutzen sollte für sich stehen, damit bei
