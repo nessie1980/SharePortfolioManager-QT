@@ -6,6 +6,7 @@
 #include "../../IconProvider.h"
 #include "../../config/AppSettings.h"
 #include "../../core/DocumentRootMigrator.h"
+#include "../../utils/DocumentFieldValue.h"
 #include "../UiConstants.h"
 
 #include <QHBoxLayout>
@@ -16,6 +17,7 @@
 #include <QLocale>
 #include <QApplication>
 #include <QFileInfo>
+#include <QDoubleValidator>
 
 // ─────────────────────────────────────────────────────────────────────────────
 ViewShareAdd::ViewShareAdd(DocumentsConfig* config, QWidget* parent)
@@ -581,27 +583,36 @@ QDateTime ViewShareAdd::buyDateTime() const
 
 void ViewShareAdd::setFieldOk(const QString& field, const QString& value)
 {
+    bool converted = true;   ///< false, wenn ein Rohwert nicht umwandelbar war
+
+    // Ein einziger QLineEdit-Zweig, nicht mehr zwei. Der zweite (weiter unten,
+    // "Numeric QLineEdit") war toter Code: der erste fing bereits JEDES
+    // QLineEdit ab, die Zahlenfelder kamen dort nie an. Aufgefallen beim
+    // Beheben der Ordernummer-Umschreibung (22.08.2026) — siehe
+    // ARCHITECTURE.md, "Rohwerte aus Belegen: eine Regel je Zieltyp".
     if (auto* le = qobject_cast<QLineEdit*>(m_inputWidgets.value(field))) {
-        // Remove any newlines/carriage-returns that pdftotext may introduce,
-        // then collapse multiple spaces into one.
-        QString clean = value;
-        clean.replace(QLatin1Char('\n'), QLatin1Char(' '));
-        clean.replace(QLatin1Char('\r'), QLatin1Char(' '));
-        clean = clean.simplified();   // collapses whitespace + trims
-        le->setText(clean);
+        // Zahlenfelder tragen einen QDoubleValidator; nur bei ihnen ist der
+        // Punkt ein Dezimal- oder Tausendertrenner. WKN, ISIN, Name, die drei
+        // URL-Felder und die Ordernummer bleiben zeichengetreu — bei einer
+        // URL wäre die Umschreibung besonders zerstörerisch.
+        const bool numeric =
+            qobject_cast<const QDoubleValidator*>(le->validator()) != nullptr;
+        le->setText(numeric ? DocumentFieldValue::forNumericField(value)
+                            : DocumentFieldValue::forTextField(value));
+        // recalcDerivedValues() braucht es hier nicht: die Zahlenfelder sind
+        // über textChanged bereits damit verbunden.
     } else if (auto* de = qobject_cast<QDateEdit*>(m_inputWidgets.value(field))) {
-        QDate d = QDate::fromString(value, QStringLiteral("d.M.yyyy"));
-        if (!d.isValid()) d = QDate::fromString(value, Qt::ISODate);
-        if (d.isValid()) de->setDate(d);
+        const QDate d = DocumentFieldValue::toDate(value);
+        if (d.isValid())
+            de->setDate(d);
+        else if (!value.isEmpty())
+            converted = false;   // sonst bliebe still das heutige Datum stehen
     } else if (auto* te = qobject_cast<QTimeEdit*>(m_inputWidgets.value(field))) {
-        QTime t = QTime::fromString(value, QStringLiteral("h:m:s"));
-        if (!t.isValid()) t = QTime::fromString(value, QStringLiteral("h:m"));
-        if (t.isValid()) te->setTime(t);
-    } else if (auto* sp = qobject_cast<QLineEdit*>(m_inputWidgets.value(field))) {
-        // Numeric QLineEdit (volume, price, provision, brokerFee, traderFee, reduction)
-        QString norm = value; norm.replace(QLatin1Char('.'), QLatin1Char(','));
-        sp->setText(norm.trimmed());
-        recalcDerivedValues();
+        const QTime t = DocumentFieldValue::toTime(value);
+        if (t.isValid())
+            te->setTime(t);
+        else if (!value.isEmpty())
+            converted = false;
     } else if (field == QStringLiteral("depotNumber")) {
         // Select the matching entry by its stored BankIdentifierValue (item data)
         for (int i = 0; i < m_depotNumber->count(); ++i) {
@@ -611,6 +622,14 @@ void ViewShareAdd::setFieldOk(const QString& field, const QString& value)
             }
         }
         // If not found: leave on placeholder — user must select manually
+    }
+
+    // Anders als in den drei Editier-Dialogen wird der Feldzustand hier ERST
+    // AM SCHLUSS gesetzt. Ein Aufruf von setFieldError() oben würde deshalb
+    // gleich wieder überschrieben — daher der Merker.
+    if (!converted) {
+        setFieldError(field);
+        return;
     }
 
     m_fieldStates[field] = FieldState::Ok;

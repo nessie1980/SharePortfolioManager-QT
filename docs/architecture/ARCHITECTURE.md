@@ -141,6 +141,7 @@ tst_sharecalculator     \
 tst_portfolioseriescalculator| ← alle Repositories + ShareCalculator, Database, Qt6::Sql
 tst_sharesplitadjuster  ← nur Qt6::Test + ShareSplitObject — zustandslos, datenbankfrei, kein QApplication
 tst_salefifoallocator   ← nur Qt6::Test + BuyObject, ShareSplitObject — zustandslos, datenbankfrei, kein QApplication
+tst_dividendvolumechecker ← nur Qt6::Test + BuyObject, SaleObject, ShareSplitObject, ShareSplitAdjuster — zustandslos, datenbankfrei, kein QApplication
 tst_overviewtabwidget   ← nur OverviewTabWidget, keine DB, kein ShareCalculator (korrigiert 07.08.2026)
 tst_portfoliochartform  ← PortfolioChartForm-Trio + ModelPortfolioChart + PortfolioSeriesCalculator + alle Repositories (zwei Testklassen seit Phase 2b, 07.08.2026 — TestPortfolioChartForm + TestModelPortfolioChart, eigener main() statt QTEST_MAIN)
 tst_documentssettingsform ← DocumentsSettingsForm + DocumentRootMigrator + AppSettings
@@ -156,8 +157,12 @@ tst_xmlportfolioparser / tst_portfoliovalidator / tst_portfolioimporter  ← too
 (07.08.2026, Phase 1 der Aktiensplit-Behandlung) waren es 33, seit
 `tst_salefifoallocator` (07.08.2026, Phase 2c) waren es 34, seit
 `tst_sharesplitsform` (08.08.2026, Phase 3a) waren es 35, seit
-`tst_sharesplithint` (09.08.2026, Phase 3b) sind es 36. Die vollständige
-Startbefehl-Liste steht in TESTING.md, "Einzelnen Test direkt starten".
+`tst_sharesplithint` (09.08.2026, Phase 3b) 36, seit
+`tst_splitpricejumpdetector` (13.08.2026) 37, seit
+`tst_splitadjustmentaudit` (20.08.2026, Phase 4b) 38 und seit
+`tst_dividendvolumechecker` (21.08.2026, Phase 3 der Ex-Tag-Behandlung) 39
+und seit `tst_documentsxml` (21.08.2026, Phase 5) sind es 40. Die vollständige Startbefehl-Liste steht in TESTING.md,
+"Einzelnen Test direkt starten".
 
 ---
 
@@ -3831,6 +3836,12 @@ bedeutungslos und zeigt seit Phase 3c "-". Die Belegzeilen tragen den
 Split-Marker wie überall sonst — siehe "Split-Marker und Summen in den
 Übersichtstabellen".
 
+@note Weiter präzisiert durch Phase 4 der Ex-Tag-Behandlung (21.08.2026):
+Der Marker der Dividenden-Belegzeilen richtet sich seither nach dem EX-TAG
+(`DividendObject::volumeReferenceDate()`), nicht mehr nach dem Zahltag. Ein
+Split zwischen beiden wurde vorher übersehen. Siehe "Plausibilitätsprüfung
+der Dividenden-Stückzahl", Abschnitt "Phase 4 — Umsetzungsdetails".
+
 ---
 
 ## Split-Marker und Summen in den Übersichtstabellen (Phase 3c, 11.08.2026)
@@ -4150,7 +4161,7 @@ bereinigt liefert, ist je Anbieter unterschiedlich.
 | 4a | "Prüfen"-Knopf im Split-Dialog (`SplitPriceJumpDetector`): vergleicht auf Nutzeraktion hin die Kurshistorie um den Ex-Tag, setzt bei eindeutigem Ergebnis automatisch den `prices_adjusted`-Haken. Siehe "Automatische Erkennung split-bereinigter Kurshistorie" unten. | ✅ umgesetzt 14.08.2026 |
 | 4b | Automatische Nachprüfung des `prices_adjusted`-Zustands nach jedem Tageswert-Abruf (Kurssprung um den Splittag vergleichen) + Startmeldung bei Widerspruch, analog `warnAboutSharesWithoutDailyValues()`. Ursprünglich zugunsten von 4a zurückgestellt (13.08.2026) — auf Nessies Wunsch 20.08.2026 doch umgesetzt, siehe "Automatische Nachprüfung nach Tageswert-Abruf" unten für die Begründung, warum das der ursprünglichen Zurückhaltung nicht widerspricht. | ✅ umgesetzt 20.08.2026 |
 
-### Plausibilitätsprüfung der Dividenden-Stückzahl (09.08.2026)
+### Plausibilitätsprüfung der Dividenden-Stückzahl (09.08.2026, Entscheidungen 21.08.2026)
 
 Die Stückzahl in `ViewDividendEdit` ist ein Eingabefeld, und aus ihr wird die
 Ausschüttung gerechnet (`rate × volume`). Wer eine Dividende von 2021 öffnet,
@@ -4164,38 +4175,777 @@ vom 09.08.2026 ist der bessere Ansatz: der Benutzer hat ein Bankdokument
 vorliegen und soll sich daran halten; sinnvoller als eine Erklärung ist eine
 Prüfung, die tatsächlich rechnet.
 
-Bezugsgrösse ist die **damals gehaltene Stückzahl zum Stichtag**, nicht die
-split-umgerechnete — nach ihr hat die Bank ausgeschüttet. Sie ergibt sich aus
-allen Käufen und Verkäufen vor dem Ex-Tag, durchgehend in Beleg-Skala.
+Bezugsgrösse ist die **damals gehaltene Stückzahl zum Ex-Tag**, also die
+Beleg-Skala des Ex-Tags und nicht die heutige — nach ersterer hat die Bank
+ausgeschüttet, und genau sie steht auf der Abrechnung. Sie ergibt sich aus
+allen Käufen und Verkäufen desselben Depots vor dem Ex-Tag.
 
-Offen sind mindestens:
+@note Präzisiert bei der Umsetzung (Phase 3, 21.08.2026): Die Zwischensumme
+lässt sich NICHT direkt in Beleg-Skala bilden, wie hier ursprünglich
+angenommen. Jeder Kauf und Verkauf liegt in der Beleg-Skala seines EIGENEN
+Datums vor; liegt dazwischen ein Split, sind das verschiedene Skalen. Summiert
+wird deshalb auf heutiger Skala und erst das Ergebnis auf die Beleg-Skala des
+Ex-Tags zurückgerechnet — Einzelheiten unter "Phase 3 — Umsetzungsdetails".
 
-- **Warnung oder Blockade?** Eine Blockade wäre riskant: Teilbestände in
-  mehreren Depots, unterjährige Käufe zwischen Ex-Tag und Zahltag und
-  Bruchstücke aus Reverse-Splits können legitim abweichen.
-- **Welcher Stichtag?** Ex-Tag oder Zahltag — `DividendObject` führt nur ein
-  Datum, welches von beiden es fachlich ist, muss geklärt werden.
-- **Depotbezug.** Eine Dividende kennt keine Depotnummer, Käufe und Verkäufe
-  schon. Die Summe über alle Depots ist die einzige verfügbare Grösse.
+Die drei ursprünglich offenen Fragen sind entschieden (Nessie, 21.08.2026):
 
-### tst_mainwindow.cpp in eigene Testdateien aufteilen (09.08.2026)
+- **Warnung oder Blockade?** Blockade — eine Abweichung darf fachlich nicht
+  vorkommen, wenn Ex-Tag und Depotnummer korrekt gepflegt sind.
+- **Welcher Stichtag?** Der Ex-Tag wird ein eigenes, vom Zahltag
+  unterschiedenes Pflichtfeld in `DividendObject`/`dividends.ex_date`. Ein
+  Ex-Tag nach dem Zahltag ist fachlich unmöglich und wird ebenfalls hart
+  abgewiesen.
+- **Depotbezug.** Ebenfalls ein neues Pflichtfeld,
+  `dividends.depot_number` — gleiches Muster wie `buys`/`sales`
+  (`ViewBuyEdit`/`ViewSaleEdit`, Combobox aus `DocumentsConfig::entries()`).
+  Die Prüfung filtert Käufe/Verkäufe damit korrekt auf das Depot, statt
+  ersatzweise über alle Depots zu summieren.
 
-`tests/forms/tst_mainwindow.cpp` ist auf 9673 Zeilen gewachsen und enthält
-fünf Testklassen, obwohl TESTING.md ein Testziel je Form vorsieht:
+Beide Felder sind auf DB-Ebene nullable (Migrationsgrund, siehe
+`app/core/CHANGELOG.md`, `[1.3.0]`) — die "Muss"-Eigenschaft sitzt in der
+Formularvalidierung, nicht im Schema. Eine bestehende Dividende ohne Ex-Tag/
+Depotnummer bleibt ladbar und ansehbar; erst ein erneutes Speichern verlangt
+die Nachpflege (`DividendObject::isValid()` prüft die beiden Felder bewusst
+nicht mit).
 
-| Klasse | gehört nach |
-| --- | --- |
-| `TestMainWindow` | bleibt in `tst_mainwindow.cpp` |
-| `TestSalesForm` | `tst_salesform.cpp` |
-| `TestDividendForm` | `tst_dividendform.cpp` |
-| `TestOwnMessageBox` | `tst_ownmessagebox.cpp` |
-| `TestBackupForm` | `tst_backupform.cpp` |
+Automatisches Parsing aus der Dividendengutschrift ist vorgesehen — aktuell
+definiert `app/config/Documents.xml` für `Document Type="Dividend"` bei
+keiner der vier hinterlegten Banken ein `DepotNumber`- oder Ex-Tag-Feld (das
+vorhandene `Date`-Feld ist nachweislich der Zahltag, ein Block matcht sogar
+wörtlich auf "Zahltag" im Dokumenttext). Nessie stellt anonymisierte
+Beispieldokumente zur Verfügung, sobald diese Erweiterung ansteht.
+
+Vorgehen in vier Phasen, analog der Aktiensplit-Behandlung:
+
+| Phase | Inhalt | Stand |
+| --- | --- | --- |
+| 1 | `dividends.ex_date`/`dividends.depot_number` (nullable), `DividendObject`, `DividendRepository` + Tests. Keine sichtbare Änderung. | ✅ umgesetzt 21.08.2026 |
+| 2 | Pflichtfelder in `ViewDividendEdit` (Ex-Tag als `QDateEdit`, Depotnummer als Combobox), Validierung Ex-Tag ≤ Zahltag (Blockade) | ✅ umgesetzt 21.08.2026 |
+| 3 | Neue Utility-Klasse für die Stückzahl-Plausibilitätsprüfung (Bestand zum Ex-Tag je Depot aus `buys`/`sales`), Anbindung an `PresenterDividendEdit`, Blockade bei Abweichung | ✅ umgesetzt 21.08.2026 |
+| 4 | `ShareSplitHint`-Aufrufe in der Dividenden-Übersicht von `date()` auf `exDate()` umstellen (fachlich richtige Bezugsgrösse für die Split-Markierung) | ✅ umgesetzt 21.08.2026 |
+| 5 | Automatisches Parsing von Ex-Tag/Depotnummer in `Documents.xml` je Bank, sobald Beispieldokumente vorliegen | ✅ umgesetzt 21.08.2026 |
+
+#### Phase 2 — Umsetzungsdetails (21.08.2026)
+
+`ViewDividendEdit`/`IViewDividendEdit` bekommen zwei neue Pflichtfelder,
+1:1 nach dem Muster von `ViewBuyEdit`:
+
+- **Depotnummer** — `QComboBox`, befüllt aus `DocumentsConfig::entries()`
+  (Bankname + Identifier als Anzeigetext, Identifier als item data), genau
+  wie in `ViewBuyEdit::createKaufdatenGroup()`. `depotNumber()` liest den
+  item-data-Wert der aktuellen Auswahl zurück, leerer String bei
+  "— bitte wählen —".
+- **Ex-Tag** — `QDateEdit`, Startwert bewusst der Sentinel `2000-01-01`
+  (nicht "heute" wie beim Zahltag-Feld `m_date`): ein `QDateEdit` kann kein
+  echtes "leer" darstellen, darum steht der Sentinel für "vom Benutzer noch
+  nicht gesetzt". `hasMissingRequiredFields()` behandelt jedes Datum
+  `<= 2000-01-01` als fehlende Pflichtangabe — dieselbe Konvention wie das
+  bestehende Zahltag-Feld in `onDateEdited()`. Beim Laden einer alten
+  Dividende ohne `exDate` (leerer String im Modell) setzt `loadDividend()`
+  bewusst wieder den Sentinel statt eines beliebigen Datums, damit die
+  Pflicht beim nächsten Speichern tatsächlich zuschlägt (Nessies
+  Entscheidung: "der Benutzer muss den Ex-Tag nachtragen").
+
+**Blockade Ex-Tag > Zahltag.** Zwei Ebenen, wie an anderer Stelle im Projekt
+üblich (z.B. Auftragsnummer-Duplikate bei Käufen): `onExDateEdited()` gibt
+sofortige visuelle Rückmeldung (rotes Icon) bei jeder Eingabe, und
+`PresenterDividendEdit::validateInput()` prüft dieselbe Bedingung
+verbindlich beim Speichern — unabhängig davon, ob `editingFinished` je
+ausgelöst wurde (z.B. ein aus `loadDividend()` unverändert übernommener
+Wert). Ändert sich der Zahltag selbst, ruft `onDateEdited()` zusätzlich
+`onExDateEdited()` erneut auf, damit ein zuvor gültiger Ex-Tag nicht
+fälschlich grün stehen bleibt, wenn er jetzt nach dem (neuen) Zahltag läge.
+
+**Bewusst nicht Teil dieser Phase:** keine neue Spalte für Ex-Tag/Depotnummer
+in der Dividenden-Übersichtstabelle (`populateOverview()`/
+`populateJahresData()` unverändert) — Phase 2 ist auf die Pflichtfelder und
+die Ex-Tag-Blockade begrenzt, um den Änderungsumfang klein zu halten. Auch
+`startParserForText()`s `knownXmlNames`/`requiredXmlNames` bleiben
+unverändert, da `Documents.xml` für Dividenden-Dokumente noch keine
+DepotNumber-/Ex-Tag-Regex definiert (Phase 5). `onParseFinished()` listet
+`exDate`/`depotNumber` trotzdem in `requiredFieldKeys`, damit nach jeder
+Analyse korrekt "Wert fehlt noch — bitte manuell eingeben" erscheint, statt
+dass beide Felder stumm auf Untouched stehen bleiben.
+
+#### Phase 3 — Umsetzungsdetails (21.08.2026)
+
+Neue Utility-Klasse `DividendVolumeChecker` (`app/utils/`), zustandslos und
+datenbankfrei wie `ShareSplitAdjuster`/`SaleFifoAllocator`/
+`SplitPriceJumpDetector` — Käufe, Verkäufe und Splits kommen als Parameter
+herein. Eigenes Testziel `tst_dividendvolumechecker` ohne `Qt6::Sql` und ohne
+die Database-Bibliothek.
+
+**Stichtagsregel: ECHT VOR dem Ex-Tag.** Der Ex-Tag ist der erste Handelstag
+OHNE Dividendenanspruch. Wer am Ex-Tag kauft, bekommt die Dividende nicht
+mehr; wer am Ex-Tag verkauft, bekommt sie noch. Gezählt werden deshalb Käufe
+UND Verkäufe mit einem Datum `< exDate`, nicht `<= exDate`.
+
+@note Das weicht bewusst von `ShareSplitAdjuster::volumeFactor()` ab, wo der
+Stichtag selbst noch zur alten Skala zählt. Beides ist an seiner Stelle
+richtig: dort geht es um die Stückelung eines Belegs, hier um die
+Dividendenberechtigung.
+
+@note Unabhängig bestätigt am 21.08.2026 durch Cortal Consors' eigene
+Erläuterung zum "Schlusstag" (= Dividenden-Stichtag, in Deutschland der Tag
+der Hauptversammlung): "An diesem Tag müssen Sie die Aktie vor Börsenschluss
+im Depot haben, damit Sie Anspruch auf die Dividende haben. Normalerweise ist
+der Schlusstag einen Tag vor dem Ex-Tag." Anspruchsberechtigt ist demnach der
+Bestand am Ende des Schlusstags — und das ist genau der Bestand ECHT VOR dem
+Ex-Tag. Ein Kauf am Schlusstag zählt also mit (`< exDate` ist erfüllt), ein
+Kauf am Ex-Tag nicht mehr. Die Regel stand bis dahin als offene Rückfrage im
+Raum; sie ist damit erledigt.
+
+**Skalen — der eigentliche Fallstrick.** Käufe und Verkäufe liegen jeweils in
+der Beleg-Skala IHRES EIGENEN Datums vor. Liegt zwischen einem Kauf und dem
+Ex-Tag ein Split, sind das zwei verschiedene Skalen, und ein direktes
+Aufsummieren wäre genau um den Split-Faktor falsch — derselbe Fehler, den
+Phase 2c mit `SaleFifoAllocator` in der FIFO-Zuteilung beseitigt hat. Die
+ursprüngliche Vorschlagsfassung ging noch davon aus, hier sei keine
+Umrechnung nötig; das trifft nur zu, solange zwischen Kauf und Ex-Tag kein
+Split liegt. `holdingsAtExDate()` summiert deshalb über
+`ShareSplitAdjuster::adjustedVolume()` auf heutiger Skala und rechnet das
+Ergebnis über `ShareSplitAdjuster::belegVolume()` auf die Beleg-Skala DES
+EX-TAGS zurück — denn genau in dieser Skala steht die Stückzahl auf der
+Dividendenabrechnung, und genau die trägt der Benutzer ein. Ohne Splits ist
+das eine schlichte Summe (Faktor 1,0 überall).
+
+**Toleranz.** `kVolumeTolerance = 1e-4` Stück, absolut. Die Eingabefelder
+führen vier Nachkommastellen; eine aus einem Reverse-Split stammende
+Drittel-Stückzahl kann daher gerundet erfasst sein (33,3333 statt
+33,33333…). Die Toleranz fängt genau diese Rundung ab und liegt weit
+unterhalb jeder fachlich bedeutsamen Abweichung.
+
+**Wann NICHT geprüft wird.** `DividendVolumeCheckResult::checkable` ist
+`false` — und der Aufruf darf dann nicht als Abweichung gewertet werden — in
+drei Fällen: kein gültiger Ex-Tag, keine Depotnummer, oder für die Aktie ist
+ÜBERHAUPT KEIN Kauf erfasst. Der dritte Fall ist die bewusste Notbremse: eine
+Aktie, deren Kaufhistorie (noch) nicht erfasst ist, bliebe sonst dauerhaft
+unspeicherbar. Sobald der erste Kauf erfasst ist, greift die Prüfung.
+
+@note Bekannte Folge der Blockade-Entscheidung: Wer eine unvollständige
+Kaufhistorie führt (z. B. Einstieg in die Erfassung mitten in der Haltedauer,
+Übertrag aus einem anderen Depot ohne Kaufbuchung), kann Dividenden dieser
+Aktie nicht mehr speichern, solange der Bestand nicht rechnerisch aufgeht.
+Das ist die gewollte Konsequenz aus "Blockade statt Warnung" (Nessie,
+21.08.2026) und kein Fehler — es ist aber der Punkt, an dem die Entscheidung
+im Alltag weh tun kann. Ein Ausweg wäre ein bewusst gesetzter Haken
+"Bestandsprüfung für diese Dividende übergehen"; bislang bewusst NICHT
+eingebaut, weil er die Blockade wieder zur Warnung machen würde.
+
+**Anbindung.** `PresenterDividendEdit` lädt Käufe und Verkäufe einmalig im
+Konstruktor (`m_buys`/`m_sales`), aus demselben Grund wie `m_splits`: beide
+sind aus dem Dividenden-Dialog heraus nicht erreichbar und ändern sich
+während einer Dialog-Sitzung nicht. `validateInput()` prüft NACH der
+Ex-Tag-Prüfung — mit falschem Ex-Tag wäre auch der errechnete Bestand falsch,
+und die Mengenmeldung würde in die Irre führen. Bei einer Abweichung wird
+zusätzlich das Mengenfeld rot markiert, damit die Meldung eine Entsprechung
+in der Maske hat.
+
+**Bewusst keine Live-Prüfung.** Die Mengenprüfung läuft nur beim Speichern,
+nicht bei jedem `editingFinished` des Mengenfelds. Ein rotes Icon ohne
+Zahlen liesse offen, ob die Menge fehlt oder nicht zum Bestand passt — die
+Meldung beim Speichern nennt dagegen eingetragene Menge, errechneten Bestand,
+Ex-Tag und Depot. Anders als beim Ex-Tag, wo die Regel ("nicht nach dem
+Zahltag") ohne Zahlen verständlich ist.
+
+#### Phase 4 — Umsetzungsdetails (21.08.2026)
+
+Der Split-Marker in den Dividenden-Übersichten hing bis hierher am Zahltag
+(`d.date()`), weil es zum Zeitpunkt von Phase 3c der Aktiensplit-Behandlung
+kein anderes Datum gab. Fachlich richtig ist der Ex-Tag: auf den Bestand am
+Ex-Tag hat die Bank ausgeschüttet, also entscheidet er, ob die Stückzahl auf
+der Abrechnung schon in heutiger Stückelung gezählt ist. Ein Split ZWISCHEN
+Ex-Tag und Zahltag — der Fall, der die beiden Datumsangaben überhaupt
+unterscheidbar macht — wurde vorher übersehen.
+
+Neu ist `DividendObject::volumeReferenceDate()`: der Ex-Tag, wenn gesetzt,
+sonst `date()` als Rückfall. Der Rückfall bildet für Dividenden, die vor dem
+21.08.2026 erfasst wurden, exakt das bisherige Verhalten ab — eine solche
+Zeile sieht aus wie vorher, statt mangels Ex-Tag gar keinen Marker mehr zu
+bekommen.
+
+@note `DividendVolumeChecker` (Phase 3) benutzt diesen Rückfall bewusst
+NICHT. Dort ist der Ex-Tag Pflichtfeld und garantiert vorhanden; ein
+stillschweigender Rückfall auf den Zahltag würde die Stückzahl gegen den
+falschen Stichtag prüfen und wäre schlimmer als gar keine Prüfung. Der
+Rückfall ist eine reine Anzeige-Regel für Altbestand.
+
+**Zwei Aufrufstellen, nicht eine.** Neben
+`ViewDividendEdit::populateOverview()` zeigt auch
+`ViewShareDetails::populateDividenden()` dieselben Dividendenzeilen mit
+Marker und Tooltip. Beide wurden umgestellt — hätte nur eine davon den
+Ex-Tag benutzt, würden die zwei Ansichten derselben Dividende
+widersprechende Marker zeigen. Die Aufrufe in `ViewBuyEdit`/`ViewSaleEdit`/
+`PresenterBuyEdit`/`PresenterSaleEdit` bleiben unverändert: Käufe und
+Verkäufe haben keinen Ex-Tag, dort ist das Belegdatum der richtige Massstab.
+
+#### Phase 5 — Umsetzungsdetails (21.08.2026)
+
+Grundlage sind DREI anonymisierte Dividendengutschriften von Nessie
+(21.08.2026): ING DiBa in EUR und in USD sowie DKB in USD. Beide Banken
+beschriften den Ex-Tag wörtlich "Ex-Tag", beide nennen bei
+Fremdwährungs-Ausschüttungen einen Devisenkurs. Ein Consors-Beleg kam später
+nach (siehe "Nachtrag Cortal Consors").
+
+@note Ein DKB-Beleg über eine EUR-Ausschüttung existiert nicht — Nessie hat
+schlicht keinen (Stand 21.08.2026). Der entsprechende Testfall in
+`tst_documentsxml` beruht deshalb auf einer KONSTRUKTION: dem USD-Beleg ohne
+die Devisen-Zeilen. Er prüft damit keine belegte Wirklichkeit, sondern nur,
+dass die Regeln auf einem euro-förmigen DKB-Layout plausibel greifen — vor
+allem, dass ein Euro-Beleg KEINEN Devisenkurs liefert und deshalb den
+Fremdwährungs-Modus nicht fälschlich einschaltet. Diese Aussage ist auch ohne
+Originalbeleg wertvoll; die übrigen Erwartungen dort sind Annahme, nicht
+Befund.
+
+**Alle neuen Regeln suchen über die BESCHRIFTUNG, nicht über die Position.**
+Die vorhandenen Dividenden-Regeln der DKB arbeiten teils positionsbasiert
+(`FoundIndex="2"` auf `([0-9., ]{1,})-` = "der dritte Betrag mit
+nachgestelltem Minus im gesamten Text"). Das ist gegenüber jeder
+Layout-Änderung und sogar gegenüber einem längeren Briefkopf anfällig. Neu
+ergänzt wurden deshalb ausschliesslich beschriftungsgebundene Regeln:
+
+| Feld | DKB | ING DiBa |
+| --- | --- | --- |
+| `ExDate` | `Ex[- ]?Tag\s+(Datum)` | dieselbe Regel |
+| `DepotNumber` | `Depotnummer\s+([0-9]{1,9})` | `Direkt-Depot Nr.:\s+([0-9]{1,10})` |
+| `Currency` | `Dividende pro Stück\s+Betrag\s+([A-Z]{3})` | `Dividendensatz\s+Betrag\s+([A-Z]{3})` |
+
+`ExchangeRate` war bei allen Banken bereits konfiguriert und musste nicht
+angefasst werden.
+
+**Der Devisenkurs wurde bis hierher zwar gelesen, aber zweifach verworfen.**
+Beim Umsetzen kamen zwei Fehler zum Vorschein, die zusammen dafür sorgten,
+dass die Fremdwährungs-Umrechnung aus einem Beleg nie ankam:
+
+1. `exchangeRatio` war als einziges beschreibbares Feld weder in
+   `m_statusLabels` noch in `m_inputWidgets` von `ViewDividendEdit`
+   eingetragen. `setFieldOk("exchangeRatio", …)` fand deshalb kein Widget und
+   kehrte wirkungslos zurück — der gelesene Kurs erreichte das Feld nie.
+   Aus demselben Grund war auch
+   `PresenterDividendEdit::onExchangeRatioEdited()` seit jeher ein
+   Leerlauf: `setFieldError()` fand ebenfalls nichts.
+2. Selbst mit gefülltem Feld hätte `onSave()` den Kurs verworfen: es
+   übernimmt `exchangeRatio()` nur bei aktivem Fremdwährungs-Modus, und den
+   schaltete niemand ein.
+
+Behoben durch die Registrierung des Felds (die Statuszelle in Spalte 3 gab es
+schon, sie war nur ein namenloser Platzhalter) und durch die neue
+View-Methode `setForeignCurrency(bool, isoCode)`, die Haken UND Währungswahl
+setzt. `populateFromResult()` ruft sie anhand des geparsten `Currency`-Felds
+auf — bewusst in beide Richtungen: nennt der Beleg EUR, wird der Modus auch
+wieder abgeschaltet, damit ein aus einem vorherigen Import stehengebliebener
+Haken keine Euro-Ausschüttung durch einen fremden Kurs teilt.
+
+Die Zuordnung ISO-Kürzel → Combobox-Eintrag läuft über
+`QLocale::currencySymbol(QLocale::CurrencyIsoCode)`, nicht über eine eigene
+Tabelle: die Combobox führt IETF-Locale-Namen ("en-US"), der Beleg das
+ISO-4217-Kürzel ("USD"), und eine handgepflegte Zuordnung wäre eine zweite
+Wahrheit, die bei jeder neuen Währung nachgezogen werden müsste.
+
+**Richtung des Kurses.** Beide Banken nennen den Kurs so, dass
+Fremdwährungsbetrag GETEILT durch den Kurs den Euro-Betrag ergibt — genau die
+Rechnung in `refreshDerivedValues()` (`payout = payoutFc / exchangeRatio`).
+Gegengerechnet am ING-USD-Beleg: 0,53 USD × 150 Stück = 79,50 USD; geteilt
+durch 1,148693 sind 69,21 EUR; abzüglich 10,39 + 6,91 + 0,38 EUR Steuern
+bleiben 51,53 EUR — exakt der auf dem Beleg ausgewiesene "Gesamtbetrag zu
+Ihren Gunsten". `tst_documentsxml` prüft diese Kette mit.
+
+**DKB-Zahltag von Position auf Beschriftung umgestellt.** `Date` stand auf
+`FoundIndex="1"` einer allgemeinen Datumssuche, also "das zweite Datum im
+Text". Im DKB-Beleg stehen Zahlbarkeitstag, Bestandsstichtag und Ex-Tag
+unmittelbar untereinander; welches davon das zweite ist, hängt auch vom
+Briefkopf ab. Jetzt: `(?:Zahlbarkeitstag|Zahltag)\s+(Datum)`. Die Alternative
+deckt beide Beschriftungsvarianten ab.
+
+@note Am 21.08.2026 gegen einen echten DKB-Beleg bestätigt (Nessie): Zahltag
+UND Ex-Tag werden korrekt gelesen. Der offene Punkt "DKB-Zahltag
+gegenprüfen", der nur gegen ein aus dem Screenshot nachgebautes Fixture
+abgesichert war, ist damit geschlossen.
+
+@note Die STEUER-Regeln der DKB blieben bewusst unverändert, obwohl sie
+demselben Positionsprinzip folgen. Die Indizes 2/4/5 gehen offenbar davon
+aus, dass im (auf den Screenshots geschwärzten) Briefkopf zwei weitere
+Treffer liegen; ein Fehlgriff dort verfälscht still Steuerbeträge.
+
+@note **Am Beleg bestätigt (Nessie, 22.08.2026):** ein echter
+DKB-Dividendenbeleg wird korrekt gelesen, die Werte kommen richtig in der
+Maske an — die Steuerfelder eingeschlossen. Der Punkt ist damit geschlossen.
+Was bleibt, ist die fehlende TESTABDECKUNG: `tst_documentsxml` prüft die
+DKB-Steuerfelder weiterhin nicht mit, weil das Fixture aus geschwärzten
+Screenshots gebaut ist und die beiden Briefkopf-Treffer, auf denen die
+Indizes beruhen, nicht enthält. Ein Fixture, das sie erfände, würde eine
+Übereinstimmung vortäuschen, die nichts über echte Belege aussagt. Die
+ING-Steuerfelder (beschriftungsgebunden) sind geprüft.
+
+**Neues Testziel `tst_documentsxml`.** Prüft die AUSGELIEFERTE
+`app/config/Documents.xml` gegen Auszüge echter Belege — bis hierher war die
+Konfigurationsdatei an keiner Stelle getestet, ein Tippfehler in einem Regex
+fiel erst beim Einlesen eines Dokuments durch den Benutzer auf. Läuft mit dem
+echten `ParserLib::Parser` (im Textmodus synchron), damit auch dessen
+Auswahlregel — `FoundIndex` wählt den Treffer, daraus die erste nicht-leere
+Fanggruppe — mitgeprüft ist. Abgrenzung zu `tst_documentsconfig`: dort geht
+es um den XML-Parser mit synthetischen Fixtures, hier um den Inhalt der
+echten Datei.
+
+#### Nachtrag Cortal Consors (21.08.2026)
+
+@note Was von dieser Bank offen blieb, ist gesammelt unter "Consors-Themen"
+weiter unten. Nessie handelt derzeit nicht über Consors; die Punkte sind
+zurückgestellt.
+
+Ein Beleg dieser Bank kam nach; damit sind `DepotNumber` und `Currency`
+ergänzt und der Zahltag korrigiert. **Ein Ex-Tag lässt sich bei Consors
+weiterhin nicht auslesen** — und das ist eine bewusste Entscheidung, keine
+Lücke:
+
+Der Beleg nennt zwei Daten, "Schlusstag" und "Valuta". Laut Consors' eigener
+Erläuterung ist der Schlusstag der Dividenden-Stichtag (in Deutschland der
+Tag der Hauptversammlung) und liegt "normalerweise einen Tag vor dem Ex-Tag".
+Genau dieses "normalerweise" verhindert eine Ableitung: Schlusstag + 1
+Kalendertag trifft den Ex-Tag nur, solange kein Wochenende oder Feiertag
+dazwischenliegt — für den nächsten HANDELStag bräuchte es einen
+Börsenkalender, den die Anwendung nicht führt. Ein um einen Tag falscher
+Ex-Tag ginge unmittelbar in die Stückzahl-Plausibilitätsprüfung (Phase 3) ein
+und würde dort entweder fälschlich blockieren oder eine echte Abweichung
+durchwinken. Es bleibt daher bei der Regel aus dem ursprünglichen Entwurf:
+ein falsch geratener Ex-Tag ist schlechter als ein fehlender. Der Benutzer
+trägt ihn bei Consors von Hand nach; die Analyse-Statuszeile weist ihn
+korrekt als fehlende Pflichtangabe aus.
+
+**Ersatzhinweis statt Ableitung.** Damit der Benutzer den Ex-Tag nicht
+anderswo nachschlagen muss, wird der Schlusstag als eigenes Feld
+`RecordDate` gelesen und über die neue View-Methode `setFieldHint()` als
+Hinweis an das Ex-Tag-Feld gehängt: Info-Symbol plus Tooltip mit dem
+gefundenen Datum und der Erläuterung, dass der Ex-Tag üblicherweise der
+nächste Handelstag ist. Der Wert wird ausdrücklich NICHT eingetragen — das
+Feld bleibt leer und zählt weiter als fehlende Pflichtangabe, damit kein
+geratenes Datum in die Stückzahl-Plausibilitätsprüfung gerät.
+
+`setFieldHint()` setzt den Feldzustand auf `Info` statt ihn auf `Untouched`
+zu lassen. Das ist kein Detail: `onParseFinished()` überschreibt sonst
+unmittelbar danach jeden noch unberührten Pflichtfeld-Status mit seinem
+allgemeinen Text ("Wert fehlt noch — bitte manuell eingeben") und der
+genauere Hinweis wäre verloren. Ein Testfall hält genau das fest.
+
+`RecordDate` steht bewusst NICHT in `knownXmlNames`: es ist kein
+Formularfeld, und in der Analyse-Statuszeile mitgezählt zu werden würde die
+Quote verfälschen.
+
+**Zahltag über "Valuta" statt über die Position.** `Date` stand auf "das
+erste Datum im Text" und lieferte damit den Schlusstag — also gerade nicht
+den Auszahlungstag. Jetzt `(?:Valuta|Zahltag)\s+(Datum)`.
+
+@note Consors merkt zum Zahltag an, dass er nicht zwingend das Datum der
+Kontogutschrift ist ("zwischen der Auszahlung und der Buchung auf Ihr Konto
+können ein paar Tage vergehen"). Der Beleg weist nur die Valuta aus, also die
+Gutschrift. Für die Anwendung ist das die brauchbarere Grösse: das Jahr der
+Gutschrift bestimmt die steuerliche Zuordnung, und `priceAtPayday` wird
+ohnehin gegen dieses Datum aus den Tageswerten gesucht. Die Alternative
+`Zahltag` steht mit in der Regel, falls eine andere Consors-Belegvariante sie
+beschriftet.
+
+@note Der `Wkn`-Ausdruck dieser Bank (`  ((?:[A-Za-z0-9]{6,6}))  ` — "sechs
+alphanumerische Zeichen zwischen zwei Leerzeichen") ist auffällig
+unspezifisch und trifft im Testbeleg an 25 Stellen. Er wurde NICHT angefasst:
+die WKN liegt auf dem vorliegenden Screenshot im geschwärzten Bereich, ein
+Ersatz wäre ungeprüft. Falls der Consors-Dividendenimport in der Praxis mit
+"Das gewählte Dokument gehört nicht zur aktuell geöffneten Aktie" abbricht,
+ist dieser Ausdruck der erste Verdächtige — `populateFromResult()` vergleicht
+die geparste WKN mit der geöffneten Aktie, und Consors hat im
+Dividenden-Block keinen `Isin`-Ausdruck, der einen Fehlgriff auffangen
+könnte.
+
+#### Leere Kennungen schlucken jedes Dokument (Bugfix 21.08.2026)
+
+Nessies Bugreport: "Consors-Dividenden werden überhaupt nicht gelesen." Nicht
+falsch gelesen — gar nicht.
+
+Ursache: `QRegularExpression("")` ist gültig und trifft jeden Text (leerer
+Treffer an Position 0). Cortal Consors hat eine LEERE `SaleIdentifier`-Regel,
+weil für diese Bank keine Verkaufsbelege konfiguriert sind. Da
+`DocumentClassifier`s `findMatchingType()` die vier Kennungen in fester
+Reihenfolge prüft — Buy, Sale, Dividend, Brokerage — und den ersten Treffer
+nimmt, gewann die leere Sale-Kennung gegen die danach geprüfte, tatsächlich
+passende Dividend-Kennung. Die Gutschrift wurde als `DocumentType::Sale`
+eingestuft; folgerichtig hat die Bank auch keinen `<Document Type="Sale">`-
+Block, `DocumentsConfig::findDocument()` lieferte einen Nullzeiger, und
+`PresenterDividendEdit::startParserForText()` brach ab, ohne ein einziges
+Feld zu lesen.
+
+Behoben in `regexMatches()` (dem gemeinsamen Helfer beider Aufrufwege): ein
+leeres Muster identifiziert nichts und liefert `false`. Die Prüfung sitzt
+bewusst dort und nicht im Lader — `DocumentsConfig` gibt die Konfiguration
+unverfälscht wieder, die Bedeutung "leer = identifiziert nichts" gehört zur
+Auswertung. Sie schützt zugleich `matchBankIndex()`, wo eine leere
+`BankIdentifier`-Regel sonst jedes beliebige Dokument dieser Bank
+zugeschlagen hätte.
+
+@note Der Fehler war seit Einführung der Consors-Konfiguration latent und
+betraf neben Dividenden auch die Kostenbelege dieser Bank (auch sie landen
+über die leere Sale-Kennung im Nichts). Käufe blieben unauffällig, weil
+`BuyIdentifier` VOR `SaleIdentifier` geprüft wird.
+
+#### Vorabpauschale-Belege werden bewusst nicht verarbeitet (21.08.2026)
+
+Nessie reichte einen DKB-Beleg "Vorabpauschale Investmentfonds" ein — die
+Vorabpauschale für thesaurierende Fonds. Entscheidung: **nicht unterstützen.**
+Bei einer Vorabpauschale fliesst dem Anleger kein Geld zu, es wird lediglich
+Steuer abgeführt; als Dividende erfasst, wiese die Anwendung eine Einnahme
+aus, die es nie gab.
+
+Verhalten heute: Die Bank wird erkannt, aber keine der vier
+Dokumenttyp-Kennungen trifft ("Vorabpauschale Investmentfonds" ist weder
+Kauf, Verkauf, Dividendengutschrift noch Kostenabrechnung). Über
+"Direkte Dokumentenerfassung" wird der Beleg deshalb abgewiesen. Wird er im
+Dividenden-Dialog von Hand ausgewählt, greift dagegen der dortige
+Vorgabewert `DocumentType::Dividend`, und die Dividendenregeln laufen —
+Ex-Tag, Zahltag, Depotnummer und Stückzahl kommen durch, Dividendensatz und
+Steuern bleiben leer, weil der Beleg "Vorabpauschale pro St." statt
+"Dividende pro Stück" schreibt. Das ist hingenommen: der Benutzer sieht am
+leeren Pflichtfeld, dass hier etwas nicht passt.
+
+Zur besseren Unterscheidbarkeit meldet `MainWindow` seither getrennt, ob die
+BANK oder der BELEGTYP unbekannt war — dafür führt
+`DocumentClassifier::Result` das neue Feld `bankMatched`, das gesetzt wird,
+sobald die Bank erkannt ist, auch wenn die Typzuordnung anschliessend
+scheitert. Vorher lautete die Meldung in beiden Fällen gleich und liess
+offen, ob ein Konfigurationseintrag fehlt oder die Belegart schlicht nicht
+verarbeitet wird.
+
+#### Zwei Lesewege, zwei Auswahlregeln (Bugfix 21.08.2026)
+
+Nessies Bugreport, unmittelbar nachdem der DKB-Beleg im Dialog erstmals
+fehlerfrei lief:
+
+    Keine passende Aktie im Portfolio gefunden für Dividenden-Dokument:
+    WKN_850663_-_Ertragsabrechnung_Dividenden_vom_02.10.2018_…pdf
+
+Derselbe Beleg, dieselbe `Documents.xml`, dieselbe Aktie im Portfolio — im
+Dividenden-Dialog einwandfrei, per Drag&Drop nicht. Das ist der interessante
+Teil der Meldung: sie schliesst die Konfiguration als Ursache aus und zeigt
+auf den Unterschied zwischen den beiden Wegen.
+
+Und den gibt es. Der Dialog parst über `ParserLib::Parser::doRegexParsing()`.
+Die Direkte Dokumentenerfassung braucht die WKN aber, BEVOR ein Dialog
+existiert — `MainWindow::resolveShareGuidForDocument()` muss erst die Aktie
+finden, um überhaupt zu wissen, welchen Dialog sie öffnen soll. Sie geht
+deshalb über `DocumentClassifier::extractWkn()`/`extractIsin()`, einen
+zweiten, viel einfacheren Auswerter derselben Regeln.
+
+**Die beiden Auswerter waren sich nicht einig.** `Parser` liest die Regel
+vollständig: `FoundIndex` bestimmt, DER WIEVIELTE Treffer gilt, und aus ihm
+zählt die erste NICHT-LEERE Fanggruppe. `extractFieldValue()` nahm dagegen
+immer den ersten Treffer und daraus starr die Gruppe 1; `FoundIndex` stand
+zwar in der Konfiguration, wurde hier aber nie gelesen.
+
+Für die DKB ist das fatal, weil ihre WKN-Regel genau auf dieser Position
+beruht:
+
+    <Wkn FoundIndex="1">[(]((?:[A-Za-z0-9]{1,}))[)]</Wkn>
+
+"Irgendetwas in runden Klammern" — und das erste solche Vorkommen ist die
+Spaltenüberschrift des Belegs:
+
+    Nominale   Wertpapierbezeichnung   ISIN           (WKN)
+    Stück 40   MUSTER INC              US0001234567   (654321)
+
+Der alte Weg lieferte also die Zeichenkette `WKN` an
+`ShareRepository::findByWkn()`. Dass dabei keine Aktie herauskommt, ist der
+freundlichste denkbare Ausgang — der Beleg hat schlicht keinen Dialog
+geöffnet. Ein `Isin`-Ausdruck, der den Fehlgriff hätte auffangen können,
+existiert im DKB-Dividendenblock nicht.
+
+Betroffen waren **alle drei DKB-Belegarten** — Kauf, Verkauf und Dividende
+teilen sich diese Regel —, nicht nur Dividenden. ING und Cortal Consors
+blieben unauffällig, weil ihre Regeln auf `FoundIndex="0"` stehen und die
+falsche Auswahl dort zufällig mit der richtigen zusammenfiel. Genau deshalb
+fiel der Fehler jahrelang nicht auf: die einzige Bank, die ihn auslöst, ist
+auch die einzige, deren Regeln positionsabhängig sind.
+
+**Behoben** in `extractFieldValue()`, das jetzt die Auswahlregel des
+`Parser` nachbildet: gewünschter Trefferindex, daraus die erste nicht-leere
+Fanggruppe. Der frühere Rückfall "keine Fanggruppe → ganzer Treffer" ist
+dabei entfallen, ebenfalls zugunsten der Gleichheit — `Parser` sammelt
+ausschliesslich die Gruppen 1..n, eine Regel ohne Fanggruppe lieferte im
+Dialog also ohnehin nichts.
+
+@note Die eigentliche Lehre ist nicht der Tippfehler, sondern die Bauform:
+zwei Auswerter für ein Format sind eine Fehlerquelle, die sich nicht durch
+Sorgfalt beseitigen lässt. Sie zusammenzulegen wäre der saubere Weg,
+scheitert aber daran, dass `Parser` ein `QObject` mit Signalen und Zustand
+ist, während die Dokumentenerfassung eine reine Funktion braucht, die
+zwischen "PDF liegt vor" und "Dialog wird geöffnet" laufen kann. Gewählt ist
+deshalb die zweitbeste Absicherung: `tst_documentsxml` prüft für JEDE in
+`Documents.xml` hinterlegte Bank, dass beide Wege aus derselben Regel
+denselben Wert holen
+(`test_capture_extractWknMatchesParserResult_allBanks`). Kommt eine vierte
+Bank hinzu, ist sie ohne Zutun mitgeprüft; fehlt zu ihr ein Belegtext, sagt
+der Testlauf das ausdrücklich.
+
+#### Rohwerte aus Belegen: eine Regel je Zieltyp (Bugfix 22.08.2026)
+
+Zwei Meldungen an einem Tag, beide an demselben Punkt: was ein Regex aus
+einem Beleg herausschneidet, ist noch nicht das, was in ein Eingabefeld
+gehört.
+
+**1. Die Ordernummer wurde zur Zahl gemacht.** Der DKB-Kaufbeleg zeigt
+"670835/66.00", im Formular stand "670835/66,00". Die Views schrieben jedem
+einzeiligen Feld den Punkt in ein Komma um:
+
+    if (auto* le = qobject_cast<QLineEdit*>(widget)) {
+        QString norm = value; norm.replace('.', ',');
+        le->setText(norm.trimmed());
+    }
+
+Gedacht war das für ZAHLENfelder — ein Beleg, der "39.998" schreibt, meint
+39,998, und die Formulare rechnen deutsch. Nur trifft `qobject_cast<QLineEdit*>`
+eben auch die Ordernummer, und in `ViewShareAdd` zusätzlich WKN, ISIN, Name
+und die drei URL-Felder. Bei einer URL wäre die Umschreibung besonders
+zerstörerisch ("www.example.com" → "www,example,com"); dass es dort nie
+auffiel, lag allein daran, dass diese Felder nicht aus Belegen befüllt werden.
+
+Unterschieden wird jetzt am **`QDoubleValidator`**: Zahlenfelder tragen einen,
+Textfelder nicht. Das ist kein Kniff, sondern die einzige Eigenschaft, die
+ohnehin schon genau diese Grenze zieht — und sie wächst mit: ein neues
+Zahlenfeld bekommt seinen Validator sowieso, ein neues Textfeld nicht.
+
+**2. Das Verkaufsdatum kam nicht an.** Bei einem DKB-Verkaufsbeleg stand im
+Datumsfeld das heutige Datum statt des Belegdatums 27.02.2020. Die Analyse
+meldete trotzdem "5/5 Pflicht" — und genau das ist der Hinweis: der Parser
+HATTE einen Wert, die View konnte ihn nur nicht verwenden.
+
+Die DKB beschriftet Datum und Uhrzeit gemeinsam:
+
+    Schlusstag/-Zeit  27.02.2020 19:16:37
+
+Die Regeln `Date` und `Time` fangen deshalb beide dieselbe Zeichenkette; jedes
+Feld muss sich seinen Teil daraus holen. Die View reichte statt dessen den
+ganzen Fang an `QDate::fromString(…, "d.M.yyyy")` weiter, bekam ein ungültiges
+`QDate` — und tat dann nichts:
+
+    if (d.isValid()) de->setDate(d);
+
+Ohne `else`. Das Feld behielt seinen Vorgabewert, und der ist bei einem
+`QDateEdit` das heutige Datum. Ein Verkauf aus 2020 wäre damit auf den Tag der
+Erfassung gebucht worden, mitsamt allen Folgen für FIFO-Zuteilung und
+Steuerjahr. Ein leeres Feld hätte man gesehen; ein plausibel aussehendes
+falsches Datum sieht man nicht.
+
+**Beides zusammengefasst in `app/utils/DocumentFieldValue.h`** — header-only
+wie `ShareUpdateRules.h`, reine Funktionen: `toDate()`, `toTime()`,
+`forTextField()`, `forNumericField()`. Eine Umwandlung je ZIELTYP, an einer
+Stelle, für alle vier Formulare (Kauf, Verkauf, Dividende, Aktie anlegen).
+`toDate()`/`toTime()` suchen sich ihren Teil aus dem Rohwert, egal was drum
+herum steht; zweistellige Jahreszahlen bleiben bewusst aussen vor, weil
+"27.02.20" 1920 oder 2020 sein kann und ein geratenes Jahrhundert schlimmer
+ist als ein gemeldeter Fehlschlag.
+
+**Misslingt die Umwandlung, wird das jetzt ANGEZEIGT** (`setFieldError()`)
+statt still beim Vorgabewert zu bleiben. Das kann dazu führen, dass die
+Zusammenfassung "Analyse OK — 5/5 Pflicht" meldet und daneben ein Feld ein
+Fehlersymbol trägt: die Zusammenfassung zählt, was der PARSER geliefert hat,
+das Symbol zeigt, was die View damit anfangen konnte. Die Doppelung ist
+gewollt — die stille Variante war der Fehler.
+
+@note Nebenbei repariert: In `ViewShareAdd` war der Zweig "Numeric QLineEdit"
+**toter Code**. Der Zweig davor fing bereits jedes `QLineEdit` ab, die
+Zahlenfelder kamen dort nie an. Folge: in diesem Dialog wurde noch nie ein
+Dezimalpunkt umgeschrieben — die Ordernummer war dort also zufällig richtig,
+ein "39.998" aus einem Beleg dagegen zufällig falsch. Beide Zweige sind jetzt
+einer.
+
+@note Zweite Nebenwirkung, die niemand gemeldet hat: bei einem Wert mit
+Tausendertrenner ("1.234,56") wurde aus dem Punkt ebenfalls ein Komma
+("1,234,56"), und `parseDouble()` machte daraus 0,00 — ein Preis über tausend
+Euro fiel lautlos auf null. `forNumericField()` unterscheidet jetzt am Komma:
+ist eines da, ist es der Dezimaltrenner und der Punkt kann nur
+Tausendertrenner sein. Ein Beleg mit einem solchen Betrag lag nicht vor; die
+Änderung stützt sich auf die Schreibweise, nicht auf einen Fund.
+
+**Die DKB-Verkaufsregel hängt nicht mehr an der Nachbarspalte.** Sie lautete
+`Schlusstag/-Zeit([0-9:. ]{1,})Auftraggeber` — sie verlangte also, dass rechts
+neben der Uhrzeit ausgerechnet das Wort "Auftraggeber" steht, das zu einer
+ganz anderen Spalte des Belegs gehört. Jetzt hängt sie nur noch an ihrer
+eigenen Beschriftung, und `Time` holt sich die Uhrzeit hinter dem Datum. Das
+war nicht die Fehlerursache — die Regel traf durchaus —, aber eine Bindung,
+die beim nächsten Layoutwechsel der Bank ohne Grund gebrochen wäre.
+
+@note Beim Nachbauen des Fixtures kam kurzzeitig die Frage auf, ob ein
+DKB-VERKAUFSbeleg überhaupt einer Aktie zugeordnet werden kann: der Block hat
+KEINE `Isin`-Regel als Fangnetz, seine `Wkn`-Regel sucht ein Klammerpaar, und
+auf dem Screenshot stand die ISIN scheinbar ohne WKN daneben. Nessies Auskunft
+vom 22.08.2026 hat das geklärt — die WKN steht dort sehr wohl, in Klammern wie
+auf den übrigen DKB-Belegen; die Dokumentenvorschau hatte nur den rechten
+Seitenrand abgeschnitten. Die positionsabhängige Regel greift also auch hier,
+ein Zusatz erübrigt sich. Festgehalten in `test_dkb_sale_wkn` und
+`test_capture_dkb_sale_extractWkn` — und das Fixture trägt die Spalte jetzt
+mit, statt stillschweigend leichter zu sein als die Wirklichkeit.
+
+@note Lehre fürs nächste Mal: ein Screenshot aus der Dokumentenvorschau zeigt
+nicht zwingend die ganze Seitenbreite. Ein daraus abgeleitetes Fixture kann
+deshalb Spalten verlieren, ohne dass es auffällt — hier hätte es beinahe zu
+einer überflüssigen `Isin`-Regel geführt, deren Fehlgriff den Import mit "Das
+gewählte Dokument gehört nicht zur aktuell geöffneten Aktie" abgebrochen
+hätte.
+
+### Bankerkennung: Mehrdeutigkeit über die Depotnummer (offen, 21.08.2026)
+
+Beim Aufspüren des obigen Fehlers fiel eine zweite Schwäche auf, die noch
+nicht behoben ist. `matchBankIndex()` nimmt die ERSTE Bank, deren
+`BankIdentifier`-Regel irgendwo im Text trifft — geprüft wird nur, DASS eine
+Depotnummer dasteht, nicht ob es die dieser Bank ist. Das Attribut
+`BankIdentifierValue`, das genau diese Nummer je Bank enthält, wird für die
+Erkennung überhaupt nicht herangezogen; es füllt nur die
+Depotnummer-Auswahlfelder.
+
+DKB und Cortal Consors beschriften beide mit "Depotnummer". Die DKB-Regel
+lautet `Depotnummer\s+([0-9]{1,9})`, die Consors-Regel
+`Depotnummer\s+([0-9]{1,10})|Depotnummer:\s+([0-9]{1,10})`, und die DKB steht
+in `Documents.xml` zuerst. Ein Consors-Beleg, der "Depotnummer 878031421"
+OHNE Doppelpunkt schreibt, wird daher der DKB zugeschlagen und mit deren
+Regeln ausgewertet. Nur die Doppelpunkt-Schreibweise landet bei Consors —
+was erklärt, warum diese Alternative überhaupt in der Regel steht.
+
+Ein tragfähiger Ansatz wäre, die gefangene Nummer gegen
+`BankIdentifierValue` zu vergleichen, statt nur die Beschriftung zu prüfen.
+Bewusst nicht zusammen mit dem obigen Bugfix umgesetzt: die Änderung berührt
+die Erkennung ALLER Banken, und ein Fehlgriff dort führt dazu, dass gar
+nichts mehr erkannt wird. Sie gehört für sich geprüft, gegen echte Belege
+aller drei Banken.
+
+@note Der bislang einzige BELEGTE Fehlgriff betrifft Consors (siehe
+"Consors-Themen"). Der Punkt steht trotzdem hier und nicht dort: die Schwäche
+liegt in `matchBankIndex()` und damit in der Erkennung aller Banken. Sobald
+eine vierte Bank hinzukommt, die ihre Depotnummer ebenso beschriftet, tritt
+dasselbe zwischen zwei aktiv genutzten Banken auf.
+
+@note Nessies Vorgabe 22.08.2026: als eigenes Vorhaben in einem separaten
+Chat. Passt zur obigen Einschätzung — die Änderung gehört für sich geprüft,
+nicht als Beifang einer anderen Arbeit.
+
+### Analyse-Statuszeile und Feldsymbole können sich widersprechen (offen, 22.08.2026)
+
+Nach dem Einlesen eines Belegs kann die Statuszeile "Analyse OK — 5/5
+Pflicht" melden, während daneben ein Pflichtfeld ein rotes Fehlersymbol
+trägt. Beides stimmt für sich, misst aber Verschiedenes:
+
+| | zählt | Ort |
+| --- | --- | --- |
+| Statuszeile | was der PARSER aus dem Beleg herausgeholt hat | `Presenter*Edit::populateFromResult()` |
+| Feldsymbol | was die MASKE mit dem Rohwert anfangen konnte | `View*Edit::setFieldOk()` |
+
+Entstanden ist die Doppelung am 22.08.2026 (siehe "Rohwerte aus Belegen: eine
+Regel je Zieltyp"). Vorher gab es sie nicht, weil eine misslungene Umwandlung
+gar nichts anzeigte: das Feld behielt still seinen Vorgabewert. Bei einem
+`QDateEdit` ist dieser Vorgabewert das heutige Datum — genau daran scheiterte
+das Verkaufsdatum aus einem Beleg von 2020, ohne dass irgendetwas darauf
+hingewiesen hätte. Das Fehlersymbol ist also die Verbesserung; der
+Widerspruch ist ihr Nebeneffekt, bewusst in Kauf genommen (Nessie,
+22.08.2026: "Ist auch so okay" — mit dem Auftrag, den Punkt festzuhalten).
+
+**Warum es überhaupt zwei Zähler gibt.** Der Presenter kennt nur die
+Rohwerte, die der `ParserLib::Parser` geliefert hat, und zählt sie gegen
+`requiredXmlNames`. Ob ein solcher Rohwert im Zielwidget ankommt, entscheidet
+sich erst eine Ebene tiefer, in `setFieldOk()` — und deren Ergebnis fliesst
+nirgends zurück. Der Presenter hat schon gezählt, wenn die View noch gar
+nicht weiss, ob sie den Wert brauchen kann.
+
+**Drei Wege, das aufzulösen** (Reihenfolge ist meine Empfehlung):
+
+1. **Rückmeldung statt Ansage.** `setFieldOk()` gibt zurück, ob die
+   Übernahme gelungen ist; der Presenter zählt nur die gelungenen. Damit
+   sagt "5/5 Pflicht" wieder, was der Leser erwartet: fünf Felder stehen
+   gefüllt in der Maske. Berührt vier Views und vier Presenter plus die
+   vier `IView*`-Schnittstellen und die Stubs in den Tests — mechanisch, aber
+   breit.
+2. **Zweiter Zähler in der Statuszeile.** Etwa "5/5 Pflicht gelesen, 1
+   nicht übernehmbar". Ehrlicher als heute, aber die Zeile wird länger und
+   erklärt einen Unterschied, den der Benutzer gar nicht kennen will.
+3. **So lassen.** Der Fall tritt nur auf, wenn eine Regel etwas fängt, das
+   das Zielfeld nicht verarbeiten kann — nach dem 22.08.2026 also selten,
+   weil `DocumentFieldValue` genau dafür da ist. Das Fehlersymbol steht am
+   richtigen Feld, und wer es sieht, schaut dort hin und nicht auf die
+   Zusammenfassung.
+
+@note Nicht zu verwechseln mit dem Fall "Wert fehlt ganz". Liefert der Parser
+für ein Pflichtfeld nichts, zählt die Statuszeile es korrekt NICHT mit und
+meldet "Analyse fehlgeschlagen — 4/5 Pflicht"; `markMissingFieldsAsFailed()`
+setzt zusätzlich das Symbol. Dort stimmen beide überein. Der Widerspruch
+entsteht ausschliesslich bei einem gefangenen, aber unbrauchbaren Wert.
+
+@note Nessies Vorgabe 22.08.2026: als eigenes Vorhaben in einem separaten
+Chat.
+
+### Consors-Themen (offen, aktuell ohne Priorität)
+
+Nessie handelt derzeit nicht mehr über Cortal Consors. Die folgenden Punkte
+bleiben festgehalten, damit sie nicht verlorengehen, sind aber **bewusst
+zurückgestellt** — sie treten nur bei Consors-Belegen auf und haben deshalb
+keine praktische Dringlichkeit. Wer sie später aufgreift, braucht dazu in
+jedem Fall echte, ungeschwärzte Consors-Belege; ohne die ist keiner der
+Punkte sinnvoll zu prüfen.
+
+**1. Ex-Tag ist bei Consors nicht auslesbar.** Der Beleg nennt nur
+"Schlusstag" und "Valuta". Warum daraus kein Ex-Tag abgeleitet wird und
+warum stattdessen ein Hinweis am Feld erscheint, steht ausführlich unter
+"Nachtrag Cortal Consors (21.08.2026)". Das ist kein Fehler, sondern eine
+getroffene Entscheidung — der Punkt steht hier nur, damit die Einschränkung
+auffindbar bleibt: bei Consors muss der Ex-Tag von Hand nachgetragen werden.
+Erst ein Beleg, der den Ex-Tag ausdrücklich benennt, würde das ändern.
+
+**2. Der `Wkn`-Ausdruck ist unspezifisch.** `  ((?:[A-Za-z0-9]{6,6}))  `
+trifft im Testbeleg an 25 Stellen; die echte WKN lag auf dem vorliegenden
+Screenshot im geschwärzten Bereich, ein Ersatz wäre ungeprüft geraten.
+Symptom im Betrieb wäre der Abbruch mit "Das gewählte Dokument gehört nicht
+zur aktuell geöffneten Aktie", weil `populateFromResult()` die geparste WKN
+gegen die geöffnete Aktie prüft. Erschwerend: der Consors-Dividendenblock
+führt keinen `Isin`-Ausdruck, der einen Fehlgriff auffangen könnte.
+
+**3. Bereits erfasste Consors-Dividenden können den falschen Zahltag
+tragen.** Bis zum 21.08.2026 stand `Date` auf "das erste Datum im Text" und
+lieferte damit den Schlusstag statt der Valuta. Alles, was vor der Korrektur
+aus einem Consors-Beleg übernommen wurde, hat also möglicherweise den
+Stichtag als Auszahlungsdatum. Meist sind das wenige Tage Unterschied und
+folgenlos; liegt der Jahreswechsel dazwischen, landet die Ausschüttung im
+falschen Steuerjahr. Eine Gegenprobe wäre: Consors-Dividenden aufrufen und
+das Datum gegen den Beleg halten.
+
+**4. Consors-Kostenbelege sind ungeprüft.** Sie waren vom selben Fehler
+betroffen wie die Dividenden (leere `SaleIdentifier`-Regel, siehe "Leere
+Kennungen schlucken jedes Dokument") und wurden vor dem Bugfix gar nicht
+gelesen. Dass sie es jetzt tun, ist plausibel, aber nicht nachgewiesen — es
+lag kein Consors-Kostenbeleg vor.
+
+@note Die Bankerkennung über die Depotnummer ist bei Consors ebenfalls
+brüchig (ohne Doppelpunkt gewinnt die DKB). Der Punkt steht bewusst weiter
+oben unter "Bankerkennung: Mehrdeutigkeit über die Depotnummer", weil die
+Ursache allgemein ist und nicht an Consors hängt.
+
+### tst_mainwindow.cpp in eigene Testdateien aufteilen (09.08.2026, Stand 22.08.2026)
+
+`tests/forms/tst_mainwindow.cpp` ist auf **11.273 Zeilen** gewachsen und
+enthält fünf Testklassen, obwohl TESTING.md ein Testziel je Form vorsieht:
+
+| Klasse | gehört nach | Dringlichkeit |
+| --- | --- | --- |
+| `TestMainWindow` | bleibt in `tst_mainwindow.cpp` | — |
+| `TestDividendForm` | `tst_dividendform.cpp` | **hoch** — allein die fünf Ex-Tag-Phasen haben hier rund 40 Testfälle ergänzt |
+| `TestSalesForm` | `tst_salesform.cpp` | mittel |
+| `TestOwnMessageBox` | `tst_ownmessagebox.cpp` | gering |
+| `TestBackupForm` | `tst_backupform.cpp` | gering |
 
 Die Konvention wird damit viermal gebrochen. Praktisch heisst das: wer eine
-Änderung an SalesForm testet, baut und lädt eine 9600-Zeilen-Datei mit, und
+Änderung an SalesForm testet, baut und lädt eine 11.000-Zeilen-Datei mit, und
 ein Fehlschlag irgendwo in der Mitte ist schwer zuzuordnen — der Absturz vom
 08.08.2026 in `tst_portfoliochartform` hat genau diese Sorte Verwechslung
 vorgeführt.
+
+@note Das Muster steht bereits: `tst_buysform.cpp` ist genau so aus dieser
+Datei herausgelöst worden und dient als Vorlage — eigenes CMake-Ziel, eigene
+Kopien von `openMemoryDb()`/`insertTestShare()`, eigene Stubs.
+
+@note Nessies Vorgabe 22.08.2026: als eigenes Vorhaben in einem separaten
+Chat.
 
 Der Umzug ist überschaubar: `TestSalesForm` bringt `openMemoryDb()` und
 `insertTestShare()` bereits als eigene Kopien mit, greift also nicht auf

@@ -25,8 +25,8 @@
             <Wkn            Name="Wkn"          FoundIndex="1" ResultEmpty="true"  RegexOptions="None">[(]((?:[A-Za-z0-9]{1,}))[)]</Wkn>
             <DepotNumber    Name="DepotNumber"  FoundIndex="0" ResultEmpty="true"  RegexOptions="None">Depotnummer\s+([0-9]{1,9})</DepotNumber>
             <OrderNumber    Name="OrderNumber"  FoundIndex="0" ResultEmpty="true"  RegexOptions="None">Auftragsnummer(.*\s)</OrderNumber>
-            <Date           Name="Date"         FoundIndex="0" ResultEmpty="false" RegexOptions="None">Schlusstag/-Zeit([0-9:. ]{1,})Auftraggeber</Date>
-            <Time           Name="Time"         FoundIndex="0" ResultEmpty="false" RegexOptions="None">Schlusstag/-Zeit([0-9:. ]{1,})Auftraggeber</Time>
+            <Date           Name="Date"         FoundIndex="0" ResultEmpty="false" RegexOptions="None">Schlusstag/-Zeit\s+([0-9]{1,2}[.][0-9]{1,2}[.][0-9]{1,4})</Date>
+            <Time           Name="Time"         FoundIndex="0" ResultEmpty="false" RegexOptions="None">Schlusstag/-Zeit\s+[0-9.]{1,}\s+([0-9]{1,2}[:][0-9]{1,2}[:][0-9]{1,2})</Time>
             <Volume         Name="Volume"       FoundIndex="0" ResultEmpty="false" RegexOptions="None">Stück([0-9., ]{1,})</Volume>
             <Price          Name="Price"        FoundIndex="0" ResultEmpty="false" RegexOptions="None">Ausführungskurs([0-9., ]{1,})</Price>
             <TaxAtSource    Name="TaxAtSource"  FoundIndex="0" ResultEmpty="true"  RegexOptions="None"></TaxAtSource>
@@ -39,8 +39,11 @@
         </Document>
         <Document Type="Dividend" TypeIdentifierValue="Dividendengutschrift" Encoding="UTF-8">
             <Wkn          Name="Wkn"          FoundIndex="1" ResultEmpty="true" RegexOptions="None">[(]((?:[A-Za-z0-9]{1,}))[)]</Wkn>
+            <DepotNumber  Name="DepotNumber"  FoundIndex="0" ResultEmpty="true" RegexOptions="None">Depotnummer\s+([0-9]{1,9})</DepotNumber>
+            <ExDate       Name="ExDate"       FoundIndex="0" ResultEmpty="true" RegexOptions="None">Ex[- ]?Tag\s+([0-9]{1,2}[.][0-9]{1,2}[.][0-9]{1,4})</ExDate>
+            <Currency     Name="Currency"     FoundIndex="0" ResultEmpty="true" RegexOptions="None">Dividende pro Stück\s+[0-9.,]{1,}\s+([A-Z]{3})</Currency>
             <ExchangeRate Name="ExchangeRate" FoundIndex="0" ResultEmpty="true" RegexOptions="None">EUR \/ USD([0-9., ]{1,})</ExchangeRate>
-            <Date         Name="Date"         FoundIndex="1" ResultEmpty="true" RegexOptions="None">([0-9]{1,2}[.][0-9]{1,2}[.][0-9]{1,4})</Date>
+            <Date         Name="Date"         FoundIndex="0" ResultEmpty="true" RegexOptions="None">(?:Zahlbarkeitstag|Zahltag)\s+([0-9]{1,2}[.][0-9]{1,2}[.][0-9]{1,4})</Date>
             <Time         Name="Time"         FoundIndex="0" ResultEmpty="true" RegexOptions="None">([0-9]{1,2}[:][0-9]{1,2}[:][0-9]{1,2})</Time>
             <Volume       Name="Volume"       FoundIndex="0" ResultEmpty="true" RegexOptions="None">Stück([0-9., ]{1,})</Volume>
             <DividendRate Name="DividendRate" FoundIndex="0" ResultEmpty="true" RegexOptions="None">Dividende pro Stück([0-9., ]{1,})</DividendRate>
@@ -100,6 +103,9 @@
         <Document Type="Dividend" TypeIdentifierValue="Dividendengutschrift" Encoding="UTF-8">
             <Wkn          Name="Wkn"          FoundIndex="0" ResultEmpty="true" RegexOptions="None">ISIN [(]WKN[)](?:[ ]{1,})(?:[A-Za-z0-9]{1,})(?:[ ]{1,})[(]([A-z0-9]{1,})[)]</Wkn>
             <Isin         Name="Isin"         FoundIndex="0" ResultEmpty="true" RegexOptions="None">ISIN [(]WKN[)](?:[ ]{1,})([A-Za-z0-9]{1,})(?:[ ]{1,})[(]</Isin>
+            <DepotNumber  Name="DepotNumber"  FoundIndex="0" ResultEmpty="true" RegexOptions="None">Direkt-Depot Nr.:\s+([0-9]{1,10})</DepotNumber>
+            <ExDate       Name="ExDate"       FoundIndex="0" ResultEmpty="true" RegexOptions="None">Ex[- ]?Tag\s+([0-9]{1,2}[.][0-9]{1,2}[.][0-9]{1,4})</ExDate>
+            <Currency     Name="Currency"     FoundIndex="0" ResultEmpty="true" RegexOptions="None">Dividendensatz\s+[0-9.,]{1,}\s+([A-Z]{3})</Currency>
             <ExchangeRate Name="ExchangeRate" FoundIndex="0" ResultEmpty="true" RegexOptions="None">Dev.-Kurs [(]([0-9,. ]{1,})[)]</ExchangeRate>
             <Date         Name="Date"         FoundIndex="0" ResultEmpty="true" RegexOptions="None">Zahltag\s+([0-9]{1,2}[.][0-9]{1,2}[.][0-9]{1,4})</Date>
             <Time         Name="Time"         FoundIndex="0" ResultEmpty="true" RegexOptions="None">([0-9]{1,2}[:][0-9]{1,2}[:][0-9]{1,2})</Time>
@@ -143,8 +149,12 @@
         </Document>
         <Document Type="Dividend" TypeIdentifierValue="Dividendengutschrift" Encoding="UTF-8">
             <Wkn          Name="Wkn"          FoundIndex="0" ResultEmpty="true" RegexOptions="None">  ((?:[A-Za-z0-9]{6,6}))  </Wkn>
+            <DepotNumber  Name="DepotNumber"  FoundIndex="0" ResultEmpty="true" RegexOptions="None">Depotnummer\s+([0-9]{1,10})|Depotnummer:\s+([0-9]{1,10})</DepotNumber>
+            <ExDate       Name="ExDate"       FoundIndex="0" ResultEmpty="true" RegexOptions="None">Ex[- ]?Tag\s+([0-9]{1,2}[.][0-9]{1,2}[.][0-9]{1,4})</ExDate>
+            <RecordDate   Name="RecordDate"   FoundIndex="0" ResultEmpty="true" RegexOptions="None">Schlusstag\s+([0-9]{1,2}[.][0-9]{1,2}[.][0-9]{1,4})</RecordDate>
+            <Currency     Name="Currency"     FoundIndex="0" ResultEmpty="true" RegexOptions="None">Dividende pro Stück\s+[0-9.,]{1,}\s+([A-Z]{3})</Currency>
             <ExchangeRate Name="ExchangeRate" FoundIndex="0" ResultEmpty="true" RegexOptions="None">EUR \/ USD([0-9., ]{1,})</ExchangeRate>
-            <Date         Name="Date"         FoundIndex="0" ResultEmpty="true" RegexOptions="None">([0-9]{1,2}[.][0-9]{1,2}[.][0-9]{1,4})</Date>
+            <Date         Name="Date"         FoundIndex="0" ResultEmpty="true" RegexOptions="None">(?:Valuta|Zahltag)\s+([0-9]{1,2}[.][0-9]{1,2}[.][0-9]{1,4})</Date>
             <Time         Name="Time"         FoundIndex="0" ResultEmpty="true" RegexOptions="None">([0-9]{1,2}[:][0-9]{1,2}[:][0-9]{1,2})</Time>
             <Volume       Name="Volume"       FoundIndex="0" ResultEmpty="true" RegexOptions="None">([0-9., ]{1,}) Stück</Volume>
             <DividendRate Name="DividendRate" FoundIndex="0" ResultEmpty="true" RegexOptions="None">Stück([0-9., ]{1,})</DividendRate>

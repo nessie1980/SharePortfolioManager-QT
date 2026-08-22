@@ -5,6 +5,7 @@
 #include "../../utils/SaleFifoAllocator.h"
 #include "../../utils/ShareSplitAdjuster.h"
 #include "../../utils/ShareSplitHint.h"
+#include "../../utils/DocumentFieldValue.h"
 #include "ModelSaleEdit.h"
 #include "../../IconProvider.h"
 #include "../../config/AppSettings.h"
@@ -764,8 +765,13 @@ void ViewSaleEdit::setFieldOk(const QString& field, const QString& value)
 
     if (auto* le = qobject_cast<QLineEdit*>(widget)) {
         if (!value.isEmpty()) {
-            QString norm = value; norm.replace(QLatin1Char('.'), QLatin1Char(','));
-            le->setText(norm.trimmed());
+            // Zahlenfeld oder Textfeld? Der QDoubleValidator entscheidet —
+            // nur dort darf der Punkt umgedeutet werden. Siehe ViewBuyEdit
+            // und ARCHITECTURE.md, "Rohwerte aus Belegen".
+            const bool numeric =
+                qobject_cast<const QDoubleValidator*>(le->validator()) != nullptr;
+            le->setText(numeric ? DocumentFieldValue::forNumericField(value)
+                                : DocumentFieldValue::forTextField(value));
         }
     } else if (field == QStringLiteral("depotNumber")) {
         if (value.isEmpty()) return;
@@ -780,13 +786,22 @@ void ViewSaleEdit::setFieldOk(const QString& field, const QString& value)
         m_depotNumber->addItem(value.trimmed(), value.trimmed());
         m_depotNumber->setCurrentIndex(m_depotNumber->count() - 1);
     } else if (auto* de = qobject_cast<QDateEdit*>(widget)) {
-        QDate d = QDate::fromString(value, QStringLiteral("d.M.yyyy"));
-        if (!d.isValid()) d = QDate::fromString(value, Qt::ISODate);
-        if (d.isValid()) de->setDate(d);
+        // Der DKB-Verkaufsbeleg liefert Datum und Uhrzeit in EINEM Fang
+        // ("Schlusstag/-Zeit  27.02.2020 19:16:37") — toDate() holt sich
+        // seinen Teil heraus. Schlägt das fehl, muss es sichtbar werden:
+        // sonst bliebe das heutige Datum stehen und ginge als Verkaufstag
+        // in die FIFO-Zuordnung ein (Nessies Bugreport 22.08.2026).
+        const QDate d = DocumentFieldValue::toDate(value);
+        if (d.isValid())
+            de->setDate(d);
+        else if (!value.isEmpty())
+            setFieldError(field);
     } else if (auto* te = qobject_cast<QTimeEdit*>(widget)) {
-        QTime t = QTime::fromString(value, QStringLiteral("h:m:s"));
-        if (!t.isValid()) t = QTime::fromString(value, QStringLiteral("h:m"));
-        if (t.isValid()) te->setTime(t);
+        const QTime t = DocumentFieldValue::toTime(value);
+        if (t.isValid())
+            te->setTime(t);
+        else if (!value.isEmpty())
+            setFieldError(field);
     }
 }
 

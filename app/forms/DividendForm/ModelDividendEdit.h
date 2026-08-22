@@ -7,6 +7,8 @@
 #include "../../repositories/ShareRepository.h"
 #include "../../repositories/DailyValuesRepository.h"
 #include "../../repositories/ShareSplitRepository.h"
+#include "../../repositories/BuyRepository.h"
+#include "../../repositories/SaleRepository.h"
 
 /**
  * @brief Concrete model for the "Dividenden" dialog.
@@ -22,6 +24,9 @@ public:
     ShareObject           loadShare(const QString& shareGuid)     const override;
 
     QList<ShareSplitObject> loadSplits(const QString& shareGuid) const override;
+
+    QList<BuyObject>  loadBuys(const QString& shareGuid)  const override;
+    QList<SaleObject> loadSales(const QString& shareGuid) const override;
 
     bool findClosingPriceForDate(const QString& shareGuid,
                                  const QDate&    date,
@@ -41,5 +46,7 @@ private:
     ShareRepository      m_shareRepo;
     DailyValuesRepository m_dailyValuesRepo;
     ShareSplitRepository  m_splitRepo;
+    BuyRepository         m_buyRepo;
+    SaleRepository        m_saleRepo;
     mutable QString      m_lastError;
 };

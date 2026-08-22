@@ -257,3 +257,61 @@ target_link_libraries(tst_splitadjustmentaudit
 )
 
 add_test(NAME tst_splitadjustmentaudit COMMAND tst_splitadjustmentaudit)
+
+# ── DividendVolumeChecker tests ──────────────────────────────────────────────────
+# Phase 3 der Ex-Tag-Behandlung bei Dividenden (21.08.2026, siehe
+# ARCHITECTURE.md, "Plausibilitätsprüfung der Dividenden-Stückzahl"): prüft die
+# im Dividenden-Dialog eingetragene Stückzahl gegen den Bestand des gewählten
+# Depots am Ex-Tag. Rechnet über ShareSplitAdjuster auf die heutige Skala und
+# zurück auf die Beleg-Skala des Ex-Tags — ein direktes Aufsummieren von Belegen
+# unterschiedlicher Datumsstände wäre bei einem Split dazwischen genau um den
+# Split-Faktor falsch (derselbe Fallstrick wie in SaleFifoAllocator).
+#
+# Zustandslos und datenbankfrei, gleiche Begründung wie bei
+# tst_sharesplitadjuster oben. BuyObject.cpp/SaleObject.cpp werden nur wegen
+# deren Konstruktoren gebraucht (reine POCOs), daher weder Qt6::Sql noch die
+# Database-Bibliothek.
+qt_add_executable(tst_dividendvolumechecker tst_dividendvolumechecker.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/DividendVolumeChecker.cpp
+)
+
+target_include_directories(tst_dividendvolumechecker
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_dividendvolumechecker PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_dividendvolumechecker
+    PRIVATE Qt6::Test
+)
+
+add_test(NAME tst_dividendvolumechecker COMMAND tst_dividendvolumechecker)
+
+# ── DocumentFieldValue ────────────────────────────────────────────────────────
+# Umwandlung der Rohwerte aus Documents.xml in Widget-taugliche Werte
+# (22.08.2026, siehe ARCHITECTURE.md, "Rohwerte aus Belegen: eine Regel je
+# Zieltyp"). Anlass waren zwei Feldfälle: die Ordernummer "670835/66.00" wurde
+# zu "670835/66,00", und der DKB-Verkaufsbeleg liefert Datum und Uhrzeit in
+# EINEM Fang ("Schlusstag/-Zeit 27.02.2020 19:16:37"), woran die Datumsübernahme
+# scheiterte — im Formular blieb still das heutige Datum stehen.
+#
+# DocumentFieldValue.h ist header-only (wie ShareUpdateRules.h): reine
+# Funktionen, kein Zustand, kein Qt-Objekt. Deshalb steht hier keine .cpp und
+# im Ziel nur Qt6::Test — der schlankeste Testlauf neben tst_shareupdaterules.
+qt_add_executable(tst_documentfieldvalue tst_documentfieldvalue.cpp)
+
+target_include_directories(tst_documentfieldvalue
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_documentfieldvalue PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_documentfieldvalue
+    PRIVATE Qt6::Test
+)
+
+add_test(NAME tst_documentfieldvalue COMMAND tst_documentfieldvalue)

@@ -1942,9 +1942,19 @@ void MainWindow::onDocumentCaptureTextExtracted(bool success, const QString& tex
     const DocumentClassifier::Result result =
         DocumentClassifier::classify(text, m_documentsConfig);
     if (!result.matched) {
+        // Die beiden Fehlerursachen getrennt benennen (21.08.2026): eine
+        // unbekannte Bank heisst, dass ein Eintrag in Documents.xml fehlt —
+        // ein unbekannter Dokumenttyp dagegen, dass die Anwendung diese
+        // Belegart nicht verarbeitet (z. B. eine Vorabpauschale-Abrechnung für
+        // thesaurierende Fonds). Vorher lautete die Meldung in beiden Fällen
+        // gleich und liess offen, woran es lag.
         addStatusMessage(
-            tr("Dokument konnte keiner Bank/keinem Dokumenttyp zugeordnet werden: %1")
-                .arg(fileName),
+            result.bankMatched
+                ? tr("Dokumenttyp nicht erkannt (Bank: %1). Verarbeitet werden "
+                     "Kauf-, Verkauf-, Dividenden- und Kostenabrechnungen: %2")
+                      .arg(result.bank.name, fileName)
+                : tr("Dokument konnte keiner hinterlegten Bank zugeordnet werden: %1")
+                      .arg(fileName),
             MessageType::Error);
         m_documentCaptureEdit->clear();
         return;

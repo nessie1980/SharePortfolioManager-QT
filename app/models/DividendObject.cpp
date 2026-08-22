@@ -15,7 +15,9 @@ DividendObject::DividendObject(const QString& guid,
                                bool   enableForeignCurrency,
                                double exchangeRatio,
                                const QString& currency,
-                               const QString& document)
+                               const QString& document,
+                               const QString& exDate,
+                               const QString& depotNumber)
     : m_guid(guid)
     , m_shareGuid(shareGuid)
     , m_dateTime(dateTime)
@@ -29,6 +31,8 @@ DividendObject::DividendObject(const QString& guid,
     , m_capitalGainsTax(capitalGainsTax)
     , m_solidarityTax(solidarityTax)
     , m_document(document)
+    , m_exDate(exDate)
+    , m_depotNumber(depotNumber)
 {
     calculateValues();
 }

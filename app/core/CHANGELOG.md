@@ -8,7 +8,21 @@ ARCHITECTURE.md, Abschnitt "Versionierung".
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [1.3.0] - 2026-08-21
+
+### Hinzugefügt
+
+- Spalten `ex_date` und `depot_number` (beide `TEXT`, nullable) in `dividends`
+  — Datengrundlage für die Plausibilitätsprüfung der Dividenden-Stückzahl,
+  Phase 1 von fünf. Siehe CHANGELOG.md der Anwendung sowie
+  `docs/architecture/ARCHITECTURE.md`, "Plausibilitätsprüfung der
+  Dividenden-Stückzahl". Bestehende Portfolios bekommen beide Spalten über
+  den bestehenden `ensureColumn()`-Migrationsschritt beim nächsten Öffnen,
+  ohne Datenverlust — gleiches Vorgehen wie bei `share_splits.document`
+  (`[1.2.0]`). Bewusst nullable statt `NOT NULL`: die "Muss"-Eigenschaft für
+  neue/bearbeitete Dividenden ist eine Sache der Formularvalidierung in der
+  Anwendung, nicht des Datenbankschemas — ein per Migration untergeschobener
+  Platzhalterwert für bestehende Zeilen wäre falsche statt fehlender Angabe.
 
 ## [1.2.0] - 2026-08-08
 ### Hinzugefügt

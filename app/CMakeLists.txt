@@ -73,6 +73,8 @@ set(APP_SOURCES
     utils/SplitPriceJumpDetector.cpp
     utils/SplitAdjustmentAudit.h
     utils/SplitAdjustmentAudit.cpp
+    utils/DividendVolumeChecker.h
+    utils/DividendVolumeChecker.cpp
     utils/PdfTextExtractor.h
     utils/PdfTextExtractor.cpp
     utils/DocumentClassifier.h

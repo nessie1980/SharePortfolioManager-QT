@@ -6,6 +6,214 @@ dokumentiert.
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [SemVer](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Added
+
+- Cortal Consors: Depotnummer und Währung werden aus der
+  Dividendengutschrift gelesen (Beleg nachgereicht am 21.08.2026, siehe
+  `docs/architecture/ARCHITECTURE.md`, "Nachtrag Cortal Consors").
+  Stückzahl, Dividendensatz und die beiden Steuern wurden von den
+  vorhandenen Regeln bereits korrekt getroffen und sind jetzt durch
+  Testfälle abgesichert.
+- Ersatzhinweis, wenn ein Beleg den Ex-Tag nicht nennt: Cortal Consors
+  weist stattdessen den "Schlusstag" (Dividenden-Stichtag) aus. Er wird
+  gelesen und als Hinweis an das Ex-Tag-Feld gehängt — angezeigt, nicht
+  eingetragen. Das Feld bleibt eine fehlende Pflichtangabe; der Ex-Tag ist
+  laut Consors "normalerweise" der nächste Handelstag nach dem Schlusstag,
+  und ein um einen Tag falscher Ex-Tag ginge unmittelbar in die
+  Stückzahl-Plausibilitätsprüfung ein. Neue View-Methode `setFieldHint()`.
+- Fehlermeldung bei nicht zuzuordnenden Dokumenten unterscheidet jetzt die
+  beiden Ursachen: unbekannte BANK (es fehlt ein Eintrag in
+  `Documents.xml`) gegen unbekannten BELEGTYP (die Anwendung verarbeitet
+  diese Belegart nicht). Im zweiten Fall nennt die Meldung die erkannte
+  Bank und die vier unterstützten Belegarten. Neues Feld
+  `DocumentClassifier::Result::bankMatched`.
+
+### Fixed
+
+- **Die Ordernummer wurde verfälscht** (Nessies Bugreport 22.08.2026). Der
+  Beleg zeigt "670835/66.00", im Formular stand "670835/66,00". Die
+  Eingabemasken schrieben in JEDEM einzeiligen Feld den Punkt in ein Komma um
+  — gedacht war das für Zahlenfelder, getroffen wurden auch Ordernummer, WKN,
+  ISIN, Name und die drei URL-Felder im Dialog "Aktie hinzufügen". Unterschieden
+  wird jetzt am `QDoubleValidator`, den nur die Zahlenfelder tragen. Betraf alle
+  vier Formulare (Kauf, Verkauf, Dividende, Aktie anlegen).
+- **Das Datum eines DKB-Verkaufsbelegs wurde nicht übernommen** (Nessies
+  Bugreport 22.08.2026): im Formular stand das heutige statt des Belegdatums.
+  Die DKB beschriftet Datum und Uhrzeit gemeinsam ("Schlusstag/-Zeit
+  27.02.2020 19:16:37"); der ganze Fang ging an
+  `QDate::fromString(…, "d.M.yyyy")`, schlug fehl — und das Feld behielt
+  stillschweigend seinen Vorgabewert, also das heutige Datum. Ein Verkauf aus
+  2020 wäre damit auf den Erfassungstag gebucht worden, mit Folgen für
+  FIFO-Zuteilung und Steuerjahr. Datum und Uhrzeit werden jetzt aus einem
+  gemeinsamen Rohwert herausgelesen; misslingt die Umwandlung, zeigt das Feld
+  ein Fehlersymbol, statt einen falschen Wert stehen zu lassen. Neue
+  header-only Einheit `app/utils/DocumentFieldValue.h` mit eigenem Testziel.
+- Zahlenfelder: ein Wert mit Tausendertrenner ("1.234,56") wurde zu
+  "1,234,56" und beim Auslesen zu 0,00 — ein Betrag über tausend Euro fiel
+  lautlos auf null. Nicht gemeldet, beim Beheben der Ordernummer aufgefallen.
+- `ViewShareAdd`: der Zweig für Zahlenfelder in `setFieldOk()` war toter Code
+  (der Zweig davor fing bereits jedes `QLineEdit` ab). In diesem Dialog wurde
+  deshalb noch nie ein Dezimalpunkt umgeschrieben.
+- Die DKB-Verkaufsregel für Datum und Uhrzeit hängt nicht mehr an der
+  Nachbarspalte (`…Auftraggeber`), sondern nur noch an ihrer eigenen
+  Beschriftung. Keine Fehlerursache, aber eine Bindung, die beim nächsten
+  Layoutwechsel ohne Grund gebrochen wäre.
+
+### Testabdeckung
+
+- Erster VERKAUFSbeleg im Fixture-Bestand von `tst_documentsxml` (bis dahin
+  nur Dividendengutschriften). Dass die DKB die WKN auch auf Verkaufsbelegen
+  in Klammern neben die ISIN setzt, ist damit festgehalten — die Direkte
+  Dokumentenerfassung kann solche Belege einer Aktie zuordnen.
+- **DKB-Belege liessen sich nicht per Drag&Drop erfassen** (Nessies Bugreport
+  21.08.2026: "Keine passende Aktie im Portfolio gefunden für
+  Dividenden-Dokument"). Derselbe Beleg wurde im Dividenden-Dialog
+  einwandfrei gelesen — die beiden Wege lasen die WKN unterschiedlich. Die
+  Direkte Dokumentenerfassung geht über
+  `DocumentClassifier::extractFieldValue()`, und das nahm immer den ERSTEN
+  Regex-Treffer und daraus starr die Fanggruppe 1; das Attribut `FoundIndex`
+  der Regel wurde ignoriert. Die DKB wählt ihre WKN aber über die Position
+  (`FoundIndex="1"`, "das zweite Klammerpaar"), weil das erste die
+  Spaltenüberschrift `(WKN)` ist — gesucht wurde im Portfolio also
+  buchstäblich nach einer Aktie mit der WKN "WKN". Betraf alle drei
+  DKB-Belegarten (Kauf, Verkauf, Dividende), die sich diese Regel teilen; ING
+  und Cortal Consors blieben unauffällig, weil ihre Regeln auf
+  `FoundIndex="0"` stehen. `extractFieldValue()` verwendet jetzt dieselbe
+  Auswahlregel wie `ParserLib::Parser` — der geforderte Treffer, daraus die
+  erste nicht-leere Fanggruppe.
+- **Consors-Belege wurden überhaupt nicht eingelesen** (Nessies Bugreport
+  21.08.2026). Ein leeres Regex-Muster ist gültig und trifft jeden Text.
+  Cortal Consors hat eine leere `SaleIdentifier`-Regel, weil für diese Bank
+  keine Verkaufsbelege konfiguriert sind — und weil die Dokumenttyp-Erkennung
+  die vier Kennungen der Reihe nach prüft (Buy, Sale, Dividend, Brokerage)
+  und den ersten Treffer nimmt, wurde jede Consors-Dividendengutschrift als
+  Verkaufsbeleg eingestuft. Da die Bank folgerichtig auch keinen
+  Sale-Dokumentblock hat, brach die Erkennung danach ab, ohne ein einziges
+  Feld zu lesen. `DocumentClassifier` wertet ein leeres Muster jetzt als "
+  identifiziert nichts". Betraf neben Dividenden auch die Kostenbelege dieser
+  Bank; Käufe blieben unauffällig, weil deren Kennung vorher geprüft wird.
+- Cortal Consors: Als Auszahlungstag wurde der **Schlusstag** übernommen
+  statt der Valuta. Die Regel nahm schlicht das erste Datum im Text; der
+  Beleg nennt aber zuerst den Schlusstag (= Dividenden-Stichtag, laut
+  Consors normalerweise einen Tag vor dem Ex-Tag) und erst danach die
+  Valuta. Jetzt beschriftungsgebunden über `Valuta`.
+
+### Bekannte Einschränkung
+
+- Der Ex-Tag lässt sich aus Consors-Belegen nicht auslesen: sie nennen ihn
+  nicht. Der genannte Schlusstag liegt laut Consors "normalerweise" einen
+  Tag davor — für den nächsten HANDELStag bräuchte es einen Börsenkalender,
+  den die Anwendung nicht führt. Ein um einen Tag falscher Ex-Tag ginge
+  direkt in die Stückzahl-Plausibilitätsprüfung ein, deshalb bleibt er bei
+  dieser Bank ein Handeintrag. Der Schlusstag wird immerhin als Hinweis am
+  Feld angezeigt (siehe oben), damit er nicht anderswo nachgeschlagen
+  werden muss.
+- Vorabpauschale-Abrechnungen für thesaurierende Fonds werden bewusst nicht
+  verarbeitet (Nessies Entscheidung 21.08.2026): dabei fliesst kein Geld zu,
+  es wird nur Steuer abgeführt — als Dividende erfasst wiese die Anwendung
+  eine Einnahme aus, die es nie gab. Über "Direkte Dokumentenerfassung"
+  werden solche Belege abgewiesen, jetzt mit der genaueren Meldung.
+
+## [1.15.0] - 2026-08-21
+
+### Added
+
+- Ex-Tag- und Depotnummer-Behandlung bei Dividenden, Phase 1 von fünf (siehe
+  `docs/architecture/ARCHITECTURE.md`, "Plausibilitätsprüfung der
+  Dividenden-Stückzahl"): `DividendObject` und `DividendRepository` um
+  `exDate`/`depotNumber` erweitert, neue nullable Spalten `dividends.ex_date`
+  und `dividends.depot_number` (Database-Bibliothek, siehe deren
+  CHANGELOG.md, `[1.3.0]`). Ohne sichtbare Auswirkung auf die
+  Anwendung — kein UI-Feld, keine Validierung, keine Prüfung; das folgt in
+  den weiteren Phasen. `isValid()` bleibt bewusst unverändert an
+  `guid`/`rate`/`volume` geknüpft, NICHT an die beiden neuen Felder, damit
+  bestehende Dividenden ohne sie weiterhin korrekt laden.
+- Ex-Tag und Depotnummer als Pflichtfelder im Dividenden-Dialog, Phase 2 von
+  fünf (siehe `docs/architecture/ARCHITECTURE.md`, "Plausibilitätsprüfung der
+  Dividenden-Stückzahl", Abschnitt "Phase 2 — Umsetzungsdetails"):
+  `ViewDividendEdit` bekommt ein neues Ex-Tag-Feld (`QDateEdit`) und eine
+  Depotnummer-Combobox (befüllt aus `DocumentsConfig::entries()`, identisches
+  Muster wie `ViewBuyEdit`). Beide sind Pflichtfelder — `hasMissingRequiredFields()`
+  markiert sie rot, wenn Depotnummer nicht ausgewählt oder Ex-Tag auf dem
+  Sentinel-Wert "nicht gesetzt" steht. Alte Dividenden ohne diese Angaben
+  zeigen beim Laden bewusst den Sentinel/leer statt eines beliebigen Werts,
+  sodass die Pflicht beim nächsten Speichern zuschlägt (Nachpflege
+  erforderlich, wie am 21.08.2026 festgelegt).
+- Blockade Ex-Tag nach dem Zahltag ("weil es eben nicht sein darf!", Nessies
+  Entscheidung 21.08.2026): sofortige Rückmeldung beim Editieren
+  (`PresenterDividendEdit::onExDateEdited()`) und verbindliche Prüfung beim
+  Speichern (`validateInput()`) — ein Ex-Tag nach dem Auszahlungstag verhindert
+  das Speichern mit einer Fehlermeldung, unabhängig davon ob das Feld zuvor
+  editiert wurde.
+- Stückzahl-Plausibilitätsprüfung bei Dividenden, Phase 3 von fünf (siehe
+  `docs/architecture/ARCHITECTURE.md`, Abschnitt "Phase 3 —
+  Umsetzungsdetails"): Beim Speichern wird die eingetragene Stückzahl gegen
+  den Bestand des gewählten Depots am Ex-Tag geprüft. Weicht sie ab, wird das
+  Speichern abgelehnt und die Meldung nennt eingetragene Menge, errechneten
+  Bestand, Ex-Tag und Depot; das Mengenfeld wird zusätzlich rot markiert.
+  Neue, datenbankfreie Utility-Klasse `DividendVolumeChecker` (`app/utils/`)
+  mit eigenem Testziel `tst_dividendvolumechecker`.
+- Die Prüfung ist split-bewusst: Käufe und Verkäufe liegen jeweils in der
+  Beleg-Skala ihres eigenen Datums vor, deshalb wird über
+  `ShareSplitAdjuster` auf heutige Skala summiert und das Ergebnis auf die
+  Beleg-Skala des Ex-Tags zurückgerechnet — genau die Skala, in der die
+  Stückzahl auf der Dividendenabrechnung steht. Ein Kauf von 100 Stück mit
+  anschliessendem 2:1-Split ergibt so korrekt 200 erwartete Stück und keine
+  Falschmeldung.
+- Stichtagsregel der Prüfung: gezählt werden Käufe und Verkäufe ECHT VOR dem
+  Ex-Tag. Wer am Ex-Tag kauft, ist nicht mehr dividendenberechtigt; wer am
+  Ex-Tag verkauft, erhält die Dividende noch.
+- Übersprungen wird die Prüfung nur, wenn für die Aktie überhaupt kein Kauf
+  erfasst ist — sonst wäre eine Dividende bei nicht erfasster Kaufhistorie
+  gar nicht mehr speicherbar. Sobald der erste Kauf erfasst ist, greift sie.
+- Automatisches Auslesen von Ex-Tag, Depotnummer und Währung aus der
+  Dividendengutschrift, Phase 5 von fünf und damit letzter Schritt des Plans
+  (siehe `docs/architecture/ARCHITECTURE.md`, Abschnitt "Phase 5 —
+  Umsetzungsdetails"). Grundlage sind vier anonymisierte Belege (ING DiBa in
+  EUR und USD, DKB in USD und EUR). Alle neuen Regeln in
+  `app/config/Documents.xml` suchen über die Feldbeschriftung statt über die
+  Position im Text und sind damit unempfindlich gegen Layout-Unterschiede.
+- Fremdwährungs-Modus wird beim Einlesen automatisch gesetzt: nennt der Beleg
+  eine andere Währung als Euro, werden Haken und Währungsauswahl gesetzt und
+  der Devisenkurs übernommen — nennt er Euro, wird der Modus abgeschaltet.
+  Neue View-Methode `setForeignCurrency()`; die Zuordnung Währungskürzel →
+  Auswahlfeld übernimmt `QLocale`, damit es keine zweite, handgepflegte
+  Tabelle gibt.
+- Der DKB-Zahltag wird jetzt über die Beschriftung "Zahlbarkeitstag" gesucht
+  statt als "zweites Datum im Text". Im Beleg stehen Zahlbarkeitstag,
+  Bestandsstichtag und Ex-Tag direkt untereinander; welches davon das zweite
+  ist, hing auch vom Briefkopf ab.
+- Neues Testziel `tst_documentsxml`: prüft die AUSGELIEFERTE
+  `app/config/Documents.xml` gegen Auszüge echter Belege. Bis hierher war die
+  Konfigurationsdatei an keiner Stelle getestet — ein Tippfehler in einem
+  regulären Ausdruck fiel erst auf, wenn ein Benutzer ein Dokument einlas.
+
+### Fixed
+
+- Split-Marker bei Dividenden richtete sich nach dem Zahltag statt nach dem
+  Ex-Tag, Phase 4 von fünf (siehe `docs/architecture/ARCHITECTURE.md`,
+  Abschnitt "Phase 4 — Umsetzungsdetails"): Ein Aktiensplit, der ZWISCHEN
+  Ex-Tag und Zahltag lag, wurde in den Dividenden-Übersichten übersehen — die
+  Anteile-Zelle trug dann weder Marker noch Tooltip, obwohl die Stückzahl auf
+  der Abrechnung sehr wohl in der alten Stückelung stand. Die Bank schüttet
+  auf den Bestand am Ex-Tag aus, deshalb ist er der richtige Massstab. Neu:
+  `DividendObject::volumeReferenceDate()` (Ex-Tag, sonst Zahltag als
+  Rückfall). Betrifft beide Ansichten, die Dividendenzeilen zeigen —
+  `ViewDividendEdit` und `ViewShareDetails`; hätte nur eine davon umgestellt,
+  würden beide dieselbe Dividende widersprüchlich markieren. Dividenden ohne
+  Ex-Tag (erfasst vor dem 21.08.2026) verhalten sich unverändert wie bisher.
+- Aus dem Beleg gelesener Devisenkurs kam nie an: `exchangeRatio` war als
+  einziges beschreibbares Feld des Dividenden-Dialogs weder in
+  `m_statusLabels` noch in `m_inputWidgets` eingetragen. Dadurch lief
+  `setFieldOk("exchangeRatio", …)` ins Leere — der Kurs erreichte das
+  Eingabefeld nicht —, und aus demselben Grund war auch die Live-Prüfung
+  `PresenterDividendEdit::onExchangeRatioEdited()` seit jeher wirkungslos.
+  Selbst mit gefülltem Feld hätte das Speichern den Kurs verworfen, weil es
+  ihn nur bei aktivem Fremdwährungs-Modus übernimmt. Beides behoben; die
+  Fremdwährungs-Umrechnung aus einem Beleg funktioniert damit erstmals.
+
 ## [1.14.8] - 2026-08-21
 
 ### Fixed

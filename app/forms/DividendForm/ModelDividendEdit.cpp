@@ -29,6 +29,21 @@ QList<ShareSplitObject> ModelDividendEdit::loadSplits(const QString& shareGuid) 
     return m_splitRepo.findByShare(shareGuid);
 }
 
+// ── loadBuys / loadSales ──────────────────────────────────────────────────────
+// Datengrundlage der Stückzahl-Plausibilitätsprüfung (Phase 3, 21.08.2026).
+// Reine Weiterleitung an die Repositories, ungefiltert über alle Depots — die
+// Depot-Filterung sitzt in DividendVolumeChecker (siehe IModelDividendEdit.h).
+
+QList<BuyObject> ModelDividendEdit::loadBuys(const QString& shareGuid) const
+{
+    return m_buyRepo.findByShare(shareGuid);
+}
+
+QList<SaleObject> ModelDividendEdit::loadSales(const QString& shareGuid) const
+{
+    return m_saleRepo.findByShare(shareGuid);
+}
+
 // ── findClosingPriceForDate ────────────────────────────────────────────────────
 
 bool ModelDividendEdit::findClosingPriceForDate(const QString& shareGuid,

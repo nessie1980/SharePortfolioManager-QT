@@ -7556,6 +7556,44 @@ private slots:
         QVERIFY(!dlg.hasMissingRequiredFields(missing));
     }
 
+    /**
+     * @brief Der DKB-Verkaufsbeleg liefert Datum UND Uhrzeit in einem Fang.
+     *
+     * Nessies Bugreport 22.08.2026: "Es wird auch das Kaufdatum nicht aus dem
+     * Dokument ausgelesen." Die Bank beschriftet beides gemeinsam
+     * ("Schlusstag/-Zeit  27.02.2020 19:16:37"), die Regeln `Date` und `Time`
+     * fangen deshalb denselben Text. Vorher ging der ganze Fang an
+     * `QDate::fromString(…, "d.M.yyyy")`, schlug fehl, und im Formular blieb
+     * still das HEUTIGE Datum stehen — das ging als Verkaufstag in die
+     * FIFO-Zuordnung ein.
+     */
+    void test_viewSaleEdit_setFieldOk_combinedDateAndTime()
+    {
+        openMemoryDb();
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        const QString combined = QStringLiteral(" 27.02.2020 19:16:37 ");
+        dlg.setFieldOk(QStringLiteral("date"), combined);
+        dlg.setFieldOk(QStringLiteral("time"), combined);
+
+        const QDateTime dt = QDateTime::fromString(dlg.dateTime(), Qt::ISODate);
+        QVERIFY(dt.isValid());
+        QCOMPARE(dt.date(), QDate(2020, 2, 27));
+        QCOMPARE(dt.time(), QTime(19, 16, 37));
+    }
+
+    /// Ordernummer 1:1 — auch im Verkaufsdialog (Nessies zweiter Screenshot).
+    void test_viewSaleEdit_setFieldOk_orderNumber_keepsDot()
+    {
+        openMemoryDb();
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        dlg.setFieldOk(QStringLiteral("orderNumber"),
+                       QStringLiteral(" 267621/08.00\n"));
+
+        QCOMPARE(dlg.orderNumber(), QStringLiteral("267621/08.00"));
+    }
+
     void test_viewSaleEdit_markMissingFieldsAsFailed_doesNotCrash()
     {
         openMemoryDb();
@@ -8582,9 +8620,24 @@ public:
     bool updateDividendCalled = false;
     bool removeDividendCalled = false;
 
+    // Phase 2 (21.08.2026): das tatsächlich übergebene DividendObject
+    // festhalten, um exDate()/depotNumber() im onSave()-Payload zu prüfen.
+    DividendObject lastAddedDividend;
+    DividendObject lastUpdatedDividend;
+
+    // Phase 3 (21.08.2026): Datengrundlage der Stückzahl-Plausibilitäts-
+    // prüfung. Vorgabe bewusst LEER — DividendVolumeChecker wertet eine Aktie
+    // ohne erfasste Käufe als "nicht prüfbar", damit die vorhandenen Tests
+    // hier unverändert durchlaufen und nur die Tests, die die Prüfung
+    // ausdrücklich meinen, Käufe setzen.
+    QList<BuyObject>  buys;
+    QList<SaleObject> sales;
+
     QList<DividendObject> loadDividends(const QString&) const override { return dividends; }
     ShareObject           loadShare(const QString&)     const override { return ShareObject{}; }
     QList<ShareSplitObject> loadSplits(const QString&)  const override { return splits; }
+    QList<BuyObject>      loadBuys(const QString&)      const override { return buys; }
+    QList<SaleObject>     loadSales(const QString&)     const override { return sales; }
 
     bool findClosingPriceForDate(const QString& shareGuid, const QDate& date,
                                  double& outPrice) const override
@@ -8597,8 +8650,10 @@ public:
         return true;
     }
 
-    bool addDividend(const DividendObject&)    override { addDividendCalled    = true; return addResult;    }
-    bool updateDividend(const DividendObject&) override { updateDividendCalled = true; return updateResult; }
+    bool addDividend(const DividendObject& d)    override
+        { addDividendCalled = true; lastAddedDividend = d; return addResult; }
+    bool updateDividend(const DividendObject& d) override
+        { updateDividendCalled = true; lastUpdatedDividend = d; return updateResult; }
     bool removeDividend(const QString&)        override { removeDividendCalled = true; return removeResult; }
 
     bool documentExists(const QString&, const QString&) const override { return docExists; }
@@ -8625,6 +8680,13 @@ public:
     QString m_docPath;
     bool    m_missingFields = false;
 
+    // Phase 2 (21.08.2026): Ex-Tag/Depotnummer — Default vor dem
+    // Auszahlungstag (m_dateTime = 2024-06-15), damit Tests, die diese Felder
+    // nicht gezielt prüfen, nicht versehentlich in die Ex-Tag>Zahltag-
+    // Blockade laufen.
+    QString m_exDate      = QStringLiteral("2024-06-13");
+    QString m_depotNumber = QStringLiteral("DE123456789");
+
     // Captured calls
     bool    populateOverviewCalled = false;
     QList<ShareSplitObject> lastOverviewSplits;
@@ -8635,6 +8697,7 @@ public:
     bool    lastIsEdit             = false;
     QString lastError;
     bool    closed                 = false;
+    QStringList fieldErrors;
 
     // setFieldOk() — letzter Aufruf (für Auto-Fill-Assertions)
     QString lastFieldOkField;
@@ -8653,6 +8716,8 @@ public:
     double  exchangeRatio()         const override { return m_exchangeRatio; }
     QString currency()              const override { return m_currency; }
     QString documentPath()          const override { return m_docPath; }
+    QString exDate()                const override { return m_exDate; }
+    QString depotNumber()           const override { return m_depotNumber; }
 
     // IViewDividendEdit — write
     void loadDividend(const DividendObject&) override { loadDividendCalled = true; }
@@ -8666,6 +8731,16 @@ public:
 
     void setForeignCurrencyEnabled(bool)    override {}
 
+    // Phase 5 (21.08.2026): Fremdwährung aus dem Beleg.
+    bool    lastFcEnabled = false;
+    QString lastFcIsoCode;
+    void setForeignCurrency(bool enabled, const QString& isoCode) override
+    {
+        lastFcEnabled = enabled;
+        lastFcIsoCode = isoCode;
+        m_enableFc    = enabled;   // wie die echte View: der Haken wird gesetzt
+    }
+
     void setFieldOk(const QString& field, const QString& value,
                     const QString& tooltip = QString()) override
     {
@@ -8678,7 +8753,17 @@ public:
         if (field == QStringLiteral("priceAtPayday") && !value.isEmpty())
             m_priceAtPayday = value.toDouble();
     }
-    void setFieldError(const QString&)              override {}
+    void setFieldError(const QString& f)            override { fieldErrors << f; }
+
+    // Phase 5-Nachtrag (21.08.2026): Ersatzhinweis für Belege ohne Ex-Tag.
+    QString lastHintField;
+    QString lastHintTooltip;
+    void setFieldHint(const QString& field, const QString& tooltip) override
+    {
+        lastHintField   = field;
+        lastHintTooltip = tooltip;
+    }
+
     void setDocumentPath(const QString& path)       override { m_docPath = path; }
     void setDocumentPreview(const QString&)         override {}
 
@@ -8733,6 +8818,21 @@ class TestDividendForm : public QObject
     {
         return DividendObject(guid, makeShareGuid(), dt,
                               1.50, 100.0, 0.0, 0.0, 0.0, 45.0);
+    }
+
+    /**
+     * @brief Kauf im Depot der Stub-View (DE123456789), standardmässig vor
+     *        deren Ex-Tag (2024-06-13) — für die Stückzahl-Plausibilitäts-
+     *        prüfung (Phase 3, 21.08.2026).
+     */
+    static BuyObject makeDepotBuy(const QString& guid, double volume,
+                                  const QString& isoDate = QStringLiteral("2024-01-10"),
+                                  const QString& depot   = QStringLiteral("DE123456789"))
+    {
+        return BuyObject(guid, makeShareGuid(), depot,
+                         QStringLiteral("order-") + guid,
+                         isoDate + QStringLiteral("T00:00:00"),
+                         volume, /*volumeSold=*/0.0, /*price=*/10.0);
     }
 
 private slots:
@@ -9159,6 +9259,9 @@ private slots:
         dlg.setFieldOk(QStringLiteral("rate"),          QStringLiteral("1,50"));
         dlg.setFieldOk(QStringLiteral("volume"),        QStringLiteral("100,0000"));
         dlg.setFieldOk(QStringLiteral("priceAtPayday"), QStringLiteral("45,00"));
+        // Seit Phase 2 (21.08.2026) ebenfalls Pflicht:
+        dlg.setFieldOk(QStringLiteral("depotNumber"), QStringLiteral("DE123456789"));
+        dlg.setFieldOk(QStringLiteral("exDate"),      QStringLiteral("2024-06-13"));
         QStringList missing;
         QVERIFY(!dlg.hasMissingRequiredFields(missing));
     }
@@ -9631,12 +9734,16 @@ private slots:
 
     void test_viewDividendEdit_setFieldOk_date_parsesISOFormat()
     {
+        // Seit Phase 2 (21.08.2026) gibt es zwei QDateEdit-Felder (Zahltag
+        // und Ex-Tag) — ein unbenanntes findChild<QDateEdit*>() ist damit
+        // mehrdeutig (und liefert je nach Verschachtelungstiefe nicht mehr
+        // zuverlässig m_date). Über den öffentlichen dateTime()-Accessor
+        // geprüft statt über den internen Widget-Baum.
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
         dlg.setFieldOk(QStringLiteral("date"), QStringLiteral("2024-06-15"));
-        auto* de = dlg.findChild<QDateEdit*>();
-        if (!de) QFAIL("QDateEdit not found");
-        QCOMPARE(de->date(), QDate(2024, 6, 15));
+        const QDate d = QDateTime::fromString(dlg.dateTime(), Qt::ISODate).date();
+        QCOMPARE(d, QDate(2024, 6, 15));
     }
 
     void test_viewDividendEdit_setFieldOk_volume_handlesGermanDecimal()
@@ -9922,6 +10029,207 @@ private slots:
         QVERIFY(view.lastError.isEmpty());
     }
 
+    // ── Ex-Tag / Depotnummer (Phase 2, 21.08.2026) ─────────────────────────
+
+    void test_presenterDividendEdit_onDepotNumberEdited_set_setsOk()
+    {
+        StubViewDividendEdit view;
+        view.m_depotNumber = QStringLiteral("DE999888777");
+        StubModelDividendEdit model;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+        p.onDepotNumberEdited();
+        QCOMPARE(view.lastFieldOkField, QStringLiteral("depotNumber"));
+    }
+
+    void test_presenterDividendEdit_onDepotNumberEdited_empty_setsError()
+    {
+        StubViewDividendEdit view;
+        view.m_depotNumber.clear();
+        StubModelDividendEdit model;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+        p.onDepotNumberEdited();
+        QVERIFY(view.fieldErrors.contains(QStringLiteral("depotNumber")));
+    }
+
+    void test_presenterDividendEdit_onExDateEdited_valid_setsOk()
+    {
+        StubViewDividendEdit view;
+        view.m_dateTime = QStringLiteral("2024-06-15T00:00:00");
+        view.m_exDate   = QStringLiteral("2024-06-13");
+        StubModelDividendEdit model;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+        p.onExDateEdited();
+        QCOMPARE(view.lastFieldOkField, QStringLiteral("exDate"));
+    }
+
+    void test_presenterDividendEdit_onExDateEdited_sentinel_setsError()
+    {
+        // "2000-01-01" ist der Sentinel für "vom Benutzer noch nicht gesetzt"
+        // (siehe IViewDividendEdit::exDate()) — muss als fehlend gelten.
+        StubViewDividendEdit view;
+        view.m_exDate = QStringLiteral("2000-01-01");
+        StubModelDividendEdit model;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+        p.onExDateEdited();
+        QVERIFY(view.fieldErrors.contains(QStringLiteral("exDate")));
+    }
+
+    void test_presenterDividendEdit_onExDateEdited_afterPayday_setsError()
+    {
+        // Blockade Ex-Tag > Auszahlungstag — Nessies Entscheidung 21.08.2026
+        // ("weil es eben nicht sein darf!").
+        StubViewDividendEdit view;
+        view.m_dateTime = QStringLiteral("2024-06-15T00:00:00");
+        view.m_exDate   = QStringLiteral("2024-06-20");  // nach dem Zahltag
+        StubModelDividendEdit model;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+        p.onExDateEdited();
+        QVERIFY(view.fieldErrors.contains(QStringLiteral("exDate")));
+    }
+
+    void test_presenterDividendEdit_onDateEdited_revalidatesExDateAgainstNewPayday()
+    {
+        // Ändert sich der Auszahlungstag auf VOR den bereits gültigen Ex-Tag,
+        // muss die Ex-Tag-Prüfung live neu anschlagen (onDateEdited() ruft
+        // onExDateEdited() erneut auf).
+        StubViewDividendEdit view;
+        view.m_exDate   = QStringLiteral("2024-06-13");
+        view.m_dateTime = QStringLiteral("2024-06-10T00:00:00");  // vor dem Ex-Tag
+        StubModelDividendEdit model;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+        p.onDateEdited();
+        QVERIFY(view.fieldErrors.contains(QStringLiteral("exDate")));
+    }
+
+    void test_presenterDividendEdit_onSave_passesExDateAndDepotNumberToModel()
+    {
+        StubViewDividendEdit view;
+        view.m_exDate      = QStringLiteral("2024-06-13");
+        view.m_depotNumber = QStringLiteral("DE123456789");
+        StubModelDividendEdit model;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+        p.onSave();
+        QVERIFY(model.addDividendCalled);
+        QCOMPARE(model.lastAddedDividend.exDate(),      QStringLiteral("2024-06-13"));
+        QCOMPARE(model.lastAddedDividend.depotNumber(), QStringLiteral("DE123456789"));
+    }
+
+    void test_presenterDividendEdit_onSave_exDateAfterPayday_blocksSave()
+    {
+        StubViewDividendEdit view;
+        view.m_dateTime = QStringLiteral("2024-06-15T00:00:00");
+        view.m_exDate   = QStringLiteral("2024-06-20");  // nach dem Zahltag → Blockade
+        StubModelDividendEdit model;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+        p.onSave();
+        QVERIFY(!model.addDividendCalled);
+        QVERIFY(!view.lastError.isEmpty());
+    }
+
+    // ── Stückzahl-Plausibilitätsprüfung (Phase 3, 21.08.2026) ─────────────
+
+    void test_presenterDividendEdit_onSave_volumeMatchesHoldings_saves()
+    {
+        StubViewDividendEdit view;
+        view.m_volume = 100.0;
+        StubModelDividendEdit model;
+        model.buys << makeDepotBuy(QStringLiteral("b1"), 100.0);
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onSave();
+
+        QVERIFY(model.addDividendCalled);
+        QVERIFY(view.lastError.isEmpty());
+    }
+
+    void test_presenterDividendEdit_onSave_volumeMismatch_blocksSave()
+    {
+        StubViewDividendEdit view;
+        view.m_volume = 150.0;              // Bestand ist aber 100
+        StubModelDividendEdit model;
+        model.buys << makeDepotBuy(QStringLiteral("b1"), 100.0);
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onSave();
+
+        QVERIFY(!model.addDividendCalled);
+        QVERIFY(!view.lastError.isEmpty());
+        // Das Mengenfeld wird rot markiert, damit die Meldung eine Entsprechung
+        // in der Maske hat.
+        QVERIFY(view.fieldErrors.contains(QStringLiteral("volume")));
+    }
+
+    void test_presenterDividendEdit_onSave_noBuysRecorded_doesNotBlock()
+    {
+        // Aktie ohne erfasste Kaufhistorie: die Prüfung wird übersprungen,
+        // statt das Speichern unmöglich zu machen.
+        StubViewDividendEdit view;
+        view.m_volume = 100.0;
+        StubModelDividendEdit model;   // model.buys bleibt leer
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onSave();
+
+        QVERIFY(model.addDividendCalled);
+        QVERIFY(view.lastError.isEmpty());
+    }
+
+    void test_presenterDividendEdit_onSave_buysInOtherDepot_blocksSave()
+    {
+        StubViewDividendEdit view;
+        view.m_volume      = 100.0;
+        view.m_depotNumber = QStringLiteral("DE123456789");
+        StubModelDividendEdit model;
+        model.buys << makeDepotBuy(QStringLiteral("b1"), 100.0,
+                                   QStringLiteral("2024-01-10"),
+                                   QStringLiteral("DE999999999"));  // anderes Depot
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onSave();
+
+        QVERIFY(!model.addDividendCalled);
+        QVERIFY(!view.lastError.isEmpty());
+    }
+
+    void test_presenterDividendEdit_onSave_splitBetweenBuyAndExDate_saves()
+    {
+        // Kauf 100 Stk., danach Split 2:1 → am Ex-Tag 200 Stk., und genau 200
+        // stehen auf der Abrechnung. Ohne Skalenumrechnung würde hier
+        // fälschlich blockiert.
+        StubViewDividendEdit view;
+        view.m_volume = 200.0;
+        StubModelDividendEdit model;
+        model.buys << makeDepotBuy(QStringLiteral("b1"), 100.0);
+        model.splits << ShareSplitObject(QStringLiteral("split-1"), makeShareGuid(),
+                                         QDate(2024, 3, 1), 2.0, 1.0);
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onSave();
+
+        QVERIFY(model.addDividendCalled);
+        QVERIFY(view.lastError.isEmpty());
+    }
+
+    void test_presenterDividendEdit_onSave_saleBeforeExDate_reducesHoldings()
+    {
+        // 100 gekauft, 30 vor dem Ex-Tag verkauft → 70 erwartet.
+        StubViewDividendEdit view;
+        view.m_volume = 70.0;
+        StubModelDividendEdit model;
+        model.buys  << makeDepotBuy(QStringLiteral("b1"), 100.0);
+        model.sales << SaleObject(QStringLiteral("s1"), makeShareGuid(),
+                                  QStringLiteral("DE123456789"),
+                                  QStringLiteral("order-s1"),
+                                  QStringLiteral("2024-03-01T00:00:00"),
+                                  30.0, 12.0, QList<SaleBuyDetail>{});
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onSave();
+
+        QVERIFY(model.addDividendCalled);
+        QVERIFY(view.lastError.isEmpty());
+    }
+
     void test_viewDividendEdit_clearForm_resetsFcCheckbox()
     {
         openMemoryDb();
@@ -9962,6 +10270,320 @@ private slots:
                          false, 1.0, QStringLiteral("EUR"));
         dlg.loadDividend(d);
         QVERIFY(!dlg.enableForeignCurrency());
+    }
+
+    // ── Ex-Tag / Depotnummer (Phase 2, 21.08.2026) ─────────────────────────
+
+    void test_viewDividendEdit_exDate_defaultsToSentinel()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        // Frisches Formular: Sentinel "2000-01-01", nicht "heute" — siehe
+        // Kommentar an m_exDate in ViewDividendEdit::createDividenddatenGroup().
+        QCOMPARE(dlg.exDate(), QStringLiteral("2000-01-01"));
+    }
+
+    void test_viewDividendEdit_depotNumber_defaultsToEmpty()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        QVERIFY(dlg.depotNumber().isEmpty());
+    }
+
+    void test_viewDividendEdit_hasMissingRequiredFields_exDateAndDepotNumberMissingByDefault()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        QStringList missing;
+        QVERIFY(dlg.hasMissingRequiredFields(missing));
+        QVERIFY(missing.contains(QObject::tr("Ex-Tag")));
+        QVERIFY(missing.contains(QObject::tr("Depotnummer")));
+    }
+
+    void test_viewDividendEdit_setFieldOk_exDate_parsesISOFormat()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        dlg.setFieldOk(QStringLiteral("exDate"), QStringLiteral("2024-06-13"));
+        QCOMPARE(dlg.exDate(), QStringLiteral("2024-06-13"));
+    }
+
+    void test_viewDividendEdit_loadDividend_withExDateAndDepotNumber_populatesFields()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        DividendObject d(QStringLiteral("div-1"), makeShareGuid(),
+                         QStringLiteral("2024-06-15T00:00:00"),
+                         1.50, 100.0, 0.0, 0.0, 0.0, 45.0,
+                         false, 1.0, QStringLiteral("EUR"), QString(),
+                         QStringLiteral("2024-06-13"), QStringLiteral("DE123456789"));
+        dlg.loadDividend(d);
+        QCOMPARE(dlg.exDate(),      QStringLiteral("2024-06-13"));
+        QCOMPARE(dlg.depotNumber(), QStringLiteral("DE123456789"));
+    }
+
+    void test_viewDividendEdit_loadDividend_withoutExDate_showsSentinel()
+    {
+        // Eine Alt-Dividende ohne Ex-Tag/Depotnummer (leere Strings, wie sie
+        // vor dem 21.08.2026 gespeichert wurden) muss beim Laden den
+        // Sentinel/leer zeigen, damit die Pflichtfeld-Prüfung beim nächsten
+        // Speichern zuschlägt — Nessies Entscheidung: "der Benutzer muss den
+        // Ex-Tag nachtragen".
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        DividendObject d(QStringLiteral("div-old"), makeShareGuid(),
+                         QStringLiteral("2024-06-15T00:00:00"),
+                         1.50, 100.0, 0.0, 0.0, 0.0, 45.0);  // exDate/depotNumber leer
+        dlg.loadDividend(d);
+        QCOMPARE(dlg.exDate(), QStringLiteral("2000-01-01"));
+        QVERIFY(dlg.depotNumber().isEmpty());
+
+        QStringList missing;
+        QVERIFY(dlg.hasMissingRequiredFields(missing));
+        QVERIFY(missing.contains(QObject::tr("Ex-Tag")));
+        QVERIFY(missing.contains(QObject::tr("Depotnummer")));
+    }
+
+    // ── Beleg-Import: Ex-Tag und Fremdwährung (Phase 5, 21.08.2026) ──────
+
+    void test_viewDividendEdit_setFieldOk_exDate_parsesGermanDocumentFormat()
+    {
+        // Genau dieses Format liefern die Belege beider Banken ("Ex-Tag
+        // 08.05.2026"), und genau so reicht der Parser den Treffer weiter.
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        dlg.setFieldOk(QStringLiteral("exDate"), QStringLiteral("08.05.2026"));
+        QCOMPARE(dlg.exDate(), QStringLiteral("2026-05-08"));
+    }
+
+    void test_viewDividendEdit_setFieldOk_depotNumber_selectsUnknownValue()
+    {
+        // Ohne DocumentsConfig kennt die Combobox keine Depotnummern; eine
+        // aus dem Beleg gelesene muss trotzdem ankommen (generischer
+        // QComboBox-Zweig in setFieldOk()).
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        dlg.setFieldOk(QStringLiteral("depotNumber"), QStringLiteral("501403950"));
+        QCOMPARE(dlg.depotNumber(), QStringLiteral("501403950"));
+    }
+
+    void test_viewDividendEdit_setFieldHint_doesNotSatisfyRequiredField()
+    {
+        // Der wichtigste Punkt am Ersatzhinweis: er zeigt nur etwas an. Das
+        // Ex-Tag-Feld bleibt leer und weiterhin eine fehlende Pflichtangabe —
+        // sonst könnte der Benutzer mit einem Sentinel-Datum speichern und
+        // die Bestände-Prüfung liefe gegen den falschen Stichtag.
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+
+        dlg.setFieldHint(QStringLiteral("exDate"),
+                         QStringLiteral("Schlusstag: 05.02.2019"));
+
+        QCOMPARE(dlg.exDate(), QStringLiteral("2000-01-01"));
+        QStringList missing;
+        QVERIFY(dlg.hasMissingRequiredFields(missing));
+        QVERIFY(missing.contains(QObject::tr("Ex-Tag")));
+    }
+
+    void test_viewDividendEdit_setFieldHint_survivesOnParseFinished()
+    {
+        // onParseFinished() setzt bei noch unberührten Pflichtfeldern seinen
+        // allgemeinen Text. Der genauere Hinweis darf davon nicht
+        // überschrieben werden — deshalb setzt setFieldHint() den Zustand auf
+        // Info statt ihn auf Untouched zu lassen.
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+
+        const QString hint = QStringLiteral("Schlusstag: 05.02.2019");
+        dlg.setFieldHint(QStringLiteral("exDate"), hint);
+        dlg.onParseFinished();
+
+        // Das Statussymbol des Ex-Tag-Felds trägt weiterhin den Hinweistext.
+        bool found = false;
+        for (auto* lbl : dlg.findChildren<QLabel*>()) {
+            if (lbl->toolTip() == hint) { found = true; break; }
+        }
+        QVERIFY2(found, "Hinweis wurde von onParseFinished() überschrieben");
+    }
+
+    void test_viewDividendEdit_setFieldHint_unknownField_doesNotCrash()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        dlg.setFieldHint(QStringLiteral("gibtesnicht"), QStringLiteral("egal"));
+        QVERIFY(true);
+    }
+
+    void test_viewDividendEdit_setForeignCurrency_usd_enablesAndSelects()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        QVERIFY(!dlg.enableForeignCurrency());
+
+        dlg.setForeignCurrency(true, QStringLiteral("USD"));
+
+        QVERIFY(dlg.enableForeignCurrency());
+        QCOMPARE(dlg.currency(), QStringLiteral("en-US"));
+    }
+
+    void test_viewDividendEdit_setForeignCurrency_gbp_selectsPound()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        dlg.setForeignCurrency(true, QStringLiteral("GBP"));
+        QVERIFY(dlg.enableForeignCurrency());
+        QCOMPARE(dlg.currency(), QStringLiteral("en-GB"));
+    }
+
+    void test_viewDividendEdit_setForeignCurrency_eur_disablesMode()
+    {
+        // Ein Euro-Beleg schaltet den Modus wieder ab — sonst würde ein aus
+        // einem vorherigen Import stehengebliebener Haken die Auszahlung
+        // durch einen fremden Devisenkurs teilen.
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        dlg.setForeignCurrency(true, QStringLiteral("USD"));
+        QVERIFY(dlg.enableForeignCurrency());
+
+        dlg.setForeignCurrency(false, QStringLiteral("EUR"));
+        QVERIFY(!dlg.enableForeignCurrency());
+    }
+
+    void test_viewDividendEdit_setForeignCurrency_unknownIso_keepsSelection()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        dlg.setForeignCurrency(true, QStringLiteral("GBP"));
+        QCOMPARE(dlg.currency(), QStringLiteral("en-GB"));
+
+        // Unbekanntes Kürzel: Modus bleibt an, Auswahl unverändert — der
+        // Benutzer sieht die Währung und kann sie korrigieren.
+        dlg.setForeignCurrency(true, QStringLiteral("XYZ"));
+        QVERIFY(dlg.enableForeignCurrency());
+        QCOMPARE(dlg.currency(), QStringLiteral("en-GB"));
+    }
+
+    void test_viewDividendEdit_setForeignCurrency_exchangeRateSurvives()
+    {
+        // Der Parser schreibt erst den Kurs und schaltet dann den Modus ein
+        // (Reihenfolge in populateFromResult()). Der Wert darf dabei nicht
+        // verlorengehen — sonst wäre die ganze Umrechnung wirkungslos.
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        dlg.setFieldOk(QStringLiteral("exchangeRatio"), QStringLiteral("1,148693"));
+        dlg.setForeignCurrency(true, QStringLiteral("USD"));
+        QCOMPARE(dlg.exchangeRatio(), 1.148693);
+    }
+
+    // ── Split-Marker am Ex-Tag statt am Zahltag (Phase 4, 21.08.2026) ─────
+
+    void test_viewDividendEdit_overview_splitMarkerUsesExDate()
+    {
+        // Der Split liegt ZWISCHEN Ex-Tag (01.05.) und Zahltag (15.06.).
+        // Am Ex-Tag galt also noch die alte Stückelung → die Anteile-Zelle
+        // muss den Marker tragen. Vor Phase 4 wurde gegen den Zahltag
+        // geprüft, und dieser Split wäre übersehen worden.
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+
+        DividendObject d(QStringLiteral("div-1"), makeShareGuid(),
+                         QStringLiteral("2024-06-15T00:00:00"),
+                         1.50, 100.0, 0.0, 0.0, 0.0, 45.0,
+                         false, 1.0, QStringLiteral("EUR"), QString(),
+                         QStringLiteral("2024-05-01"), QStringLiteral("DE123456789"));
+
+        const QList<ShareSplitObject> splits = {
+            ShareSplitObject(QStringLiteral("split-1"), makeShareGuid(),
+                             QDate(2024, 5, 20), 2.0, 1.0)
+        };
+
+        dlg.populateOverview({ d }, splits);
+
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
+        auto* container = tabs->widget(1);
+        if (!container) QFAIL("Jahres-Tab container not found");
+        auto* tbl = qobject_cast<QTableWidget*>(
+            container->property("dataTable").value<QObject*>());
+        if (!tbl) QFAIL("dataTable not found");
+
+        auto* iVol = tbl->item(0, 2);   // kColVolume
+        QVERIFY(iVol != nullptr);
+        QVERIFY2(iVol->text().contains(ShareSplitHint::marker()),
+                 qPrintable(iVol->text()));
+    }
+
+    void test_viewDividendEdit_overview_splitBetweenExDateAndPayday_wasMissedBefore()
+    {
+        // Gegenprobe zum Test darüber: derselbe Split, aber die Dividende hat
+        // KEINEN Ex-Tag (Alt-Datensatz). Dann greift der Rückfall auf den
+        // Zahltag (15.06.), der Split vom 20.05. liegt davor — kein Marker.
+        // Genau das war vor Phase 4 auch bei gesetztem Ex-Tag das Ergebnis.
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+
+        const QList<ShareSplitObject> splits = {
+            ShareSplitObject(QStringLiteral("split-1"), makeShareGuid(),
+                             QDate(2024, 5, 20), 2.0, 1.0)
+        };
+
+        dlg.populateOverview({ makeDividend(QStringLiteral("div-old")) }, splits);
+
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
+        auto* container = tabs->widget(1);
+        if (!container) QFAIL("Jahres-Tab container not found");
+        auto* tbl = qobject_cast<QTableWidget*>(
+            container->property("dataTable").value<QObject*>());
+        if (!tbl) QFAIL("dataTable not found");
+
+        auto* iVol = tbl->item(0, 2);
+        QVERIFY(iVol != nullptr);
+        QVERIFY2(!iVol->text().contains(ShareSplitHint::marker()),
+                 qPrintable(iVol->text()));
+    }
+
+    void test_viewDividendEdit_overview_splitAfterPayday_markerForOldDividend()
+    {
+        // Alt-Dividende ohne Ex-Tag, Split NACH dem Zahltag: der Rückfall auf
+        // date() muss das bisherige Verhalten unverändert lassen — Marker.
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+
+        const QList<ShareSplitObject> splits = {
+            ShareSplitObject(QStringLiteral("split-1"), makeShareGuid(),
+                             QDate(2024, 8, 1), 2.0, 1.0)
+        };
+
+        dlg.populateOverview({ makeDividend(QStringLiteral("div-old")) }, splits);
+
+        auto* tabs = dlg.findChild<OverviewTabWidget*>();
+        if (!tabs) QFAIL("OverviewTabWidget not found");
+        auto* container = tabs->widget(1);
+        if (!container) QFAIL("Jahres-Tab container not found");
+        auto* tbl = qobject_cast<QTableWidget*>(
+            container->property("dataTable").value<QObject*>());
+        if (!tbl) QFAIL("dataTable not found");
+
+        auto* iVol = tbl->item(0, 2);
+        QVERIFY(iVol != nullptr);
+        QVERIFY2(iVol->text().contains(ShareSplitHint::marker()),
+                 qPrintable(iVol->text()));
+    }
+
+    void test_viewDividendEdit_clearForm_resetsExDateAndDepotNumber()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        DividendObject d(QStringLiteral("div-1"), makeShareGuid(),
+                         QStringLiteral("2024-06-15T00:00:00"),
+                         1.50, 100.0, 0.0, 0.0, 0.0, 45.0,
+                         false, 1.0, QStringLiteral("EUR"), QString(),
+                         QStringLiteral("2024-06-13"), QStringLiteral("DE123456789"));
+        dlg.loadDividend(d);
+        dlg.clearForm();
+        QCOMPARE(dlg.exDate(), QStringLiteral("2000-01-01"));
+        QVERIFY(dlg.depotNumber().isEmpty());
     }
 
 };

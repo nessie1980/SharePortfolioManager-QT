@@ -2084,6 +2084,100 @@ private slots:
         QFAIL("orderNumber QLineEdit not found");
     }
 
+    /**
+     * @brief Die Ordernummer wird ZEICHENGETREU übernommen.
+     *
+     * Nessies Bugreport 22.08.2026: der DKB-Beleg zeigt "670835/66.00", im
+     * Formular stand "670835/66,00". Ursache war, dass die View jedem
+     * einzeiligen Feld die Dezimalpunkt-Umschreibung verpasste — gedacht war
+     * sie für Zahlenfelder. Eine Ordernummer ist keine Zahl.
+     */
+    void test_viewBuyEdit_setFieldOk_orderNumber_keepsDot()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        dlg.setFieldOk(QStringLiteral("orderNumber"),
+                       QStringLiteral(" 670835/66.00\n"));
+
+        QCOMPARE(dlg.orderNumber(), QStringLiteral("670835/66.00"));
+    }
+
+    /// Gegenprobe: bei ZAHLENfeldern (die einen QDoubleValidator tragen) ist
+    /// der Punkt sehr wohl der Dezimaltrenner und wird zum Komma.
+    void test_viewBuyEdit_setFieldOk_numericField_stillNormalisesDot()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        dlg.setFieldOk(QStringLiteral("price"), QStringLiteral("39.998"));
+
+        QCOMPARE(dlg.price(), 39.998);
+    }
+
+    /**
+     * @brief Ein Tausendertrenner darf den Wert nicht auf null fallen lassen.
+     *
+     * Vorher wurde aus "1.234,56" die Zeichenkette "1,234,56", und
+     * `parseDouble()` machte daraus 0,00. Aufgefallen beim Beheben der
+     * Ordernummer; ein Beleg mit einem solchen Betrag lag nicht vor.
+     */
+    void test_viewBuyEdit_setFieldOk_numericField_handlesThousandsSeparator()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        dlg.setFieldOk(QStringLiteral("price"), QStringLiteral("1.234,56"));
+
+        QCOMPARE(dlg.price(), 1234.56);
+    }
+
+    /**
+     * @brief Ein unbrauchbarer Datumswert muss SICHTBAR werden.
+     *
+     * Vorher blieb bei einer misslungenen Umwandlung stillschweigend das
+     * heutige Datum stehen — bei einem Kauf aus 2018 kein Schönheitsfehler,
+     * sondern ein falscher Datensatz.
+     */
+    void test_viewBuyEdit_setFieldOk_unparsableDate_marksFieldAsError()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        // m_fieldStates ist privat — gezählt wird deshalb über den Tooltip
+        // der Status-Symbole, den setFieldError() setzt.
+        auto errorLabels = [&dlg]() {
+            int n = 0;
+            for (auto* l : dlg.findChildren<QLabel*>())
+                if (l->toolTip() == QObject::tr("Ungültige oder fehlende Eingabe"))
+                    ++n;
+            return n;
+        };
+
+        const int before = errorLabels();
+        dlg.setFieldOk(QStringLiteral("date"), QStringLiteral("kein Datum"));
+        QCOMPARE(errorLabels(), before + 1);
+    }
+
+    /// Gegenprobe: ein brauchbares Datum darf KEIN Fehlersymbol setzen.
+    void test_viewBuyEdit_setFieldOk_validDate_marksNoError()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        auto errorLabels = [&dlg]() {
+            int n = 0;
+            for (auto* l : dlg.findChildren<QLabel*>())
+                if (l->toolTip() == QObject::tr("Ungültige oder fehlende Eingabe"))
+                    ++n;
+            return n;
+        };
+
+        const int before = errorLabels();
+        dlg.setFieldOk(QStringLiteral("date"), QStringLiteral("4.2.2026"));
+        QCOMPARE(errorLabels(), before);
+    }
+
     void test_viewBuyEdit_populateOverview_jahresTabsDescendingByYear()
     {
         // Years must appear newest-first: Tab 1 = newest year, Tab 2 = older.

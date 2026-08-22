@@ -2,6 +2,7 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "ViewDividendEdit.h"
 #include "../../utils/ShareSplitHint.h"
+#include "../../utils/DocumentFieldValue.h"
 #include "PresenterDividendEdit.h"
 #include "ModelDividendEdit.h"
 #include "../../IconProvider.h"
@@ -70,6 +71,14 @@ ViewDividendEdit::ViewDividendEdit(const QString& shareGuid,
     // ── Live field validation ─────────────────────────────────────────────
     connect(m_date, &QDateEdit::editingFinished,
             m_presenter, &PresenterDividendEdit::onDateEdited);
+    // Use editingFinished for Ex-Tag — analog zu m_date, kein "leer" bei
+    // QDateEdit möglich (siehe IViewDividendEdit::exDate()).
+    connect(m_exDate, &QDateEdit::editingFinished,
+            m_presenter, &PresenterDividendEdit::onExDateEdited);
+    // activated() feuert nur bei Benutzerinteraktion, nicht bei
+    // programmatischem setCurrentIndex() (wie ViewBuyEdit::m_depotNumber).
+    connect(m_depotNumber, QOverload<int>::of(&QComboBox::activated),
+            m_presenter, &PresenterDividendEdit::onDepotNumberEdited);
     connect(m_rate, &QLineEdit::editingFinished,
             m_presenter, &PresenterDividendEdit::onRateEdited);
     connect(m_volume, &QLineEdit::editingFinished,
@@ -153,6 +162,41 @@ QGroupBox* ViewDividendEdit::createDividenddatenGroup()
     m_inputWidgets[QStringLiteral("date")] = m_date;
     m_inputWidgets[QStringLiteral("time")] = m_time;
 
+    // ── Depotnummer (Pflichtfeld seit 21.08.2026) ─────────────────────────
+    // Identischer Aufbau wie ViewBuyEdit::createKaufdatenGroup() — Dividenden
+    // werden per Depot gutgeschrieben, siehe DividendObject.h, "Ex-Tag und
+    // Depotnummer" und ARCHITECTURE.md, "Plausibilitätsprüfung der
+    // Dividenden-Stückzahl".
+    m_depotNumber = new QComboBox;
+    m_depotNumber->setEditable(false);  // Nur bekannte Depotnummern aus Documents.xml
+    m_depotNumber->addItem(tr("— bitte wählen —"));
+    if (m_config) {
+        for (const auto& bank : m_config->entries()) {
+            if (!bank.identifier.isEmpty())
+                m_depotNumber->addItem(
+                    QStringLiteral("%1 (%2)").arg(bank.name, bank.identifier),
+                    bank.identifier);
+        }
+    }
+    m_statusLabels[QStringLiteral("depotNumber")] =
+        addRow(grid, row, tr("Depotnummer:"), m_depotNumber,
+               QString(), QStringLiteral("depotNumber"));
+    m_inputWidgets[QStringLiteral("depotNumber")] = m_depotNumber;
+
+    // ── Ex-Tag (Pflichtfeld seit 21.08.2026) ──────────────────────────────
+    // Startwert bewusst der Sentinel 2000-01-01, nicht das heutige Datum wie
+    // bei m_date — ein QDateEdit kann kein "leer" darstellen, darum markiert
+    // hasMissingRequiredFields() diesen Sentinel als fehlende Pflichtangabe.
+    // Damit greift die Pflicht auch für alte Dividenden ohne Ex-Tag beim
+    // nächsten Speichern (Nessies Entscheidung 21.08.2026), statt versehentlich
+    // ein "heute" als scheinbar gültigen Ex-Tag zu übernehmen.
+    m_exDate = new QDateEdit(QDate(2000, 1, 1));
+    m_exDate->setCalendarPopup(true);
+    m_exDate->setDisplayFormat(QStringLiteral("d . M . yyyy"));
+    m_statusLabels[QStringLiteral("exDate")] =
+        addRow(grid, row, tr("Ex-Tag:"), m_exDate, QString(), QStringLiteral("exDate"));
+    m_inputWidgets[QStringLiteral("exDate")] = m_exDate;
+
     // ── Fremdwährung aktivieren ───────────────────────────────────────────
     m_enableFc = new QCheckBox;
     m_enableFc->setFixedHeight(UiConstants::kFieldHeight);
@@ -201,10 +245,22 @@ QGroupBox* ViewDividendEdit::createDividenddatenGroup()
         fcLbl->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         grid->addWidget(fcLbl,       row, 0);
         grid->addWidget(fcRowWidget, row, 1, 1, 2);
-        auto* fcSpacer = new QLabel;
-        fcSpacer->setFixedSize(20, 20);
-        grid->addWidget(fcSpacer,    row, 3);
+        auto* fcStatus = new QLabel;
+        fcStatus->setFixedSize(20, 20);
+        fcStatus->setAlignment(Qt::AlignCenter);
+        grid->addWidget(fcStatus,    row, 3);
         ++row;
+
+        // Bugfix 21.08.2026 (Phase 5): Der Devisenkurs war als einziges
+        // beschreibbares Feld weder in m_statusLabels noch in m_inputWidgets
+        // eingetragen. Damit lief setFieldOk("exchangeRatio", …) ins Leere —
+        // ein aus dem Beleg gelesener Kurs erreichte das Feld nie —, und
+        // setFieldError("exchangeRatio") ebenso, weshalb
+        // PresenterDividendEdit::onExchangeRatioEdited() seit jeher wirkungslos
+        // war. Die Zelle in Spalte 3 war schon da, aber nur als namenloser
+        // Platzhalter; sie ist jetzt das Statussymbol dieser Zeile.
+        m_statusLabels[QStringLiteral("exchangeRatio")] = fcStatus;
+        m_inputWidgets[QStringLiteral("exchangeRatio")] = m_exchangeRatio;
 
         // setEnabled NACH dem Einbetten — damit Qt die Parent-Child-Hierarchie kennt
         m_exchangeRatio->setEnabled(false);
@@ -523,6 +579,18 @@ double ViewDividendEdit::priceAtPayday()   const { return parseDouble(m_priceAtP
 bool   ViewDividendEdit::enableForeignCurrency() const { return m_enableFc->isChecked();         }
 QString ViewDividendEdit::documentPath()   const { return m_documentPath->text();                }
 
+QString ViewDividendEdit::exDate() const
+{
+    return m_exDate->date().toString(Qt::ISODate);
+}
+
+QString ViewDividendEdit::depotNumber() const
+{
+    // Rohen BankIdentifierValue aus den item data zurückgeben — wie ViewBuyEdit::depotNumber().
+    const QVariant data = m_depotNumber->currentData();
+    return data.isValid() ? data.toString() : QString();
+}
+
 double ViewDividendEdit::exchangeRatio() const
 {
     const double v = parseDouble(m_exchangeRatio->text());
@@ -570,6 +638,37 @@ void ViewDividendEdit::loadDividend(const DividendObject& d)
     m_solidarityTax->setText(formatMoney(d.solidarityTax()));
     m_priceAtPayday->setText(formatMoney(d.priceAtPayday()));
     m_documentPath->setText(d.document());
+
+    // Ex-Tag: Sentinel 2000-01-01, wenn die geladene Dividende (noch) keinen
+    // Ex-Tag hat — siehe Kommentar an der Feld-Erzeugung oben. Damit zeigt
+    // eine alte Dividende ohne Ex-Tag das Feld als fehlend/rot an, sobald
+    // onRowSelected() im Anschluss onExDateEdited() aufruft.
+    m_exDate->setDate(d.hasExDate() ? d.exDateAsDate() : QDate(2000, 1, 1));
+
+    // Depotnummer — Abgleich per item data (getrimmt), wie ViewBuyEdit::loadBuy().
+    {
+        const QString depotNr = d.depotNumber().trimmed();
+        QSignalBlocker block(m_depotNumber);
+        bool matched = false;
+        for (int i = 0; i < m_depotNumber->count(); ++i) {
+            if (m_depotNumber->itemData(i).toString().trimmed() == depotNr) {
+                m_depotNumber->setCurrentIndex(i);
+                matched = true;
+                break;
+            }
+        }
+        if (!matched && !depotNr.isEmpty()) {
+            m_depotNumber->addItem(depotNr, depotNr);
+            m_depotNumber->setCurrentIndex(m_depotNumber->count() - 1);
+        } else if (!matched) {
+            // Alte Dividende ohne Depotnummer: explizit auf "— bitte
+            // wählen —" zurücksetzen statt die Auswahl der zuvor geladenen
+            // Zeile stehen zu lassen (anders als ViewBuyEdit::loadBuy(), wo
+            // eine leere Depotnummer praktisch nicht vorkommt, weil das Feld
+            // dort schon länger Pflicht ist).
+            m_depotNumber->setCurrentIndex(0);
+        }
+    }
 }
 
 void ViewDividendEdit::clearForm()
@@ -593,10 +692,17 @@ void ViewDividendEdit::clearForm()
     m_solidarityTax->setText(QStringLiteral("0,00"));
     m_priceAtPayday->setText(QStringLiteral("0,00"));
     m_documentPath->clear();
+    m_exDate->setDate(QDate(2000, 1, 1));
+    {
+        QSignalBlocker block(m_depotNumber);
+        m_depotNumber->setCurrentIndex(0);
+    }
 
     // Restore all input fields to enabled state
     m_date->setEnabled(true);           m_date->setStyleSheet(QString());
     m_time->setEnabled(true);           m_time->setStyleSheet(QString());
+    m_exDate->setEnabled(true);         m_exDate->setStyleSheet(QString());
+    m_depotNumber->setEnabled(true);
     m_enableFc->setEnabled(true);
     // FC-Felder deaktiviert bis Checkbox angehakt wird.
     // StyleSheet wird von setForeignCurrencyEnabled gesetzt.
@@ -695,6 +801,43 @@ void ViewDividendEdit::setForeignCurrencyEnabled(bool enabled)
     }
 }
 
+// ── setForeignCurrency ────────────────────────────────────────────────────────
+
+void ViewDividendEdit::setForeignCurrency(bool enabled, const QString& isoCode)
+{
+    {
+        // Haken ohne toggled()-Signal setzen — sonst liefen
+        // setForeignCurrencyEnabled() und PresenterDividendEdit::
+        // onForeignCurrencyToggled() mitten im Parse-Durchlauf los. Beides
+        // wird unten bzw. vom Presenter selbst gezielt nachgeholt.
+        QSignalBlocker block(m_enableFc);
+        m_enableFc->setChecked(enabled);
+    }
+
+    if (enabled && !isoCode.trimmed().isEmpty()) {
+        // Die Combobox führt IETF-Locale-Namen als item data ("en-US"), der
+        // Beleg nennt das ISO-4217-Kürzel ("USD"). QLocale übersetzt zwischen
+        // beiden — eine eigene Zuordnungstabelle wäre eine zweite Wahrheit,
+        // die bei jeder neuen Währung nachgepflegt werden müsste.
+        const QString wanted = isoCode.trimmed().toUpper();
+        QSignalBlocker block(m_currency);
+        for (int i = 0; i < m_currency->count(); ++i) {
+            const QLocale loc(m_currency->itemData(i).toString());
+            if (loc.currencySymbol(QLocale::CurrencyIsoCode).toUpper() == wanted) {
+                m_currency->setCurrentIndex(i);
+                break;
+            }
+        }
+        // Kein Treffer: Auswahl bleibt, wie sie war. Der Devisenkurs steht
+        // trotzdem im Feld und der Modus ist aktiv — der Benutzer sieht die
+        // Währung in der Combobox und kann sie korrigieren.
+    }
+
+    // Feldfreigabe und Währungssymbole nachziehen; wegen des QSignalBlockers
+    // oben passiert das nicht von selbst.
+    setForeignCurrencyEnabled(enabled);
+}
+
 // ── Field status ──────────────────────────────────────────────────────────────
 
 void ViewDividendEdit::setFieldOk(const QString& field, const QString& value,
@@ -713,18 +856,44 @@ void ViewDividendEdit::setFieldOk(const QString& field, const QString& value,
 
     if (auto* le = qobject_cast<QLineEdit*>(widget)) {
         if (!value.isEmpty()) {
-            QString norm = value;
-            norm.replace(QLatin1Char('.'), QLatin1Char(','));
-            le->setText(norm.trimmed());
+            // Zahlenfeld oder Textfeld? Der QDoubleValidator entscheidet —
+            // nur dort darf der Punkt umgedeutet werden. Siehe ViewBuyEdit
+            // und ARCHITECTURE.md, "Rohwerte aus Belegen".
+            const bool numeric =
+                qobject_cast<const QDoubleValidator*>(le->validator()) != nullptr;
+            le->setText(numeric ? DocumentFieldValue::forNumericField(value)
+                                : DocumentFieldValue::forTextField(value));
         }
     } else if (auto* de = qobject_cast<QDateEdit*>(widget)) {
-        QDate d = QDate::fromString(value, QStringLiteral("d.M.yyyy"));
-        if (!d.isValid()) d = QDate::fromString(value, Qt::ISODate);
-        if (d.isValid()) de->setDate(d);
+        const QDate d = DocumentFieldValue::toDate(value);
+        if (d.isValid())
+            de->setDate(d);
+        else if (!value.isEmpty())
+            setFieldError(field);   // sonst bliebe still ein Vorgabewert stehen
     } else if (auto* te = qobject_cast<QTimeEdit*>(widget)) {
-        QTime t = QTime::fromString(value, QStringLiteral("h:m:s"));
-        if (!t.isValid()) t = QTime::fromString(value, QStringLiteral("h:m"));
-        if (t.isValid()) te->setTime(t);
+        const QTime t = DocumentFieldValue::toTime(value);
+        if (t.isValid())
+            te->setTime(t);
+        else if (!value.isEmpty())
+            setFieldError(field);
+    } else if (auto* cb = qobject_cast<QComboBox*>(widget)) {
+        // Aktuell nur m_depotNumber — generischer Fallback wie
+        // ViewBuyEdit::setFieldOk(), falls das automatische Parsing (Phase 5)
+        // künftig eine Depotnummer liefert, die noch nicht in der Liste steht.
+        if (value.isEmpty()) return;
+        bool matched = false;
+        for (int i = 0; i < cb->count(); ++i) {
+            if (cb->itemData(i).toString() == value ||
+                cb->itemText(i) == value) {
+                cb->setCurrentIndex(i);
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            cb->addItem(value, value);
+            cb->setCurrentIndex(cb->count() - 1);
+        }
     }
 }
 
@@ -735,6 +904,22 @@ void ViewDividendEdit::setFieldError(const QString& field)
     m_fieldStates[field] = FieldState::Error;
     lbl->setPixmap(IconProvider::icon(IconProvider::SearchFailed).pixmap(16, 16));
     lbl->setToolTip(tr("Ungültige oder fehlende Eingabe"));
+    lbl->setVisible(true);
+}
+
+void ViewDividendEdit::setFieldHint(const QString& field, const QString& tooltip)
+{
+    auto* lbl = m_statusLabels.value(field);
+    if (!lbl) return;
+
+    // Info, nicht Ok: das Feld ist weiterhin unausgefüllt und bleibt eine
+    // fehlende Pflichtangabe. Der Zustand verhindert zugleich, dass
+    // onParseFinished() den Hinweis anschliessend durch seinen allgemeinen
+    // Text ("Wert fehlt noch — bitte manuell eingeben") ersetzt: dort werden
+    // nur Felder angefasst, die noch auf Untouched stehen.
+    m_fieldStates[field] = FieldState::Info;
+    lbl->setPixmap(IconProvider::icon(IconProvider::SearchInfo).pixmap(16, 16));
+    lbl->setToolTip(tooltip);
     lbl->setVisible(true);
 }
 
@@ -789,8 +974,15 @@ void ViewDividendEdit::setUiBusy(bool busy)
 
 void ViewDividendEdit::onParseFinished()
 {
+    // exDate/depotNumber stehen hier bewusst mit in der Liste, obwohl das
+    // automatische Parsing sie (noch) nicht befüllt (Phase 5, wartet auf
+    // Beispieldokumente) — so bekommt der Benutzer nach jeder Analyse den
+    // korrekten Hinweis "Wert fehlt noch — bitte manuell eingeben" für beide
+    // Pflichtfelder, statt dass sie stumm auf Untouched stehen bleiben.
     static const QStringList requiredFieldKeys = {
         QStringLiteral("date"),
+        QStringLiteral("exDate"),
+        QStringLiteral("depotNumber"),
         QStringLiteral("rate"),
         QStringLiteral("volume"),
     };
@@ -906,9 +1098,18 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>&   dividends
             // Zeilenklick rechts in der Vorschau erscheint. Der Marker und
             // sein Tooltip nennen die heutige Entsprechung
             // (Phase 3c, 11.08.2026).
-            const bool    volAffected = ShareSplitHint::hasSplitAfter(splits, d.date());
+            //
+            // Massstab ist der EX-TAG, nicht der Zahltag (Phase 4 der
+            // Ex-Tag-Behandlung, 21.08.2026): auf den Bestand am Ex-Tag hat
+            // die Bank ausgeschüttet, also entscheidet er, ob die Stückzahl
+            // schon in heutiger Skala gezählt ist. Ein Split zwischen Ex-Tag
+            // und Zahltag wurde vorher übersehen. volumeReferenceDate() fällt
+            // für Alt-Dividenden ohne Ex-Tag auf date() zurück und bildet
+            // damit exakt das bisherige Verhalten ab.
+            const QDate   volRefDate  = d.volumeReferenceDate();
+            const bool    volAffected = ShareSplitHint::hasSplitAfter(splits, volRefDate);
             const QString volTooltip  = ShareSplitHint::overviewRowTooltip(
-                splits, d.date(), d.volume(), d.rate());
+                splits, volRefDate, d.volume(), d.rate());
 
             auto* iVol = new QTableWidgetItem(
                 ShareSplitHint::withMarker(
@@ -1057,6 +1258,8 @@ void ViewDividendEdit::setButtonStates(bool canRemove, bool isEdit)
     // Exception: FC fields depend on the checkbox state.
     m_date->setEnabled(true);
     m_time->setEnabled(true);
+    m_exDate->setEnabled(true);
+    m_depotNumber->setEnabled(true);
     m_enableFc->setEnabled(true);
     const bool fcOn = m_enableFc->isChecked();
     const QString disabledFcStyle = QStringLiteral("background: palette(midlight);");
@@ -1181,6 +1384,8 @@ void ViewDividendEdit::markMissingFieldsAsFailed()
 {
     struct Check { QString key; bool ok; };
     const QList<Check> checks = {
+        { QStringLiteral("depotNumber"),   !m_depotNumber->currentData().toString().isEmpty() },
+        { QStringLiteral("exDate"),        m_exDate->date() > QDate(2000, 1, 1) },
         { QStringLiteral("rate"),          parseDouble(m_rate->text())          > 0.0 },
         { QStringLiteral("volume"),        parseDouble(m_volume->text())        > 0.0 },
         { QStringLiteral("priceAtPayday"), parseDouble(m_priceAtPayday->text()) > 0.0 },
@@ -1207,6 +1412,8 @@ void ViewDividendEdit::markMissingFieldsAsFailed()
 bool ViewDividendEdit::hasMissingRequiredFields(QStringList& missingFields) const
 {
     missingFields.clear();
+    if (m_depotNumber->currentData().toString().isEmpty()) missingFields.append(tr("Depotnummer"));
+    if (m_exDate->date() <= QDate(2000, 1, 1))              missingFields.append(tr("Ex-Tag"));
     if (parseDouble(m_rate->text())          <= 0.0) missingFields.append(tr("Dividendensatz"));
     if (parseDouble(m_volume->text())        <= 0.0) missingFields.append(tr("Anteile am Auszahlungstag"));
     if (parseDouble(m_priceAtPayday->text()) <= 0.0) missingFields.append(tr("Preis der Aktie am Auszahlungstag"));

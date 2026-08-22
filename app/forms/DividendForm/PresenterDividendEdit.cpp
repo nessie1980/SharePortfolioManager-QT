@@ -2,6 +2,9 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterDividendEdit.h"
 #include "../../utils/DocumentClassifier.h"
+#include "../../utils/DividendVolumeChecker.h"
+
+#include <QLocale>
 
 #include <QTimer>
 #include <QUuid>
@@ -29,6 +32,11 @@ PresenterDividendEdit::PresenterDividendEdit(IViewDividendEdit*  view,
     // nicht, ein Abruf je reloadOverview() wäre eine unnötige Abfrage
     // (Phase 3c, 11.08.2026).
     m_splits = m_model->loadSplits(m_shareGuid);
+
+    // Käufe/Verkäufe für die Stückzahl-Plausibilitätsprüfung (Phase 3,
+    // 21.08.2026) — gleiche Überlegung wie bei m_splits, siehe Header.
+    m_buys  = m_model->loadBuys(m_shareGuid);
+    m_sales = m_model->loadSales(m_shareGuid);
 
     reloadOverview();
     m_view->clearForm();
@@ -65,7 +73,9 @@ void PresenterDividendEdit::onSave()
         m_view->enableForeignCurrency(),
         m_view->enableForeignCurrency() ? m_view->exchangeRatio() : 1.0,
         m_view->enableForeignCurrency() ? m_view->currency() : QStringLiteral("EUR"),
-        m_view->documentPath().trimmed());
+        m_view->documentPath().trimmed(),
+        m_view->exDate(),
+        m_view->depotNumber().trimmed());
 
     const bool ok = isEdit
         ? m_model->updateDividend(dividend)
@@ -137,6 +147,8 @@ void PresenterDividendEdit::onRowSelected(const QString& dividendGuid)
 
             // Validate loaded fields so icons reflect the current state.
             onDateEdited();
+            onExDateEdited();
+            onDepotNumberEdited();
             onRateEdited();
             onVolumeEdited();
             onPriceAtPaydayEdited();
@@ -176,7 +188,46 @@ void PresenterDividendEdit::onDateEdited()
     }
 
     m_view->setFieldOk(QStringLiteral("date"), QString());
+
+    // Der Auszahlungstag ist die obere Schranke für den Ex-Tag (Blockade,
+    // Nessies Entscheidung 21.08.2026 — "weil es eben nicht sein darf!").
+    // Ändert sich der Auszahlungstag, muss die Ex-Tag-Prüfung live neu
+    // laufen, sonst bliebe ein zuvor gültiges Ex-Tag-Feld fälschlich grün,
+    // obwohl es jetzt nach dem (neuen) Auszahlungstag läge. VOR
+    // applyDailyValuePriceAtPayday() aufgerufen, damit deren setFieldOk()
+    // für "priceAtPayday" das zuletzt gesetzte Feld bleibt (Tests/Verhalten
+    // erwarten das als sichtbares Ergebnis eines Datumswechsels).
+    onExDateEdited();
+
     applyDailyValuePriceAtPayday(d);
+}
+
+void PresenterDividendEdit::onExDateEdited()
+{
+    const QDate exDate = QDate::fromString(m_view->exDate(), Qt::ISODate);
+    if (!exDate.isValid() || exDate <= QDate(2000, 1, 1)) {
+        m_view->setFieldError(QStringLiteral("exDate"));
+        return;
+    }
+
+    // Blockade Ex-Tag > Auszahlungstag (Nessies Entscheidung 21.08.2026,
+    // s. validateInput() für die verbindliche Prüfung beim Speichern — hier
+    // nur die sofortige visuelle Rückmeldung).
+    const QDate payday = QDate::fromString(m_view->dateTime().left(10), Qt::ISODate);
+    if (payday.isValid() && exDate > payday) {
+        m_view->setFieldError(QStringLiteral("exDate"));
+        return;
+    }
+
+    m_view->setFieldOk(QStringLiteral("exDate"), QString());
+}
+
+void PresenterDividendEdit::onDepotNumberEdited()
+{
+    if (!m_view->depotNumber().trimmed().isEmpty())
+        m_view->setFieldOk(QStringLiteral("depotNumber"), QString());
+    else
+        m_view->setFieldError(QStringLiteral("depotNumber"));
 }
 
 void PresenterDividendEdit::onRateEdited()
@@ -301,7 +352,12 @@ void PresenterDividendEdit::startParserForText(const QString& pdfText)
 
     int bankIndex = -1;
     if (!DocumentClassifier::matchBankIndex(pdfText, *m_config, bankIndex)) {
-        const QStringList required = { "date", "rate", "volume" };
+        // Bank nicht erkannt: alle Pflichtfelder rot markieren, damit klar
+        // ist, dass nichts übernommen wurde. Seit Phase 2 gehören Ex-Tag und
+        // Depotnummer dazu (ergänzt in Phase 5, 21.08.2026).
+        const QStringList required = {
+            "date", "exDate", "depotNumber", "rate", "volume"
+        };
         for (const auto& f : required) m_view->setFieldError(f);
         m_view->onParseFinished();
         return;
@@ -407,12 +463,17 @@ void PresenterDividendEdit::populateFromResult(
     }
 
     static const QStringList knownXmlNames = {
-        "Date", "Time", "Volume", "DividendRate",
+        "Date", "Time", "ExDate", "DepotNumber", "Volume", "DividendRate",
         "TaxAtSource", "CapitalGainTax", "SolidarityTax",
         "ExchangeRate", "Currency"
     };
+    // ExDate und DepotNumber zählen als Pflicht, weil sie seit Phase 2 auch
+    // im Formular Pflicht sind: findet der Parser sie nicht, IST die Analyse
+    // unvollständig und der Benutzer muss nachtragen. Die Statuszeile sagt
+    // das dann ehrlich ("4/5 Pflicht"), statt eine vollständige Übernahme
+    // vorzuspiegeln (Phase 5, 21.08.2026).
     static const QStringList requiredXmlNames = {
-        "Date", "Volume", "DividendRate"
+        "Date", "ExDate", "DepotNumber", "Volume", "DividendRate"
     };
 
     int found = 0, requiredFound = 0;
@@ -437,6 +498,60 @@ void PresenterDividendEdit::populateFromResult(
                 }
             }
         }
+    }
+
+    // ── Ersatzhinweis, wenn der Beleg keinen Ex-Tag nennt (21.08.2026) ───
+    // Cortal Consors nennt den Ex-Tag nicht, wohl aber den "Schlusstag"
+    // (Dividenden-Stichtag), der laut Bank "normalerweise einen Tag vor dem
+    // Ex-Tag" liegt. Daraus zu RECHNEN wäre geraten: der nächste HANDELStag
+    // hängt von Wochenenden und Feiertagen ab, und ein um einen Tag falscher
+    // Ex-Tag ginge unmittelbar in die Stückzahl-Plausibilitätsprüfung ein.
+    // Der Wert wird deshalb nur angezeigt — eintragen muss ihn der Benutzer.
+    //
+    // Läuft VOR onParseFinished(), damit dessen allgemeiner Text ("Wert fehlt
+    // noch — bitte manuell eingeben") den genaueren Hinweis nicht überschreibt.
+    const QString parsedExDate = result.contains(QStringLiteral("ExDate"))
+        ? result[QStringLiteral("ExDate")].value(0).trimmed()
+        : QString();
+    const QString parsedRecordDate = result.contains(QStringLiteral("RecordDate"))
+        ? result[QStringLiteral("RecordDate")].value(0).trimmed()
+        : QString();
+
+    if (parsedExDate.isEmpty() && !parsedRecordDate.isEmpty()) {
+        m_view->setFieldHint(
+            QStringLiteral("exDate"),
+            QObject::tr(
+                "Dieser Beleg nennt keinen Ex-Tag.\n"
+                "Schlusstag (Dividenden-Stichtag): %1\n"
+                "Der Ex-Tag ist üblicherweise der nächste Handelstag — "
+                "bitte selbst eintragen.")
+                .arg(parsedRecordDate));
+    }
+
+    // ── Fremdwährung aus dem Beleg übernehmen (Phase 5, 21.08.2026) ───────
+    // Der Devisenkurs wurde schon vor Phase 5 gelesen (ExchangeRate steht in
+    // Documents.xml für alle Banken), landete aber wirkungslos im Feld:
+    // onSave() übernimmt exchangeRatio() nur bei aktivem Fremdwährungs-Modus,
+    // und den hat nie jemand eingeschaltet. Erst die Währung aus dem Beleg
+    // macht den Kurs also nutzbar.
+    //
+    // Bewusst in BEIDE Richtungen: nennt der Beleg EUR, wird der Modus auch
+    // wieder abgeschaltet. Der Beleg ist die Wahrheit über das Dokument — ein
+    // aus einem vorherigen Import stehengebliebener Haken würde sonst eine
+    // Euro-Ausschüttung durch einen fremden Devisenkurs teilen.
+    const QString parsedCurrency = result.contains(QStringLiteral("Currency"))
+        ? result[QStringLiteral("Currency")].value(0).trimmed().toUpper()
+        : QString();
+
+    if (!parsedCurrency.isEmpty()) {
+        const bool isForeign = (parsedCurrency != QStringLiteral("EUR"));
+        m_view->setForeignCurrency(isForeign, parsedCurrency);
+        // Der Haken wurde ohne toggled()-Signal gesetzt (siehe
+        // ViewDividendEdit::setForeignCurrency()), die abgeleiteten Werte
+        // müssen deshalb von Hand nachgezogen werden.
+        refreshDerivedValues();
+        if (isForeign)
+            onExchangeRatioEdited();
     }
 
     // "Preis der Aktie am Auszahlungstag" mit dem GEPARSTEN Datum abgleichen —
@@ -489,6 +604,11 @@ QString PresenterDividendEdit::xmlNameToViewField(const QString& xmlName)
     static const QMap<QString, QString> map = {
         { QStringLiteral("Date"),           QStringLiteral("date")           },
         { QStringLiteral("Time"),           QStringLiteral("time")           },
+        // Phase 5 (21.08.2026): Ex-Tag und Depotnummer werden jetzt aus dem
+        // Beleg gelesen. Beide sind seit Phase 2 Pflichtfelder — bis hierher
+        // musste der Benutzer sie nach jedem Import von Hand nachtragen.
+        { QStringLiteral("ExDate"),         QStringLiteral("exDate")         },
+        { QStringLiteral("DepotNumber"),    QStringLiteral("depotNumber")    },
         { QStringLiteral("Volume"),         QStringLiteral("volume")         },
         { QStringLiteral("DividendRate"),   QStringLiteral("rate")           },
         { QStringLiteral("TaxAtSource"),    QStringLiteral("taxAtSource")    },
@@ -553,6 +673,54 @@ QString PresenterDividendEdit::validateInput() const
         return QObject::tr(
             "Es fehlen noch Pflichtangaben.\n"
             "Die fehlenden Felder sind in der Maske rot markiert.");
+    }
+
+    // Blockade Ex-Tag > Auszahlungstag — Nessies Entscheidung 21.08.2026:
+    // "weil es eben nicht sein darf!". hasMissingRequiredFields() oben
+    // garantiert bereits, dass exDate() ein gültiges (Nicht-Sentinel-)Datum
+    // ist; hier folgt die eigentliche fachliche Prüfung gegen den
+    // Auszahlungstag. onExDateEdited() gibt dieselbe Rückmeldung schon
+    // live beim Editieren — diese Prüfung ist die verbindliche, die auch
+    // greift, wenn kein editingFinished ausgelöst wurde (z.B. Wert kam
+    // unverändert aus loadDividend()).
+    const QDate exDate = QDate::fromString(m_view->exDate(), Qt::ISODate);
+    const QDate payday  = QDate::fromString(m_view->dateTime().left(10), Qt::ISODate);
+    if (exDate.isValid() && payday.isValid() && exDate > payday) {
+        m_view->setFieldError(QStringLiteral("exDate"));
+        return QObject::tr(
+            "Der Ex-Tag darf nicht nach dem Auszahlungstag liegen.\n"
+            "Bitte prüfen Sie das Datum.");
+    }
+
+    // ── Stückzahl-Plausibilitätsprüfung (Phase 3, 21.08.2026) ─────────────
+    // Blockade statt Warnung — Nessies Entscheidung 21.08.2026. Mit Ex-Tag UND
+    // Depotnummer als Pflichtfeldern darf eine Abweichung fachlich nicht mehr
+    // vorkommen; siehe ARCHITECTURE.md, "Plausibilitätsprüfung der
+    // Dividenden-Stückzahl". Läuft NACH der Ex-Tag-Prüfung oben, damit ein
+    // widersprüchlicher Ex-Tag zuerst benannt wird — mit falschem Ex-Tag wäre
+    // auch der errechnete Bestand falsch, und die Meldung würde in die Irre
+    // führen.
+    const DividendVolumeCheckResult volumeCheck = DividendVolumeChecker::check(
+        m_view->volume(), exDate, m_view->depotNumber().trimmed(),
+        m_buys, m_sales, m_splits);
+
+    if (volumeCheck.checkable && !volumeCheck.matches) {
+        m_view->setFieldError(QStringLiteral("volume"));
+        return QObject::tr(
+            "Die eingetragenen Anteile passen nicht zum Bestand des gewählten "
+            "Depots am Ex-Tag.\n\n"
+            "Eingetragen:            %1 Stk.\n"
+            "Bestand am %2:  %3 Stk.\n\n"
+            "Berücksichtigt wurden %4 Käufe und %5 Verkäufe im Depot \"%6\" "
+            "vor dem Ex-Tag.\n"
+            "Bitte Ex-Tag, Depotnummer und Stückzahl anhand der Abrechnung "
+            "prüfen.")
+            .arg(QLocale().toString(volumeCheck.enteredVolume,  'f', 4),
+                 QLocale().toString(exDate, QLocale::ShortFormat),
+                 QLocale().toString(volumeCheck.expectedVolume, 'f', 4),
+                 QString::number(volumeCheck.consideredBuys),
+                 QString::number(volumeCheck.consideredSales),
+                 m_view->depotNumber().trimmed());
     }
 
     const QString doc = m_view->documentPath().trimmed();

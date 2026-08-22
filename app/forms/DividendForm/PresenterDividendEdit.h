@@ -59,6 +59,8 @@ public slots:
 
     // ── Live field validation ─────────────────────────────────────────────
     void onDateEdited();
+    void onExDateEdited();
+    void onDepotNumberEdited();
     void onRateEdited();
     void onVolumeEdited();
     void onPriceAtPaydayEdited();
@@ -106,6 +108,16 @@ private:
     /// unnötige Datenbankabfrage (gleiche Überlegung wie in
     /// PresenterSaleEdit::refreshDerivedValues(), 09.08.2026).
     QList<ShareSplitObject> m_splits;
+
+    /// Käufe und Verkäufe der Aktie über alle Depots, einmalig im Konstruktor
+    /// geladen (Phase 3 der Ex-Tag-Behandlung, 21.08.2026). Datengrundlage der
+    /// Stückzahl-Plausibilitätsprüfung in validateInput(). Aus demselben Grund
+    /// zwischengespeichert wie m_splits: Käufe und Verkäufe sind aus diesem
+    /// Dialog heraus nicht erreichbar und ändern sich während einer
+    /// Dialog-Sitzung nicht — ein Abruf je Speichern wären zwei unnötige
+    /// Datenbankabfragen.
+    QList<BuyObject>      m_buys;
+    QList<SaleObject>     m_sales;
 
     QString               m_currentDividendGuid;
 

@@ -37,6 +37,19 @@
  * );
  * qDebug() << div.dividendPayoutWithTaxes(); // 1.5 * 100 - 5.0 - 3.0 - 0.5 = 141.5
  * @endcode
+ *
+ * ### Ex-Tag und Depotnummer (seit 21.08.2026)
+ *
+ * `exDate`/`depotNumber` sind die Datengrundlage für die Plausibilitätsprüfung
+ * der Dividenden-Stückzahl — siehe ARCHITECTURE.md,
+ * "Plausibilitätsprüfung der Dividenden-Stückzahl". Beide sind auf
+ * Modell-/DB-Ebene bewusst optional (leerer String = nicht gesetzt): eine
+ * bestehende Dividende ohne diese Angaben muss weiterhin ladbar und anzeigbar
+ * bleiben. Verbindlich ("Muss") sind sie erst in der Formularvalidierung von
+ * `PresenterDividendEdit` (Phase 2) — `isValid()` bleibt daher unverändert an
+ * `guid`/`rate`/`volume` geknüpft und prüft `exDate`/`depotNumber` NICHT mit,
+ * sonst würde eine bereits gespeicherte Alt-Dividende beim Laden fälschlich
+ * als "nicht gefunden" erscheinen.
  */
 class DividendObject
 {
@@ -58,6 +71,10 @@ public:
      * @param exchangeRatio        Exchange rate FC→domestic (default 1.0)
      * @param currency             Currency code (e.g. "EUR")
      * @param document             Path to dividend document (optional)
+     * @param exDate               Ex-date (ISO 8601 date, e.g. "2024-05-13"), optional —
+     *        empty for existing dividends that predate this field
+     * @param depotNumber          Depot number the dividend was paid into, optional —
+     *        empty for existing dividends that predate this field
      */
     DividendObject(const QString& guid,
                    const QString& shareGuid,
@@ -71,7 +88,9 @@ public:
                    bool   enableForeignCurrency = false,
                    double exchangeRatio     = 1.0,
                    const QString& currency  = QStringLiteral("EUR"),
-                   const QString& document  = QString());
+                   const QString& document  = QString(),
+                   const QString& exDate      = QString(),
+                   const QString& depotNumber = QString());
 
     // ── Identity ──────────────────────────────────────────────────────────
     QString guid()      const { return m_guid; }      ///< Unique identifier
@@ -107,8 +126,45 @@ public:
     QString document()                            const { return m_document; }    ///< Path to dividend document
     void    setDocument(const QString& document)        { m_document = document; } ///< Update document path
 
+    // ── Ex-date / Depot (siehe Klassendoku "Ex-Tag und Depotnummer") ───────
+    QString exDate()      const { return m_exDate; }      ///< Ex-date, ISO 8601 date string, empty if unset
+    QDate   exDateAsDate() const { return QDate::fromString(m_exDate, Qt::ISODate); } ///< Ex-date as QDate, invalid if unset
+    QString exDateAsStr() const { return hasExDate()
+                                        ? QLocale().toString(exDateAsDate(), QLocale::ShortFormat)
+                                        : QStringLiteral("-"); }                   ///< Ex-date formatted for display, "-" if unset
+    bool    hasExDate()   const { return exDateAsDate().isValid(); }               ///< True if a (parseable) ex-date is set
+
+    QString depotNumber()    const { return m_depotNumber; }        ///< Depot number, empty if unset
+    bool    hasDepotNumber() const { return !m_depotNumber.isEmpty(); } ///< True if a depot number is set
+
+    /**
+     * @brief Das Datum, auf das sich volume() bezieht: der Ex-Tag, wenn
+     *        gesetzt — sonst der Zahltag als Rückfall.
+     *
+     * Phase 4 der Ex-Tag-Behandlung (21.08.2026). Die Bank schüttet auf den
+     * Bestand am Ex-Tag aus, nicht auf den am Zahltag; für die Frage "war
+     * diese Stückzahl schon nach dem Split gezählt" ist deshalb der Ex-Tag
+     * der richtige Massstab. Die Übersichtstabellen benutzen diesen Wert für
+     * den Split-Marker und dessen Tooltip.
+     *
+     * Der Rückfall auf date() ist für Dividenden gedacht, die vor dem
+     * 21.08.2026 erfasst wurden und noch keinen Ex-Tag haben. Er bildet exakt
+     * das bisherige Verhalten ab — eine solche Zeile sieht also aus wie
+     * vorher, statt mangels Ex-Tag gar keinen Marker mehr zu bekommen.
+     *
+     * @note Bewusst NICHT von `DividendVolumeChecker` (Phase 3) verwendet.
+     * Dort ist der Ex-Tag Pflichtfeld und garantiert vorhanden; ein
+     * stillschweigender Rückfall auf den Zahltag würde die Stückzahl gegen
+     * den falschen Stichtag prüfen und wäre schlimmer als gar keine Prüfung.
+     */
+    QDate volumeReferenceDate() const { return hasExDate() ? exDateAsDate() : date(); }
+
     // ── Validity ──────────────────────────────────────────────────────────
     /// Returns true if guid is set, rate > 0 and volume > 0.
+    /// Deliberately does NOT require exDate()/depotNumber() — those are
+    /// optional at model/DB level (see class doc) so that pre-21.08.2026
+    /// dividends without them keep loading and displaying correctly.
+    /// Enforcing them as mandatory for saving is the presenter/UI layer's job.
     bool isValid() const { return !m_guid.isEmpty() && m_rate > 0 && m_volume > 0; }
 
 private:
@@ -136,4 +192,7 @@ private:
     double  m_yield                   = 0.0;
 
     QString m_document;
+
+    QString m_exDate;      ///< ISO 8601 date string, empty if unset
+    QString m_depotNumber; ///< Depot number, empty if unset
 };

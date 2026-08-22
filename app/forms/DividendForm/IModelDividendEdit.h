@@ -5,6 +5,8 @@
 #include "../../models/DividendObject.h"
 #include "../../models/ShareObject.h"
 #include "../../models/ShareSplitObject.h"
+#include "../../models/BuyObject.h"
+#include "../../models/SaleObject.h"
 
 #include <QDate>
 #include <QList>
@@ -35,6 +37,19 @@ public:
      * passiert in der View. Wortgleich zu IModelBuyEdit::loadSplits().
      */
     virtual QList<ShareSplitObject> loadSplits(const QString& shareGuid) const = 0;
+
+    /**
+     * @brief Alle Käufe der Aktie über ALLE Depots.
+     *
+     * Ergänzt 21.08.2026 (Phase 3 der Ex-Tag-Behandlung) als Datengrundlage
+     * für `DividendVolumeChecker`. Bewusst ungefiltert — auf das Depot der
+     * Dividende filtert der Checker selbst, damit die Filterregel an genau
+     * einer Stelle steht und ohne Datenbank testbar bleibt.
+     */
+    virtual QList<BuyObject>  loadBuys(const QString& shareGuid)  const = 0;
+
+    /** @brief Alle Verkäufe der Aktie über ALLE Depots. Siehe loadBuys(). */
+    virtual QList<SaleObject> loadSales(const QString& shareGuid) const = 0;
 
     /**
      * @brief Look up the closing price for a share on a given date from the

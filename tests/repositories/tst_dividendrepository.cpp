@@ -92,6 +92,83 @@ private slots:
         QCOMPARE(d.year(), 2024);
     }
 
+    // ── Ex-Tag / Depotnummer (21.08.2026) ───────────────────────────────────
+    //
+    // Grundlage für die Plausibilitätsprüfung der Dividenden-Stückzahl, siehe
+    // ARCHITECTURE.md, "Plausibilitätsprüfung der Dividenden-Stückzahl".
+
+    void test_exDate_and_depotNumber_defaultToEmpty()
+    {
+        // Alt-Dividenden, die vor diesem Feld angelegt wurden, dürfen nicht
+        // plötzlich anders aussehen — beide Felder bleiben ohne explizite
+        // Angabe leer/ungesetzt.
+        DividendObject d(newGuid(), k_shareGuid, "2024-05-15T00:00:00", 1.5, 100.0);
+
+        QVERIFY(d.exDate().isEmpty());
+        QVERIFY(!d.hasExDate());
+        QVERIFY(!d.exDateAsDate().isValid());
+        QCOMPARE(d.exDateAsStr(), QStringLiteral("-"));
+
+        QVERIFY(d.depotNumber().isEmpty());
+        QVERIFY(!d.hasDepotNumber());
+    }
+
+    void test_exDate_accessors_withValue()
+    {
+        DividendObject d(newGuid(), k_shareGuid, "2024-05-15T00:00:00",
+                         1.5, 100.0, 0.0, 0.0, 0.0, 0.0, false, 1.0,
+                         QStringLiteral("EUR"), QString(),
+                         QStringLiteral("2024-05-13"), QStringLiteral("1234567"));
+
+        QCOMPARE(d.exDate(), QStringLiteral("2024-05-13"));
+        QVERIFY(d.hasExDate());
+        QCOMPARE(d.exDateAsDate(), QDate(2024, 5, 13));
+        QVERIFY2(!d.exDateAsStr().isEmpty() && d.exDateAsStr() != QStringLiteral("-"),
+                  qPrintable(d.exDateAsStr()));
+
+        QCOMPARE(d.depotNumber(), QStringLiteral("1234567"));
+        QVERIFY(d.hasDepotNumber());
+    }
+
+    // ── volumeReferenceDate (Phase 4, 21.08.2026) ─────────────────────────
+
+    void test_volumeReferenceDate_withExDate_returnsExDate()
+    {
+        DividendObject d(newGuid(), k_shareGuid, "2024-05-15T00:00:00",
+                         1.5, 100.0, 0.0, 0.0, 0.0, 0.0, false, 1.0,
+                         QStringLiteral("EUR"), QString(),
+                         QStringLiteral("2024-05-13"), QStringLiteral("1234567"));
+
+        QCOMPARE(d.volumeReferenceDate(), QDate(2024, 5, 13));
+        // Ausdrücklich NICHT der Zahltag — darauf beruht Phase 4.
+        QVERIFY(d.volumeReferenceDate() != d.date());
+    }
+
+    void test_volumeReferenceDate_withoutExDate_fallsBackToPayday()
+    {
+        // Alt-Dividende ohne Ex-Tag: der Rückfall bildet exakt das Verhalten
+        // vor Phase 4 ab, damit die Zeile nicht plötzlich anders aussieht.
+        DividendObject d(newGuid(), k_shareGuid, "2024-05-15T00:00:00",
+                         1.5, 100.0, 0.0, 0.0, 0.0, 0.0);
+
+        QVERIFY(!d.hasExDate());
+        QCOMPARE(d.volumeReferenceDate(), QDate(2024, 5, 15));
+        QCOMPARE(d.volumeReferenceDate(), d.date());
+    }
+
+    void test_isValid_ignoresMissingExDateAndDepotNumber()
+    {
+        // Zentrale Design-Entscheidung: isValid() bleibt an guid/rate/volume
+        // geknüpft, NICHT an exDate/depotNumber — sonst würde eine bereits
+        // gespeicherte Alt-Dividende beim Laden fälschlich als "nicht
+        // gefunden" erscheinen. Die "Muss"-Prüfung für neue/bearbeitete
+        // Dividenden sitzt in der Formularvalidierung, nicht hier.
+        DividendObject d(newGuid(), k_shareGuid, "2024-05-15T00:00:00", 1.5, 100.0);
+        QVERIFY(!d.hasExDate());
+        QVERIFY(!d.hasDepotNumber());
+        QVERIFY(d.isValid());
+    }
+
     // ── DividendRepository ────────────────────────────────────────────────
     void test_insert_and_findByGuid()
     {
@@ -144,6 +221,57 @@ private slots:
         const auto found = repo.findByGuid(guid);
         QCOMPARE(found.rate(),   1.8);
         QCOMPARE(found.volume(), 120.0);
+    }
+
+    void test_insert_and_findByGuid_persistsExDateAndDepotNumber()
+    {
+        DividendRepository repo;
+        const QString guid = newGuid();
+
+        DividendObject d(guid, k_shareGuid, "2024-05-15T00:00:00",
+                         1.5, 100.0, 0.0, 0.0, 0.0, 0.0, false, 1.0,
+                         QStringLiteral("EUR"), QString(),
+                         QStringLiteral("2024-05-13"), QStringLiteral("1234567"));
+        QVERIFY(repo.insert(d));
+
+        const auto found = repo.findByGuid(guid);
+        QVERIFY(found.isValid());
+        QCOMPARE(found.exDate(),      QStringLiteral("2024-05-13"));
+        QCOMPARE(found.depotNumber(), QStringLiteral("1234567"));
+    }
+
+    void test_insert_withoutExDateAndDepotNumber_roundTripsEmpty()
+    {
+        // Deckt den Migrationsfall ab: eine Dividende ohne diese Felder muss
+        // nach dem Speichern/Laden weiterhin als "nicht gesetzt" erkennbar
+        // sein, nicht als leerer String, der wie ein gültiges Datum aussieht.
+        DividendRepository repo;
+        const QString guid = newGuid();
+        QVERIFY(repo.insert(DividendObject(guid, k_shareGuid, "2024-05-15T00:00:00", 1.5, 100.0)));
+
+        const auto found = repo.findByGuid(guid);
+        QVERIFY(found.isValid());
+        QVERIFY(!found.hasExDate());
+        QVERIFY(!found.hasDepotNumber());
+    }
+
+    void test_update_persistsExDateAndDepotNumber()
+    {
+        DividendRepository repo;
+        const QString guid = newGuid();
+        // Alt-Datensatz ohne Ex-Tag/Depotnummer anlegen — genau der Fall
+        // "bestehende Dividende wird geöffnet und nachgepflegt".
+        QVERIFY(repo.insert(DividendObject(guid, k_shareGuid, "2024-05-15T00:00:00", 1.5, 100.0)));
+
+        DividendObject updated(guid, k_shareGuid, "2024-05-15T00:00:00",
+                               1.5, 100.0, 0.0, 0.0, 0.0, 0.0, false, 1.0,
+                               QStringLiteral("EUR"), QString(),
+                               QStringLiteral("2024-05-13"), QStringLiteral("1234567"));
+        QVERIFY(repo.update(updated));
+
+        const auto found = repo.findByGuid(guid);
+        QCOMPARE(found.exDate(),      QStringLiteral("2024-05-13"));
+        QCOMPARE(found.depotNumber(), QStringLiteral("1234567"));
     }
 
     void test_updateDocument()

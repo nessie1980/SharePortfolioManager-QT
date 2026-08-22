@@ -24,7 +24,9 @@ DividendObject DividendRepository::fromQuery(const QSqlQuery& sqlQuery) const
         sqlQuery.value("enable_fc").toBool(),
         sqlQuery.value("exchange_ratio").toDouble(),
         sqlQuery.value("currency").toString(),
-        sqlQuery.value("document").toString()
+        sqlQuery.value("document").toString(),
+        sqlQuery.value("ex_date").toString(),
+        sqlQuery.value("depot_number").toString()
     );
 }
 
@@ -37,11 +39,13 @@ bool DividendRepository::insert(const DividendObject& dividend)
         INSERT INTO dividends
             (guid, share_guid, datetime, rate, volume,
              tax_at_source, capital_gains_tax, solidarity_tax,
-             price_at_payday, enable_fc, exchange_ratio, currency, document)
+             price_at_payday, enable_fc, exchange_ratio, currency, document,
+             ex_date, depot_number)
         VALUES
             (:guid, :share_guid, :datetime, :rate, :volume,
              :tax_at_source, :capital_gains_tax, :solidarity_tax,
-             :price_at_payday, :enable_fc, :exchange_ratio, :currency, :document)
+             :price_at_payday, :enable_fc, :exchange_ratio, :currency, :document,
+             :ex_date, :depot_number)
     )");
 
     sqlQuery.bindValue(":guid",             dividend.guid());
@@ -57,6 +61,8 @@ bool DividendRepository::insert(const DividendObject& dividend)
     sqlQuery.bindValue(":exchange_ratio",   dividend.exchangeRatio());
     sqlQuery.bindValue(":currency",         dividend.currency());
     sqlQuery.bindValue(":document",         dividend.document());
+    sqlQuery.bindValue(":ex_date",          dividend.exDate());
+    sqlQuery.bindValue(":depot_number",     dividend.depotNumber());
 
     if (!sqlQuery.exec()) {
         m_lastError = sqlQuery.lastError();
@@ -137,7 +143,9 @@ bool DividendRepository::update(const DividendObject& dividend)
             enable_fc         = :enable_fc,
             exchange_ratio    = :exchange_ratio,
             currency          = :currency,
-            document          = :document
+            document          = :document,
+            ex_date           = :ex_date,
+            depot_number      = :depot_number
         WHERE guid = :guid
     )");
 
@@ -153,6 +161,8 @@ bool DividendRepository::update(const DividendObject& dividend)
     sqlQuery.bindValue(":exchange_ratio",   dividend.exchangeRatio());
     sqlQuery.bindValue(":currency",         dividend.currency());
     sqlQuery.bindValue(":document",         dividend.document());
+    sqlQuery.bindValue(":ex_date",          dividend.exDate());
+    sqlQuery.bindValue(":depot_number",     dividend.depotNumber());
 
     if (!sqlQuery.exec()) {
         m_lastError = sqlQuery.lastError();

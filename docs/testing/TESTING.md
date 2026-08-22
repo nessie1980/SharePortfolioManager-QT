@@ -37,11 +37,14 @@ ctest --output-on-failure
 ./bin/tst_singleinstanceguard
 ./bin/tst_websitesconfig
 ./bin/tst_documentsconfig
+./bin/tst_documentsxml
 ./bin/tst_documentclassifier
 ./bin/tst_sharecalculator
 ./bin/tst_portfolioseriescalculator
 ./bin/tst_sharesplitadjuster
 ./bin/tst_salefifoallocator
+./bin/tst_dividendvolumechecker
+./bin/tst_documentfieldvalue
 ./bin/tst_sharesplithint
 ./bin/tst_splitpricejumpdetector
 ./bin/tst_splitadjustmentaudit
@@ -73,7 +76,10 @@ Projekts; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
 `tst_sharesplithint` (09.08.2026, Phase 3b) waren es 36, seit
 `tst_splitpricejumpdetector` (13.08.2026, "Prüfen"-Knopf im Split-Dialog)
 waren es 37, seit `tst_splitadjustmentaudit` (20.08.2026, Phase 4b —
-automatische Nachprüfung nach Tageswert-Abruf) sind es 38. Anlass für den
+automatische Nachprüfung nach Tageswert-Abruf) 38 und seit
+`tst_dividendvolumechecker` (21.08.2026, Phase 3 der Ex-Tag-Behandlung bei
+Dividenden) 39 und seit `tst_documentsxml` (21.08.2026, Phase 5 — prüft die
+ausgelieferte Documents.xml gegen echte Belegauszüge) sind es 40. Anlass für den
 ursprünglichen Abgleich war der Vorfall vom 05.08.2026, bei dem
 `tst_sharecalculator` hier aufgeführt war, aber in keiner `CMakeLists.txt`
 stand und deshalb nie gebaut wurde und nie mitlief. Wer ein Testziel
@@ -386,9 +392,16 @@ nach demselben Muster wie `tst_documentsconfig` (`writeXml()`-Helper).
 | `test_classify_unknownBank_notMatched` | Kein BankIdentifier trifft | `matched = false` |
 | `test_classify_knownBank_unknownType_notMatched` | Bank erkannt, aber kein Dokumenttyp-Identifier trifft | `matched = false` — bewusst kein Fallback (anders als in den vier Presentern) |
 | `test_classify_emptyConfig_notMatched` | `DocumentsConfig` nie geladen | `matched = false`, kein Absturz |
+| `test_classify_emptySaleIdentifier_doesNotSwallowDividend` | Bank mit LEERER `SaleIdentifier`-Regel (Aufbau von Cortal Consors) | Die Gutschrift wird als `Dividend` erkannt — ein leeres Muster identifiziert nichts |
+| `test_detectDocumentType_emptyIdentifier_isSkipped` | dasselbe für den Presenter-Weg | Leere Kennung wird übersprungen, kein Fehltreffer |
+| `test_classify_unknownDocumentType_reportsBankMatched` / `test_classify_unknownBank_reportsBankNotMatched` / `test_classify_success_alsoSetsBankMatched` | `Result::bankMatched` | Aufrufer kann "Bank unbekannt" von "Belegtyp unbekannt" unterscheiden |
 | `test_extractWkn_found` / `test_extractIsin_found` | Regel mit Capture-Gruppe im Text vorhanden | Getrimmter Wert der ersten Capture-Gruppe |
 | `test_extractWkn_notPresentInDocType_returnsEmpty` | Dokumenttyp (hier: Sale) hat keine `Wkn`-Regel | Leerer String, kein Absturz |
 | `test_extractFieldValue_noMatch_returnsEmpty` | Regel vorhanden, aber Text enthält keinen Treffer | Leerer String |
+| `test_extractWkn_honoursFoundIndex` | Regel mit `FoundIndex="1"` (Aufbau der DKB: erstes Klammerpaar ist die Spaltenüberschrift) | Der ZWEITE Treffer zählt — der Bugfix vom 21.08.2026 |
+| `test_extractFieldValue_skipsEmptyCaptureGroups` | Ausdruck mit Alternativen, erste Gruppe bleibt leer | Erste NICHT-LEERE Fanggruppe, wie im `Parser` |
+| `test_extractWkn_foundIndexBeyondLastMatch_returnsEmpty` | Geforderter Trefferindex existiert im Text nicht | Leerer String — geraten wird nicht |
+| `test_extractFieldValue_emptyExpression_returnsEmpty` | Leeres Muster als Regel | Leerer String statt "trifft überall" |
 | `test_matchBankIndex_found` / `test_matchBankIndex_notFound_leavesIndexUnchanged` | Bank-Erkennung isoliert (ohne Typ-Erkennung) | Index gesetzt bzw. unverändert |
 | `test_detectDocumentType_matches_buyIdentifier` | Identifier-Treffer gewinnt gegen einen absichtlich "falschen" Fallback | Erkannter Typ, nicht der Fallback |
 | `test_detectDocumentType_noIdentifierMatch_returnsFallback` | Bank erkannt, kein Identifier trifft | Übergebener Fallback-Typ (spiegelt z. B. `PresenterSaleEdit`s Default auf `DocumentType::Sale`) |
@@ -2933,6 +2946,173 @@ Kern der Klasse: falscher Alarm bei unsicherer Datenlage wäre schädlicher
 als ein übersehener echter Widerspruch, weil er das Vertrauen in die
 Startmeldung untergräbt (dieselbe Vorsicht wie beim "Prüfen"-Knopf, siehe
 `tst_splitpricejumpdetector` oben).
+
+---
+
+### Documents.xml, ausgelieferte Datei (tests/config/tst_documentsxml.cpp)
+
+Executable: `tst_documentsxml`
+Geprüft wird: der INHALT von `app/config/Documents.xml` — also die
+ausgelieferten regulären Ausdrücke selbst, angewandt auf Auszüge echter
+Dividendengutschriften (Phase 5 der Ex-Tag-Behandlung, 21.08.2026).
+
+Abgrenzung zu `tst_documentsconfig`: dort geht es um den XML-PARSER
+(Fehlerfälle, fehlende Attribute, mehrere Banken) mit synthetischen
+Fixtures — hier um die Frage, ob die konfigurierten Ausdrücke auf einem
+echten Beleg das Richtige treffen. Bis Phase 5 war die ausgelieferte
+Konfiguration an keiner Stelle getestet: ein Tippfehler in einem Regex fiel
+erst auf, wenn ein Benutzer ein Dokument einlas.
+
+Die Belegtexte stammen aus anonymisierten Screenshots realer Abrechnungen
+(Nessie, 21.08.2026) und sind so formatiert, wie `pdftotext -layout` sie
+liefert — genau das verwendet `PdfTextExtractor`. Ausgeführt wird mit dem
+echten `ParserLib::Parser` (im Textmodus synchron, kein Ereignisschleifen-
+Umweg nötig), damit auch dessen Auswahlregel mitgeprüft ist: `FoundIndex`
+wählt den Treffer, daraus die erste nicht-leere Fanggruppe. Den Pfad zur
+echten Datei liefert die Compile-Definition `SPM_DOCUMENTS_XML`.
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_ing_eur_exDate` / `test_ing_usd_exDate` | Ex-Tag aus beiden ING-Belegen |
+| `test_dkb_usd_exDate` / `test_dkb_eur_exDate` | Ex-Tag aus beiden DKB-Belegen |
+| `test_exDate_isNotConfusedWithPayday` | Ex-Tag und Zahltag stehen direkt beieinander und dürfen nicht vertauscht werden |
+| `test_dkb_paydayIsZahlbarkeitstag` | DKB-Zahltag kommt aus "Zahlbarkeitstag", nicht aus Bestandsstichtag oder Ex-Tag |
+| `test_ing_usd_exchangeRate` / `test_dkb_usd_exchangeRate` | Devisenkurs beider Banken |
+| `test_eurDocuments_haveNoExchangeRate` | Euro-Beleg liefert KEINEN Kurs — sonst würde der Fremdwährungs-Modus fälschlich anspringen |
+| `test_exchangeRateDirection_matchesApplicationSemantics` | Kursrichtung: FC-Betrag GETEILT durch Kurs ergibt Euro, so wie `refreshDerivedValues()` rechnet |
+| `test_ing_currency` / `test_dkb_currency` | Währungskürzel USD bzw. EUR |
+| `test_ing_depotNumber` / `test_dkb_depotNumber` | Depotnummer aus dem Briefkopf |
+| `test_ing_volumeAndRate` / `test_dkb_volumeAndRate` | Stückzahl und Dividendensatz (Regressionsschutz, nicht neu in Phase 5) |
+| `test_ing_taxes` | Quellensteuer, Kapitalertragsteuer, Solidaritätszuschlag der ING |
+| `test_ing_usd_endToEndAmountMatchesDocument` | Aus den geparsten Werten entsteht der auf dem Beleg ausgewiesene Auszahlungsbetrag (51,53 EUR) |
+| `test_capture_dkb_extractWknIsTheNumberNotTheHeading` | DKB-WKN über `FoundIndex="1"`: geliefert wird die Kennnummer, nicht die Spaltenüberschrift `(WKN)` |
+| `test_capture_ing_extractWkn` | WKN und ISIN der ING über den Weg der Dokumentenerfassung |
+| `test_capture_extractWknMatchesParserResult_allBanks` | Beide Lesewege — `ParserLib::Parser` (Dialog) und `DocumentClassifier` (Drag&Drop) — holen aus derselben Regel denselben Wert, für jede hinterlegte Bank |
+| `test_capture_dkb_buyAndSaleUseTheSamePositionalRule` | Kauf und Verkauf der DKB teilen die positionsabhängige WKN-Regel — der Fehler betraf alle drei Belegarten |
+| `test_dkb_sale_date` / `test_dkb_sale_time` | "Schlusstag/-Zeit" liefert Datum und Uhrzeit getrennt an ihre Felder |
+| `test_dkb_sale_dateDoesNotDependOnNeighbouringColumn` | Die Regel hängt an ihrer eigenen Beschriftung, nicht am Wort "Auftraggeber" der Nachbarspalte |
+| `test_dkb_sale_dateComesFromSchlusstagNotFromLetterhead` | Nicht das Briefkopfdatum, sondern der Schlusstag |
+| `test_dkb_sale_oldRuleReturnedDateAndTimeTogether` | Hält fest, WORAN es im Feld lag: die alte Regel traf, lieferte aber beides in einem Stück |
+| `test_dkb_sale_orderNumberKeepsItsDot` | "267621/08.00" — der Punkt gehört zur Nummer |
+| `test_dkb_sale_volumeAndPrice` | Regressionsschutz für die übrigen Pflichtfelder dieses Belegtyps |
+| `test_dkb_sale_wkn` / `test_capture_dkb_sale_extractWkn` | Auch der Verkaufsbeleg trägt die WKN in Klammern neben der ISIN — beide Lesewege finden sie, die Direkte Dokumentenerfassung kann den Beleg also zuordnen |
+
+@note Mit `kDkbSale` liegt seit dem 22.08.2026 der erste VERKAUFSbeleg im
+Fixture-Bestand; bis dahin prüfte dieses Ziel ausschliesslich
+Dividendengutschriften. Dafür ist `parseDividend()` zu `parseDocument(bank,
+type, text)` verallgemeinert — `parseDividend()` bleibt als Kurzform.
+
+@note Seit dem 21.08.2026 wird `DocumentClassifier.cpp` mit übersetzt. Grund
+ist der Bugfix "Zwei Lesewege, zwei Auswahlregeln" (siehe ARCHITECTURE.md):
+die Direkte Dokumentenerfassung wertet dieselben Regeln über
+`DocumentClassifier::extractWkn()` aus statt über den `Parser`, und diese
+zweite Auswertung ignorierte `FoundIndex`. Ein DKB-Beleg, der im Dialog
+einwandfrei gelesen wurde, meldete deshalb per Drag&Drop "Keine passende
+Aktie im Portfolio gefunden". Der Gleichlauf beider Wege gehört genau hierher
+geprüft — an der Stelle, wo die ausgelieferte Konfiguration auf echte
+Belegtexte trifft.
+
+@note Die STEUER-Felder der DKB werden bewusst NICHT geprüft. Ihre Regeln
+arbeiten positionsbasiert (`FoundIndex` 2/4/5 auf `([0-9., ]{1,})-`), und wie
+viele solcher Treffer vor den Steuerzeilen liegen, hängt auch vom Briefkopf
+ab — der ist auf den Screenshots geschwärzt. Ein Fixture ohne diesen Bereich
+verschiebt die Indizes und würde ein Scheitern melden, das nichts über echte
+Belege aussagt. Genau deshalb suchen alle in Phase 5 ergänzten Regeln über
+die BESCHRIFTUNG statt über die Position.
+
+---
+
+### DocumentFieldValue (tests/utils/tst_documentfieldvalue.cpp)
+
+Executable: `tst_documentfieldvalue`
+Einheit unter Test: `app/utils/DocumentFieldValue.h` — die Umwandlung der
+ROHWERTE aus `Documents.xml` in Widget-taugliche Werte (22.08.2026, siehe
+ARCHITECTURE.md, "Rohwerte aus Belegen: eine Regel je Zieltyp").
+
+Header-only wie `ShareUpdateRules.h`: reine Funktionen, kein Zustand, kein
+Qt-Objekt. Im CMake-Ziel steht deshalb keine `.cpp` und nur `Qt6::Test`, und
+der Testlauf kommt mit `QTEST_APPLESS_MAIN` ohne `QApplication` aus.
+
+Anlass sind zwei Feldfälle desselben Tages:
+
+- Die Ordernummer "670835/66.00" wurde zu "670835/66,00" — die Views
+  behandelten jedes einzeilige Feld als Zahlenfeld.
+- Der DKB-Verkaufsbeleg beschriftet Datum und Uhrzeit gemeinsam; der ganze
+  Fang landete in `QDate::fromString(…, "d.M.yyyy")`, schlug fehl, und im
+  Formular blieb still das HEUTIGE Datum stehen.
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_toDate_plainGermanDate` / `test_toDate_singleDigitDayAndMonth` / `test_toDate_isoFormat` | Die drei gängigen Schreibweisen |
+| `test_toDate_combinedDateAndTime` / `test_toDate_surroundedByText` | Datum wird aus einem Fang geholt, in dem noch mehr steht |
+| `test_toDate_twoDigitYear_isRejected` | "27.02.20" wird NICHT geraten — ein falsches Jahrhundert verschöbe die ganze FIFO-Zuordnung |
+| `test_toDate_impossibleDate_isRejected` / `test_toDate_noDateAtAll_isInvalid` | Ungültiges `QDate` statt Notlösung |
+| `test_toTime_plain` / `test_toTime_withoutSeconds` / `test_toTime_combinedDateAndTime` | Gegenstück für die Uhrzeit; Sekunden optional |
+| `test_forTextField_keepsDotInOrderNumber` | Der gemeldete Fall: "670835/66.00" bleibt, wie die Bank es druckt |
+| `test_forTextField_keepsDotsInUrl` | Dieselbe Falle bei den URL-Feldern von "Aktie hinzufügen" |
+| `test_forTextField_collapsesWhitespaceFromPdftotext` | Zeilenumbrüche und Mehrfach-Leerzeichen kommen weg |
+| `test_forNumericField_dotBecomesComma` | Bei ZAHLENfeldern ist der Punkt sehr wohl der Dezimaltrenner |
+| `test_forNumericField_germanValueUnchanged` | Deutsche Schreibweise bleibt unangetastet |
+| `test_forNumericField_thousandsSeparatorIsRemoved` | "1.234,56" → "1234,56"; vorher wurde daraus 0,00 |
+
+---
+
+### DividendVolumeChecker (tests/utils/tst_dividendvolumechecker.cpp)
+
+Executable: `tst_dividendvolumechecker`
+Klasse unter Test: `DividendVolumeChecker` — zustandsloser, DB-freier
+Rechenkern hinter Phase 3 der Ex-Tag-Behandlung bei Dividenden (21.08.2026,
+siehe ARCHITECTURE.md, "Plausibilitätsprüfung der Dividenden-Stückzahl").
+Vergleicht die im Dividenden-Dialog eingetragene Stückzahl mit dem Bestand
+des gewählten Depots am Ex-Tag.
+
+Wie `tst_sharesplitadjuster` zustandslos und datenbankfrei — `BuyObject.cpp`
+und `SaleObject.cpp` werden nur wegen deren Konstruktoren gebraucht, weder
+`Qt6::Sql` noch die Database-Bibliothek.
+
+Zwei Regeln tragen die Klasse und stehen deshalb im Mittelpunkt der Tests:
+
+- **Stichtag `< exDate`, nicht `<= exDate`.** Der Ex-Tag ist der erste
+  Handelstag ohne Dividendenanspruch: ein Kauf AM Ex-Tag zählt nicht mehr,
+  ein Verkauf AM Ex-Tag zählt noch mit.
+- **Skalenumrechnung.** Käufe/Verkäufe liegen in der Beleg-Skala ihres
+  eigenen Datums vor; bei einem Split dazwischen wäre ein direktes
+  Aufsummieren genau um den Split-Faktor falsch (derselbe Fallstrick wie in
+  `SaleFifoAllocator`).
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_holdings_singleBuyBeforeExDate_counts` | Ein Kauf vor dem Ex-Tag zählt voll mit |
+| `test_holdings_buyAfterExDate_ignored` | Ein Kauf nach dem Ex-Tag bleibt unberücksichtigt |
+| `test_holdings_buyOnExDate_ignored` | Kauf AM Ex-Tag zählt nicht — Stichtagsregel |
+| `test_holdings_saleBeforeExDate_subtracted` | Verkauf vor dem Ex-Tag mindert den Bestand |
+| `test_holdings_saleOnExDate_notSubtracted` | Verkauf AM Ex-Tag mindert NICHT — Dividende steht dem Verkäufer noch zu |
+| `test_holdings_otherDepotBuy_ignored` | Käufe fremder Depots zählen nicht mit |
+| `test_holdings_otherDepotSale_ignored` | Verkäufe fremder Depots mindern nicht |
+| `test_holdings_depotComparisonIsTrimmed` | Depotnummern werden getrimmt verglichen |
+| `test_holdings_splitBetweenBuyAndExDate_scalesToExDate` | Kauf 100 + Split 2:1 → 200 am Ex-Tag |
+| `test_holdings_splitAfterExDate_doesNotAffectResult` | Ein Split NACH dem Ex-Tag ändert die damalige Stückzahl nicht |
+| `test_holdings_reverseSplitBetweenBuyAndExDate` | Reverse-Split 1:10 → aus 1000 werden 100 |
+| `test_holdings_buyBeforeAndAfterSplit_mixedScales` | Zwei Käufe in verschiedenen Skalen → 250 statt naiver 150 |
+| `test_holdings_saleBeforeSplit_scaledToo` | Auch Verkäufe werden skaliert (100→200, −20→−40 = 160) |
+| `test_holdings_counters_reportConsideredRows` | Die Zähler nennen nur die tatsächlich eingegangenen Zeilen |
+| `test_holdings_invalidExDate_returnsZero` | Ungültiger Ex-Tag → 0, keine Rechnung |
+| `test_check_noExDate_notCheckable` | Ohne Ex-Tag ist die Prüfung nicht möglich |
+| `test_check_noDepotNumber_notCheckable` | Ohne Depotnummer ist die Prüfung nicht möglich |
+| `test_check_noBuysAtAll_notCheckable` | Aktie ohne Kaufhistorie → Prüfung wird übersprungen statt zu blockieren |
+| `test_check_matchingVolume_matches` | Passende Stückzahl → Treffer, Abweichung 0 |
+| `test_check_tooManyShares_doesNotMatch` | Zu viel eingetragen → Abweichung positiv |
+| `test_check_tooFewShares_doesNotMatch` | Zu wenig eingetragen → Abweichung negativ |
+| `test_check_wrongDepotSelected_doesNotMatch` | Käufe im anderen Depot → Bestand 0, Abweichung gemeldet |
+| `test_check_withinTolerance_matches` | 33,3333 gegen 33,33333… → innerhalb `kVolumeTolerance` |
+| `test_check_justOutsideTolerance_doesNotMatch` | Knapp ausserhalb der Toleranz → Abweichung |
+| `test_check_splitBetweenBuyAndExDate_matchesSplitAdjustedVolume` | Praxisfall: Abrechnung nennt 200, Kauf war 100 vor 2:1-Split → Treffer |
+| `test_check_fullySoldBeforeExDate_expectsZero` | Vor dem Ex-Tag komplett verkauft → Bestand 0 |
+
+@note `test_check_noBuysAtAll_notCheckable` ist die bewusste Notbremse der
+Blockade: eine Aktie, deren Kaufhistorie nicht erfasst ist, bliebe sonst
+dauerhaft unspeicherbar. Siehe die zugehörige Anmerkung in ARCHITECTURE.md,
+"Phase 3 — Umsetzungsdetails".
 
 ---
 

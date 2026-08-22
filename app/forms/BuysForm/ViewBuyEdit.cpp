@@ -8,6 +8,7 @@
 #include "../../core/DocumentRootMigrator.h"
 #include "../../utils/ShareSplitAdjuster.h"
 #include "../../utils/ShareSplitHint.h"
+#include "../../utils/DocumentFieldValue.h"
 #include "../../config/DocumentsConfig.h"
 #include "../UiConstants.h"
 
@@ -641,8 +642,15 @@ void ViewBuyEdit::setFieldOk(const QString& field, const QString& value)
         // Only update the widget text when a real value is provided (from parser).
         // Live validation calls setFieldOk with an empty value — don't overwrite.
         if (!value.isEmpty()) {
-            QString norm = value; norm.replace(QLatin1Char('.'), QLatin1Char(','));
-            le->setText(norm.trimmed());
+            // Zahlenfelder tragen einen QDoubleValidator, Textfelder nicht —
+            // daran hängt, ob der Punkt umgedeutet werden darf. Vorher bekam
+            // JEDES einzeilige Feld die Dezimalpunkt-Umschreibung, und die
+            // Ordernummer "670835/66.00" wurde zu "670835/66,00"
+            // (Nessies Bugreport 22.08.2026).
+            const bool numeric =
+                qobject_cast<const QDoubleValidator*>(le->validator()) != nullptr;
+            le->setText(numeric ? DocumentFieldValue::forNumericField(value)
+                                : DocumentFieldValue::forTextField(value));
         }
     } else if (field == QStringLiteral("depotNumber")) {
         // Only update when a real value is provided (from parser).
@@ -670,14 +678,17 @@ void ViewBuyEdit::setFieldOk(const QString& field, const QString& value)
             cb->setCurrentIndex(cb->count() - 1);
         }
     } else if (auto* de = qobject_cast<QDateEdit*>(widget)) {
-        QDate d = QDate::fromString(value, QStringLiteral("d.M.yyyy"));
-        if (!d.isValid()) d = QDate::fromString(value, Qt::ISODate);
-        if (d.isValid()) de->setDate(d);
+        const QDate d = DocumentFieldValue::toDate(value);
+        if (d.isValid())
+            de->setDate(d);
+        else if (!value.isEmpty())
+            setFieldError(field);   // sonst bliebe still das heutige Datum stehen
     } else if (auto* te = qobject_cast<QTimeEdit*>(widget)) {
-        // Try "h:m:s" and "h:m" — same as ViewShareAdd
-        QTime t = QTime::fromString(value, QStringLiteral("h:m:s"));
-        if (!t.isValid()) t = QTime::fromString(value, QStringLiteral("h:m"));
-        if (t.isValid()) te->setTime(t);
+        const QTime t = DocumentFieldValue::toTime(value);
+        if (t.isValid())
+            te->setTime(t);
+        else if (!value.isEmpty())
+            setFieldError(field);
     }
 }
 

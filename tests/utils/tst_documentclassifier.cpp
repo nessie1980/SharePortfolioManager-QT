@@ -78,11 +78,197 @@ private:
             "</Documents>");
     }
 
+    /**
+     * @brief Wie validXml(), aber mit LEERER SaleIdentifier-Regel und ohne
+     *        Sale-Dokumentblock — der Aufbau von "Cortal Consors" in der
+     *        ausgelieferten Documents.xml.
+     *
+     * Nachbau des Feldfalls vom 21.08.2026 ("Consors-Dividenden werden
+     * überhaupt nicht gelesen"). Für diese Bank sind keine Verkaufsbelege
+     * konfiguriert; das Element bleibt leer stehen und der zugehörige
+     * Dokumentblock fehlt.
+     */
+    QString xmlWithEmptySaleIdentifier() const
+    {
+        return QStringLiteral(
+            "<?xml version=\"1.0\"?><Documents>"
+            "<Bank Name=\"TestBank\" BankIdentifierValue=\"123456\" Encoding=\"UTF-8\">"
+            "<BankIdentifier Name=\"BankIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" "
+                "RegexOptions=\"None\">Depotnummer\\s+(\\d+)</BankIdentifier>"
+            "<BuyIdentifier Name=\"BuyIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" "
+                "RegexOptions=\"None\">ORDERABRECHNUNG\\s+KAUF</BuyIdentifier>"
+            "<SaleIdentifier Name=\"SaleIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" "
+                "RegexOptions=\"None\"></SaleIdentifier>"
+            "<DividendIdentifier Name=\"DividendIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" "
+                "RegexOptions=\"None\">Dividendengutschrift</DividendIdentifier>"
+            "<BrokerageIdentifier Name=\"BrokerageIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" "
+                "RegexOptions=\"None\">Kosten</BrokerageIdentifier>"
+            "<Document Type=\"Dividend\" TypeIdentifierValue=\"Dividendengutschrift\" Encoding=\"UTF-8\">"
+            "<Date Name=\"Date\" FoundIndex=\"0\" ResultEmpty=\"false\" "
+                "RegexOptions=\"None\">Valuta\\s+(\\d{2}.\\d{2}.\\d{4})</Date>"
+            "</Document>"
+            "</Bank>"
+            "</Documents>");
+    }
+
+    /**
+     * @brief Nachbau der DKB-Regeln, die auf die POSITION des Treffers
+     *        setzen — `FoundIndex="1"` heisst "das zweite Klammerpaar".
+     *
+     * Feldfall vom 21.08.2026: ein DKB-Dividendenbeleg, der im Dialog
+     * einwandfrei gelesen wird, meldete per Drag&Drop "Keine passende Aktie
+     * im Portfolio gefunden". Ursache war, dass `extractFieldValue()` den
+     * `FoundIndex` ignorierte und immer den ersten Treffer nahm — das ist
+     * hier die Spaltenüberschrift `(WKN)`, nicht die WKN.
+     *
+     * Der Dividendenblock trägt zusätzlich eine Regel mit Alternativen
+     * (`Wkn2`), deren erste Fanggruppe im Testtext leer bleibt: die zweite
+     * Prüfung der Auswahlregel des `ParserLib::Parser`.
+     */
+    QString xmlWithPositionalWkn() const
+    {
+        return QStringLiteral(
+            "<?xml version=\"1.0\"?><Documents>"
+            "<Bank Name=\"TestBank\" BankIdentifierValue=\"123456\" Encoding=\"UTF-8\">"
+            "<BankIdentifier Name=\"BankIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" "
+                "RegexOptions=\"None\">Depotnummer\\s+(\\d+)</BankIdentifier>"
+            "<BuyIdentifier Name=\"BuyIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" "
+                "RegexOptions=\"None\">Wertpapier Abrechnung Kauf</BuyIdentifier>"
+            "<SaleIdentifier Name=\"SaleIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" "
+                "RegexOptions=\"None\">Wertpapier Abrechnung Verkauf</SaleIdentifier>"
+            "<DividendIdentifier Name=\"DividendIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" "
+                "RegexOptions=\"None\">Dividendengutschrift</DividendIdentifier>"
+            "<BrokerageIdentifier Name=\"BrokerageIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" "
+                "RegexOptions=\"None\">Kostenausweis</BrokerageIdentifier>"
+            "<Document Type=\"Dividend\" TypeIdentifierValue=\"Dividendengutschrift\" Encoding=\"UTF-8\">"
+            "<Wkn Name=\"Wkn\" FoundIndex=\"1\" ResultEmpty=\"true\" "
+                "RegexOptions=\"None\">[(]((?:[A-Za-z0-9]{1,}))[)]</Wkn>"
+            "<Wkn2 Name=\"Wkn2\" FoundIndex=\"0\" ResultEmpty=\"true\" "
+                "RegexOptions=\"None\">WKN-alt:\\s+([A-Z0-9]{6})|WKN:\\s+([A-Z0-9]{6})</Wkn2>"
+            "<Date Name=\"Date\" FoundIndex=\"0\" ResultEmpty=\"false\" "
+                "RegexOptions=\"None\">Datum:\\s+(\\d{2}.\\d{2}.\\d{4})</Date>"
+            "</Document>"
+            "</Bank>"
+            "</Documents>");
+    }
+
 private slots:
 
     void initTestCase()
     {
         QVERIFY(m_tempDir.isValid());
+    }
+
+    // ── Leere Kennungen (Bugfix 21.08.2026) ─────────────────────────────
+    // Ein leeres Regex-Muster ist gültig und trifft JEDEN Text (leerer
+    // Treffer an Position 0). Ohne Sonderbehandlung gewinnt eine leer
+    // gelassene Kennung gegen jede später geprüfte, tatsächlich passende —
+    // findMatchingType() geht Buy, Sale, Dividend, Brokerage der Reihe nach
+    // durch und nimmt den ersten Treffer.
+
+    void test_classify_emptySaleIdentifier_doesNotSwallowDividend()
+    {
+        // Der Feldfall: Consors-Dividendengutschrift. Vor dem Bugfix wurde
+        // sie von der leeren SaleIdentifier-Regel als "Sale" eingestuft;
+        // weil die Bank keinen Sale-Dokumentblock hat, brach die Erkennung
+        // danach ab und es wurde kein einziges Feld gelesen.
+        DocumentsConfig config;
+        QCOMPARE(config.load(writeXml(QStringLiteral("emptysale.xml"),
+                                      xmlWithEmptySaleIdentifier())),
+                 DocumentsConfig::LoadResult::Success);
+
+        const QString text = QStringLiteral(
+            "Depotnummer 123456\nDividendengutschrift\n"
+            "Dividende pro Stück 0,39843 EUR   Schlusstag 05.02.2019\n"
+            "Valuta 08.02.2019");
+
+        const auto result = DocumentClassifier::classify(text, config);
+        QVERIFY(result.matched);
+        QCOMPARE(result.type, DocumentType::Dividend);
+        QCOMPARE(result.docEntry.type, DocumentType::Dividend);
+    }
+
+    void test_detectDocumentType_emptyIdentifier_isSkipped()
+    {
+        DocumentsConfig config;
+        config.load(writeXml(QStringLiteral("emptysale2.xml"),
+                             xmlWithEmptySaleIdentifier()));
+
+        const QString text = QStringLiteral(
+            "Depotnummer 123456\nDividendengutschrift\nValuta 08.02.2019");
+
+        const auto banks = config.entries();
+        QCOMPARE(banks.size(), 1);
+        QCOMPARE(DocumentClassifier::detectDocumentType(text, banks.first(),
+                                                        DocumentType::Buy),
+                 DocumentType::Dividend);
+    }
+
+    // ── Result::bankMatched (21.08.2026) ────────────────────────────────
+    // Trennt die beiden Fehlerursachen: unbekannte Bank (Eintrag fehlt in
+    // Documents.xml) gegen unbekannten Dokumenttyp (Belegart wird nicht
+    // verarbeitet). MainWindow nennt sie in der Meldung getrennt.
+
+    void test_classify_unknownDocumentType_reportsBankMatched()
+    {
+        // Anlass: eine DKB-"Vorabpauschale Investmentfonds" (Nessie,
+        // 21.08.2026). Die Bank steht im Beleg, die Belegart kennt die
+        // Anwendung aber nicht.
+        DocumentsConfig config;
+        config.load(writeXml(QStringLiteral("bankonly.xml"), validXml()));
+
+        const QString text = QStringLiteral(
+            "Depotnummer 123456\nVorabpauschale Investmentfonds\n"
+            "Zahlbarkeitstag 02.01.2019\nEx-Tag 02.01.2019");
+
+        const auto result = DocumentClassifier::classify(text, config);
+        QVERIFY(!result.matched);
+        QVERIFY(result.bankMatched);
+        QCOMPARE(result.bank.name, QStringLiteral("TestBank"));
+    }
+
+    void test_classify_unknownBank_reportsBankNotMatched()
+    {
+        DocumentsConfig config;
+        config.load(writeXml(QStringLiteral("nobank.xml"), validXml()));
+
+        const QString text = QStringLiteral(
+            "Konto 999\nWertpapier Abrechnung Kauf\nDatum: 01.07.2026");
+
+        const auto result = DocumentClassifier::classify(text, config);
+        QVERIFY(!result.matched);
+        QVERIFY(!result.bankMatched);
+        QVERIFY(result.bank.name.isEmpty());
+    }
+
+    void test_classify_success_alsoSetsBankMatched()
+    {
+        DocumentsConfig config;
+        config.load(writeXml(QStringLiteral("bothok.xml"), validXml()));
+
+        const QString text = QStringLiteral(
+            "Depotnummer 123456\nWertpapier Abrechnung Kauf\nDatum: 01.07.2026");
+
+        const auto result = DocumentClassifier::classify(text, config);
+        QVERIFY(result.matched);
+        QVERIFY(result.bankMatched);
+    }
+
+    void test_detectDocumentType_noIdentifierMatches_usesFallback()
+    {
+        // Gegenprobe: Trifft KEINE Kennung, bleibt es beim Vorgabewert —
+        // die leere Sale-Regel darf auch hier nicht einspringen.
+        DocumentsConfig config;
+        config.load(writeXml(QStringLiteral("emptysale3.xml"),
+                             xmlWithEmptySaleIdentifier()));
+
+        const QString text = QStringLiteral(
+            "Depotnummer 123456\nIrgendein anderes Schreiben\n");
+
+        const auto banks = config.entries();
+        QCOMPARE(DocumentClassifier::detectDocumentType(text, banks.first(),
+                                                        DocumentType::Dividend),
+                 DocumentType::Dividend);
     }
 
     // ── classify() ──────────────────────────────────────────────────────
@@ -220,6 +406,114 @@ private slots:
         // Text has no "WKN: ..." at all.
         QVERIFY(DocumentClassifier::extractWkn(QStringLiteral("kein WKN hier"),
                                                result.docEntry).isEmpty());
+    }
+
+    /**
+     * @brief Bugfix 21.08.2026 — `FoundIndex` muss beachtet werden.
+     *
+     * Der Regelsatz der DKB wählt die WKN über die POSITION des Treffers
+     * (`FoundIndex="1"`, "das zweite Klammerpaar"). Bis zum Bugfix nahm
+     * `extractFieldValue()` immer den ersten Treffer und lieferte damit die
+     * Spaltenüberschrift "WKN" statt der Wertpapierkennnummer — worauf
+     * `resolveShareGuidForDocument()` keine Aktie fand und die Direkte
+     * Dokumentenerfassung mit "Keine passende Aktie im Portfolio gefunden"
+     * abbrach, obwohl derselbe Beleg im Dividenden-Dialog fehlerfrei lief.
+     */
+    void test_extractWkn_honoursFoundIndex()
+    {
+        DocumentsConfig config;
+        config.load(writeXml(QStringLiteral("posidx.xml"), xmlWithPositionalWkn()));
+
+        // Erstes Klammerpaar ist die Spaltenüberschrift, zweites die WKN —
+        // der Aufbau echter DKB-Belege.
+        const QString text = QStringLiteral(
+            "Depotnummer 123456\n"
+            "Dividendengutschrift\n"
+            "Nominale  Wertpapierbezeichnung   ISIN          (WKN)\n"
+            "Stück 40  MUSTER INC              US0001234567  (654321)\n"
+            "Datum: 02.07.2026");
+
+        const auto result = DocumentClassifier::classify(text, config);
+        QVERIFY(result.matched);
+        QCOMPARE(result.type, DocumentType::Dividend);
+
+        QCOMPARE(DocumentClassifier::extractWkn(text, result.docEntry),
+                 QStringLiteral("654321"));
+    }
+
+    /**
+     * @brief Aus dem gewählten Treffer zählt die erste NICHT-LEERE
+     *        Fanggruppe — wie in `ParserLib::Parser::doRegexParsing()`.
+     *
+     * Bei einem Ausdruck mit Alternativen (`a(x)|b(y)`) füllt jeder Treffer
+     * nur eine der beiden Gruppen. Die alte Fassung griff starr auf Gruppe 1
+     * zu und lieferte hier eine leere Zeichenkette.
+     */
+    void test_extractFieldValue_skipsEmptyCaptureGroups()
+    {
+        DocumentsConfig config;
+        config.load(writeXml(QStringLiteral("altgroups.xml"), xmlWithPositionalWkn()));
+
+        // Nur die ZWEITE Alternative trifft, Fanggruppe 1 bleibt leer.
+        const QString text = QStringLiteral(
+            "Depotnummer 123456\nDividendengutschrift\nWKN: BASF11\nDatum: 02.07.2026");
+
+        const auto result = DocumentClassifier::classify(text, config);
+        QVERIFY(result.matched);
+
+        QCOMPARE(DocumentClassifier::extractFieldValue(text, result.docEntry.regexList,
+                                                       QStringLiteral("Wkn2")),
+                 QStringLiteral("BASF11"));
+    }
+
+    /**
+     * @brief Verlangt die Regel einen Treffer, den es nicht gibt, bleibt das
+     *        Feld leer — geraten wird nicht.
+     *
+     * Wichtig für die Direkte Dokumentenerfassung: eine falsch geratene WKN
+     * fände entweder gar keine oder — schlimmer — die FALSCHE Aktie.
+     */
+    void test_extractWkn_foundIndexBeyondLastMatch_returnsEmpty()
+    {
+        DocumentsConfig config;
+        config.load(writeXml(QStringLiteral("posidx2.xml"), xmlWithPositionalWkn()));
+
+        // Nur EIN Klammerpaar — der geforderte Index 1 existiert nicht.
+        const QString text = QStringLiteral(
+            "Depotnummer 123456\nDividendengutschrift\n"
+            "Stück 40  MUSTER INC  US0001234567  (654321)\nDatum: 02.07.2026");
+
+        const auto result = DocumentClassifier::classify(text, config);
+        QVERIFY(result.matched);
+
+        QVERIFY(DocumentClassifier::extractWkn(text, result.docEntry).isEmpty());
+    }
+
+    /**
+     * @brief Eine leere Regel identifiziert nichts (vgl. `regexMatches()`).
+     *
+     * `QRegularExpression("")` trifft jeden Text an Position 0; ohne diese
+     * Prüfung käme statt "kein Wert" eine leere Zeichenkette zurück, die
+     * `resolveShareGuidForDocument()` als gefundene WKN weiterreichen würde.
+     */
+    void test_extractFieldValue_emptyExpression_returnsEmpty()
+    {
+        DocumentsConfig config;
+        config.load(writeXml(QStringLiteral("emptyrule.xml"), xmlWithEmptySaleIdentifier()));
+
+        const auto result = DocumentClassifier::classify(
+            QStringLiteral("Depotnummer 123456\nDividendengutschrift\nValuta 02.07.2026"),
+            config);
+        QVERIFY(result.matched);
+
+        ParserLib::RegExList rules = result.docEntry.regexList;
+        ParserLib::RegExElement empty;
+        empty.regexExpression = QString();
+        rules.insert(QStringLiteral("Wkn"), empty);
+
+        QVERIFY(DocumentClassifier::extractFieldValue(
+                    QStringLiteral("beliebiger Text"), rules,
+                    QStringLiteral("Wkn")).isEmpty());
     }
 
     // ── matchBankIndex() / detectDocumentType() ────────────────────────────

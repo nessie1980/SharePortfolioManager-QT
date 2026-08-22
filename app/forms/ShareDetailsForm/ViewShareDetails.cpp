@@ -639,11 +639,18 @@ void ViewShareDetails::populateDividenden(const QList<DividendObject>&   dividen
                 // Belegzeile: bleibt in BELEG-Skala. "Anteile am
                 // Auszahlungstag" ist die Stückzahl, auf die die Bank
                 // tatsächlich ausgeschüttet hat (Phase 3c, 11.08.2026).
-                const bool volAffected = ShareSplitHint::hasSplitAfter(splits, d.date());
+                //
+                // Massstab ist der EX-TAG, nicht der Zahltag (Phase 4 der
+                // Ex-Tag-Behandlung, 21.08.2026) — gleiche Begründung und
+                // gleiche Rückfallregel wie in ViewDividendEdit::
+                // populateOverview(). Beide Tabellen zeigen dieselbe
+                // Dividende und müssen sie deshalb gleich bewerten.
+                const QDate volRefDate = d.volumeReferenceDate();
+                const bool volAffected = ShareSplitHint::hasSplitAfter(splits, volRefDate);
                 auto* iVol = centeredItem(ShareSplitHint::withMarker(
                     fmtVolume(d.volume()), volAffected));
                 const QString volTooltip = ShareSplitHint::overviewRowTooltip(
-                    splits, d.date(), d.volume(), d.rate());
+                    splits, volRefDate, d.volume(), d.rate());
                 if (!volTooltip.isEmpty())
                     iVol->setToolTip(volTooltip);
                 data->setItem(i, 2, iVol);

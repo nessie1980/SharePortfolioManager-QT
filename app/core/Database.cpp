@@ -191,6 +191,15 @@ bool Database::createSchema()
         ))",
 
         // ── dividends ────────────────────────────────────────────────────
+        // ex_date/depot_number stehen bewusst als LETZTE Spalten hier, obwohl
+        // sie inhaltlich eher zu datetime gehören würden: ensureColumn()
+        // haengt eine nachgezogene Spalte per ALTER TABLE ADD COLUMN immer
+        // ans Ende an, das kann SQLite nicht anders. Stünden sie hier weiter
+        // vorn, hätte ein frisch angelegtes Portfolio eine andere
+        // Spaltenreihenfolge in `dividends` als ein migriertes — verwirrend
+        // bei jedem manuellen `PRAGMA table_info`/`SELECT *`, auch wenn der
+        // Code selbst (DividendRepository::fromQuery()) ausschliesslich über
+        // Spaltennamen zugreift und davon nicht betroffen ist.
         R"(
         CREATE TABLE IF NOT EXISTS dividends (
             guid                TEXT    PRIMARY KEY,
@@ -205,7 +214,9 @@ bool Database::createSchema()
             enable_fc           INTEGER DEFAULT 0,
             exchange_ratio      REAL    DEFAULT 1,
             currency            TEXT    DEFAULT 'EUR',
-            document            TEXT
+            document            TEXT,
+            ex_date             TEXT,
+            depot_number        TEXT
         ))",
 
         // ── daily_values ─────────────────────────────────────────────────
@@ -273,6 +284,19 @@ bool Database::migrateSchema()
     // Käufe, Verkäufe, Dividenden und Kosten auch. Portfolios, die zwischen
     // Phase 1 und Phase 3a geöffnet wurden, haben die Tabelle bereits ohne
     // diese Spalte angelegt.
+    //
+    // 21.08.2026 — dividends.ex_date / dividends.depot_number: Grundlage für
+    // die Plausibilitätsprüfung der Dividenden-Stückzahl, siehe
+    // ARCHITECTURE.md, "Plausibilitätsprüfung der Dividenden-Stückzahl".
+    // Beide Spalten bleiben auf DB-Ebene bewusst NULLable — ein bestehendes
+    // Portfolio hat für seine alten Dividenden keinen echten Wert dafür, und
+    // ein per ALTER TABLE untergeschobener Platzhalter wäre falsche Angabe
+    // statt fehlender Angabe. Die "Muss"-Eigenschaft, die Nessie für beide
+    // Felder festgelegt hat, sitzt stattdessen ausschliesslich in der
+    // Formularvalidierung (`PresenterDividendEdit::validateInput()`,
+    // Phase 2) — eine bereits vorhandene Dividende ohne die beiden Felder
+    // lässt sich weiterhin öffnen und ansehen, nur das erneute Speichern
+    // verlangt dann die Nachpflege.
     struct ColumnMigration {
         const char* table;
         const char* column;
@@ -280,7 +304,9 @@ bool Database::migrateSchema()
     };
 
     static const ColumnMigration migrations[] = {
-        { "share_splits", "document", "TEXT" },
+        { "share_splits", "document",     "TEXT" },
+        { "dividends",    "ex_date",      "TEXT" },
+        { "dividends",    "depot_number", "TEXT" },
     };
 
     for (const ColumnMigration& migration : migrations) {

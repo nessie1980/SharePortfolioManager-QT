@@ -133,6 +133,8 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/utils/ShareCalculator.cpp
     ../../app/utils/ShareSplitAdjuster.h
     ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/DividendVolumeChecker.h
+    ../../app/utils/DividendVolumeChecker.cpp
     ../../app/utils/ShareSplitHint.h
     ../../app/utils/ShareSplitHint.cpp
     ../../app/utils/SplitPriceJumpDetector.h
@@ -368,6 +370,8 @@ qt_add_executable(tst_shareeditform tst_shareeditform.cpp
     ../../app/repositories/ShareSplitRepository.cpp
     ../../app/utils/ShareSplitAdjuster.h
     ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/DividendVolumeChecker.h
+    ../../app/utils/DividendVolumeChecker.cpp
     ../../app/utils/ShareSplitHint.h
     ../../app/utils/ShareSplitHint.cpp
     ../../app/utils/SplitPriceJumpDetector.h

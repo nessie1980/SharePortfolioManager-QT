@@ -41,7 +41,23 @@ public:
     struct Result
     {
         bool          matched = false;             ///< true if both bank and document type were identified
-        BankEntry     bank;                         ///< Matched bank entry (copy — see class note)
+
+        /**
+         * @brief true, sobald die BANK erkannt wurde — auch dann, wenn der
+         *        Dokumenttyp anschliessend nicht zugeordnet werden konnte.
+         *
+         * Ergänzt 21.08.2026: Ohne diese Unterscheidung konnte der Aufrufer
+         * einem Benutzer nur mitteilen, dass "irgendetwas" nicht passte. Die
+         * beiden Fälle verlangen aber ganz verschiedene Reaktionen — bei einer
+         * unbekannten Bank fehlt ein Eintrag in `Documents.xml`, bei einem
+         * unbekannten Dokumenttyp handelt es sich schlicht um eine Belegart,
+         * die die Anwendung nicht verarbeitet (z. B. eine Vorabpauschale-
+         * Abrechnung für thesaurierende Fonds). `bank` ist in diesem Fall
+         * bereits gefüllt und kann in der Meldung genannt werden.
+         */
+        bool          bankMatched = false;
+
+        BankEntry     bank;                         ///< Gefüllt, sobald bankMatched true ist (Kopie — siehe Klassennotiz)
         DocumentEntry docEntry;                     ///< Matched document entry within that bank (copy)
         DocumentType  type = DocumentType::Buy;     ///< Only meaningful when matched == true
     };

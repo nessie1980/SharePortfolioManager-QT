@@ -357,6 +357,181 @@ private slots:
         Database::instance().close();
         QVERIFY(Database::instance().open(":memory:")); // Ausgangszustand wiederherstellen
     }
+
+    // ── Schema migration: dividends.ex_date / dividends.depot_number (21.08.2026) ──
+    //
+    // Grundlage für die Plausibilitätsprüfung der Dividenden-Stückzahl, siehe
+    // ARCHITECTURE.md. Gleiches Vorgehen wie bei share_splits.document oben.
+
+    void test_dividends_has_ex_date_and_depot_number_columns()
+    {
+        QSqlQuery q(QSqlDatabase::database("spm_main"));
+        QVERIFY(q.exec("PRAGMA table_info(dividends)"));
+
+        bool foundExDate = false, foundDepotNumber = false;
+        while (q.next()) {
+            const QString column = q.value(1).toString();
+            if (column == QStringLiteral("ex_date"))      foundExDate = true;
+            if (column == QStringLiteral("depot_number")) foundDepotNumber = true;
+        }
+        QVERIFY2(foundExDate,      "Spalte 'ex_date' fehlt in dividends");
+        QVERIFY2(foundDepotNumber, "Spalte 'depot_number' fehlt in dividends");
+    }
+
+    void test_migration_addsMissingDividendColumns()
+    {
+        // Der eigentliche Prüfgegenstand: eine Datenbank, die dividends noch
+        // ohne ex_date/depot_number führt — der Zustand eines Portfolios, das
+        // vor diesem Migrationsschritt zuletzt geöffnet wurde.
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString dbPath = tempDir.path() + QStringLiteral("/migration-dividends.db");
+
+        QVERIFY(Database::instance().open(dbPath));
+        {
+            QSqlQuery q(QSqlDatabase::database("spm_main"));
+            QVERIFY(q.exec("DROP TABLE IF EXISTS dividends"));
+            QVERIFY(q.exec("CREATE TABLE dividends ("
+                           "guid TEXT PRIMARY KEY, "
+                           "share_guid TEXT NOT NULL REFERENCES shares(guid) ON DELETE CASCADE, "
+                           "datetime TEXT NOT NULL, "
+                           "rate REAL NOT NULL CHECK(rate >= 0), "
+                           "volume REAL NOT NULL CHECK(volume > 0), "
+                           "tax_at_source REAL DEFAULT 0, "
+                           "capital_gains_tax REAL DEFAULT 0, "
+                           "solidarity_tax REAL DEFAULT 0, "
+                           "price_at_payday REAL DEFAULT 0, "
+                           "enable_fc INTEGER DEFAULT 0, "
+                           "exchange_ratio REAL DEFAULT 1, "
+                           "currency TEXT DEFAULT 'EUR', "
+                           "document TEXT)"));
+            QVERIFY(q.exec("INSERT INTO shares (guid, wkn, name) "
+                           "VALUES ('mig-div-share', 'MIGD01', 'Migration Dividend AG')"));
+            QVERIFY(q.exec("INSERT INTO dividends "
+                           "(guid, share_guid, datetime, rate, volume) "
+                           "VALUES ('mig-div', 'mig-div-share', '2024-05-15T00:00:00', 1.5, 100)"));
+        }
+        Database::instance().close();
+
+        // Erneutes Öffnen zieht die fehlenden Spalten nach.
+        QVERIFY(Database::instance().open(dbPath));
+
+        QSqlQuery q(QSqlDatabase::database("spm_main"));
+        QVERIFY(q.exec("PRAGMA table_info(dividends)"));
+        bool foundExDate = false, foundDepotNumber = false;
+        while (q.next()) {
+            const QString column = q.value(1).toString();
+            if (column == QStringLiteral("ex_date"))      foundExDate = true;
+            if (column == QStringLiteral("depot_number")) foundDepotNumber = true;
+        }
+        QVERIFY2(foundExDate,      "Spalte 'ex_date' wurde nicht nachgezogen");
+        QVERIFY2(foundDepotNumber, "Spalte 'depot_number' wurde nicht nachgezogen");
+
+        // Die bereits erfasste Dividende ist noch da, mit leerem ex_date/
+        // depot_number — die Migration darf keine Daten kosten.
+        QVERIFY(q.exec("SELECT rate, ex_date, depot_number FROM dividends WHERE guid = 'mig-div'"));
+        QVERIFY(q.next());
+        QCOMPARE(q.value(0).toDouble(), 1.5);
+        QVERIFY(!q.value(1).isValid() || q.value(1).toString().isEmpty());
+        QVERIFY(!q.value(2).isValid() || q.value(2).toString().isEmpty());
+
+        Database::instance().close();
+        QVERIFY(Database::instance().open(":memory:")); // Ausgangszustand wiederherstellen
+    }
+
+    void test_migration_dividendColumns_isIdempotent()
+    {
+        // Zweimaliges Öffnen nach der Migration darf die Spalten nicht
+        // erneut anlegen — ein zweites ALTER TABLE mit demselben Spaltennamen
+        // wäre ein SQL-Fehler und würde open() fehlschlagen lassen.
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString dbPath = tempDir.path() + QStringLiteral("/idempotent-dividends.db");
+
+        QVERIFY(Database::instance().open(dbPath));
+        {
+            QSqlQuery q(QSqlDatabase::database("spm_main"));
+            QVERIFY(q.exec("DROP TABLE IF EXISTS dividends"));
+            QVERIFY(q.exec("CREATE TABLE dividends ("
+                           "guid TEXT PRIMARY KEY, "
+                           "share_guid TEXT NOT NULL, "
+                           "datetime TEXT NOT NULL, "
+                           "rate REAL NOT NULL, "
+                           "volume REAL NOT NULL, "
+                           "document TEXT)"));
+        }
+        Database::instance().close();
+
+        QVERIFY(Database::instance().open(dbPath));   // migriert
+        Database::instance().close();
+        QVERIFY(Database::instance().open(dbPath));   // darf nicht erneut migrieren
+
+        QSqlQuery q(QSqlDatabase::database("spm_main"));
+        QVERIFY(q.exec("PRAGMA table_info(dividends)"));
+        int exDateColumns = 0, depotNumberColumns = 0;
+        while (q.next()) {
+            const QString column = q.value(1).toString();
+            if (column == QStringLiteral("ex_date"))      ++exDateColumns;
+            if (column == QStringLiteral("depot_number")) ++depotNumberColumns;
+        }
+        QCOMPARE(exDateColumns,      1);
+        QCOMPARE(depotNumberColumns, 1);
+
+        Database::instance().close();
+        QVERIFY(Database::instance().open(":memory:")); // Ausgangszustand wiederherstellen
+    }
+
+    void test_dividends_columnOrder_matchesBetweenFreshAndMigratedSchema()
+    {
+        // ensureColumn() haengt eine nachgezogene Spalte immer ans ENDE der
+        // Tabelle an (SQLite-Vorgabe, siehe Kommentar über der Tabelle in
+        // Database.cpp). Damit ein frisch angelegtes Portfolio und ein
+        // migriertes dieselbe Spaltenreihenfolge in `dividends` haben, muss
+        // die Reihenfolge in createSchema() das exakt vorwegnehmen — dieser
+        // Test belegt das, statt es nur als Kommentar zu behaupten.
+        QSqlQuery freshQuery(QSqlDatabase::database("spm_main")); // :memory:, frisch aus initTestCase()
+        QVERIFY(freshQuery.exec("PRAGMA table_info(dividends)"));
+        QStringList freshColumns;
+        while (freshQuery.next())
+            freshColumns << freshQuery.value(1).toString();
+
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString dbPath = tempDir.path() + QStringLiteral("/column-order.db");
+
+        QVERIFY(Database::instance().open(dbPath));
+        {
+            QSqlQuery q(QSqlDatabase::database("spm_main"));
+            QVERIFY(q.exec("DROP TABLE IF EXISTS dividends"));
+            QVERIFY(q.exec("CREATE TABLE dividends ("
+                           "guid TEXT PRIMARY KEY, "
+                           "share_guid TEXT NOT NULL, "
+                           "datetime TEXT NOT NULL, "
+                           "rate REAL NOT NULL, "
+                           "volume REAL NOT NULL, "
+                           "tax_at_source REAL DEFAULT 0, "
+                           "capital_gains_tax REAL DEFAULT 0, "
+                           "solidarity_tax REAL DEFAULT 0, "
+                           "price_at_payday REAL DEFAULT 0, "
+                           "enable_fc INTEGER DEFAULT 0, "
+                           "exchange_ratio REAL DEFAULT 1, "
+                           "currency TEXT DEFAULT 'EUR', "
+                           "document TEXT)"));
+        }
+        Database::instance().close();
+        QVERIFY(Database::instance().open(dbPath)); // migriert ex_date/depot_number nach
+
+        QSqlQuery migratedQuery(QSqlDatabase::database("spm_main"));
+        QVERIFY(migratedQuery.exec("PRAGMA table_info(dividends)"));
+        QStringList migratedColumns;
+        while (migratedQuery.next())
+            migratedColumns << migratedQuery.value(1).toString();
+
+        QCOMPARE(migratedColumns, freshColumns);
+
+        Database::instance().close();
+        QVERIFY(Database::instance().open(":memory:")); // Ausgangszustand wiederherstellen
+    }
 };
 
 QTEST_MAIN(TestDatabase)

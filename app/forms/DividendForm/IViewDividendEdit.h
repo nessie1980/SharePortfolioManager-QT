@@ -34,6 +34,26 @@ public:
     virtual QString currency()              const = 0;  ///< Währungskürzel (z.B. "USD")
     virtual QString documentPath()          const = 0;
 
+    /**
+     * @brief Ex-Tag als ISO-8601-Datumsstring (z.B. "2024-05-13").
+     *
+     * Pflichtfeld seit 21.08.2026 (siehe DividendObject.h, "Ex-Tag und
+     * Depotnummer"). Der Sentinel-Wert "2000-01-01" bedeutet "vom Benutzer
+     * noch nicht gesetzt" — genau wie bei date()/dateTime() gibt es bei
+     * QDateEdit kein echtes "leer", darum markiert hasMissingRequiredFields()
+     * diesen Sentinel als fehlende Pflichtangabe.
+     */
+    virtual QString exDate()                const = 0;
+
+    /**
+     * @brief Depotnummer, in die die Dividende ausgezahlt wurde.
+     *
+     * Pflichtfeld seit 21.08.2026, identisches Verhalten wie
+     * IViewBuyEdit::depotNumber() — leerer String, wenn keine Depotnummer
+     * ausgewählt ist.
+     */
+    virtual QString depotNumber()           const = 0;
+
     // ── Form population (Presenter → View) ───────────────────────────────
     virtual void loadDividend(const DividendObject& dividend) = 0;
     virtual void clearForm()                                   = 0;
@@ -48,6 +68,25 @@ public:
     // ── Foreign currency mode ─────────────────────────────────────────────
     /** Enable/disable the Fremdwährungs-Eingabe fields. */
     virtual void setForeignCurrencyEnabled(bool enabled) = 0;
+
+    /**
+     * @brief Setzt den Fremdwährungs-Modus samt Währungsauswahl.
+     *
+     * Phase 5 der Ex-Tag-Behandlung (21.08.2026). Anders als
+     * setForeignCurrencyEnabled(), das nur die Eingabefelder frei- oder
+     * sperrt, setzt diese Methode auch den Haken "Fremdwährungseingabe
+     * aktivieren" selbst und wählt die passende Währung aus.
+     *
+     * Nötig, weil ein aus dem Beleg gelesener Devisenkurs sonst wirkungslos
+     * bliebe: `PresenterDividendEdit::onSave()` übernimmt `exchangeRatio()`
+     * nur, wenn `enableForeignCurrency()` true ist. Vor Phase 5 wurde der
+     * Kurs zwar ins Feld geschrieben, aber beim Speichern verworfen.
+     *
+     * @param enabled  Fremdwährungs-Modus ein- oder ausschalten.
+     * @param isoCode  ISO-4217-Kürzel aus dem Beleg ("USD", "GBP", …).
+     *        Leer oder unbekannt lässt die Auswahl unverändert.
+     */
+    virtual void setForeignCurrency(bool enabled, const QString& isoCode) = 0;
 
     // ── Field status ──────────────────────────────────────────────────────
     /**
@@ -66,6 +105,30 @@ public:
      * @param field  Field key matching m_statusLabels.
      */
     virtual void setFieldError(const QString& field) = 0;
+
+    /**
+     * @brief Hängt einen Hinweis an ein Feld, OHNE dessen Wert zu setzen und
+     *        ohne es als ausgefüllt zu markieren.
+     *
+     * Ergänzt 21.08.2026 für Belege, die eine Pflichtangabe nicht selbst
+     * nennen, aber eine Angabe enthalten, aus der sie sich herleiten lässt.
+     * Konkreter Anlass: Cortal Consors nennt keinen Ex-Tag, wohl aber den
+     * "Schlusstag" (Dividenden-Stichtag), der laut Bank üblicherweise einen
+     * Tag davor liegt. Den Ex-Tag daraus zu berechnen wäre geraten — der
+     * nächste HANDELStag hängt von Wochenenden und Feiertagen ab, und ein um
+     * einen Tag falscher Ex-Tag ginge unmittelbar in die
+     * Stückzahl-Plausibilitätsprüfung ein. Der Benutzer bekommt die Zahl
+     * deshalb angezeigt und trägt sie selbst ein.
+     *
+     * Das Feld erhält das Info-Symbol (dasselbe wie in onParseFinished()) und
+     * @p tooltip als Erklärung. Es zählt weiterhin als fehlende Pflichtangabe
+     * — `hasMissingRequiredFields()` bleibt davon unberührt.
+     *
+     * @param field    Feldschlüssel wie in setFieldOk()/setFieldError().
+     * @param tooltip  Erklärender Text; leer entfernt den Hinweis nicht,
+     *                 sondern setzt lediglich das Info-Symbol.
+     */
+    virtual void setFieldHint(const QString& field, const QString& tooltip) = 0;
 
     // ── Document ──────────────────────────────────────────────────────────
     /**

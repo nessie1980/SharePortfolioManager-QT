@@ -78,6 +78,8 @@ public:
     double  exchangeRatio()         const override;
     QString currency()              const override;
     QString documentPath()          const override;
+    QString exDate()                const override;
+    QString depotNumber()           const override;
 
     // ── IViewDividendEdit write ───────────────────────────────────────────
     void loadDividend(const DividendObject& dividend)    override;
@@ -90,10 +92,12 @@ public:
     void setYield(double value)                   override;
 
     void setForeignCurrencyEnabled(bool enabled) override;
+    void setForeignCurrency(bool enabled, const QString& isoCode) override;
 
     void setFieldOk(const QString& field, const QString& value,
                     const QString& tooltip = QString()) override;
     void setFieldError(const QString& field)                    override;
+    void setFieldHint(const QString& field, const QString& tooltip) override;
     void setDocumentPath(const QString& path)                   override;
     void setDocumentPreview(const QString& text)                override;
 
@@ -140,6 +144,8 @@ private:
     QGroupBox*   m_dividenddatenGroup = nullptr;  ///< Titel wechselt je Edit-Modus
     QDateEdit*   m_date              = nullptr;
     QTimeEdit*   m_time              = nullptr;
+    QComboBox*   m_depotNumber       = nullptr;   ///< Depotnummer (Pflichtfeld seit 21.08.2026)
+    QDateEdit*   m_exDate            = nullptr;   ///< Ex-Tag (Pflichtfeld seit 21.08.2026)
     QCheckBox*   m_enableFc          = nullptr;   ///< Fremdwährung aktivieren
     QLineEdit*   m_exchangeRatio     = nullptr;   ///< Devisenkurs
     QComboBox*   m_currency          = nullptr;   ///< Währungsauswahl
