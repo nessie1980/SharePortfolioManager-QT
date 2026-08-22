@@ -3,26 +3,35 @@
 #include "SplitRatioChecker.h"
 #include "ShareSplitAdjuster.h"
 
+#include <QMap>
 #include <QtGlobal>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
 
-/// Restbestand eines Kaufs in dessen Beleg-Skala.
-double remainingBeleg(const BuyObject& buy)
+/// Depot-Schluessel: getrimmt verglichen wie in DividendVolumeChecker.
+QString depotKey(const QString& depotNumber)
 {
-    return buy.volume() - buy.volumeSold();
+    return depotNumber.trimmed();
 }
+
+/// Ein Verkauf im Bestandsverlauf, auf das Noetigste reduziert.
+struct SaleEvent
+{
+    QDate  date;
+    double volume = 0.0;
+};
 
 } // namespace
 
-// -- diagnose ---------------------------------------------------------------------
+// -- diagnose (Lot-Variante, eigentlicher Rechenkern) ------------------------------
 
 SplitRatioSuspicion SplitRatioChecker::diagnose(
     double                         requiredVolumeToday,
     const QDate&                   referenceDate,
-    const QList<BuyObject>&        availableBuys,
+    const QList<SplitVolumeLot>&   lots,
     const QList<ShareSplitObject>& splits)
 {
     SplitRatioSuspicion suspicion;
@@ -30,27 +39,27 @@ SplitRatioSuspicion SplitRatioChecker::diagnose(
     if (!referenceDate.isValid())
         return suspicion;
 
-    // Aeltester Kauf mit Restbestand. Ein Split VOR diesem Datum wirkt sich
-    // auf keinen der verfuegbaren Kaeufe aus (ShareSplitAdjuster::
-    // volumeFactor() zaehlt nur Splits ECHT NACH dem Belegdatum) und kann
-    // die Unterdeckung folglich nicht erklaeren.
-    QDate earliestBuy;
-    for (const BuyObject& buy : availableBuys) {
-        if (remainingBeleg(buy) <= kVolumeEpsilon || !buy.date().isValid())
+    // Aeltester Posten mit Menge. Ein Split VOR diesem Datum wirkt sich auf
+    // keinen der Posten aus (ShareSplitAdjuster::volumeFactor() zaehlt nur
+    // Splits ECHT NACH dem Belegdatum) und kann die Unterdeckung folglich
+    // nicht erklaeren.
+    QDate earliestLot;
+    for (const SplitVolumeLot& lot : lots) {
+        if (lot.volume <= kVolumeEpsilon || !lot.date.isValid())
             continue;
-        if (!earliestBuy.isValid() || buy.date() < earliestBuy)
-            earliestBuy = buy.date();
+        if (!earliestLot.isValid() || lot.date < earliestLot)
+            earliestLot = lot.date;
     }
-    if (!earliestBuy.isValid())
-        return suspicion;   // gar keine offenen Kaeufe — nichts zu deuten
+    if (!earliestLot.isValid())
+        return suspicion;   // gar keine Posten — nichts zu deuten
 
-    // Splits NACH dem Stichtag skalieren Kaeufe und angeforderte Menge
+    // Splits NACH dem Stichtag skalieren Posten und angeforderte Menge
     // gleichermassen auf heutige Skala; sie kuerzen sich im Vergleich heraus
     // und bleiben deshalb aussen vor.
     for (const ShareSplitObject& split : splits) {
         if (!split.isValid() || !split.date().isValid())
             continue;
-        if (split.date() > earliestBuy && split.date() <= referenceDate)
+        if (split.date() > earliestLot && split.date() <= referenceDate)
             suspicion.splitsBetween.append(split);
     }
     if (suspicion.splitsBetween.isEmpty())
@@ -81,25 +90,24 @@ SplitRatioSuspicion SplitRatioChecker::diagnose(
     if (suspect.ratioNew() < 1.0)
         return suspicion;
 
-    // Verfuegbare Menge (heutige Skala) aufgeteilt nach Kaeufen vor und ab
-    // dem Splittag. Nur der erste Teil traegt den fraglichen Faktor; ein Kauf
+    // Verfuegbare Menge (heutige Skala) aufgeteilt nach Posten vor und ab dem
+    // Splittag. Nur der erste Teil traegt den fraglichen Faktor; ein Posten
     // AM Splittag liegt bereits in der neuen Stueckelung vor (derselbe
     // Massstab wie ShareSplitAdjuster::volumeFactor()).
     double beforeSplit = 0.0;
     double fromSplitOn = 0.0;
-    for (const BuyObject& buy : availableBuys) {
-        const double remaining = remainingBeleg(buy);
-        if (remaining <= kVolumeEpsilon || !buy.date().isValid())
+    for (const SplitVolumeLot& lot : lots) {
+        if (lot.volume <= kVolumeEpsilon || !lot.date.isValid())
             continue;
 
-        const double today = ShareSplitAdjuster::adjustedVolume(remaining, splits, buy.date());
-        if (buy.date() < suspect.date())
+        const double today = ShareSplitAdjuster::adjustedVolume(lot.volume, splits, lot.date);
+        if (lot.date < suspect.date())
             beforeSplit += today;
         else
             fromSplitOn += today;
     }
     if (beforeSplit <= kVolumeEpsilon)
-        return suspicion;   // ohne Kauf vor dem Split ist nichts zurueckzurechnen
+        return suspicion;   // ohne Posten vor dem Split ist nichts zurueckzurechnen
 
     const double target = requiredVolumeToday - fromSplitOn;
     if (target <= kVolumeEpsilon)
@@ -121,4 +129,106 @@ SplitRatioSuspicion SplitRatioChecker::diagnose(
     suspicion.proposedAvailableToday = beforeSplit * (proposedNew / factor) + fromSplitOn;
 
     return suspicion;
+}
+
+// -- diagnose (Kauf-Ueberladung) ---------------------------------------------------
+
+SplitRatioSuspicion SplitRatioChecker::diagnose(
+    double                         requiredVolumeToday,
+    const QDate&                   referenceDate,
+    const QList<BuyObject>&        availableBuys,
+    const QList<ShareSplitObject>& splits)
+{
+    QList<SplitVolumeLot> lots;
+    lots.reserve(availableBuys.size());
+    for (const BuyObject& buy : availableBuys)
+        lots.append(SplitVolumeLot{ buy.date(), buy.volume() - buy.volumeSold() });
+
+    return diagnose(requiredVolumeToday, referenceDate, lots, splits);
+}
+
+// -- checkAgainstHistory -----------------------------------------------------------
+
+SplitHistoryConflict SplitRatioChecker::checkAgainstHistory(
+    const QList<ShareSplitObject>& splits,
+    const QDate&                   fromDate,
+    const QList<BuyObject>&        buys,
+    const QList<SaleObject>&       sales)
+{
+    SplitHistoryConflict result;
+
+    if (!fromDate.isValid())
+        return result;
+
+    // Je Depot ein eigener Verlauf. QMap statt QHash, damit die Reihenfolge
+    // der Depots feststeht und das Ergebnis bei gleichem Konfliktdatum
+    // reproduzierbar bleibt.
+    QMap<QString, QList<SplitVolumeLot>> buysByDepot;
+    QMap<QString, QList<SaleEvent>>      salesByDepot;
+
+    for (const BuyObject& buy : buys) {
+        if (!buy.date().isValid() || buy.volume() <= kVolumeEpsilon)
+            continue;
+        // Volle Kaufmenge, NICHT der Restbestand: die Verkaeufe fuehrt der
+        // Verlauf unten selbst, ueber volumeSold() waeren sie doppelt weg.
+        buysByDepot[depotKey(buy.depotNumber())].append(
+            SplitVolumeLot{ buy.date(), buy.volume() });
+    }
+    for (const SaleObject& sale : sales) {
+        if (!sale.date().isValid() || sale.volume() <= kVolumeEpsilon)
+            continue;
+        salesByDepot[depotKey(sale.depotNumber())].append(
+            SaleEvent{ sale.date(), sale.volume() });
+    }
+
+    for (auto it = salesByDepot.begin(); it != salesByDepot.end(); ++it) {
+        const QString&         depot     = it.key();
+        QList<SaleEvent>&      depotSales = it.value();
+        const QList<SplitVolumeLot> depotBuys = buysByDepot.value(depot);
+
+        std::sort(depotSales.begin(), depotSales.end(),
+                  [](const SaleEvent& a, const SaleEvent& b) { return a.date < b.date; });
+
+        double soldToday = 0.0;
+        for (const SaleEvent& sale : std::as_const(depotSales)) {
+            soldToday += ShareSplitAdjuster::adjustedVolume(sale.volume, splits, sale.date);
+
+            // Unterdeckungen vor dem Ex-Tag skalieren mit allen anderen
+            // Belegen gleich — das Verhaeltnis kann daran nichts aendern.
+            if (sale.date < fromDate)
+                continue;
+
+            // Ein Kauf AM Verkaufstag zaehlt noch mit, sonst meldete ein
+            // Kauf-und-Verkauf am selben Tag faelschlich eine Unterdeckung.
+            double boughtToday = 0.0;
+            for (const SplitVolumeLot& lot : depotBuys) {
+                if (lot.date <= sale.date)
+                    boughtToday += ShareSplitAdjuster::adjustedVolume(lot.volume, splits, lot.date);
+            }
+
+            if (soldToday <= boughtToday + kVolumeEpsilon)
+                continue;
+
+            // Frueheste Fundstelle gewinnt; bei gleichem Datum das
+            // alphabetisch erste Depot (QMap-Reihenfolge).
+            if (result.hasConflict && result.conflictDate <= sale.date)
+                break;
+
+            QList<SplitVolumeLot> lotsUntilSale;
+            for (const SplitVolumeLot& lot : depotBuys) {
+                if (lot.date <= sale.date)
+                    lotsUntilSale.append(lot);
+            }
+
+            result.hasConflict    = true;
+            result.depotNumber    = depot;
+            result.conflictDate   = sale.date;
+            result.requiredToday  = soldToday;
+            result.availableToday = boughtToday;
+            result.suspicion      = diagnose(soldToday, sale.date, lotsUntilSale, splits);
+            break;   // je Depot nur die erste Fundstelle
+        }
+    }
+
+    return result;
 }

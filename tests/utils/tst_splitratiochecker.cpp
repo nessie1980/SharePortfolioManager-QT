@@ -8,6 +8,9 @@
 // datenbankfrei, gleiches Muster wie tst_sharesplitadjuster,
 // tst_salefifoallocator und tst_dividendvolumechecker.
 //
+// Ergänzt 22.08.2026 um checkAgainstHistory() (Punkt 2 — Prüfung beim
+// Speichern und Löschen eines Splits).
+//
 // Der Bezugsfall ist durchgängig der Alphabet-Feldfall: 10 Stück gekauft,
 // Split am 18.07.2022 mit dem Bank-Zuteilungsverhältnis "1:19" fälschlich als
 // 19:1 erfasst, Verkaufsbeleg über 200 Stück. Richtig wäre 20:1 gewesen.
@@ -16,6 +19,7 @@
 #include <QUuid>
 
 #include "../../app/models/BuyObject.h"
+#include "../../app/models/SaleObject.h"
 #include "../../app/models/ShareSplitObject.h"
 #include "../../app/utils/SplitRatioChecker.h"
 
@@ -25,12 +29,23 @@ QDate d(int y, int m, int day) { return QDate(y, m, day); }
 
 /// Kauf mit Restbestand; das Datum geht als ISO-8601-Zeitstempel hinein.
 BuyObject makeBuy(const QString& guid, const QDate& date,
-                  double volume, double volumeSold = 0.0, double price = 100.0)
+                  double volume, double volumeSold = 0.0, double price = 100.0,
+                  const QString& depot = QStringLiteral("depot1"))
 {
-    return BuyObject(guid, QStringLiteral("share-1"), QStringLiteral("depot1"),
+    return BuyObject(guid, QStringLiteral("share-1"), depot,
                      QString(),
                      QDateTime(date, QTime(10, 0)).toString(Qt::ISODate),
                      volume, volumeSold, price);
+}
+
+/// Verkauf für checkAgainstHistory(); Preis und Steuern spielen keine Rolle.
+SaleObject makeSale(const QDate& date, double volume,
+                    const QString& depot = QStringLiteral("depot1"))
+{
+    return SaleObject(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                      QStringLiteral("share-1"), depot, QString(),
+                      QDateTime(date, QTime(10, 0)).toString(Qt::ISODate),
+                      volume, 50.0, {});
 }
 
 ShareSplitObject makeSplit(const QDate& date, double ratioNew, double ratioOld)
@@ -306,6 +321,207 @@ private slots:
 
         QVERIFY(!s.hasSuspicion);
         QVERIFY(!s.hasProposal);
+    }
+
+    // ── checkAgainstHistory (Punkt 2, 22.08.2026) ─────────────────────────
+    //
+    // Der Split-Dialog kennt keinen einzelnen Verkauf, sondern nur die
+    // gesamte Historie. checkAgainstHistory() sucht die Unterdeckung deshalb
+    // selbst — je Depot ein Bestandsverlauf — und ruft an der Fundstelle
+    // diagnose(). Ein zweiter Rechenweg entsteht dadurch nicht.
+
+    void test_checkAgainstHistory_fieldCase_findsConflictAndProposesRatio()
+    {
+        const QList<BuyObject>        buys   = { makeBuy("b1", d(2021, 3, 18), 10.0) };
+        const QList<SaleObject>       sales  = { makeSale(d(2022, 12, 5), 200.0) };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 19.0, 1.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory(splits, d(2022, 7, 18), buys, sales);
+
+        QVERIFY(c.hasConflict);
+        QCOMPARE(c.conflictDate, d(2022, 12, 5));
+        QVERIFY(qAbs(c.requiredToday  - 200.0) < 1e-6);
+        QVERIFY(qAbs(c.availableToday - 190.0) < 1e-6);
+        QVERIFY(c.suspicion.hasProposal);
+        QCOMPARE(c.suspicion.proposedRatioNew, 20.0);
+    }
+
+    void test_checkAgainstHistory_correctRatio_noConflict()
+    {
+        const QList<BuyObject>        buys   = { makeBuy("b1", d(2021, 3, 18), 10.0) };
+        const QList<SaleObject>       sales  = { makeSale(d(2022, 12, 5), 200.0) };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 20.0, 1.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory(splits, d(2022, 7, 18), buys, sales);
+
+        QVERIFY(!c.hasConflict);
+    }
+
+    void test_checkAgainstHistory_usesFullBuyVolume_notRemainder()
+    {
+        // Der Kauf trägt volume(), NICHT volume() - volumeSold(): die
+        // Verkäufe führt der Verlauf selbst. Über volumeSold() wären sie
+        // doppelt abgezogen und jede korrekte Historie meldete Widerspruch.
+        const QList<BuyObject>  buys  = { makeBuy("b1", d(2021, 3, 18), 10.0, 10.0) };
+        const QList<SaleObject> sales = { makeSale(d(2022, 12, 5), 200.0) };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 20.0, 1.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory(splits, d(2022, 7, 18), buys, sales);
+
+        QVERIFY2(!c.hasConflict, "vollständig verkaufter Kauf muss trotzdem voll zählen");
+    }
+
+    void test_checkAgainstHistory_saleBeforeExDate_ignored()
+    {
+        // Vor dem Ex-Tag skalieren alle Belege gleich — das Verhältnis kann
+        // an einer dortigen Unterdeckung nichts ändern.
+        const QList<BuyObject>        buys   = { makeBuy("b1", d(2021, 3, 18), 10.0) };
+        const QList<SaleObject>       sales  = { makeSale(d(2022, 1, 5), 50.0) };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 19.0, 1.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory(splits, d(2022, 7, 18), buys, sales);
+
+        QVERIFY(!c.hasConflict);
+    }
+
+    void test_checkAgainstHistory_buyAndSaleOnSameDay_isCovered()
+    {
+        const QList<BuyObject>        buys   = { makeBuy("b1", d(2023, 1, 10), 100.0) };
+        const QList<SaleObject>       sales  = { makeSale(d(2023, 1, 10), 100.0) };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 19.0, 1.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory(splits, d(2022, 7, 18), buys, sales);
+
+        QVERIFY(!c.hasConflict);
+    }
+
+    void test_checkAgainstHistory_secondSaleTipsItOver()
+    {
+        // Der erste Verkauf ist noch gedeckt, der zweite nicht mehr —
+        // gemeldet wird die Stelle, an der es kippt.
+        const QList<BuyObject>  buys = { makeBuy("b1", d(2021, 3, 18), 10.0) };
+        const QList<SaleObject> sales = {
+            makeSale(d(2022, 12, 5), 100.0),
+            makeSale(d(2023,  1, 5), 100.0),
+        };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 19.0, 1.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory(splits, d(2022, 7, 18), buys, sales);
+
+        QVERIFY(c.hasConflict);
+        QCOMPARE(c.conflictDate, d(2023, 1, 5));
+        QVERIFY(c.suspicion.hasProposal);
+    }
+
+    void test_checkAgainstHistory_otherDepotSale_isNotOffsetByForeignBuy()
+    {
+        const QList<BuyObject>  buys  = { makeBuy("b1", d(2021, 3, 18), 10.0, 0.0, 100.0, "depot1") };
+        const QList<SaleObject> sales = { makeSale(d(2022, 12, 5), 200.0, "depot2") };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 20.0, 1.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory(splits, d(2022, 7, 18), buys, sales);
+
+        QVERIFY(c.hasConflict);
+        QCOMPARE(c.depotNumber, QStringLiteral("depot2"));
+        QVERIFY(qAbs(c.availableToday) < 1e-9);
+    }
+
+    void test_checkAgainstHistory_depotNumbersAreTrimmed()
+    {
+        const QList<BuyObject>  buys  = { makeBuy("b1", d(2021, 3, 18), 10.0, 0.0, 100.0, "  depot1  ") };
+        const QList<SaleObject> sales = { makeSale(d(2022, 12, 5), 200.0, "depot1") };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 20.0, 1.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory(splits, d(2022, 7, 18), buys, sales);
+
+        QVERIFY2(!c.hasConflict, "getrimmt sind es dieselben Depots");
+    }
+
+    void test_checkAgainstHistory_earliestConflictWinsAcrossDepots()
+    {
+        const QList<BuyObject> buys = {
+            makeBuy("a", d(2021, 3, 18), 10.0, 0.0, 100.0, "A"),
+            makeBuy("b", d(2021, 3, 18), 10.0, 0.0, 100.0, "B"),
+        };
+        const QList<SaleObject> sales = {
+            makeSale(d(2023,  5, 5), 200.0, "A"),
+            makeSale(d(2022, 12, 5), 200.0, "B"),
+        };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 19.0, 1.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory(splits, d(2022, 7, 18), buys, sales);
+
+        QCOMPARE(c.depotNumber,  QStringLiteral("B"));
+        QCOMPARE(c.conflictDate, d(2022, 12, 5));
+    }
+
+    void test_checkAgainstHistory_sameDate_firstDepotAlphabetically()
+    {
+        // Reproduzierbarkeit: bei gleichem Konfliktdatum entscheidet die
+        // Depotnummer, nicht die Reihenfolge in der Eingabeliste.
+        const QList<BuyObject> buys = {
+            makeBuy("a", d(2021, 3, 18), 10.0, 0.0, 100.0, "A"),
+            makeBuy("b", d(2021, 3, 18), 10.0, 0.0, 100.0, "B"),
+        };
+        const QList<SaleObject> sales = {
+            makeSale(d(2022, 12, 5), 200.0, "B"),
+            makeSale(d(2022, 12, 5), 200.0, "A"),
+        };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 19.0, 1.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory(splits, d(2022, 7, 18), buys, sales);
+
+        QCOMPARE(c.depotNumber, QStringLiteral("A"));
+    }
+
+    void test_checkAgainstHistory_removedSplit_reportsConflictWithoutProposal()
+    {
+        // Löschfall: ohne Split fällt der Kauf auf seine Beleg-Stückzahl
+        // zurück. Der Widerspruch wird gemeldet, ein Verhältnis-Vorschlag
+        // entsteht nicht — es liegt gar kein Split mehr dazwischen.
+        const QList<BuyObject>  buys  = { makeBuy("b1", d(2021, 3, 18), 10.0) };
+        const QList<SaleObject> sales = { makeSale(d(2022, 12, 5), 200.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory({}, d(2022, 7, 18), buys, sales);
+
+        QVERIFY(c.hasConflict);
+        QVERIFY(qAbs(c.availableToday - 10.0) < 1e-6);
+        QVERIFY(!c.suspicion.hasProposal);
+    }
+
+    void test_checkAgainstHistory_unattributableShortfall_hasNoProposal()
+    {
+        // Verhältnis 20:1 stimmt, verkauft sind 777 — etwa weil die
+        // Kaufhistorie unvollständig ist. Gemeldet ja, gedeutet nein.
+        const QList<BuyObject>        buys   = { makeBuy("b1", d(2021, 3, 18), 10.0) };
+        const QList<SaleObject>       sales  = { makeSale(d(2022, 12, 5), 777.0) };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 20.0, 1.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory(splits, d(2022, 7, 18), buys, sales);
+
+        QVERIFY(c.hasConflict);
+        QVERIFY(!c.suspicion.hasProposal);
+    }
+
+    void test_checkAgainstHistory_noSales_noConflict()
+    {
+        // Der normale Ablauf: Kauf, dann Split, Verkauf kommt erst später.
+        const QList<BuyObject>        buys   = { makeBuy("b1", d(2021, 3, 18), 10.0) };
+        const QList<ShareSplitObject> splits = { makeSplit(d(2022, 7, 18), 19.0, 1.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory(splits, d(2022, 7, 18), buys, {});
+
+        QVERIFY(!c.hasConflict);
+    }
+
+    void test_checkAgainstHistory_invalidFromDate_noConflict()
+    {
+        const QList<BuyObject>  buys  = { makeBuy("b1", d(2021, 3, 18), 10.0) };
+        const QList<SaleObject> sales = { makeSale(d(2022, 12, 5), 200.0) };
+
+        const auto c = SplitRatioChecker::checkAgainstHistory({}, QDate(), buys, sales);
+
+        QVERIFY(!c.hasConflict);
     }
 };
 

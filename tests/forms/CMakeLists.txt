@@ -791,6 +791,11 @@ qt_add_executable(tst_sharesplitsform tst_sharesplitsform.cpp
     ../../app/utils/ShareSplitAdjuster.cpp
     ../../app/utils/SplitPriceJumpDetector.h
     ../../app/utils/SplitPriceJumpDetector.cpp
+    # Historienprüfung beim Speichern und Löschen eines Splits (Punkt 2 der
+    # Split-Plausibilitätsprüfung, 22.08.2026) — von PresenterShareSplitEdit
+    # aufgerufen. SaleObject/SaleRepository standen bereits in der Liste.
+    ../../app/utils/SplitRatioChecker.h
+    ../../app/utils/SplitRatioChecker.cpp
     ${FORM_TEST_RESOURCES}
 )
 

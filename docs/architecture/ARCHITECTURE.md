@@ -4219,17 +4219,76 @@ Anwendung erwartete Umrechnungsverhaeltnis. Bitte das Verhaeltnis im Dialog
 "Aktiensplits" gegen die Bankmitteilung pruefen.
 @endcode
 
-### Was diese Stufe nicht leistet
+### Punkt 2 — dieselbe Pruefung im Split-Dialog (22.08.2026)
 
-Ein ZU GROSSES Verhaeltnis faellt hier nicht auf. Wer 21 statt 20 eintraegt,
-hat mehr Bestand als noetig, es entsteht keine Unterdeckung und damit kein
-Anlass zu pruefen. Dafuer ist Punkt 3 der Arbeitsliste zustaendig (Gegenprobe
-aus der Kurshistorie) — die einzige Pruefung, die auch ohne Unterdeckung
-greift.
+Punkt 1 greift im chronologischen Ablauf (Kauf, Split, Verkauf). Wird der
+Split dagegen NACHTRAEGLICH erfasst — so entstand der Feldfall Alphabet —,
+liegt die Gegenprobe bereits beim Speichern des Splits vor. Genau dort setzt
+Punkt 2 an.
+
+**Warum eine zweite Einstiegsmethode, aber kein zweiter Rechenweg.** Der
+Split-Dialog kennt keine einzelne Verkaufsmenge, sondern nur die gesamte
+Historie. `checkAgainstHistory()` fuehrt deshalb je Depot einen
+Bestandsverlauf und sucht den ersten Verkauf, der nicht mehr gedeckt ist —
+und ruft an dieser Fundstelle `diagnose()`. Die Rueckrechnung und die
+Vorschlagsregel bleiben also unveraendert die von Punkt 1.
+
+**Warum der Rechenkern auf `SplitVolumeLot` umgestellt wurde.** Punkt 1
+reicht Restbestaende herein (`volume() - volumeSold()`), Punkt 2 volle
+Kaufmengen — dort fuehrt der Verlauf die Verkaeufe selbst, ueber
+`volumeSold()` waeren sie doppelt abgezogen und jede korrekte Historie
+meldete Widerspruch. Wuerde `diagnose()` weiterhin `BuyObject` verlangen,
+muesste einer der beiden Aufrufer synthetische Objekte bauen. Die
+`BuyObject`-Signatur bleibt als duenne Ueberladung erhalten, Punkt 1 und
+seine Tests aendern sich nicht.
+
+**Warum der Vergleich "mit und ohne Split" hier nicht taugt.** In
+`onRemove()` bewaehrt sich das Muster, den Bestand mit und ohne den Split
+gegenueberzustellen. Als Ausloeser fuer diese Pruefung funktioniert es
+nicht: im Feldfall ist der Bestand ohne Split minus 190, mit dem falschen
+19:1 immer noch minus 10 — der Split macht es besser, nicht schlechter. Dass
+die Daten OHNE Split nicht aufgehen, ist ja der Normalfall, wenn ein Split
+stattgefunden hat und noch nicht erfasst ist.
+
+**Rueckfrage, keine Blockade** (Nessies Entscheidung 22.08.2026). Damit
+entfaellt auch die Notbremse, die eine Blockade gebraucht haette: eine
+unvollstaendig erfasste Kaufhistorie — etwa nach einem Depotuebertrag von
+einer anderen Bank — erzeugt denselben rechnerischen Widerspruch, ohne dass
+am Split etwas falsch waere. Sie duerfte niemanden dauerhaft daran hindern,
+ueberhaupt einen Split zu erfassen. Der Text unterscheidet die beiden Faelle:
+laesst sich der Widerspruch dem Split zuordnen (Vorschlagsregel greift),
+nennt er das richtige Verhaeltnis; sonst weist er auf die moegliche
+Datenluecke hin.
+
+**Beim Loeschen ebenfalls** (Nessies Entscheidung 22.08.2026). Ohne den Split
+fallen alle Belege vor seinem Ex-Tag auf ihre Beleg-Stueckzahl zurueck, was
+die Verkaufshistorie unschluessig machen kann. Der Hinweis haengt an der
+bestehenden Loeschabfrage, die die Bestandsaenderung ohnehin beziffert. Der
+Verhaeltnis-Vorschlag bleibt dort bewusst ungenutzt: der fragliche Split ist
+gar nicht mehr in der Liste, ein Vorschlag zu einem ANDEREN Split waere im
+Loeschdialog nur verwirrend.
+
+**Je Depot** (Nessies Entscheidung 22.08.2026). Depotnummern werden getrimmt
+verglichen, wie in `DividendVolumeChecker`; Belege ohne Depotnummer bilden
+eine eigene Gruppe. Gemeldet wird die frueheste Fundstelle ueber alle Depots,
+bei gleichem Datum das alphabetisch erste — damit das Ergebnis reproduzierbar
+ist und nicht von der Reihenfolge der Datenbankzeilen abhaengt.
+
+`IModelShareSplitEdit` bekam dafuer `loadBuys()` und `loadSales()`.
+`openLots()` reichte nicht: es liefert nur Restbestaende und traegt keine
+Depotnummer.
+
+### Was diese beiden Stufen nicht leisten
+
+Ein ZU GROSSES Verhaeltnis faellt nicht auf. Wer 21 statt 20 eintraegt, hat
+mehr Bestand als noetig, es entsteht keine Unterdeckung und damit kein Anlass
+zu pruefen. Dafuer ist Punkt 3 der Arbeitsliste zustaendig (Gegenprobe aus
+der Kurshistorie) — die einzige Pruefung, die auch ohne Unterdeckung greift.
 
 Tests: `tst_splitratiochecker.cpp` (Feldfall, Rueckrechnung, alle vier
-Bedingungen der Vorschlagsregel einzeln, Tippfehler-Abwehr) sowie vier
-Presenter-Tests in `tst_salesform.cpp`.
+Bedingungen der Vorschlagsregel einzeln, Tippfehler-Abwehr, Bestandsverlauf
+je Depot) sowie vier Presenter-Tests in `tst_salesform.cpp` und elf in
+`tst_sharesplitsform.cpp`.
 
 ---
 
@@ -5266,7 +5325,7 @@ Sessions.
 | Nr. | Punkt | Pruefzeitpunkt | Stand |
 | --- | --- | --- | --- |
 | 1 | Rechenkern `SplitRatioChecker` + Diagnose in der Verkaufs-Mengenpruefung | beim Speichern eines Verkaufs | umgesetzt 22.08.2026 |
-| 2 | Derselbe Kern beim Speichern eines Splits | beim Speichern eines Splits | offen |
+| 2 | Derselbe Kern beim Speichern und Loeschen eines Splits | im Split-Dialog | umgesetzt 22.08.2026 |
 | 3 | Verhaeltnis-Gegenprobe aus der Kurshistorie | "Pruefen"-Knopf im Split-Dialog | offen |
 | 4 | Nachpruefung im Hintergrund | Programmstart / nach Tageswert-Abruf | offen |
 | 5 | Warnung bei Ex-Tag heute oder in der Zukunft | beim Speichern eines Splits | offen |
@@ -5274,12 +5333,9 @@ Sessions.
 Zu den einzelnen Punkten:
 
 **2** greift, wenn nach dem Ex-Tag bereits Verkaeufe erfasst sind — also bei
-nachtraeglicher Erfassung. Im chronologischen Ablauf meldet er nichts. Teilt
-sich den Rechenkern mit Punkt 1; die Eingabe ist dort allerdings die
-vollstaendige Kauf- und Verkaufshistorie statt einer einzelnen Verkaufsmenge,
-noetig ist also eine zweite Einstiegsmethode, kein zweiter Kern. Nessies
-Vorgaben dazu bereits getroffen (22.08.2026): Blockade statt Rueckfrage,
-Bestandsfuehrung je Depot.
+nachtraeglicher Erfassung. Im chronologischen Ablauf meldet er nichts.
+Umgesetzt am 22.08.2026, siehe "Plausibilitaetspruefung des
+Split-Verhaeltnisses" weiter oben, Abschnitt "Punkt 2".
 
 **3** nutzt `SplitPriceJumpDetector::detect()`, das den Kurssprung um den
 Ex-Tag ohnehin misst (`observedRatio`, im Feldfall 1003,00 auf 50,20, also

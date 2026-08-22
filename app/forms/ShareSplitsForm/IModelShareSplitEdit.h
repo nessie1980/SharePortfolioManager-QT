@@ -4,6 +4,8 @@
 
 #include "../../models/ShareSplitObject.h"
 #include "../../models/DailyValuesObject.h"
+#include "../../models/BuyObject.h"
+#include "../../models/SaleObject.h"
 
 #include <QDate>
 #include <QList>
@@ -27,10 +29,12 @@ struct OpenBuyLot
 /**
  * @brief Abstraktes Model-Interface für den Dialog "Aktiensplits".
  *
- * Deckt reines CRUD auf `share_splits` ab, ergänzt um zwei Lesezugriffe, die
- * der Presenter für Duplikat-Prüfung (existsForDate()) und Löschfolgen-Anzeige
- * (openLots()) braucht. Bewusst ohne jeden Qt-Widget-Bezug, damit der Presenter
- * gegen einen Stub testbar bleibt.
+ * Deckt reines CRUD auf `share_splits` ab, ergänzt um Lesezugriffe, die der
+ * Presenter für Duplikat-Prüfung (existsForDate()), Löschfolgen-Anzeige
+ * (openLots()), Kurssprung-Erkennung (dailyValuesInRange()) und die
+ * Plausibilitätsprüfung des Verhältnisses (loadBuys()/loadSales()) braucht.
+ * Bewusst ohne jeden Qt-Widget-Bezug, damit der Presenter gegen einen Stub
+ * testbar bleibt.
  */
 class IModelShareSplitEdit
 {
@@ -61,6 +65,24 @@ public:
      * brauchen deshalb keinen eigenen Abruf.
      */
     virtual QList<OpenBuyLot> openLots(const QString& shareGuid) const = 0;
+
+    /**
+     * @brief Alle Käufe der Aktie, aufsteigend nach Datum.
+     *
+     * Ergänzt 22.08.2026 für die Plausibilitätsprüfung des Split-Verhältnisses
+     * (Punkt 2, siehe ARCHITECTURE.md). `openLots()` reicht dafür nicht: es
+     * liefert nur Restbestände — die Verkäufe sind über `volume_sold` bereits
+     * abgezogen — und trägt keine Depotnummer. Für einen Bestandsverlauf je
+     * Depot werden aber beide Seiten einzeln gebraucht.
+     */
+    virtual QList<BuyObject> loadBuys(const QString& shareGuid) const = 0;
+
+    /**
+     * @brief Alle Verkäufe der Aktie, aufsteigend nach Datum.
+     *
+     * Gegenstück zu loadBuys(), siehe dort.
+     */
+    virtual QList<SaleObject> loadSales(const QString& shareGuid) const = 0;
 
     /**
      * @brief Prüft, ob ein Dokument bereits einem anderen Split zugeordnet ist.

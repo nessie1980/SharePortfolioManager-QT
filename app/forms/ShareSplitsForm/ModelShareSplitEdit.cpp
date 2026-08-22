@@ -31,6 +31,16 @@ QList<OpenBuyLot> ModelShareSplitEdit::openLots(const QString& shareGuid) const
     return lots;
 }
 
+QList<BuyObject> ModelShareSplitEdit::loadBuys(const QString& shareGuid) const
+{
+    return m_buyRepo.findByShare(shareGuid);
+}
+
+QList<SaleObject> ModelShareSplitEdit::loadSales(const QString& shareGuid) const
+{
+    return m_saleRepo.findByShare(shareGuid);
+}
+
 bool ModelShareSplitEdit::documentExists(const QString& document,
                                          const QString& excludeGuid) const
 {

@@ -265,12 +265,17 @@ add_test(NAME tst_splitadjustmentaudit COMMAND tst_splitadjustmentaudit)
 # als möglichen Fehler im Split-Verhältnis und rechnet zurück, welches
 # Verhältnis die Rechnung aufgehen liesse.
 #
+# Seit 22.08.2026 zusätzlich checkAgainstHistory() (Punkt 2): der Split-Dialog
+# kennt keinen einzelnen Verkauf, sondern nur die gesamte Historie — daher
+# kommt SaleObject.cpp hinzu.
+#
 # Zustandslos und datenbankfrei, gleiche Begründung wie bei
-# tst_sharesplitadjuster oben. BuyObject.cpp wird nur wegen dessen Konstruktor
-# gebraucht — wie bei tst_salefifoallocator, mit dem dieses Ziel den
-# Eingabe-Zuschnitt (verfügbare Käufe + Splits) teilt.
+# tst_sharesplitadjuster oben. BuyObject.cpp/SaleObject.cpp werden nur wegen
+# deren Konstruktoren gebraucht — wie bei tst_salefifoallocator, mit dem
+# dieses Ziel den Eingabe-Zuschnitt (Belege + Splits) teilt.
 qt_add_executable(tst_splitratiochecker tst_splitratiochecker.cpp
     ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
     ../../app/models/ShareSplitObject.cpp
     ../../app/utils/ShareSplitAdjuster.cpp
     ../../app/utils/SplitRatioChecker.cpp

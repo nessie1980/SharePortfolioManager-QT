@@ -29,6 +29,7 @@
 #include "../../app/core/Database.h"
 #include "../../app/models/ShareObject.h"
 #include "../../app/models/BuyObject.h"
+#include "../../app/models/SaleObject.h"
 #include "../../app/models/ShareSplitObject.h"
 #include "../../app/models/DailyValuesObject.h"
 #include "../../app/repositories/ShareRepository.h"
@@ -53,6 +54,26 @@ ShareSplitObject makeSplit(const QString& guid, const QDate& date,
 {
     return ShareSplitObject(guid, kShareGuid, date, ratioNew, ratioOld,
                             pricesAdjusted, QString(), document);
+}
+
+/// Kauf für die Historienprüfung (Punkt 2 der Split-Plausibilitätsprüfung).
+BuyObject makeHistoryBuy(const QDate& date, double volume,
+                         const QString& depot = QStringLiteral("depot1"))
+{
+    return BuyObject(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                     kShareGuid, depot, QString(),
+                     QDateTime(date, QTime(10, 0)).toString(Qt::ISODate),
+                     volume, 0.0, 100.0);
+}
+
+/// Verkauf für die Historienprüfung.
+SaleObject makeHistorySale(const QDate& date, double volume,
+                           const QString& depot = QStringLiteral("depot1"))
+{
+    return SaleObject(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                      kShareGuid, depot, QString(),
+                      QDateTime(date, QTime(10, 0)).toString(Qt::ISODate),
+                      volume, 50.0, {});
 }
 }
 
@@ -163,6 +184,15 @@ public:
         { lastDocumentExistsExclude = excludeGuid; return documentInUse; }
 
     QList<OpenBuyLot> openLots(const QString&) const override { return lots; }
+
+    // Historienprüfung (Punkt 2, 22.08.2026). Standardmässig leer — die
+    // allermeisten Tests hier interessieren sich nicht dafür, und ohne
+    // Verkäufe kann kein Widerspruch entstehen.
+    QList<BuyObject>  historyBuys;
+    QList<SaleObject> historySales;
+
+    QList<BuyObject>  loadBuys(const QString&)  const override { return historyBuys;  }
+    QList<SaleObject> loadSales(const QString&) const override { return historySales; }
 
     mutable QDate lastDailyValuesFrom;
     mutable QDate lastDailyValuesTo;
@@ -441,6 +471,246 @@ private slots:
         p.onSave();
 
         QCOMPARE(view.lastError, model.errorMsg);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Historienprüfung beim Speichern (Punkt 2 der Split-Plausibilitäts-
+    // prüfung, 22.08.2026, siehe ARCHITECTURE.md). Rückfrage, keine
+    // Blockade: eine unvollständig erfasste Kaufhistorie erzeugt denselben
+    // rechnerischen Widerspruch und dürfte niemanden aussperren.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_presenter_onSave_noSalesAtAll_savesWithoutAsking()
+    {
+        // Der Normalfall: Kauf, dann Split, Verkauf kommt erst später. Es
+        // gibt noch nichts, wogegen sich das Verhältnis halten liesse.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        model.historyBuys << makeHistoryBuy(QDate(2021, 3, 18), 10.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY(!view.confirmCalled);
+        QVERIFY(model.addCalled);
+    }
+
+    void test_presenter_onSave_consistentHistory_savesWithoutAsking()
+    {
+        // Verhältnis 20:1 (Formular-Vorgabe des Stubs) gegen Kauf 10 und
+        // Verkauf 200 — geht exakt auf.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn = QDate(2022, 7, 18);
+        model.historyBuys  << makeHistoryBuy(QDate(2021, 3, 18), 10.0);
+        model.historySales << makeHistorySale(QDate(2022, 12, 5), 200.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY(!view.confirmCalled);
+        QVERIFY(model.addCalled);
+    }
+
+    void test_presenter_onSave_fieldCase_asksAndNamesProposedRatio()
+    {
+        // Feldfall Alphabet, nachträglich erfasst: 19:1 statt 20:1.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 19.0;
+        view.ratioOldToReturn = 1.0;
+        model.historyBuys  << makeHistoryBuy(QDate(2021, 3, 18), 10.0);
+        model.historySales << makeHistorySale(QDate(2022, 12, 5), 200.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY(view.confirmCalled);
+        QVERIFY2(view.lastConfirmMessage.contains(QStringLiteral("20:1")),
+                 qPrintable(view.lastConfirmMessage));
+        // Die Bank-Schreibweise gehört mit in den Text — ohne sie bleibt
+        // unklar, WARUM 19 statt 20 im Formular stand.
+        QVERIFY2(view.lastConfirmMessage.contains(QStringLiteral("1:19")),
+                 qPrintable(view.lastConfirmMessage));
+    }
+
+    void test_presenter_onSave_conflictConfirmed_savesAnyway()
+    {
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.confirmResult    = true;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 19.0;
+        model.historyBuys  << makeHistoryBuy(QDate(2021, 3, 18), 10.0);
+        model.historySales << makeHistorySale(QDate(2022, 12, 5), 200.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY(model.addCalled);
+    }
+
+    void test_presenter_onSave_conflictDeclined_doesNotSave()
+    {
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.confirmResult    = false;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 19.0;
+        model.historyBuys  << makeHistoryBuy(QDate(2021, 3, 18), 10.0);
+        model.historySales << makeHistorySale(QDate(2022, 12, 5), 200.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY(!model.addCalled);
+        QVERIFY(view.lastError.isEmpty());   // Abbruch ist kein Fehler
+    }
+
+    void test_presenter_onSave_conflictNamesDepotAndQuantities()
+    {
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 19.0;
+        model.historyBuys  << makeHistoryBuy(QDate(2021, 3, 18), 10.0);
+        model.historySales << makeHistorySale(QDate(2022, 12, 5), 200.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        const QLocale loc;
+        QVERIFY2(view.lastConfirmMessage.contains(loc.toString(200.0, 'f', 4)),
+                 qPrintable(view.lastConfirmMessage));
+        QVERIFY2(view.lastConfirmMessage.contains(loc.toString(190.0, 'f', 4)),
+                 qPrintable(view.lastConfirmMessage));
+        QVERIFY2(view.lastConfirmMessage.contains(QStringLiteral("depot1")),
+                 qPrintable(view.lastConfirmMessage));
+    }
+
+    void test_presenter_onSave_unattributableConflict_asksWithoutRatio()
+    {
+        // Verhältnis 20:1 ist richtig, verkauft sind aber 777 Stück — etwa
+        // weil die Kaufhistorie unvollständig ist. Der Widerspruch wird
+        // genannt, ein Verhältnis darf NICHT vorgeschlagen werden.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn = QDate(2022, 7, 18);
+        model.historyBuys  << makeHistoryBuy(QDate(2021, 3, 18), 10.0);
+        model.historySales << makeHistorySale(QDate(2022, 12, 5), 777.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY(view.confirmCalled);
+        QVERIFY2(!view.lastConfirmMessage.contains(QStringLiteral("Zuteilungsverhältnis")),
+                 qPrintable(view.lastConfirmMessage));
+        QVERIFY2(view.lastConfirmMessage.contains(QStringLiteral("Depotübertrag")),
+                 qPrintable(view.lastConfirmMessage));
+    }
+
+    void test_presenter_onSave_saleInOtherDepot_isNotOffset()
+    {
+        // Käufe in depot1, Verkauf in depot2: je Depot ein eigener Verlauf,
+        // der Kauf darf den fremden Verkauf nicht decken.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn = QDate(2022, 7, 18);
+        model.historyBuys  << makeHistoryBuy(QDate(2021, 3, 18), 10.0,
+                                             QStringLiteral("depot1"));
+        model.historySales << makeHistorySale(QDate(2022, 12, 5), 200.0,
+                                              QStringLiteral("depot2"));
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY(view.confirmCalled);
+        QVERIFY2(view.lastConfirmMessage.contains(QStringLiteral("depot2")),
+                 qPrintable(view.lastConfirmMessage));
+    }
+
+    void test_presenter_onSave_editedSplit_comparesAgainstNewRatioOnly()
+    {
+        // Beim Bearbeiten darf der ALTE Stand desselben Splits nicht mehr
+        // mitzählen — sonst träte er gegen seine eigene neue Fassung an.
+        // Gespeichert wird 20:1 über den bestehenden Split s1 (19:1); die
+        // Historie geht damit auf, es darf keine Rückfrage kommen.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        model.splits << makeSplit(QStringLiteral("s1"), QDate(2022, 7, 18), 19.0, 1.0);
+        model.historyBuys  << makeHistoryBuy(QDate(2021, 3, 18), 10.0);
+        model.historySales << makeHistorySale(QDate(2022, 12, 5), 200.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onRowSelected(QStringLiteral("s1"));
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 20.0;
+        view.ratioOldToReturn = 1.0;
+        p.onSave();
+
+        QVERIFY(!view.confirmCalled);
+        QVERIFY(model.updateCalled);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Historienprüfung beim Löschen
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_presenter_onRemove_conflictAfterRemoval_warnsInConfirmation()
+    {
+        // Ohne den Split fällt der Kauf auf seine Beleg-Stückzahl zurück:
+        // 10 gekauft gegen 200 verkauft.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        model.splits << makeSplit(QStringLiteral("s1"), QDate(2022, 7, 18), 20.0, 1.0);
+        model.historyBuys  << makeHistoryBuy(QDate(2021, 3, 18), 10.0);
+        model.historySales << makeHistorySale(QDate(2022, 12, 5), 200.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onRowSelected(QStringLiteral("s1"));
+        p.onRemove();
+
+        QVERIFY(view.confirmCalled);
+        QVERIFY2(view.lastConfirmMessage.contains(QStringLiteral("nicht mehr auf")),
+                 qPrintable(view.lastConfirmMessage));
+    }
+
+    void test_presenter_onRemove_conflictHintDoesNotProposeARatio()
+    {
+        // Der gelöschte Split ist nicht mehr in der Liste — ein Vorschlag zu
+        // einem anderen Split wäre hier nur verwirrend.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        model.splits << makeSplit(QStringLiteral("s1"), QDate(2022, 7, 18), 20.0, 1.0);
+        model.historyBuys  << makeHistoryBuy(QDate(2021, 3, 18), 10.0);
+        model.historySales << makeHistorySale(QDate(2022, 12, 5), 200.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onRowSelected(QStringLiteral("s1"));
+        p.onRemove();
+
+        QVERIFY2(!view.lastConfirmMessage.contains(QStringLiteral("Zuteilungsverhältnis")),
+                 qPrintable(view.lastConfirmMessage));
+    }
+
+    void test_presenter_onRemove_consistentAfterRemoval_noExtraWarning()
+    {
+        // Ohne Verkäufe kann das Löschen keinen Widerspruch erzeugen — die
+        // Löschabfrage bleibt unverändert.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        model.splits << makeSplit(QStringLiteral("s1"), QDate(2022, 7, 18), 20.0, 1.0);
+        model.historyBuys << makeHistoryBuy(QDate(2021, 3, 18), 10.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onRowSelected(QStringLiteral("s1"));
+        p.onRemove();
+
+        QVERIFY(view.confirmCalled);
+        QVERIFY2(!view.lastConfirmMessage.contains(QStringLiteral("nicht mehr auf")),
+                 qPrintable(view.lastConfirmMessage));
+        QVERIFY(model.removeCalled);
     }
 
     // ─────────────────────────────────────────────────────────────────────

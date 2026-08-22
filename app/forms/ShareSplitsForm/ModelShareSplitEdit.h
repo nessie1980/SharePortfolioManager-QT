@@ -5,14 +5,16 @@
 #include "IModelShareSplitEdit.h"
 #include "../../repositories/ShareSplitRepository.h"
 #include "../../repositories/BuyRepository.h"
+#include "../../repositories/SaleRepository.h"
 #include "../../repositories/DailyValuesRepository.h"
 
 /**
  * @brief Konkretes Model für den Dialog "Aktiensplits".
  *
- * Delegiert weitgehend an `ShareSplitRepository`; `BuyRepository` wird
- * ausschliesslich für openLots() gebraucht, also für die Angabe der
- * Bestandsänderung in der Löschabfrage.
+ * Delegiert weitgehend an `ShareSplitRepository`. `BuyRepository` trägt
+ * openLots() (Bestandsänderung in der Löschabfrage) und loadBuys(),
+ * `SaleRepository` seit 22.08.2026 loadSales() — beide für die
+ * Plausibilitätsprüfung des Verhältnisses (siehe ARCHITECTURE.md).
  *
  * Einzige Ausnahme ist documentExists(): die Abfrage steht hier direkt statt
  * im Repository — genauso wie in ModelBuyEdit, ModelSaleEdit,
@@ -27,6 +29,8 @@ public:
     QList<ShareSplitObject> loadSplits(const QString& shareGuid) const override;
     bool existsForDate(const QString& shareGuid, const QDate& date) const override;
     QList<OpenBuyLot> openLots(const QString& shareGuid) const override;
+    QList<BuyObject>  loadBuys(const QString& shareGuid) const override;
+    QList<SaleObject> loadSales(const QString& shareGuid) const override;
     bool documentExists(const QString& document,
                         const QString& excludeGuid = QString()) const override;
     QList<DailyValuesObject> dailyValuesInRange(const QString& shareGuid,
@@ -42,6 +46,7 @@ public:
 private:
     ShareSplitRepository  m_splitRepo;
     BuyRepository         m_buyRepo;
+    SaleRepository        m_saleRepo;
     DailyValuesRepository m_dailyValuesRepo;
     mutable QString       m_lastError;
 };

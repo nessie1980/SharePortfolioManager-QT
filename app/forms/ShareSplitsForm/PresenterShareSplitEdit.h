@@ -4,6 +4,7 @@
 
 #include "IViewShareSplitEdit.h"
 #include "IModelShareSplitEdit.h"
+#include "../../utils/SplitRatioChecker.h"
 
 #include <QObject>
 #include <QList>
@@ -24,6 +25,15 @@
  * - Faktor ungleich 1,0 — ein 1:1-"Split" ist keiner (Nessies Entscheidung
  *   08.08.2026) und würde nur Rechenzeit kosten
  * - kein zweiter Split derselben Aktie am selben Tag (`UNIQUE(share_guid, date)`)
+ *
+ * Zusätzlich prüft der Presenter seit 22.08.2026 beim Speichern UND beim
+ * Löschen, ob die Verkaufshistorie unter der resultierenden Split-Liste noch
+ * aufgeht (`SplitRatioChecker::checkAgainstHistory()`, Punkt 2 der
+ * Split-Plausibilitätsprüfung, siehe ARCHITECTURE.md). Das Ergebnis ist eine
+ * RÜCKFRAGE, keine Blockade (Nessies Entscheidung 22.08.2026): eine
+ * unvollständig erfasste Kaufhistorie — etwa nach einem Depotübertrag —
+ * erzeugt denselben rechnerischen Widerspruch und dürfte niemanden dauerhaft
+ * daran hindern, überhaupt einen Split zu erfassen.
  *
  * Zukünftige Ex-Tage sind ausdrücklich erlaubt (Nessies Entscheidung
  * 08.08.2026): ein angekündigter Split darf sofort erfasst werden. Technisch
@@ -103,6 +113,39 @@ private:
      * die Bestandsänderung in der Löschabfrage beziffern zu können.
      */
     double volumeForSplits(const QList<ShareSplitObject>& splits) const;
+
+    /**
+     * @brief Prüft die Verkaufshistorie gegen den zu speichernden Split und
+     * holt bei einem Widerspruch die Bestätigung des Benutzers ein.
+     *
+     * @param candidate  Der zu speichernde Split, aus den Formularwerten
+     *        gebaut. Die übrigen Splits sind `m_splits` ohne `m_currentGuid`
+     *        — dieselbe Ausklammerung wie in onCheckPriceJump(), damit beim
+     *        Bearbeiten nicht der alte Stand gegen den neuen antritt.
+     * @return true, wenn gespeichert werden darf (kein Widerspruch, oder der
+     *         Benutzer hat bestätigt).
+     */
+    bool confirmSaveDespiteConflict(const ShareSplitObject& candidate) const;
+
+    /**
+     * @brief Zusatztext für die Löschabfrage, wenn das Entfernen des Splits
+     * die Verkaufshistorie unschlüssig machen würde.
+     *
+     * @param without  Split-Liste OHNE den zu löschenden Split.
+     * @param victim   Der zu löschende Split.
+     * @return Leer, wenn kein Widerspruch entsteht.
+     */
+    QString removalConflictHint(const QList<ShareSplitObject>& without,
+                                const ShareSplitObject&        victim) const;
+
+    /**
+     * @brief Beziffert einen Widerspruch in Worten: verkaufte gegen gekaufte
+     * Menge bis zum Konflikttag, mit Depot.
+     *
+     * Gemeinsamer Satz für Speicher- und Löschabfrage — beide beschreiben
+     * denselben Sachverhalt und sollen ihn gleich benennen.
+     */
+    static QString describeConflict(const SplitHistoryConflict& conflict);
 
     /** Kurzbeschreibung eines Splits für Meldungstexte, z. B. "20:1 vom 18.07.2022". */
     static QString describeSplit(const ShareSplitObject& split);

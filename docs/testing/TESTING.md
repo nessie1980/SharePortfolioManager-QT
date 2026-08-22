@@ -3182,6 +3182,40 @@ Zwei Gruppen tragen die Klasse:
 | `test_diagnose_reverseSplitAsFraction_namesItWithoutProposal` | Reverse als 0,1:1 → neue Seite kleiner 1 |
 | `test_diagnose_soldOutBuyBeforeSplit_isNotTheReference` | Nur der älteste OFFENE Kauf zählt als Bezugspunkt |
 
+Seit 22.08.2026 kommt `checkAgainstHistory()` dazu (Punkt 2 — Prüfung beim
+Speichern und Löschen eines Splits). Sie sucht die Unterdeckung selbst, statt
+sie gereicht zu bekommen: je Depot ein Bestandsverlauf, und an der ersten
+Fundstelle derselbe `diagnose()`-Aufruf wie oben. Ein zweiter Rechenweg
+entsteht dadurch nicht.
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_checkAgainstHistory_fieldCase_findsConflictAndProposesRatio` | Feldfall: Fundstelle, beide Mengen, Vorschlag 20:1 |
+| `test_checkAgainstHistory_correctRatio_noConflict` | Richtiges 20:1 geht auf |
+| `test_checkAgainstHistory_usesFullBuyVolume_notRemainder` | Kauf zählt mit `volume()`, nicht mit dem Restbestand |
+| `test_checkAgainstHistory_saleBeforeExDate_ignored` | Verkauf vor dem Ex-Tag bleibt aussen vor |
+| `test_checkAgainstHistory_buyAndSaleOnSameDay_isCovered` | Kauf AM Verkaufstag zählt noch mit |
+| `test_checkAgainstHistory_secondSaleTipsItOver` | Gemeldet wird die Stelle, an der es kippt |
+| `test_checkAgainstHistory_otherDepotSale_isNotOffsetByForeignBuy` | Fremdes Depot deckt nicht |
+| `test_checkAgainstHistory_depotNumbersAreTrimmed` | Depotnummern getrimmt verglichen |
+| `test_checkAgainstHistory_earliestConflictWinsAcrossDepots` | Früheste Fundstelle über alle Depots |
+| `test_checkAgainstHistory_sameDate_firstDepotAlphabetically` | Bei gleichem Datum entscheidet die Depotnummer |
+| `test_checkAgainstHistory_removedSplit_reportsConflictWithoutProposal` | Löschfall: Widerspruch ja, Vorschlag nein |
+| `test_checkAgainstHistory_unattributableShortfall_hasNoProposal` | Unvollständige Kaufhistorie wird nicht gedeutet |
+| `test_checkAgainstHistory_noSales_noConflict` | Der normale Ablauf meldet nichts |
+| `test_checkAgainstHistory_invalidFromDate_noConflict` | Ungültiger Ex-Tag: keine Rechnung |
+
+@note `test_checkAgainstHistory_usesFullBuyVolume_notRemainder` haelt den
+Fallstrick fest, an dem diese Methode als einzige haette scheitern koennen:
+`volume_sold` traegt die Verkaeufe bereits. Wuerde der Verlauf mit dem
+Restbestand rechnen, waeren sie doppelt abgezogen und JEDE korrekte Historie
+meldete einen Widerspruch.
+
+@note `test_..._sameDate_firstDepotAlphabetically` sichert die
+Reproduzierbarkeit: ohne feste Reihenfolge haenge die gemeldete Fundstelle an
+der Reihenfolge der Datenbankzeilen, und derselbe Datenstand ergaebe mal die
+eine, mal die andere Meldung.
+
 @note `test_diagnose_typoInVolume_doesNotProposeAbsurdRatio` ist der
 wichtigste Test der Datei. Dieselbe Rückrechnung liefert auch bei einem
 reinen Tippfehler ein formal sauberes Verhältnis (190:1), das den Benutzer
@@ -3194,6 +3228,21 @@ Die Anbindung an das Verkaufsformular prüfen vier Tests in
 Vorschlag im Feldfall inklusive Bank-Schreibweise, Erhalt der bisherigen
 Mengenzeile, kein Split-Hinweis ohne Split, und Nennung ohne Zahl beim
 Tippfehler.
+
+Die Anbindung an den Split-Dialog prüfen elf Tests in
+`tst_sharesplitsform.cpp`, Abschnitte "Historienprüfung beim Speichern" und
+"... beim Löschen": stiller Durchlauf ohne Verkäufe und bei stimmiger
+Historie, Rückfrage mit Verhältnis-Vorschlag im Feldfall, Speichern nach
+Bestätigung, Abbruch bei Ablehnung (ohne Fehlermeldung — ein Abbruch ist kein
+Fehler), Depot und beide Mengen im Text, Rückfrage ohne Zahl bei
+unzuordenbarem Widerspruch, getrennte Depots, Ausklammerung des eigenen alten
+Stands beim Bearbeiten sowie die drei Löschfälle.
+
+@note `test_presenter_onSave_editedSplit_comparesAgainstNewRatioOnly` sichert
+die Ausklammerung von `m_currentGuid`: ohne sie träte beim Bearbeiten der alte
+Stand desselben Splits gegen seine eigene neue Fassung an, und ein
+korrigiertes Verhältnis meldete weiterhin einen Widerspruch — also genau dann,
+wenn der Benutzer den Fehler gerade behebt.
 
 ---
 

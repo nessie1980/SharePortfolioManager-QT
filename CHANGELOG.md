@@ -10,6 +10,24 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Added
 
+- Plausibilitätsprüfung des Split-Verhältnisses, zweiter von fünf
+  Prüfzeitpunkten: der Dialog "Aktiensplits" prüft beim Speichern und beim
+  Löschen, ob die Verkaufshistorie unter der resultierenden Split-Liste
+  noch aufgeht — je Depot, mit einem Bestandsverlauf über alle Käufe und
+  Verkäufe. Greift damit genau dort, wo Punkt 1 nichts sagen kann: bei
+  nachträglich erfassten Splits, wo die Verkäufe längst in der Datenbank
+  stehen.
+
+  Das Ergebnis ist eine Rückfrage, keine Blockade. Eine unvollständig
+  erfasste Kaufhistorie — etwa nach einem Depotübertrag von einer anderen
+  Bank — erzeugt denselben rechnerischen Widerspruch, ohne dass am Split
+  etwas falsch wäre, und dürfte niemanden dauerhaft daran hindern,
+  überhaupt einen Split zu erfassen. Lässt sich der Widerspruch dem Split
+  zuordnen, nennt der Text das Verhältnis, mit dem die Rechnung aufginge;
+  sonst weist er auf die mögliche Datenlücke hin.
+
+  Neue Model-Methoden `loadBuys()`/`loadSales()` im Split-Dialog —
+  `openLots()` liefert nur Restbestände und trägt keine Depotnummer.
 - Plausibilitätsprüfung des Split-Verhältnisses, erster von fünf
   Prüfzeitpunkten (siehe `docs/architecture/ARCHITECTURE.md`,
   "Plausibilitätsprüfung des Split-Verhältnisses" sowie die Arbeitsliste

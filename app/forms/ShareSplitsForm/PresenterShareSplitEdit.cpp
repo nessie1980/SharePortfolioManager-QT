@@ -56,6 +56,13 @@ void PresenterShareSplitEdit::onSave()
         m_view->comment().trimmed(),
         m_view->documentPath().trimmed());
 
+    // Plausibilitätsprüfung des Verhältnisses gegen die eigenen Belege
+    // (Punkt 2, siehe ARCHITECTURE.md, "Plausibilitätsprüfung des
+    // Split-Verhältnisses"). Rückfrage statt Blockade — die Begründung steht
+    // im Klassenkopf.
+    if (!confirmSaveDespiteConflict(split))
+        return;
+
     const bool ok = isEdit ? m_model->updateSplit(split)
                            : m_model->addSplit(split);
     if (!ok) {
@@ -95,7 +102,8 @@ void PresenterShareSplitEdit::onRemove()
     const double volumeWithout = volumeForSplits(without);
 
     const QLocale loc;
-    const QString message =
+    // Nicht const: der Konflikthinweis unten wird gegebenenfalls angehängt.
+    QString message =
         QObject::tr("Split %1 wirklich entfernen?\n\n"
                     "Alle Käufe und Verkäufe vor diesem Datum werden danach "
                     "wieder in ihrer Beleg-Stückzahl gerechnet. Der Bestand "
@@ -105,6 +113,13 @@ void PresenterShareSplitEdit::onRemove()
             .arg(describeSplit(victim),
                  loc.toString(volumeWith,    'f', 4),
                  loc.toString(volumeWithout, 'f', 4));
+
+    // Ohne den Split fallen alle Belege vor seinem Ex-Tag auf ihre
+    // Beleg-Stückzahl zurück — das kann die Verkaufshistorie unschlüssig
+    // machen (Punkt 2, siehe ARCHITECTURE.md).
+    const QString conflictHint = removalConflictHint(without, victim);
+    if (!conflictHint.isEmpty())
+        message += QStringLiteral("\n\n") + conflictHint;
 
     if (!m_view->confirm(QObject::tr("Split entfernen"), message))
         return;
@@ -366,6 +381,98 @@ double PresenterShareSplitEdit::volumeForSplits(const QList<ShareSplitObject>& s
     for (const OpenBuyLot& lot : lots)
         total += ShareSplitAdjuster::adjustedVolume(lot.remainingVolume, splits, lot.date);
     return total;
+}
+
+// ── confirmSaveDespiteConflict ────────────────────────────────────────────────
+
+bool PresenterShareSplitEdit::confirmSaveDespiteConflict(const ShareSplitObject& candidate) const
+{
+    // Resultierende Liste: alle übrigen Splits plus der Kandidat. Beim
+    // Bearbeiten fliegt der alte Stand desselben Splits heraus, sonst träte
+    // er gegen seine eigene neue Fassung an (gleiche Ausklammerung wie in
+    // onCheckPriceJump()).
+    QList<ShareSplitObject> resulting;
+    for (const ShareSplitObject& s : std::as_const(m_splits)) {
+        if (s.guid() != m_currentGuid)
+            resulting.append(s);
+    }
+    resulting.append(candidate);
+
+    const SplitHistoryConflict conflict = SplitRatioChecker::checkAgainstHistory(
+        resulting, candidate.date(),
+        m_model->loadBuys(m_shareGuid), m_model->loadSales(m_shareGuid));
+
+    if (!conflict.hasConflict)
+        return true;
+
+    QString message = QObject::tr("Mit diesem Split geht die Verkaufshistorie nicht auf.\n\n%1")
+                          .arg(describeConflict(conflict));
+
+    if (conflict.suspicion.hasProposal) {
+        const SplitRatioSuspicion& s = conflict.suspicion;
+        const QString proposed = formatRatioPart(s.proposedRatioNew)
+                                 + QStringLiteral(":")
+                                 + formatRatioPart(s.proposedRatioOld);
+        // Bank-Schreibweise: alte Seite zu ZUSÄTZLICHEN Stücken, im Beispiel
+        // "1:19" für das Umrechnungsverhältnis 20:1.
+        const QString bankNotation = formatRatioPart(s.proposedRatioOld)
+                                     + QStringLiteral(":")
+                                     + formatRatioPart(s.proposedRatioNew - s.proposedRatioOld);
+
+        message += QObject::tr(
+            "\n\nMit dem Verhältnis %1 ergäben sich genau %2 Stk., die Rechnung "
+            "ginge dann exakt auf. Bankmitteilungen nennen das "
+            "Zuteilungsverhältnis häufig als \"%3\" — das sind die ZUSÄTZLICHEN "
+            "Stücke je gehaltenem Stück, nicht das von der Anwendung erwartete "
+            "Umrechnungsverhältnis.")
+            .arg(proposed,
+                 QLocale().toString(s.proposedAvailableToday, 'f', 4),
+                 bankNotation);
+    } else {
+        message += QObject::tr(
+            "\n\nMöglich ist auch, dass die Kaufhistorie unvollständig ist — "
+            "etwa nach einem Depotübertrag von einer anderen Bank.");
+    }
+
+    message += QObject::tr("\n\nTrotzdem speichern?");
+
+    return m_view->confirm(QObject::tr("Split speichern"), message);
+}
+
+// ── removalConflictHint ───────────────────────────────────────────────────────
+
+QString PresenterShareSplitEdit::removalConflictHint(const QList<ShareSplitObject>& without,
+                                                     const ShareSplitObject&        victim) const
+{
+    const SplitHistoryConflict conflict = SplitRatioChecker::checkAgainstHistory(
+        without, victim.date(),
+        m_model->loadBuys(m_shareGuid), m_model->loadSales(m_shareGuid));
+
+    if (!conflict.hasConflict)
+        return QString();
+
+    // conflict.suspicion bleibt hier bewusst ungenutzt: der fragliche Split
+    // ist gar nicht mehr in der Liste, ein Verhältnis-Vorschlag zu einem
+    // ANDEREN Split wäre in der Löschabfrage nur verwirrend.
+    return QObject::tr("Achtung: Danach geht die Verkaufshistorie nicht mehr auf.\n%1")
+        .arg(describeConflict(conflict));
+}
+
+// ── describeConflict ──────────────────────────────────────────────────────────
+
+QString PresenterShareSplitEdit::describeConflict(const SplitHistoryConflict& conflict)
+{
+    const QLocale loc;
+    const QString depot = conflict.depotNumber.isEmpty()
+        ? QObject::tr("ohne Depotnummer")
+        : QObject::tr("Depot %1").arg(conflict.depotNumber);
+
+    return QObject::tr("Bis zum %1 sind %2 Stk. verkauft, gekauft wurden bis dahin "
+                       "nur %3 Stk. (heutige Skala, %4).")
+        .arg(loc.toString(conflict.conflictDate, QLocale::ShortFormat),
+             loc.toString(conflict.requiredToday,  'f', 4),
+             loc.toString(conflict.availableToday, 'f', 4),
+             depot);
 }
 
 // ── describeSplit / formatRatioPart ───────────────────────────────────────────
