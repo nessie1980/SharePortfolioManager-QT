@@ -1000,6 +1000,126 @@ private slots:
         QVERIFY(view.lastError.isEmpty());
     }
 
+    // ── Gegenprobe des Verhältnisses (Punkt 3, 22.08.2026) ────────────────
+    //
+    // Der gemessene Kurssprung ist die einzige Gegenprobe, die schon beim
+    // Erfassen vorliegt — lange bevor ein Verkauf existiert — und die einzige,
+    // die ein ZU GROSSES Verhältnis bemerken kann.
+
+    void test_presenter_onCheckPriceJump_ratioTooSmall_hintNamesMeasuredRatio()
+    {
+        // Feldfall Alphabet: 19:1 eingetragen, gemessen wird ~19,98.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 19.0;
+        view.ratioOldToReturn = 1.0;
+        model.dailyValuesToReturn << DailyValuesObject(kShareGuid, QDate(2022, 7, 18),
+                                                        1003.0, 1003.0, 1003.0, 1003.0, 0.0)
+                                   << DailyValuesObject(kShareGuid, QDate(2022, 7, 19),
+                                                        50.20, 50.20, 50.20, 50.20, 0.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onCheckPriceJump();
+
+        QVERIFY2(view.lastPriceJumpHint.contains(QStringLiteral("20:1")),
+                 qPrintable(view.lastPriceJumpHint));
+        QVERIFY2(view.lastPriceJumpHint.contains(QStringLiteral("19:1")),
+                 qPrintable(view.lastPriceJumpHint));
+    }
+
+    void test_presenter_onCheckPriceJump_ratioMismatch_switchesTone()
+    {
+        // Der Haken wird weiterhin gesetzt — ob die Kurshistorie bereinigt
+        // ist, ist eine andere Frage als das Verhältnis. Nur die Einfärbung
+        // wechselt, damit die Zeile nicht "alles übernommen" signalisiert,
+        // während etwas zu prüfen ist.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 19.0;
+        view.ratioOldToReturn = 1.0;
+        model.dailyValuesToReturn << DailyValuesObject(kShareGuid, QDate(2022, 7, 18),
+                                                        1003.0, 1003.0, 1003.0, 1003.0, 0.0)
+                                   << DailyValuesObject(kShareGuid, QDate(2022, 7, 19),
+                                                        50.20, 50.20, 50.20, 50.20, 0.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onCheckPriceJump();
+
+        QVERIFY(view.pricesAdjustedSetCalled);
+        QVERIFY(!view.pricesAdjustedToReturn);   // Sprung erkannt -> Haken AUS
+        QCOMPARE(view.lastPriceJumpTone,
+                 IViewShareSplitEdit::PriceJumpTone::ManualDecisionNeeded);
+    }
+
+    void test_presenter_onCheckPriceJump_ratioTooLarge_hintNamesMeasuredRatio()
+    {
+        // 21:1 eingetragen, gemessen ~19,98. Diesen Fall können die
+        // Bestandsprüfungen nicht sehen: ein zu grosses Verhältnis erzeugt
+        // nie eine Unterdeckung.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 21.0;
+        view.ratioOldToReturn = 1.0;
+        model.dailyValuesToReturn << DailyValuesObject(kShareGuid, QDate(2022, 7, 18),
+                                                        1003.0, 1003.0, 1003.0, 1003.0, 0.0)
+                                   << DailyValuesObject(kShareGuid, QDate(2022, 7, 19),
+                                                        50.20, 50.20, 50.20, 50.20, 0.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onCheckPriceJump();
+
+        QVERIFY2(view.lastPriceJumpHint.contains(QStringLiteral("20:1")),
+                 qPrintable(view.lastPriceJumpHint));
+    }
+
+    void test_presenter_onCheckPriceJump_correctRatio_noExtraHint()
+    {
+        // 20:1 eingetragen und gemessen — nichts anzumerken, Ton bleibt bei
+        // "übernommen".
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 20.0;
+        view.ratioOldToReturn = 1.0;
+        model.dailyValuesToReturn << DailyValuesObject(kShareGuid, QDate(2022, 7, 18),
+                                                        1003.0, 1003.0, 1003.0, 1003.0, 0.0)
+                                   << DailyValuesObject(kShareGuid, QDate(2022, 7, 19),
+                                                        50.20, 50.20, 50.20, 50.20, 0.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onCheckPriceJump();
+
+        QVERIFY2(!view.lastPriceJumpHint.contains(QStringLiteral("passt eher")),
+                 qPrintable(view.lastPriceJumpHint));
+        QCOMPARE(view.lastPriceJumpTone, IViewShareSplitEdit::PriceJumpTone::Adopted);
+    }
+
+    void test_presenter_onCheckPriceJump_adjustedHistory_noRatioHint()
+    {
+        // Ohne Sprung gibt es nichts, woran sich ein Verhältnis ablesen
+        // liesse — auch bei grob falschem Faktor kein Verdacht.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn     = QDate(2022, 7, 18);
+        view.ratioNewToReturn = 19.0;
+        view.ratioOldToReturn = 1.0;
+        model.dailyValuesToReturn << DailyValuesObject(kShareGuid, QDate(2022, 7, 18),
+                                                        50.20, 50.20, 50.20, 50.20, 0.0)
+                                   << DailyValuesObject(kShareGuid, QDate(2022, 7, 19),
+                                                        50.60, 50.60, 50.60, 50.60, 0.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onCheckPriceJump();
+
+        QVERIFY(view.pricesAdjustedToReturn);    // kein Sprung -> Haken AN
+        QVERIFY2(!view.lastPriceJumpHint.contains(QStringLiteral("passt eher")),
+                 qPrintable(view.lastPriceJumpHint));
+        QCOMPARE(view.lastPriceJumpTone, IViewShareSplitEdit::PriceJumpTone::Adopted);
+    }
+
     void test_presenter_onCheckPriceJump_noJump_setsCheckedTrueAndHint()
     {
         StubViewShareSplitEdit  view;

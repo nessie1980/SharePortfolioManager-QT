@@ -10,6 +10,26 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Added
 
+- Plausibilitätsprüfung des Split-Verhältnisses, dritter von fünf
+  Prüfzeitpunkten: der "Prüfen"-Knopf im Split-Dialog vergleicht den
+  gemessenen Kurssprung um den Ex-Tag jetzt auch mit dem eingetragenen
+  Verhältnis und weist darauf hin, wenn er besser zu einem anderen passt.
+
+  Das schliesst die Lücke der beiden Bestandsprüfungen: die hängen an einer
+  Unterdeckung, und ein zu grosses Verhältnis erzeugt nie eine. Wer 21 statt
+  20 einträgt, hat rechnerisch mehr Bestand als nötig, alles geht auf,
+  niemand fragt nach. Der Kurssprung ist zudem die einzige Gegenprobe, die
+  schon beim Erfassen vorliegt — lange bevor ein Verkauf existiert.
+
+  Die bisherigen Toleranzbänder taugten dafür nicht: mit plus/minus 20
+  Prozent geht bei eingetragenen 19 auch ein gemessener Sprung von 19,98
+  glatt als Treffer durch. Verglichen wird deshalb gegen 3 Prozent, und nur
+  gegen das nächstgelegene saubere Verhältnis. Bei unruhigen Kursen oder
+  Verhältnissen nahe 1 bleibt die Prüfung still, statt zu raten.
+
+  Der "Kurshistorie bereinigt"-Haken wird davon nicht berührt — das ist eine
+  andere Frage als das Verhältnis. Nur die Einfärbung der Ergebniszeile
+  wechselt auf "manuelle Entscheidung nötig".
 - Plausibilitätsprüfung des Split-Verhältnisses, zweiter von fünf
   Prüfzeitpunkten: der Dialog "Aktiensplits" prüft beim Speichern und beim
   Löschen, ob die Verkaufshistorie unter der resultierenden Split-Liste

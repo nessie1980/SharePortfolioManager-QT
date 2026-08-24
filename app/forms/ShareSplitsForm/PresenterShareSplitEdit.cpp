@@ -256,6 +256,22 @@ void PresenterShareSplitEdit::onCheckPriceJump()
         dailyValues, date, factor, previousSplitDate, nextSplitDate);
 
     const QLocale loc;
+
+    // Gegenprobe des Verhältnisses (Punkt 3 der Split-Plausibilitätsprüfung,
+    // 22.08.2026, siehe ARCHITECTURE.md). Der gemessene Sprung ist die
+    // einzige Gegenprobe, die ein ZU GROSSES Verhältnis bemerken kann — die
+    // Bestandsprüfungen können das nicht, weil ein zu grosses Verhältnis nie
+    // eine Unterdeckung erzeugt.
+    QString ratioHint;
+    if (outcome.ratioMismatch) {
+        ratioHint = QObject::tr(
+            "\nDer gemessene Sprung passt eher zum Verhältnis %1 als zum "
+            "eingetragenen %2 — bitte gegen die Bankmitteilung prüfen.")
+            .arg(describeImpliedRatio(outcome.impliedFactor),
+                 formatRatioPart(newSide) + QStringLiteral(":")
+                     + formatRatioPart(oldSide));
+    }
+
     switch (outcome.result) {
     case SplitPriceJumpDetector::Result::Adjusted:
         m_view->setPricesAdjusted(true);
@@ -270,6 +286,10 @@ void PresenterShareSplitEdit::onCheckPriceJump()
         break;
     case SplitPriceJumpDetector::Result::NotAdjusted:
         m_view->setPricesAdjusted(false);
+        // Der Haken wird auch bei einem Verhältnis-Verdacht gesetzt: ob die
+        // Kurshistorie bereinigt ist, ist eine ANDERE Frage als das
+        // Verhältnis. Nur die Einfärbung wechselt, damit die Zeile nicht
+        // "alles übernommen" signalisiert, während etwas zu prüfen ist.
         m_view->setPriceJumpHint(QObject::tr(
             "Kurssprung erkannt (%1: %2 → %3: %4, Faktor ≈ %5) — Kurshistorie "
             "scheint nicht bereinigt. Haken entfernt.")
@@ -277,8 +297,11 @@ void PresenterShareSplitEdit::onCheckPriceJump()
                      loc.toString(outcome.priceBefore, 'f', 2),
                      loc.toString(outcome.dateAfter, QLocale::ShortFormat),
                      loc.toString(outcome.priceAfter, 'f', 2),
-                     loc.toString(outcome.observedRatio, 'f', 1)),
-            IViewShareSplitEdit::PriceJumpTone::Adopted);
+                     loc.toString(outcome.observedRatio, 'f', 1))
+                + ratioHint,
+            outcome.ratioMismatch
+                ? IViewShareSplitEdit::PriceJumpTone::ManualDecisionNeeded
+                : IViewShareSplitEdit::PriceJumpTone::Adopted);
         break;
     case SplitPriceJumpDetector::Result::Ambiguous:
         m_view->setPriceJumpHint(QObject::tr(
@@ -287,7 +310,8 @@ void PresenterShareSplitEdit::onCheckPriceJump()
                 .arg(loc.toString(outcome.dateBefore, QLocale::ShortFormat),
                      loc.toString(outcome.priceBefore, 'f', 2),
                      loc.toString(outcome.dateAfter, QLocale::ShortFormat),
-                     loc.toString(outcome.priceAfter, 'f', 2)),
+                     loc.toString(outcome.priceAfter, 'f', 2))
+                + ratioHint,
             IViewShareSplitEdit::PriceJumpTone::ManualDecisionNeeded);
         break;
     case SplitPriceJumpDetector::Result::InsufficientData:
@@ -483,6 +507,19 @@ QString PresenterShareSplitEdit::describeSplit(const ShareSplitObject& split)
         .arg(formatRatioPart(split.ratioNew()),
              formatRatioPart(split.ratioOld()),
              QLocale().toString(split.date(), QLocale::ShortFormat));
+}
+
+QString PresenterShareSplitEdit::describeImpliedRatio(double factor)
+{
+    if (factor <= 0.0)
+        return QString();
+
+    // Faktor >= 1 ist ein normaler Split ("20:1"), darunter ein
+    // Reverse-Split, den man als "1:10" schreibt.
+    if (factor >= 1.0)
+        return formatRatioPart(factor) + QStringLiteral(":1");
+
+    return QStringLiteral("1:") + formatRatioPart(1.0 / factor);
 }
 
 QString PresenterShareSplitEdit::formatRatioPart(double value)

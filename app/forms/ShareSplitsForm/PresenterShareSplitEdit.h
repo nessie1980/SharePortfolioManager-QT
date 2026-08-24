@@ -150,6 +150,15 @@ private:
     /** Kurzbeschreibung eines Splits für Meldungstexte, z. B. "20:1 vom 18.07.2022". */
     static QString describeSplit(const ShareSplitObject& split);
 
+    /**
+     * @brief Schreibt einen Umrechnungsfaktor als Verhältnis.
+     *
+     * Faktor >= 1 als "20:1", darunter — Reverse-Split — als "1:10". Für den
+     * Verhältnis-Hinweis der Kurs-Gegenprobe (Punkt 3, siehe ARCHITECTURE.md),
+     * die einen Faktor liefert und keine zwei Seiten.
+     */
+    static QString describeImpliedRatio(double factor);
+
     /** Formatiert eine Verhältnis-Seite ohne unnötige Nachkommastellen. */
     static QString formatRatioPart(double value);
 

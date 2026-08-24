@@ -4278,17 +4278,75 @@ ist und nicht von der Reihenfolge der Datenbankzeilen abhaengt.
 `openLots()` reichte nicht: es liefert nur Restbestaende und traegt keine
 Depotnummer.
 
-### Was diese beiden Stufen nicht leisten
+### Punkt 3 — Gegenprobe aus der Kurshistorie (22.08.2026)
 
-Ein ZU GROSSES Verhaeltnis faellt nicht auf. Wer 21 statt 20 eintraegt, hat
-mehr Bestand als noetig, es entsteht keine Unterdeckung und damit kein Anlass
-zu pruefen. Dafuer ist Punkt 3 der Arbeitsliste zustaendig (Gegenprobe aus
-der Kurshistorie) — die einzige Pruefung, die auch ohne Unterdeckung greift.
+Punkt 1 und 2 haben eine gemeinsame blinde Stelle: beide haengen an einer
+Unterdeckung, und ein ZU GROSSES Verhaeltnis erzeugt nie eine. Wer 21 statt
+20 eintraegt, hat rechnerisch mehr Bestand als noetig, alles geht auf,
+niemand fragt nach. Punkt 3 ist die einzige der fuenf Stufen, die das
+bemerken kann — und die einzige, die schon beim Erfassen greift, bevor
+ueberhaupt ein Verkauf existiert.
 
-Tests: `tst_splitratiochecker.cpp` (Feldfall, Rueckrechnung, alle vier
-Bedingungen der Vorschlagsregel einzeln, Tippfehler-Abwehr, Bestandsverlauf
-je Depot) sowie vier Presenter-Tests in `tst_salesform.cpp` und elf in
-`tst_sharesplitsform.cpp`.
+**Warum die vorhandenen Toleranzbaender dafuer nicht taugen.**
+`SplitPriceJumpDetector` misst den Kurssprung um den Ex-Tag laengst
+(`observedRatio`), verwendet ihn aber nur fuer die Ja/Nein-Einordnung des
+"Kurshistorie bereinigt"-Hakens: passt er zu 1,0 oder passt er zum
+eingetragenen Faktor? Diese Baender sind mit plus/minus 20 Prozent so weit,
+dass bei eingetragenen 19 auch ein gemessener Sprung von 19,98 glatt als
+Treffer durchgeht. Genau so rutscht der Feldfall Alphabet durch.
+
+**Die feinere Frage.** `detect()` beantwortet seither zusaetzlich: passt der
+gemessene Sprung womoeglich BESSER zu einem anderen Verhaeltnis? Ermittelt
+wird das naechstgelegene saubere Verhaeltnis — die naechste ganze Zahl, bei
+Reverse-Splits deren Kehrwert. Gemeldet wird nur, wenn dieses innerhalb von
+`kRatioMatchTolerance` (3 %) liegt UND der eingetragene Faktor ausserhalb.
+
+Beide Bedingungen sind noetig. Passt der eingetragene Faktor selbst gut, gibt
+es nichts zu melden — das deckt zugleich den Fall ab, dass Kandidat und
+Faktor dieselbe Zahl sind. Passt keiner von beiden, waere eine Zahl geraten.
+
+Feldfall: gemessen 19,98; gegen 20 sind das 0,1 %, gegen die eingetragenen 19
+sind es 5,2 % — Hinweis auf 20:1. Umgekehrt bei eingetragenen 20 passt der
+eingetragene selbst, und es bleibt still.
+
+**Warum 3 %.** Deutlich enger als die Baender der Ja/Nein-Einordnung, denn 19
+und 20 liegen nur gut 5 % auseinander. Schlusskurse zweier aufeinander
+folgender Tage schwanken fuer sich schon um ein bis zwei Prozent; 3 % trennt
+den Feldfall sicher, ohne bei unruhigen Kursen zu raten. Ein 5:4-Split (1,25
+gegen 1,5) liegt ausserhalb dessen, was sich so unterscheiden laesst — dort
+schweigt die Gegenprobe, statt auf Verdacht zu raten. Der Wert steht als
+benannte Konstante und laesst sich nachziehen, falls die Praxis etwas anderes
+zeigt (Nessies Vorgabe 22.08.2026: erst einmal 3 %).
+
+**Nur bei gemessenem Sprung.** Die Gegenprobe laeuft bei `NotAdjusted` und
+`Ambiguous`. Bei `Adjusted` ist der Kurs praktisch gleich geblieben — es gibt
+gar keinen Sprung, an dem sich ein Verhaeltnis ablesen liesse, auch bei grob
+falschem Faktor nicht. Bei `Ambiguous` ist der Hinweis oft der eigentliche
+Ertrag: misst der Detektor einen 5:1-Sprung bei eingetragenen 20:1, bleibt
+die Haken-Frage uneindeutig, das Verhaeltnis laesst sich aber sehr wohl
+benennen.
+
+**Nur am "Pruefen"-Knopf** (Nessies Entscheidung 22.08.2026, in Fortsetzung
+der Vorgabe vom 13.08.2026). Die Kursauswertung bleibt an eine ausdrueckliche
+Nutzeraktion gebunden; die flaechendeckende Abdeckung bringt Punkt 4
+(Nachpruefung im Hintergrund), sonst entstuende sie zweimal.
+
+**Der Haken bleibt unberuehrt**, auch bei einem Verhaeltnis-Verdacht: ob die
+Kurshistorie bereinigt ist, ist eine ANDERE Frage als das Verhaeltnis. Nur
+die Einfaerbung wechselt im Zweig `NotAdjusted` von "uebernommen" auf
+"manuelle Entscheidung noetig", damit die Zeile nicht Entwarnung signalisiert,
+waehrend etwas zu pruefen ist.
+
+### Was auch nach Punkt 3 offen bleibt
+
+Alle drei Stufen setzen eine Nutzeraktion voraus — einen Verkauf, ein
+Speichern, einen Knopfdruck. Was bereits fehlerhaft in der Datenbank steht
+und von sich aus nie wieder angefasst wird, faellt weiterhin niemandem auf.
+Das ist Punkt 4 der Arbeitsliste.
+
+Tests: `tst_splitratiochecker.cpp` und `tst_splitpricejumpdetector.cpp` fuer
+die Rechenkerne, dazu vier Presenter-Tests in `tst_salesform.cpp` und sechzehn
+in `tst_sharesplitsform.cpp`.
 
 ---
 
@@ -5326,7 +5384,7 @@ Sessions.
 | --- | --- | --- | --- |
 | 1 | Rechenkern `SplitRatioChecker` + Diagnose in der Verkaufs-Mengenpruefung | beim Speichern eines Verkaufs | umgesetzt 22.08.2026 |
 | 2 | Derselbe Kern beim Speichern und Loeschen eines Splits | im Split-Dialog | umgesetzt 22.08.2026 |
-| 3 | Verhaeltnis-Gegenprobe aus der Kurshistorie | "Pruefen"-Knopf im Split-Dialog | offen |
+| 3 | Verhaeltnis-Gegenprobe aus der Kurshistorie | "Pruefen"-Knopf im Split-Dialog | umgesetzt 22.08.2026 |
 | 4 | Nachpruefung im Hintergrund | Programmstart / nach Tageswert-Abruf | offen |
 | 5 | Warnung bei Ex-Tag heute oder in der Zukunft | beim Speichern eines Splits | offen |
 
@@ -5338,14 +5396,9 @@ Umgesetzt am 22.08.2026, siehe "Plausibilitaetspruefung des
 Split-Verhaeltnisses" weiter oben, Abschnitt "Punkt 2".
 
 **3** nutzt `SplitPriceJumpDetector::detect()`, das den Kurssprung um den
-Ex-Tag ohnehin misst (`observedRatio`, im Feldfall 1003,00 auf 50,20, also
-rund 19,98 gegen eingetragene 19). Es ist die einzige Gegenprobe, die zum
-Zeitpunkt der Split-Erfassung vorliegt — und die einzige, die ein ZU GROSSES
-Verhaeltnis ueberhaupt bemerken kann, denn ein solches erzeugt nie eine
-Unterdeckung. Einschraenkung: 19 gegen 20 sind gut 5 % Unterschied,
-Schlusskurse zweier aufeinanderfolgender Tage schwanken fuer sich schon um
-ein bis zwei Prozent. Also ein Hinweis, nie eine Blockade, und bei
-uneindeutiger Messung schweigt er.
+Ex-Tag ohnehin misst. Umgesetzt am 22.08.2026, siehe
+"Plausibilitaetspruefung des Split-Verhaeltnisses" weiter oben, Abschnitt
+"Punkt 3".
 
 **4** waere eine reine Lese-Pruefung ueber alle Aktien mit Splits, gebaut wie
 `SplitAdjustmentAudit`. Faengt auch das ab, was bereits fehlerhaft in der

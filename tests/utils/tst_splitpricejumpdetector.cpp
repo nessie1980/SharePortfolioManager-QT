@@ -7,6 +7,10 @@
 // Fixture values loosely mirror the Alphabet Inc. Cl. A case documented in
 // ARCHITECTURE.md ("Split-Verhaeltnis: Notation der Bankmitteilungen"):
 // 20:1 split, ex-date 18.07.2022.
+//
+// Erweitert 22.08.2026 um die Gegenprobe des Verhaeltnisses (Punkt 3 der
+// Split-Plausibilitaetspruefung): passt der gemessene Sprung besser zu einem
+// anderen Verhaeltnis als zu dem eingetragenen?
 #include <QtTest>
 
 #include "../../app/utils/SplitPriceJumpDetector.h"
@@ -215,6 +219,145 @@ private slots:
         QCOMPARE(outcome.priceBefore, 1003.0);
         QCOMPARE(outcome.dateAfter, d(2022, 7, 19));
         QCOMPARE(outcome.priceAfter, 50.20);
+    }
+
+    // ── Gegenprobe des Verhaeltnisses (Punkt 3, 22.08.2026) ──────────────────
+    //
+    // Zweite, feinere Frage: passt der gemessene Sprung womoeglich BESSER zu
+    // einem anderen Verhaeltnis als zu dem eingetragenen? Die Toleranzbaender
+    // der Ja/Nein-Einordnung taugen dafuer nicht — mit +-20 % geht bei
+    // eingetragenen 19 auch ein gemessener Sprung von 19,98 als Treffer durch.
+    // Genau das ist der Feldfall Alphabet.
+
+    void test_detect_enteredRatioTooSmall_reportsMismatch()
+    {
+        // Der Feldfall: Bank schreibt "1:19", eingetragen wurde 19 statt 20.
+        const QList<DailyValuesObject> values = {
+            dv(d(2022, 7, 18), 1003.0),
+            dv(d(2022, 7, 19),   50.20),
+        };
+        const auto outcome = SplitPriceJumpDetector::detect(values, d(2022, 7, 18), 19.0);
+
+        QCOMPARE(outcome.result, SplitPriceJumpDetector::Result::NotAdjusted);
+        QVERIFY(outcome.ratioMismatch);
+        QCOMPARE(outcome.impliedFactor, 20.0);
+    }
+
+    void test_detect_enteredRatioCorrect_noMismatch()
+    {
+        const QList<DailyValuesObject> values = {
+            dv(d(2022, 7, 18), 1003.0),
+            dv(d(2022, 7, 19),   50.20),
+        };
+        const auto outcome = SplitPriceJumpDetector::detect(values, d(2022, 7, 18), 20.0);
+
+        QCOMPARE(outcome.result, SplitPriceJumpDetector::Result::NotAdjusted);
+        QVERIFY(!outcome.ratioMismatch);
+    }
+
+    void test_detect_enteredRatioTooLarge_reportsMismatch()
+    {
+        // Das ist der Fall, den KEINE der Bestandspruefungen bemerken kann:
+        // ein zu grosses Verhaeltnis erzeugt nie eine Unterdeckung.
+        const QList<DailyValuesObject> values = {
+            dv(d(2022, 7, 18), 1003.0),
+            dv(d(2022, 7, 19),   50.20),
+        };
+        const auto outcome = SplitPriceJumpDetector::detect(values, d(2022, 7, 18), 21.0);
+
+        QVERIFY(outcome.ratioMismatch);
+        QCOMPARE(outcome.impliedFactor, 20.0);
+    }
+
+    void test_detect_adjustedHistory_neverReportsMismatch()
+    {
+        // Kein Sprung heisst: es gibt gar nichts, woran sich ein Verhaeltnis
+        // ablesen liesse — auch bei grob falschem Faktor kein Verdacht.
+        const QList<DailyValuesObject> values = {
+            dv(d(2022, 7, 18), 50.20),
+            dv(d(2022, 7, 19), 50.60),
+        };
+        const auto outcome = SplitPriceJumpDetector::detect(values, d(2022, 7, 18), 19.0);
+
+        QCOMPARE(outcome.result, SplitPriceJumpDetector::Result::Adjusted);
+        QVERIFY(!outcome.ratioMismatch);
+    }
+
+    void test_detect_insufficientData_neverReportsMismatch()
+    {
+        const auto outcome = SplitPriceJumpDetector::detect({}, d(2022, 7, 18), 19.0);
+
+        QCOMPARE(outcome.result, SplitPriceJumpDetector::Result::InsufficientData);
+        QVERIFY(!outcome.ratioMismatch);
+    }
+
+    void test_detect_ambiguousResult_canStillReportMismatch()
+    {
+        // Gemessen wird ein 5:1-Sprung, eingetragen sind 20:1. Fuer die
+        // Ja/Nein-Einordnung bleibt das uneindeutig — das Verhaeltnis laesst
+        // sich trotzdem benennen.
+        const QList<DailyValuesObject> values = {
+            dv(d(2022, 7, 18), 100.0),
+            dv(d(2022, 7, 19),  20.0),
+        };
+        const auto outcome = SplitPriceJumpDetector::detect(values, d(2022, 7, 18), 20.0);
+
+        QCOMPARE(outcome.result, SplitPriceJumpDetector::Result::Ambiguous);
+        QVERIFY(outcome.ratioMismatch);
+        QCOMPARE(outcome.impliedFactor, 5.0);
+    }
+
+    void test_detect_reverseSplit_wrongRatio_reportsMismatch()
+    {
+        // Reverse-Split: der Kurs STEIGT, observedRatio liegt unter 1. Der
+        // Kandidat ist dann der Kehrwert der naechsten ganzen Zahl.
+        const QList<DailyValuesObject> values = {
+            dv(d(2023, 1, 9),   5.00),
+            dv(d(2023, 1, 10), 50.00),
+        };
+        const auto outcome = SplitPriceJumpDetector::detect(values, d(2023, 1, 9), 1.0 / 9.0);
+
+        QVERIFY(outcome.ratioMismatch);
+        QVERIFY(qAbs(outcome.impliedFactor - 0.1) < 1e-9);
+    }
+
+    void test_detect_reverseSplit_correctRatio_noMismatch()
+    {
+        const QList<DailyValuesObject> values = {
+            dv(d(2023, 1, 9),   5.00),
+            dv(d(2023, 1, 10), 50.00),
+        };
+        const auto outcome = SplitPriceJumpDetector::detect(values, d(2023, 1, 9), 0.1);
+
+        QVERIFY(!outcome.ratioMismatch);
+    }
+
+    void test_detect_noisyPriceWithinTolerance_staysSilent()
+    {
+        // Gemessen 20,5 bei eingetragenen 20 — das sind 2,5 % und liegt
+        // innerhalb der Toleranz. Tagesschwankungen duerfen keinen Verdacht
+        // ausloesen.
+        const QList<DailyValuesObject> values = {
+            dv(d(2022, 7, 18), 1025.0),
+            dv(d(2022, 7, 19),   50.00),
+        };
+        const auto outcome = SplitPriceJumpDetector::detect(values, d(2022, 7, 18), 20.0);
+
+        QVERIFY(!outcome.ratioMismatch);
+    }
+
+    void test_detect_smallFactorSplit_staysSilent()
+    {
+        // 5:4-Split: die naechste ganze Zahl waere 1, also gar kein Split.
+        // Bei so kleinen Verhaeltnissen schweigt die Gegenprobe.
+        const QList<DailyValuesObject> values = {
+            dv(d(2022, 7, 18), 125.0),
+            dv(d(2022, 7, 19), 100.0),
+        };
+        const auto outcome = SplitPriceJumpDetector::detect(values, d(2022, 7, 18), 1.25);
+
+        QVERIFY(!outcome.ratioMismatch);
+        QCOMPARE(outcome.impliedFactor, 0.0);
     }
 };
 

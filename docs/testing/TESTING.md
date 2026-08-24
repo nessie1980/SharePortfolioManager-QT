@@ -2986,6 +2986,48 @@ Randregel wie `ShareSplitAdjuster::volumeFactor()` — siehe auch
 "Bruchstücke bei Reverse-Splits nicht abgedeckt" in ARCHITECTURE.md, wo
 genau diese Regel die Grundlage für das dortige Vorgehen ist.
 
+Gegenprobe des Verhältnisses (Punkt 3 der Split-Plausibilitätsprüfung,
+22.08.2026): passt der gemessene Sprung besser zu einem anderen Verhältnis
+als zu dem eingetragenen? Das ist eine deutlich feinere Frage als die
+Ja/Nein-Einordnung darüber — deren Toleranzbänder sind mit plus/minus 20
+Prozent so weit, dass bei eingetragenen 19 auch ein gemessener Sprung von
+19,98 als Treffer durchgeht. Verglichen wird deshalb gegen 3 Prozent.
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_detect_enteredRatioTooSmall_reportsMismatch` | Feldfall: 19 eingetragen, gemessen 19,98 → Hinweis auf 20 |
+| `test_detect_enteredRatioCorrect_noMismatch` | 20 eingetragen und gemessen → still |
+| `test_detect_enteredRatioTooLarge_reportsMismatch` | 21 eingetragen → Hinweis auf 20 |
+| `test_detect_adjustedHistory_neverReportsMismatch` | Ohne Sprung kein Verhältnis ablesbar |
+| `test_detect_insufficientData_neverReportsMismatch` | Ohne Kurse erst recht nicht |
+| `test_detect_ambiguousResult_canStillReportMismatch` | 5:1 gemessen bei 20:1 eingetragen: Haken-Frage uneindeutig, Verhältnis benennbar |
+| `test_detect_reverseSplit_wrongRatio_reportsMismatch` | Reverse-Split: Kandidat ist der Kehrwert der nächsten ganzen Zahl |
+| `test_detect_reverseSplit_correctRatio_noMismatch` | Reverse-Split mit richtigem Verhältnis bleibt still |
+| `test_detect_noisyPriceWithinTolerance_staysSilent` | 20,5 gemessen bei 20 eingetragen: 2,5 % sind Tagesschwankung |
+| `test_detect_smallFactorSplit_staysSilent` | 5:4-Split: die nächste ganze Zahl wäre 1, also gar kein Split |
+
+@note `test_detect_enteredRatioTooLarge_reportsMismatch` haelt fest, warum
+diese Stufe ueberhaupt existiert. Ein zu grosses Verhaeltnis erzeugt nie eine
+Unterdeckung — die Bestandspruefungen der Punkte 1 und 2 koennen es
+grundsaetzlich nicht sehen. Der gemessene Kurssprung ist dafuer die einzige
+Gegenprobe.
+
+@note `test_detect_noisyPriceWithinTolerance_staysSilent` und
+`test_detect_smallFactorSplit_staysSilent` sichern die Zurueckhaltung nach
+unten ab: lieber kein Hinweis als ein falscher. Ohne sie waere die Toleranz
+frei verstellbar, ohne dass ein Test widerspricht.
+
+Die Anbindung an den "Prüfen"-Knopf prüfen fünf Tests in
+`tst_sharesplitsform.cpp`, Abschnitt "Gegenprobe des Verhältnisses":
+Hinweistext bei zu kleinem und bei zu grossem Verhältnis, Wechsel der
+Einfärbung auf "manuelle Entscheidung nötig", kein Zusatz bei richtigem
+Verhältnis, und kein Zusatz ohne gemessenen Sprung.
+
+@note `test_presenter_onCheckPriceJump_ratioMismatch_switchesTone` hält
+fest, dass der "Kurshistorie bereinigt"-Haken trotz Verhältnis-Verdacht
+gesetzt wird. Das sind zwei verschiedene Fragen; nur die Einfärbung wechselt,
+damit die Zeile nicht Entwarnung signalisiert, während etwas zu prüfen ist.
+
 ---
 
 ### SplitAdjustmentAudit (tests/utils/tst_splitadjustmentaudit.cpp)
