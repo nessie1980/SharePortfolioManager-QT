@@ -184,6 +184,84 @@ private slots:
         QCOMPARE(config.count(), 2);
     }
 
+    /**
+     * @brief Zwei Einträge mit derselben Depotnummer werden abgewiesen
+     *        (25.08.2026).
+     *
+     * Die Depotnummer ist der eineindeutige Schlüssel eines Eintrags; steht
+     * sie zweimal, lässt sich nicht mehr entscheiden, welcher Regelsatz für
+     * einen Beleg gilt. Abgewiesen wird die ganze Datei, statt den zweiten
+     * Eintrag stillschweigend zu übergehen: eine halbierte Konfiguration
+     * würde falsche Werte liefern, ein Ladefehler dagegen sperrt in
+     * MainWindow die Bedienelemente und ist damit sichtbar.
+     *
+     * Der Bankname darf sich dabei ausdrücklich unterscheiden — geprüft wird
+     * die Nummer, nicht der Name.
+     */
+    void test_load_duplicateDepotNumber_returnsError()
+    {
+        const QString path = writeXml(QStringLiteral("dupdepot.xml"),
+            QStringLiteral(
+                "<?xml version=\"1.0\"?><Documents>"
+                "<Bank Name=\"BankA\" BankIdentifierValue=\"123456\" Encoding=\"UTF-8\">"
+                "<BankIdentifier Name=\"BankIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</BankIdentifier>"
+                "<BuyIdentifier Name=\"BuyIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</BuyIdentifier>"
+                "<SaleIdentifier Name=\"SaleIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</SaleIdentifier>"
+                "<DividendIdentifier Name=\"DividendIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</DividendIdentifier>"
+                "<BrokerageIdentifier Name=\"BrokerageIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</BrokerageIdentifier>"
+                "<Document Type=\"Buy\" TypeIdentifierValue=\"X\" Encoding=\"UTF-8\">"
+                "<Wkn Name=\"Wkn\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">x</Wkn>"
+                "</Document></Bank>"
+                "<Bank Name=\"BankB\" BankIdentifierValue=\"123456\" Encoding=\"UTF-8\">"
+                "<BankIdentifier Name=\"BankIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</BankIdentifier>"
+                "<BuyIdentifier Name=\"BuyIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</BuyIdentifier>"
+                "<SaleIdentifier Name=\"SaleIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</SaleIdentifier>"
+                "<DividendIdentifier Name=\"DividendIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</DividendIdentifier>"
+                "<BrokerageIdentifier Name=\"BrokerageIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</BrokerageIdentifier>"
+                "<Document Type=\"Buy\" TypeIdentifierValue=\"Y\" Encoding=\"UTF-8\">"
+                "<Wkn Name=\"Wkn\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">y</Wkn>"
+                "</Document></Bank>"
+                "</Documents>"));
+
+        DocumentsConfig config;
+        QCOMPARE(config.load(path), DocumentsConfig::LoadResult::DuplicateDepotNumber);
+        QVERIFY(!config.lastError().isEmpty());
+    }
+
+    /**
+     * @brief Gegenprobe: gleicher Bankname, verschiedene Depotnummern —
+     *        das ist der ERLAUBTE Fall (zweites Depot bei derselben Bank).
+     */
+    void test_load_sameBankNameDifferentDepotNumbers_succeeds()
+    {
+        const QString path = writeXml(QStringLiteral("samebank.xml"),
+            QStringLiteral(
+                "<?xml version=\"1.0\"?><Documents>"
+                "<Bank Name=\"DKB\" BankIdentifierValue=\"501403950\" Encoding=\"UTF-8\">"
+                "<BankIdentifier Name=\"BankIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</BankIdentifier>"
+                "<BuyIdentifier Name=\"BuyIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</BuyIdentifier>"
+                "<SaleIdentifier Name=\"SaleIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</SaleIdentifier>"
+                "<DividendIdentifier Name=\"DividendIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</DividendIdentifier>"
+                "<BrokerageIdentifier Name=\"BrokerageIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</BrokerageIdentifier>"
+                "<Document Type=\"Buy\" TypeIdentifierValue=\"X\" Encoding=\"UTF-8\">"
+                "<Wkn Name=\"Wkn\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">x</Wkn>"
+                "</Document></Bank>"
+                "<Bank Name=\"DKB\" BankIdentifierValue=\"501403951\" Encoding=\"UTF-8\">"
+                "<BankIdentifier Name=\"BankIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</BankIdentifier>"
+                "<BuyIdentifier Name=\"BuyIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</BuyIdentifier>"
+                "<SaleIdentifier Name=\"SaleIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</SaleIdentifier>"
+                "<DividendIdentifier Name=\"DividendIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</DividendIdentifier>"
+                "<BrokerageIdentifier Name=\"BrokerageIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</BrokerageIdentifier>"
+                "<Document Type=\"Buy\" TypeIdentifierValue=\"Y\" Encoding=\"UTF-8\">"
+                "<Wkn Name=\"Wkn\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">y</Wkn>"
+                "</Document></Bank>"
+                "</Documents>"));
+
+        DocumentsConfig config;
+        QCOMPARE(config.load(path), DocumentsConfig::LoadResult::Success);
+        QCOMPARE(config.count(), 2);
+    }
+
     // ── Depot entry content ───────────────────────────────────────────────
 
     void test_depot_attributes()

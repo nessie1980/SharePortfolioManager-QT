@@ -74,7 +74,9 @@ struct DepotEntry
  * objects — one per DEPOT, not per bank (see DepotEntry). Each entry contains
  * identifier regexes and per-document regex rule sets used by the PDF parser
  * to extract transaction data.
-
+ *
+ * Depot numbers are unique across the whole file; load() rejects a duplicate
+ * with LoadResult::DuplicateDepotNumber rather than silently keeping both.
  *
  * ### XML structure
  * ```xml
@@ -123,7 +125,20 @@ public:
         DocumentAttributeError      = -6, ///< A required Document attribute is missing
         IdentifierAttributeError    = -7, ///< A required identifier attribute is missing
         XmlParseError               = -8, ///< XML is malformed
-        LoadFailed                  = -9  ///< Unspecified load failure
+        LoadFailed                  = -9, ///< Unspecified load failure
+
+        /**
+         * @brief Two `<Bank>` elements carry the same `BankIdentifierValue`.
+         *
+         * Added 25.08.2026 together with the depot-number based bank
+         * detection. The depot number is the unique key of an entry; if it
+         * appears twice, no caller can tell which set of regex rules a
+         * document belongs to. Loading is refused rather than keeping the
+         * first and dropping the second, because a silently halved
+         * configuration would produce wrong parse results instead of a
+         * visible error.
+         */
+        DuplicateDepotNumber        = -10
     };
 
     DocumentsConfig() = default;

@@ -4886,6 +4886,14 @@ ohne fachlichen Gewinn. Die Zuordnung XML-Attribut zu Feldname steht in
 weiterhin `BankAttributeError`/`BankElementError` — sie benennen das
 XML-Element, nicht den C++-Typ.
 
+**Neue Zusage beim Laden.** Zwei Eintraege mit derselben Depotnummer sind
+ein Konfigurationsfehler und werden mit `LoadResult::DuplicateDepotNumber`
+abgewiesen. Nicht stillschweigend uebergangen: welcher der beiden
+Regelsaetze fuer einen Beleg gilt, waere sonst nicht mehr entscheidbar, und
+eine halbierte Konfiguration liefert falsche Werte statt eines sichtbaren
+Fehlers. `MainWindow` behandelt das wie jeden anderen Ladefehler und sperrt
+die Bedienelemente.
+
 **Nebenbefund: das Fixture war falsch.** `kCortalEur` in `tst_documentsxml`
 trug die Consors-Depotnummer ohne ihre fuehrende Null. Solange nur die
 Beschriftung geprueft wurde, war das folgenlos; mit dem Wertvergleich haette
@@ -4910,7 +4918,7 @@ Benutzer den Fehler an der falschen Stelle.
 
 **Geprueft** in drei Testzielen. `tst_documentclassifier` deckt die Regel
 selbst gegen ein synthetisches Fixture ab, das DKB und Consors mit ihren
-echten Regeln nachbaut; `tst_documentsconfig` das Verhalten von
+echten Regeln nachbaut; `tst_documentsconfig` die Duplikatspruefung und
 `findByDepotNumber()` an zwei Depots derselben Bank; `tst_documentsxml` die
 Zuordnung gegen die AUSGELIEFERTE `Documents.xml` und die nachgebauten
 Belegtexte. Nur das dritte kann belegen, dass die Regel auf Nessies Belegen

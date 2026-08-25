@@ -407,6 +407,13 @@ Depotnummer"). Danach richten sich seit dem 25.08.2026 diese Pruefungen in
 | ---- | ----- |
 | `test_findByDepotNumber_found` / `test_findByDepotNumber_notFound` | Nachfolgerin von `findByName()`, das ersatzlos entfallen ist |
 | `test_findByDepotNumber_twoDepotsSameBank_areDistinguished` | Zwei Eintraege mit demselben `Name`, verschiedenen Nummern — beide behalten ihren eigenen Regelsatz |
+| `test_load_duplicateDepotNumber_returnsError` | Doppelte Depotnummer ist ein Konfigurationsfehler: `LoadResult::DuplicateDepotNumber` |
+| `test_load_sameBankNameDifferentDepotNumbers_succeeds` | Gegenprobe — gleicher Bankname bei verschiedenen Nummern ist der ERLAUBTE Fall |
+
+@note Abgewiesen wird die ganze Datei, nicht nur der zweite Eintrag: welcher
+der beiden Regelsaetze fuer einen Beleg gilt, waere sonst nicht mehr
+entscheidbar, und eine halbierte Konfiguration liefert falsche Werte statt
+eines sichtbaren Fehlers.
 
 ---
 

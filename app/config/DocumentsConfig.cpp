@@ -82,6 +82,22 @@ DocumentsConfig::LoadResult DocumentsConfig::load(const QString& filePath)
             return LoadResult::BankAttributeError;
         }
 
+        // Die Depotnummer ist der eineindeutige Schlüssel eines Eintrags
+        // (siehe DepotEntry). Ein zweites Vorkommen ist ein
+        // Konfigurationsfehler und wird hier abgewiesen — nicht stillschweigend
+        // übergangen: welcher der beiden Regelsätze für einen Beleg gilt, wäre
+        // sonst nicht mehr entscheidbar, und die Erkennung würde eine falsche
+        // Antwort geben statt gar keiner.
+        for (const auto& existing : std::as_const(m_entries)) {
+            if (existing.depotNumber == bankId) {
+                m_lastError = QStringLiteral(
+                    "Duplicate BankIdentifierValue \"%1\" (banks \"%2\" and \"%3\")")
+                    .arg(bankId, existing.bankName, bankName);
+                qWarning() << "[DocumentsConfig]" << m_lastError;
+                return LoadResult::DuplicateDepotNumber;
+            }
+        }
+
         DepotEntry depot;
         depot.bankName    = bankName;
         depot.depotNumber = bankId;

@@ -198,6 +198,11 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   XML-Datei selbst bleibt unverändert — sie ist ein Konfigurationsformat im
   Feld, ein Schemawechsel wäre ein Bruch ohne fachlichen Gewinn.
 
+  Zwei Einträge mit derselben Depotnummer sind ein Konfigurationsfehler und
+  werden beim Laden abgewiesen, statt stillschweigend übergangen zu werden:
+  welcher der beiden Regelsätze für einen Beleg gilt, wäre sonst nicht mehr
+  entscheidbar.
+
 ### Fixed
 
 - **Ein Consors-Beleg wurde als DKB-Beleg ausgewertet** (Nessies Bugreport
