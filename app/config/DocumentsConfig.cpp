@@ -7,6 +7,8 @@
 #include <QRegularExpression>
 #include <QDebug>
 
+#include <utility>   // std::as_const
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 DocumentType DocumentsConfig::documentTypeFromString(const QString& typeStr)
@@ -80,10 +82,10 @@ DocumentsConfig::LoadResult DocumentsConfig::load(const QString& filePath)
             return LoadResult::BankAttributeError;
         }
 
-        BankEntry bank;
-        bank.name       = bankName;
-        bank.identifier = bankId;
-        bank.encoding   = bankEnc;
+        DepotEntry depot;
+        depot.bankName    = bankName;
+        depot.depotNumber = bankId;
+        depot.encoding    = bankEnc;
 
         // ── Read Bank children ────────────────────────────────────────────
         while (!xml.atEnd()) {
@@ -123,7 +125,7 @@ DocumentsConfig::LoadResult DocumentsConfig::load(const QString& filePath)
                 element.resultEmpty        = (idEmpty.toLower() == QStringLiteral("true"));
                 element.regexOptions       = parseRegexOptions(idOpts);
 
-                bank.identifierRegexList.insert(elementName, element);
+                depot.identifierRegexList.insert(elementName, element);
                 continue;
             }
 
@@ -188,11 +190,11 @@ DocumentsConfig::LoadResult DocumentsConfig::load(const QString& filePath)
                     return LoadResult::DocumentElementError;
                 }
 
-                bank.documents.insert(docEntry.type, docEntry);
+                depot.documents.insert(docEntry.type, docEntry);
             }
         }
 
-        m_entries.append(bank);
+        m_entries.append(depot);
     }
 
     if (xml.hasError()) {
@@ -209,16 +211,16 @@ DocumentsConfig::LoadResult DocumentsConfig::load(const QString& filePath)
     }
 
     qInfo() << "[DocumentsConfig] Loaded" << m_entries.size()
-            << "bank(s) from" << filePath;
+            << "depot(s) from" << filePath;
     return LoadResult::Success;
 }
 
-// ── findByName ────────────────────────────────────────────────────────────────
+// ── findByDepotNumber ─────────────────────────────────────────────────────────
 
-const BankEntry* DocumentsConfig::findByName(const QString& name) const
+const DepotEntry* DocumentsConfig::findByDepotNumber(const QString& depotNumber) const
 {
     for (const auto& entry : std::as_const(m_entries)) {
-        if (entry.name == name)
+        if (entry.depotNumber == depotNumber)
             return &entry;
     }
     return nullptr;
@@ -226,11 +228,11 @@ const BankEntry* DocumentsConfig::findByName(const QString& name) const
 
 // ── findDocument ──────────────────────────────────────────────────────────────
 
-const DocumentEntry* DocumentsConfig::findDocument(const BankEntry& bank,
+const DocumentEntry* DocumentsConfig::findDocument(const DepotEntry& depot,
                                                      DocumentType type)
 {
-    auto it = bank.documents.find(type);
-    if (it == bank.documents.end())
+    auto it = depot.documents.find(type);
+    if (it == depot.documents.end())
         return nullptr;
     return &it.value();
 }

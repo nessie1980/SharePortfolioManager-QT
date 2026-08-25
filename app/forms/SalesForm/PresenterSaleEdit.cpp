@@ -392,16 +392,16 @@ void PresenterSaleEdit::onPdfTextExtracted(bool success, const QString& text)
 }
 
 // ── startParserForText ────────────────────────────────────────────────────────
-// Bank-/document-type detection now delegates to DocumentClassifier
+// Depot-/document-type detection now delegates to DocumentClassifier
 // (see ARCHITECTURE.md) — behaviour unchanged, including the fallback to
-// DocumentType::Sale when the bank matched but no identifier did.
+// DocumentType::Sale when the depot matched but no identifier did.
 
 void PresenterSaleEdit::startParserForText(const QString& pdfText)
 {
     if (!m_config || !m_config->isValid()) return;
 
-    int bankIndex = -1;
-    if (!DocumentClassifier::matchBankIndex(pdfText, *m_config, bankIndex)) {
+    int depotIndex = -1;
+    if (!DocumentClassifier::matchDepotIndex(pdfText, *m_config, depotIndex)) {
         const QStringList required = {
             "date","depotNumber","orderNumber","volume","salePrice"
         };
@@ -410,12 +410,12 @@ void PresenterSaleEdit::startParserForText(const QString& pdfText)
         return;
     }
 
-    const BankEntry matchedBank = m_config->entries().at(bankIndex);
+    const DepotEntry matchedDepot = m_config->entries().at(depotIndex);
     const DocumentType docType = DocumentClassifier::detectDocumentType(
-        pdfText, matchedBank, DocumentType::Sale);
+        pdfText, matchedDepot, DocumentType::Sale);
 
     const DocumentEntry* docEntry =
-        DocumentsConfig::findDocument(matchedBank, docType);
+        DocumentsConfig::findDocument(matchedDepot, docType);
     if (!docEntry) {
         m_view->onParseFinished();
         return;

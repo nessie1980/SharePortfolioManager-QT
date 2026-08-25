@@ -19,7 +19,7 @@ enum class DocumentType {
 };
 
 /**
- * @brief Parsing configuration for one document type of a bank.
+ * @brief Parsing configuration for one document type of one depot.
  *
  * Maps to one `<Document>` element inside a `<Bank>` in `Documents.xml`.
  * Contains the regex rules to extract field values (WKN, ISIN, Date, Price, etc.)
@@ -34,17 +34,35 @@ struct DocumentEntry
 };
 
 /**
- * @brief Parsing configuration for one bank.
+ * @brief Parsing configuration for exactly ONE DEPOT at one bank.
  *
- * Maps to one `<Bank>` element in `Documents.xml`.
- * Contains identifier regexes to recognise which bank and document type
- * a given PDF belongs to, plus per-document regex rule sets.
+ * Maps to one `<Bank>` element in `Documents.xml`. Despite the XML element's
+ * name, an entry does not describe a bank in general — it describes a single
+ * depot, and @ref depotNumber is its unique key (Nessie, 25.08.2026):
+ *
+ * - A second depot at an already-configured bank needs its OWN `<Bank>`
+ *   element, carrying the same @ref bankName but a different @ref depotNumber.
+ * - The regex rules are cut to the layout of the documents that THIS depot
+ *   produces. If a bank changes its layout or extends its depot numbers from
+ *   nine to ten digits, the rules of that entry have to follow.
+ *
+ * @note @ref bankName is display text only and therefore NOT unique. Anything
+ * that has to identify an entry — bank detection, the depot-number combo
+ * boxes of the four edit dialogs, findByDepotNumber() — goes through
+ * @ref depotNumber. See ARCHITECTURE.md, "Bankerkennung: Mehrdeutigkeit ueber
+ * die Depotnummer".
+ *
+ * @note The struct was called `BankEntry` with members `name`/`identifier`
+ * until 25.08.2026. The old names suggested a per-bank entry and were part of
+ * why bank detection never compared the depot number in the first place.
+ * The XML attribute names (`Name`, `BankIdentifierValue`) stay untouched —
+ * they describe the file format, which is deliberately unchanged.
  */
-struct BankEntry
+struct DepotEntry
 {
-    QString            name;           ///< Bank display name (e.g. "DKB")
-    QString            identifier;     ///< Regex value to identify the bank's depot number
-    QString            encoding;       ///< Default encoding for this bank's documents
+    QString            bankName;       ///< Bank display name (e.g. "DKB") — NOT unique
+    QString            depotNumber;    ///< Depot number from `BankIdentifierValue` — the unique key
+    QString            encoding;       ///< Default encoding for this depot's documents
     ParserLib::RegExList identifierRegexList; ///< Bank + transaction type identifier regexes
     QMap<DocumentType, DocumentEntry> documents; ///< Parsing rules per document type
 };
@@ -52,9 +70,11 @@ struct BankEntry
 /**
  * @brief Loads and provides access to the document parsing configuration.
  *
- * Reads `Documents.xml` and exposes the entries as a list of `BankEntry` objects.
- * Each bank entry contains identifier regexes and per-document regex rule sets
- * used by the PDF parser to extract transaction data.
+ * Reads `Documents.xml` and exposes the entries as a list of `DepotEntry`
+ * objects — one per DEPOT, not per bank (see DepotEntry). Each entry contains
+ * identifier regexes and per-document regex rule sets used by the PDF parser
+ * to extract transaction data.
+
  *
  * ### XML structure
  * ```xml
@@ -78,9 +98,9 @@ struct BankEntry
  * @code
  * DocumentsConfig config;
  * if (config.load("/path/to/Documents.xml") == DocumentsConfig::LoadResult::Success) {
- *     const auto* bank = config.findByName("DKB");
- *     if (bank) {
- *         const auto* doc = config.findDocument(*bank, DocumentType::Buy);
+ *     const auto* depot = config.findByDepotNumber("501403950");
+ *     if (depot) {
+ *         const auto* doc = config.findDocument(*depot, DocumentType::Buy);
  *         if (doc)
  *             parser.setParsingValues(ParsingValues(text, doc->encoding, doc->regexList));
  *     }
@@ -116,25 +136,32 @@ public:
     LoadResult load(const QString& filePath);
 
     /**
-     * @brief Returns all loaded bank entries.
-     * @return List of BankEntry objects, empty if not loaded.
+     * @brief Returns all loaded depot entries.
+     * @return List of DepotEntry objects, empty if not loaded.
      */
-    QList<BankEntry> entries() const { return m_entries; }
+    QList<DepotEntry> entries() const { return m_entries; }
 
     /**
-     * @brief Find a bank entry by its name.
-     * @param name  Bank name (e.g. "DKB").
+     * @brief Find a depot entry by its depot number.
+     *
+     * Replaces the former `findByName()` (removed 25.08.2026). Looking an
+     * entry up by bank name cannot work once a second depot exists at the
+     * same bank: both entries carry the same name, and the lookup would
+     * silently return whichever comes first in the file. The depot number is
+     * the unique key — see DepotEntry.
+     *
+     * @param depotNumber  Depot number as written in `BankIdentifierValue`.
      * @return Pointer to the matching entry, or nullptr if not found.
      */
-    const BankEntry* findByName(const QString& name) const;
+    const DepotEntry* findByDepotNumber(const QString& depotNumber) const;
 
     /**
-     * @brief Find a document entry within a bank by document type.
-     * @param bank  The bank entry to search in.
-     * @param type  The document type to find.
+     * @brief Find a document entry within a depot by document type.
+     * @param depot  The depot entry to search in.
+     * @param type   The document type to find.
      * @return Pointer to the matching DocumentEntry, or nullptr if not found.
      */
-    static const DocumentEntry* findDocument(const BankEntry& bank, DocumentType type);
+    static const DocumentEntry* findDocument(const DepotEntry& depot, DocumentType type);
 
     /**
      * @brief Convert a document type string to the DocumentType enum.
@@ -144,13 +171,13 @@ public:
     static DocumentType documentTypeFromString(const QString& typeStr);
 
     /**
-     * @brief Returns true if the config was loaded and contains at least one bank.
+     * @brief Returns true if the config was loaded and contains at least one depot.
      * @return true if valid.
      */
     bool isValid() const { return !m_entries.isEmpty(); }
 
     /**
-     * @brief Returns the number of loaded bank entries.
+     * @brief Returns the number of loaded depot entries.
      * @return Entry count.
      */
     int count() const { return m_entries.size(); }
@@ -170,6 +197,6 @@ private:
     static QList<QRegularExpression::PatternOption> parseRegexOptions(
         const QString& optionsStr);
 
-    QList<BankEntry> m_entries;
+    QList<DepotEntry> m_entries;
     QString          m_lastError;
 };

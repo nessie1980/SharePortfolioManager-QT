@@ -20,7 +20,7 @@
  *
  * Parse pipeline is identical to PresenterBuyEdit:
  * 1. onDocumentSelected() → PdfTextExtractor → onPdfTextExtracted()
- * 2. startParserForText() → DocumentClassifier::matchBankIndex()/
+ * 2. startParserForText() → DocumentClassifier::matchDepotIndex()/
  *    detectDocumentType() → ParserLib
  * 3. onParserUpdated() → populateFromResult() → setFieldOk/Error + onParseFinished
  *
@@ -29,11 +29,11 @@
  * - canRemove = isLastSale (no sold-volume guard needed for sales).
  * - Derived values: saleValue, kaufwert, gewinnVerlust, gesGebühren, taxSum, auszahlung.
  *
- * @note PDF-to-text conversion and bank-/document-type detection now
+ * @note PDF-to-text conversion and depot-/document-type detection now
  * delegate to the shared `PdfTextExtractor`/`DocumentClassifier` utility
  * classes (see ARCHITECTURE.md, "PDF-Erkennungslogik gebündelt in
  * DocumentClassifier"). Behaviour unchanged, including the fallback to
- * `DocumentType::Sale` when the bank matched but no explicit identifier did.
+ * `DocumentType::Sale` when the depot matched but no explicit identifier did.
  */
 class PresenterSaleEdit : public QObject
 {

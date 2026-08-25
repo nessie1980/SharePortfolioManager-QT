@@ -2032,18 +2032,26 @@ void MainWindow::onDocumentCaptureTextExtracted(bool success, const QString& tex
     const DocumentClassifier::Result result =
         DocumentClassifier::classify(text, m_documentsConfig);
     if (!result.matched) {
-        // Die beiden Fehlerursachen getrennt benennen (21.08.2026): eine
-        // unbekannte Bank heisst, dass ein Eintrag in Documents.xml fehlt —
+        // Die beiden Fehlerursachen getrennt benennen (21.08.2026): ein
+        // unbekanntes Depot heisst, dass ein Eintrag in Documents.xml fehlt —
         // ein unbekannter Dokumenttyp dagegen, dass die Anwendung diese
         // Belegart nicht verarbeitet (z. B. eine Vorabpauschale-Abrechnung für
         // thesaurierende Fonds). Vorher lautete die Meldung in beiden Fällen
         // gleich und liess offen, woran es lag.
+        //
+        // Die zweite Meldung nennt seit dem 25.08.2026 ausdrücklich die
+        // Depotnummer als Ursache: die Erkennung vergleicht die Nummer aus dem
+        // Beleg gegen die hinterlegte, ein Beleg aus einem noch nicht
+        // eingetragenen Depot fällt also hier heraus — auch dann, wenn die
+        // BANK längst in Documents.xml steht. Ohne den Zusatz suchte der
+        // Benutzer den Fehler an der falschen Stelle.
         addStatusMessage(
-            result.bankMatched
-                ? tr("Dokumenttyp nicht erkannt (Bank: %1). Verarbeitet werden "
-                     "Kauf-, Verkauf-, Dividenden- und Kostenabrechnungen: %2")
-                      .arg(result.bank.name, fileName)
-                : tr("Dokument konnte keiner hinterlegten Bank zugeordnet werden: %1")
+            result.depotMatched
+                ? tr("Dokumenttyp nicht erkannt (Bank %1, Depot %2). Verarbeitet "
+                     "werden Kauf-, Verkauf-, Dividenden- und Kostenabrechnungen: %3")
+                      .arg(result.depot.bankName, result.depot.depotNumber, fileName)
+                : tr("Dokument konnte keinem hinterlegten Depot zugeordnet werden — "
+                     "die Depotnummer im Beleg steht nicht in Documents.xml: %1")
                       .arg(fileName),
             MessageType::Error);
         m_documentCaptureEdit->clear();

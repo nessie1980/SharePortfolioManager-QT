@@ -152,10 +152,10 @@ Ausmachender Betrag                                               1.573,73+  EUR
 /// Cortal Consors, Ausschüttung in EUR (Nessies Screenshot, 21.08.2026).
 ///
 /// Der Kopfbereich ist auf dem Screenshot abgeschnitten. Die Zeile mit der
-/// Depotnummer MUSS dort stehen: die Bankerkennung
-/// (`DocumentClassifier::matchBankIndex()`) läuft über die
-/// `BankIdentifier`-Regel dieser Bank, und die sucht genau danach. Ohne sie
-/// würde der Beleg gar nicht als Consors-Dokument erkannt.
+/// Depotnummer MUSS dort stehen: die Depoterkennung
+/// (`DocumentClassifier::matchDepotIndex()`) läuft über die
+/// `BankIdentifier`-Regel dieses Eintrags, und die sucht genau danach. Ohne
+/// sie würde der Beleg gar nicht als Consors-Dokument erkannt.
 ///
 /// @note Die Depotnummer trug hier bis zum 25.08.2026 die Form `878031421`
 /// — ohne die führende Null. Nessie hat bestätigt, dass der echte Beleg
@@ -250,6 +250,15 @@ Provision                                                          10,00- EUR
 Ausmachender Betrag                                             2.048,80+ EUR
 )";
 
+/// Die Depotnummern aus `Documents.xml` — der eineindeutige Schlüssel eines
+/// Eintrags (siehe DepotEntry). Alle Helfer dieses Testziels schlagen darüber
+/// nach, NICHT über den Banknamen: sobald ein zweites Depot bei einer bereits
+/// eingetragenen Bank hinzukommt, tragen beide Einträge denselben Namen, und
+/// eine Suche danach lieferte stillschweigend den erstbesten Regelsatz.
+const char* kDepotDkb     = "501403950";
+const char* kDepotIng     = "8006189848";
+const char* kDepotConsors = "0878031421";
+
 } // namespace
 
 class TestDocumentsXml : public QObject
@@ -260,37 +269,36 @@ class TestDocumentsXml : public QObject
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    /// Wendet die Dividenden-Regeln von @p bankName auf @p text an.
-    QMap<QString, QList<QString>> parseDividend(const QString& bankName,
+    /// Wendet die Dividenden-Regeln des Depots @p depotNumber auf @p text an.
+    QMap<QString, QList<QString>> parseDividend(const QString& depotNumber,
                                                  const QString& text)
     {
-        return parseDocument(bankName, DocumentType::Dividend, text);
+        return parseDocument(depotNumber, DocumentType::Dividend, text);
     }
 
-    /// Wendet die Regeln von @p bankName für @p type auf @p text an.
-    QMap<QString, QList<QString>> parseDocument(const QString& bankName,
+    /// Wendet die Regeln des Depots @p depotNumber für @p type auf @p text an.
+    ///
+    /// Schlägt seit dem 25.08.2026 über die DEPOTNUMMER nach statt über den
+    /// Banknamen: der Name ist nicht eindeutig, sobald eine Bank ein zweites
+    /// Depot führt, und dieses Testziel prüfte dann heimlich den falschen
+    /// Regelsatz.
+    QMap<QString, QList<QString>> parseDocument(const QString& depotNumber,
                                                 DocumentType   type,
                                                 const QString& text)
     {
-        // entries() liefert die Liste als KOPIE. Sie muss deshalb in einer
-        // eigenen Variablen am Leben bleiben — ein Zeiger in das temporäre
-        // Ergebnis eines Aufrufs wäre nach der Schleife ungültig, und
-        // findDocument() unten reicht wiederum einen Zeiger IN diesen Eintrag
-        // zurück.
-        const QList<BankEntry> banks = m_config.entries();
-
-        const BankEntry* bank = nullptr;
-        for (const BankEntry& b : banks) {
-            if (b.name == bankName) { bank = &b; break; }
-        }
-        if (!bank) {
-            qWarning() << "Bank nicht in Documents.xml:" << bankName;
+        // findByDepotNumber() reicht einen Zeiger in die interne Liste von
+        // m_config zurück — die lebt so lange wie das Testobjekt, anders als
+        // die Kopie aus entries(). Die frühere Lebensdauer-Falle (Zeiger in
+        // ein Temporary) entfällt damit.
+        const DepotEntry* depot = m_config.findByDepotNumber(depotNumber);
+        if (!depot) {
+            qWarning() << "Depot nicht in Documents.xml:" << depotNumber;
             return {};
         }
 
-        const DocumentEntry* doc = DocumentsConfig::findDocument(*bank, type);
+        const DocumentEntry* doc = DocumentsConfig::findDocument(*depot, type);
         if (!doc) {
-            qWarning() << "Kein Dokumentblock für" << bankName
+            qWarning() << "Kein Dokumentblock für Depot" << depotNumber
                        << "Typ" << static_cast<int>(type);
             return {};
         }
@@ -318,21 +326,16 @@ class TestDocumentsXml : public QObject
         return r.value(QString::fromLatin1(key)).value(0).trimmed();
     }
 
-    /// Dividendenblock von @p bankName als KOPIE — für die Aufrufe von
-    /// DocumentClassifier, die einen `DocumentEntry` erwarten. Dieselbe
-    /// Lebensdauer-Falle wie in parseDividend(): `entries()` gibt eine Kopie
-    /// zurück, `findDocument()` einen Zeiger hinein.
-    DocumentEntry dividendEntry(const QString& bankName)
+    /// Dividendenblock des Depots @p depotNumber als KOPIE — für die Aufrufe
+    /// von DocumentClassifier, die einen `DocumentEntry` erwarten.
+    DocumentEntry dividendEntry(const QString& depotNumber)
     {
-        const QList<BankEntry> banks = m_config.entries();
-        for (const BankEntry& b : banks) {
-            if (b.name != bankName)
-                continue;
+        if (const DepotEntry* depot = m_config.findByDepotNumber(depotNumber)) {
             if (const DocumentEntry* doc =
-                    DocumentsConfig::findDocument(b, DocumentType::Dividend))
+                    DocumentsConfig::findDocument(*depot, DocumentType::Dividend))
                 return *doc;
         }
-        qWarning() << "Kein Dividend-Block für" << bankName;
+        qWarning() << "Kein Dividend-Block für Depot" << depotNumber;
         return {};
     }
 
@@ -354,28 +357,28 @@ private slots:
 
     void test_ing_eur_exDate()
     {
-        QCOMPARE(first(parseDividend(QStringLiteral("ING diba"), QString::fromUtf8(kIngEur)),
+        QCOMPARE(first(parseDividend(QString::fromLatin1(kDepotIng), QString::fromUtf8(kIngEur)),
                        "ExDate"),
                  QStringLiteral("08.05.2026"));
     }
 
     void test_ing_usd_exDate()
     {
-        QCOMPARE(first(parseDividend(QStringLiteral("ING diba"), QString::fromUtf8(kIngUsd)),
+        QCOMPARE(first(parseDividend(QString::fromLatin1(kDepotIng), QString::fromUtf8(kIngUsd)),
                        "ExDate"),
                  QStringLiteral("15.06.2026"));
     }
 
     void test_dkb_usd_exDate()
     {
-        QCOMPARE(first(parseDividend(QStringLiteral("DKB"), QString::fromUtf8(kDkbUsd)),
+        QCOMPARE(first(parseDividend(QString::fromLatin1(kDepotDkb), QString::fromUtf8(kDkbUsd)),
                        "ExDate"),
                  QStringLiteral("29.11.2016"));
     }
 
     void test_dkb_eur_exDate()
     {
-        QCOMPARE(first(parseDividend(QStringLiteral("DKB"), QString::fromUtf8(kDkbEur)),
+        QCOMPARE(first(parseDividend(QString::fromLatin1(kDepotDkb), QString::fromUtf8(kDkbEur)),
                        "ExDate"),
                  QStringLiteral("08.05.2026"));
     }
@@ -385,7 +388,7 @@ private slots:
         // Der wichtigste Test dieser Datei: Ex-Tag und Zahltag stehen in
         // beiden Belegformaten unmittelbar untereinander bzw. nebeneinander.
         // Eine positionsbasierte Regel würde sie leicht vertauschen.
-        const auto ing = parseDividend(QStringLiteral("ING diba"), QString::fromUtf8(kIngEur));
+        const auto ing = parseDividend(QString::fromLatin1(kDepotIng), QString::fromUtf8(kIngEur));
         QCOMPARE(first(ing, "ExDate"), QStringLiteral("08.05.2026"));
         QCOMPARE(first(ing, "Date"),   QStringLiteral("12.05.2026"));
         QVERIFY(first(ing, "ExDate") != first(ing, "Date"));
@@ -395,14 +398,14 @@ private slots:
 
     void test_ing_usd_exchangeRate()
     {
-        QCOMPARE(first(parseDividend(QStringLiteral("ING diba"), QString::fromUtf8(kIngUsd)),
+        QCOMPARE(first(parseDividend(QString::fromLatin1(kDepotIng), QString::fromUtf8(kIngUsd)),
                        "ExchangeRate"),
                  QStringLiteral("1,148693"));
     }
 
     void test_dkb_usd_exchangeRate()
     {
-        QCOMPARE(first(parseDividend(QStringLiteral("DKB"), QString::fromUtf8(kDkbUsd)),
+        QCOMPARE(first(parseDividend(QString::fromLatin1(kDepotDkb), QString::fromUtf8(kDkbUsd)),
                        "ExchangeRate"),
                  QStringLiteral("1,04535"));
     }
@@ -411,9 +414,9 @@ private slots:
     {
         // Ein Euro-Beleg darf keinen Devisenkurs liefern — sonst würde der
         // Fremdwährungs-Modus fälschlich eingeschaltet.
-        QVERIFY(first(parseDividend(QStringLiteral("ING diba"), QString::fromUtf8(kIngEur)),
+        QVERIFY(first(parseDividend(QString::fromLatin1(kDepotIng), QString::fromUtf8(kIngEur)),
                       "ExchangeRate").isEmpty());
-        QVERIFY(first(parseDividend(QStringLiteral("DKB"), QString::fromUtf8(kDkbEur)),
+        QVERIFY(first(parseDividend(QString::fromLatin1(kDepotDkb), QString::fromUtf8(kDkbEur)),
                       "ExchangeRate").isEmpty());
     }
 
@@ -430,7 +433,7 @@ private slots:
     {
         bool ok = false;
 
-        const double ingRate = first(parseDividend(QStringLiteral("ING diba"),
+        const double ingRate = first(parseDividend(QString::fromLatin1(kDepotIng),
                                                    QString::fromUtf8(kIngUsd)),
                                      "ExchangeRate")
                                    .replace(QLatin1Char(','), QLatin1Char('.'))
@@ -440,7 +443,7 @@ private slots:
         QVERIFY2(qAbs(67.57 / ingRate - 58.82) < 0.01,
                  qPrintable(QString::number(67.57 / ingRate)));
 
-        const double dkbRate = first(parseDividend(QStringLiteral("DKB"),
+        const double dkbRate = first(parseDividend(QString::fromLatin1(kDepotDkb),
                                                    QString::fromUtf8(kDkbUsd)),
                                      "ExchangeRate")
                                    .replace(QLatin1Char(','), QLatin1Char('.'))
@@ -455,20 +458,20 @@ private slots:
 
     void test_ing_currency()
     {
-        QCOMPARE(first(parseDividend(QStringLiteral("ING diba"), QString::fromUtf8(kIngUsd)),
+        QCOMPARE(first(parseDividend(QString::fromLatin1(kDepotIng), QString::fromUtf8(kIngUsd)),
                        "Currency"),
                  QStringLiteral("USD"));
-        QCOMPARE(first(parseDividend(QStringLiteral("ING diba"), QString::fromUtf8(kIngEur)),
+        QCOMPARE(first(parseDividend(QString::fromLatin1(kDepotIng), QString::fromUtf8(kIngEur)),
                        "Currency"),
                  QStringLiteral("EUR"));
     }
 
     void test_dkb_currency()
     {
-        QCOMPARE(first(parseDividend(QStringLiteral("DKB"), QString::fromUtf8(kDkbUsd)),
+        QCOMPARE(first(parseDividend(QString::fromLatin1(kDepotDkb), QString::fromUtf8(kDkbUsd)),
                        "Currency"),
                  QStringLiteral("USD"));
-        QCOMPARE(first(parseDividend(QStringLiteral("DKB"), QString::fromUtf8(kDkbEur)),
+        QCOMPARE(first(parseDividend(QString::fromLatin1(kDepotDkb), QString::fromUtf8(kDkbEur)),
                        "Currency"),
                  QStringLiteral("EUR"));
     }
@@ -477,14 +480,14 @@ private slots:
 
     void test_ing_depotNumber()
     {
-        QCOMPARE(first(parseDividend(QStringLiteral("ING diba"), QString::fromUtf8(kIngUsd)),
+        QCOMPARE(first(parseDividend(QString::fromLatin1(kDepotIng), QString::fromUtf8(kIngUsd)),
                        "DepotNumber"),
                  QStringLiteral("8006189848"));
     }
 
     void test_dkb_depotNumber()
     {
-        QCOMPARE(first(parseDividend(QStringLiteral("DKB"), QString::fromUtf8(kDkbUsd)),
+        QCOMPARE(first(parseDividend(QString::fromLatin1(kDepotDkb), QString::fromUtf8(kDkbUsd)),
                        "DepotNumber"),
                  QStringLiteral("501403950"));
     }
@@ -496,21 +499,21 @@ private slots:
 
     void test_ing_volumeAndRate()
     {
-        const auto r = parseDividend(QStringLiteral("ING diba"), QString::fromUtf8(kIngUsd));
+        const auto r = parseDividend(QString::fromLatin1(kDepotIng), QString::fromUtf8(kIngUsd));
         QCOMPARE(first(r, "Volume"),       QStringLiteral("150,00"));
         QCOMPARE(first(r, "DividendRate"), QStringLiteral("0,53"));
     }
 
     void test_dkb_volumeAndRate()
     {
-        const auto r = parseDividend(QStringLiteral("DKB"), QString::fromUtf8(kDkbUsd));
+        const auto r = parseDividend(QString::fromLatin1(kDepotDkb), QString::fromUtf8(kDkbUsd));
         QCOMPARE(first(r, "Volume"),       QStringLiteral("40"));
         QCOMPARE(first(r, "DividendRate"), QStringLiteral("0,35"));
     }
 
     void test_ing_taxes()
     {
-        const auto r = parseDividend(QStringLiteral("ING diba"), QString::fromUtf8(kIngUsd));
+        const auto r = parseDividend(QString::fromLatin1(kDepotIng), QString::fromUtf8(kIngUsd));
         QCOMPARE(first(r, "TaxAtSource"),    QStringLiteral("10,39"));
         QCOMPARE(first(r, "CapitalGainTax"), QStringLiteral("6,91"));
         QCOMPARE(first(r, "SolidarityTax"),  QStringLiteral("0,38"));
@@ -521,7 +524,7 @@ private slots:
         // Der Zahltag steht bei der DKB unter "Zahlbarkeitstag" und darf
         // nicht mit Bestandsstichtag oder Ex-Tag verwechselt werden — alle
         // drei stehen im Beleg direkt untereinander.
-        const auto r = parseDividend(QStringLiteral("DKB"), QString::fromUtf8(kDkbUsd));
+        const auto r = parseDividend(QString::fromLatin1(kDepotDkb), QString::fromUtf8(kDkbUsd));
         QCOMPARE(first(r, "Date"),   QStringLiteral("15.12.2016"));
         QCOMPARE(first(r, "ExDate"), QStringLiteral("29.11.2016"));
     }
@@ -541,7 +544,7 @@ private slots:
 
     void test_cortal_depotNumberAndCurrency()
     {
-        const auto r = parseDividend(QStringLiteral("Cortal Consors"),
+        const auto r = parseDividend(QString::fromLatin1(kDepotConsors),
                                      QString::fromUtf8(kCortalEur));
         QCOMPARE(first(r, "DepotNumber"), QStringLiteral("0878031421"));
         QCOMPARE(first(r, "Currency"),    QStringLiteral("EUR"));
@@ -553,14 +556,14 @@ private slots:
         // "Valuta 08.02.2019". Gutgeschrieben wird zur Valuta — das ist der
         // Zahltag. Die frühere Regel nahm schlicht das ERSTE Datum im Text
         // und lieferte damit den Schlusstag.
-        const auto r = parseDividend(QStringLiteral("Cortal Consors"),
+        const auto r = parseDividend(QString::fromLatin1(kDepotConsors),
                                      QString::fromUtf8(kCortalEur));
         QCOMPARE(first(r, "Date"), QStringLiteral("08.02.2019"));
     }
 
     void test_cortal_volumeAndRate()
     {
-        const auto r = parseDividend(QStringLiteral("Cortal Consors"),
+        const auto r = parseDividend(QString::fromLatin1(kDepotConsors),
                                      QString::fromUtf8(kCortalEur));
         QCOMPARE(first(r, "Volume"),       QStringLiteral("10"));
         QCOMPARE(first(r, "DividendRate"), QStringLiteral("0,39843"));
@@ -568,7 +571,7 @@ private slots:
 
     void test_cortal_taxes()
     {
-        const auto r = parseDividend(QStringLiteral("Cortal Consors"),
+        const auto r = parseDividend(QString::fromLatin1(kDepotConsors),
                                      QString::fromUtf8(kCortalEur));
         QCOMPARE(first(r, "CapitalGainTax"), QStringLiteral("1,00"));
         QCOMPARE(first(r, "SolidarityTax"),  QStringLiteral("0,05"));
@@ -599,7 +602,7 @@ private slots:
         // Deshalb bleibt der Ex-Tag bei Consors ein Handeintrag; die
         // Analyse-Statuszeile weist ihn korrekt als fehlende Pflichtangabe
         // aus. Siehe ARCHITECTURE.md, "Phase 5 — Umsetzungsdetails".
-        const auto r = parseDividend(QStringLiteral("Cortal Consors"),
+        const auto r = parseDividend(QString::fromLatin1(kDepotConsors),
                                      QString::fromUtf8(kCortalEur));
         QVERIFY(first(r, "ExDate").isEmpty());
     }
@@ -611,7 +614,7 @@ private slots:
         // Ex-Tag-Feld gehängt — angezeigt, nicht eingetragen. Damit hat der
         // Benutzer die Zahl vor Augen, ohne dass ein geratenes Datum in die
         // Stückzahl-Plausibilitätsprüfung gerät.
-        const auto r = parseDividend(QStringLiteral("Cortal Consors"),
+        const auto r = parseDividend(QString::fromLatin1(kDepotConsors),
                                      QString::fromUtf8(kCortalEur));
         QCOMPARE(first(r, "RecordDate"), QStringLiteral("05.02.2019"));
         // Und er darf nicht mit dem Zahltag verwechselt werden.
@@ -628,7 +631,7 @@ private slots:
      */
     void test_ing_usd_endToEndAmountMatchesDocument()
     {
-        const auto r = parseDividend(QStringLiteral("ING diba"), QString::fromUtf8(kIngUsd));
+        const auto r = parseDividend(QString::fromLatin1(kDepotIng), QString::fromUtf8(kIngUsd));
 
         auto num = [&r](const char* key) {
             return first(r, key).replace(QLatin1Char('.'), QString())
@@ -654,14 +657,14 @@ private slots:
 
     void test_dkb_sale_date()
     {
-        QCOMPARE(first(parseDocument(QStringLiteral("DKB"), DocumentType::Sale,
+        QCOMPARE(first(parseDocument(QString::fromLatin1(kDepotDkb), DocumentType::Sale,
                                      QString::fromUtf8(kDkbSale)), "Date"),
                  QStringLiteral("27.02.2020"));
     }
 
     void test_dkb_sale_time()
     {
-        QCOMPARE(first(parseDocument(QStringLiteral("DKB"), DocumentType::Sale,
+        QCOMPARE(first(parseDocument(QString::fromLatin1(kDepotDkb), DocumentType::Sale,
                                      QString::fromUtf8(kDkbSale)), "Time"),
                  QStringLiteral("19:16:37"));
     }
@@ -687,7 +690,7 @@ private slots:
             QStringLiteral("Schlusstag/-Zeit([0-9:. ]{1,})Auftraggeber "));
         QVERIFY(!oldRule.match(text).hasMatch());
 
-        QCOMPARE(first(parseDocument(QStringLiteral("DKB"), DocumentType::Sale, text),
+        QCOMPARE(first(parseDocument(QString::fromLatin1(kDepotDkb), DocumentType::Sale, text),
                        "Date"),
                  QStringLiteral("27.02.2020"));
     }
@@ -722,7 +725,7 @@ private slots:
         text.replace(QStringLiteral("Schlusstag/-Zeit  27.02.2020"),
                      QStringLiteral("Schlusstag/-Zeit  26.02.2020"));
 
-        QCOMPARE(first(parseDocument(QStringLiteral("DKB"), DocumentType::Sale, text),
+        QCOMPARE(first(parseDocument(QString::fromLatin1(kDepotDkb), DocumentType::Sale, text),
                        "Date"),
                  QStringLiteral("26.02.2020"));
     }
@@ -730,7 +733,7 @@ private slots:
     /// Ordernummer 1:1 — der Punkt in "267621/08.00" ist Teil der Nummer.
     void test_dkb_sale_orderNumberKeepsItsDot()
     {
-        QCOMPARE(first(parseDocument(QStringLiteral("DKB"), DocumentType::Sale,
+        QCOMPARE(first(parseDocument(QString::fromLatin1(kDepotDkb), DocumentType::Sale,
                                      QString::fromUtf8(kDkbSale)), "OrderNumber"),
                  QStringLiteral("267621/08.00"));
     }
@@ -738,7 +741,7 @@ private slots:
     /// Regressionsschutz für die übrigen Pflichtfelder dieses Belegtyps.
     void test_dkb_sale_volumeAndPrice()
     {
-        const auto r = parseDocument(QStringLiteral("DKB"), DocumentType::Sale,
+        const auto r = parseDocument(QString::fromLatin1(kDepotDkb), DocumentType::Sale,
                                      QString::fromUtf8(kDkbSale));
         QCOMPARE(first(r, "Volume"),      QStringLiteral("40"));
         QCOMPARE(first(r, "Price"),       QStringLiteral("51,47"));
@@ -756,7 +759,7 @@ private slots:
      */
     void test_dkb_sale_wkn()
     {
-        QCOMPARE(first(parseDocument(QStringLiteral("DKB"), DocumentType::Sale,
+        QCOMPARE(first(parseDocument(QString::fromLatin1(kDepotDkb), DocumentType::Sale,
                                      QString::fromUtf8(kDkbSale)), "Wkn"),
                  QStringLiteral("654321"));
     }
@@ -765,11 +768,7 @@ private slots:
     /// findet `resolveShareGuidForDocument()` die Aktie zum Verkaufsbeleg.
     void test_capture_dkb_sale_extractWkn()
     {
-        const QList<BankEntry> banks = m_config.entries();
-        const BankEntry* dkb = nullptr;
-        for (const BankEntry& b : banks) {
-            if (b.name == QStringLiteral("DKB")) { dkb = &b; break; }
-        }
+        const DepotEntry* dkb = m_config.findByDepotNumber(QString::fromLatin1(kDepotDkb));
         QVERIFY(dkb);
 
         const DocumentEntry* doc =
@@ -801,14 +800,14 @@ private slots:
      */
     void test_capture_dkb_extractWknIsTheNumberNotTheHeading()
     {
-        const DocumentEntry doc = dividendEntry(QStringLiteral("DKB"));
+        const DocumentEntry doc = dividendEntry(QString::fromLatin1(kDepotDkb));
         QCOMPARE(DocumentClassifier::extractWkn(QString::fromUtf8(kDkbUsd), doc),
                  QStringLiteral("654321"));
     }
 
     void test_capture_ing_extractWkn()
     {
-        const DocumentEntry doc = dividendEntry(QStringLiteral("ING diba"));
+        const DocumentEntry doc = dividendEntry(QString::fromLatin1(kDepotIng));
         QCOMPARE(DocumentClassifier::extractWkn(QString::fromUtf8(kIngUsd), doc),
                  QStringLiteral("654321"));
         QCOMPARE(DocumentClassifier::extractIsin(QString::fromUtf8(kIngUsd), doc),
@@ -820,38 +819,171 @@ private slots:
      *        künftigen Regeländerungen von selbst mitwächst: BEIDE Lesewege
      *        müssen aus derselben Regel denselben Wert holen.
      *
-     * Läuft über alle in Documents.xml hinterlegten Banken — kommt eine
-     * vierte hinzu, ist sie ohne Zutun mitgeprüft.
+     * Läuft über alle in Documents.xml hinterlegten Depots — kommt ein
+     * viertes hinzu, ist es ohne Zutun mitgeprüft.
      */
-    void test_capture_extractWknMatchesParserResult_allBanks()
+    void test_capture_extractWknMatchesParserResult_allDepots()
     {
-        const QList<BankEntry> banks = m_config.entries();
-        QVERIFY(!banks.isEmpty());
+        const QList<DepotEntry> depots = m_config.entries();
+        QVERIFY(!depots.isEmpty());
 
         const QMap<QString, const char*> texts {
-            { QStringLiteral("DKB"),           kDkbUsd    },
-            { QStringLiteral("ING diba"),      kIngUsd    },
-            { QStringLiteral("Cortal Consors"), kCortalEur },
+            { QString::fromLatin1(kDepotDkb),     kDkbUsd    },
+            { QString::fromLatin1(kDepotIng),     kIngUsd    },
+            { QString::fromLatin1(kDepotConsors), kCortalEur },
         };
 
-        for (const BankEntry& bank : banks) {
-            if (!texts.contains(bank.name)) {
-                qWarning() << "Kein Belegtext für Bank" << bank.name
-                           << "— bitte Fixture ergänzen.";
+        for (const DepotEntry& depot : depots) {
+            if (!texts.contains(depot.depotNumber)) {
+                qWarning() << "Kein Belegtext für Depot" << depot.depotNumber
+                           << "(" << depot.bankName << ") — bitte Fixture ergänzen.";
                 continue;
             }
 
-            const QString text = QString::fromUtf8(texts.value(bank.name));
+            const QString text = QString::fromUtf8(texts.value(depot.depotNumber));
             const QString viaParser =
-                first(parseDividend(bank.name, text), "Wkn");
+                first(parseDividend(depot.depotNumber, text), "Wkn");
             const QString viaClassifier =
-                DocumentClassifier::extractWkn(text, dividendEntry(bank.name));
+                DocumentClassifier::extractWkn(text, dividendEntry(depot.depotNumber));
 
             QVERIFY2(viaParser == viaClassifier,
-                     qPrintable(QStringLiteral("%1: Dialog liest \"%2\", "
-                                               "Dokumentenerfassung liest \"%3\"")
-                                    .arg(bank.name, viaParser, viaClassifier)));
+                     qPrintable(QStringLiteral("%1 (%2): Dialog liest \"%3\", "
+                                               "Dokumentenerfassung liest \"%4\"")
+                                    .arg(depot.bankName, depot.depotNumber,
+                                         viaParser, viaClassifier)));
         }
+    }
+
+    // ── Depoterkennung gegen echte Belege (Bugfix 25.08.2026) ─────────────
+    //
+    // Das eigentliche Prüfnetz der Umstellung, und der Grund, warum es hier
+    // steht und nicht in tst_documentclassifier: nur dieses Testziel arbeitet
+    // gegen die AUSGELIEFERTE Documents.xml und gegen Belegtexte, die
+    // echten Dokumenten nachgebaut sind. Ein synthetisches Fixture kann
+    // beweisen, dass die Regel stimmt — nicht, dass sie auf Nessies Belegen
+    // greift.
+    //
+    // Siehe ARCHITECTURE.md, "Bankerkennung: Mehrdeutigkeit ueber die
+    // Depotnummer".
+
+    /**
+     * @brief Jeder hinterlegte Beleg wird SEINEM Depot zugeordnet.
+     *
+     * Läuft über alle Depots aus Documents.xml — kommt ein viertes hinzu, ist
+     * es ohne Zutun mitgeprüft und meldet sich, sobald ein Belegtext fehlt.
+     */
+    void test_bankDetection_everyDocumentMatchesItsOwnDepot()
+    {
+        const QList<DepotEntry> depots = m_config.entries();
+        QVERIFY(!depots.isEmpty());
+
+        const QMap<QString, const char*> texts {
+            { QString::fromLatin1(kDepotDkb),     kDkbUsd    },
+            { QString::fromLatin1(kDepotIng),     kIngUsd    },
+            { QString::fromLatin1(kDepotConsors), kCortalEur },
+        };
+
+        for (const DepotEntry& depot : depots) {
+            if (!texts.contains(depot.depotNumber)) {
+                qWarning() << "Kein Belegtext für Depot" << depot.depotNumber
+                           << "(" << depot.bankName << ") — bitte Fixture ergänzen.";
+                continue;
+            }
+
+            const QString text = QString::fromUtf8(texts.value(depot.depotNumber));
+
+            int index = -1;
+            QVERIFY2(DocumentClassifier::matchDepotIndex(text, m_config, index),
+                     qPrintable(QStringLiteral("Beleg von %1 (%2) wurde keinem "
+                                               "Depot zugeordnet")
+                                    .arg(depot.bankName, depot.depotNumber)));
+
+            const DepotEntry matched = m_config.entries().at(index);
+            QVERIFY2(matched.depotNumber == depot.depotNumber,
+                     qPrintable(QStringLiteral("Beleg von %1 (%2) landete bei "
+                                               "%3 (%4)")
+                                    .arg(depot.bankName, depot.depotNumber,
+                                         matched.bankName, matched.depotNumber)));
+        }
+    }
+
+    /**
+     * @brief Die Gegenprobe zum Feldfall: der Consors-Beleg darf NICHT bei
+     *        der DKB landen.
+     *
+     * Der Test oben würde auch dann grün, wenn Consors zufällig zuerst
+     * geprüft würde. Diese Prüfung nennt die falsche Zuordnung beim Namen —
+     * sie ist genau das, was bis zum 25.08.2026 geschah.
+     */
+    void test_bankDetection_consorsDocumentIsNotAssignedToDkb()
+    {
+        int index = -1;
+        QVERIFY(DocumentClassifier::matchDepotIndex(
+            QString::fromUtf8(kCortalEur), m_config, index));
+
+        const DepotEntry matched = m_config.entries().at(index);
+        QCOMPARE(matched.bankName,    QStringLiteral("Cortal Consors"));
+        QCOMPARE(matched.depotNumber, QString::fromLatin1(kDepotConsors));
+    }
+
+    /**
+     * @brief Der Grund, warum die Beschriftung allein nicht genügt: die
+     *        DKB-Regel TRIFFT auf dem Consors-Beleg.
+     *
+     * Sie fängt die ersten neun der zehn Ziffern. Vor dem Bugfix entschied
+     * genau dieser Treffer, weil die DKB in Documents.xml zuerst steht. Ohne
+     * diese Prüfung bliebe der Test darüber mehrdeutig — er wäre auch dann
+     * grün, wenn die DKB-Regel gar nicht mehr anschlüge, und die Umstellung
+     * hätte ihre Rechtfertigung verloren.
+     */
+    void test_bankDetection_dkbRuleStillMatchesConsorsDocument()
+    {
+        const DepotEntry* dkb =
+            m_config.findByDepotNumber(QString::fromLatin1(kDepotDkb));
+        QVERIFY(dkb);
+
+        const QString captured = DocumentClassifier::extractFieldValue(
+            QString::fromUtf8(kCortalEur), dkb->identifierRegexList,
+            QStringLiteral("BankIdentifier"));
+
+        QVERIFY(!captured.isEmpty());              // die Regel trifft …
+        QVERIFY(captured != dkb->depotNumber);     // … aber nicht mit ihrer Nummer
+    }
+
+    /**
+     * @brief Auch der DKB-VERKAUFSbeleg wird korrekt zugeordnet.
+     *
+     * Der einzige Nicht-Dividendenbeleg im Fixture-Bestand; sein Briefkopf
+     * schreibt die Depotnummer eingerückt in einer Spalte, nicht am
+     * Zeilenanfang.
+     */
+    void test_bankDetection_dkbSaleDocumentMatchesDkb()
+    {
+        int index = -1;
+        QVERIFY(DocumentClassifier::matchDepotIndex(
+            QString::fromUtf8(kDkbSale), m_config, index));
+        QCOMPARE(m_config.entries().at(index).depotNumber,
+                 QString::fromLatin1(kDepotDkb));
+    }
+
+    /**
+     * @brief Ein Beleg aus einem nicht hinterlegten Depot wird nicht
+     *        zugeordnet — auch wenn die Bank eingetragen ist.
+     *
+     * Nessies Vorgabe vom 25.08.2026: ein Eintrag in Documents.xml gilt für
+     * genau ein Depot. Wird ein zweites eröffnet, muss die Datei erweitert
+     * werden; bis dahin ist "nicht erkannt" die richtige Antwort und rote
+     * Pflichtfelder sind das richtige Verhalten.
+     */
+    void test_bankDetection_unknownDepotNumber_notMatched()
+    {
+        QString foreign = QString::fromUtf8(kDkbUsd);
+        foreign.replace(QString::fromLatin1(kDepotDkb), QStringLiteral("111111111"));
+        QVERIFY(!foreign.contains(QString::fromLatin1(kDepotDkb)));
+
+        int index = -9;
+        QVERIFY(!DocumentClassifier::matchDepotIndex(foreign, m_config, index));
+        QCOMPARE(index, -9);
     }
 
     /**
@@ -860,11 +992,7 @@ private slots:
      */
     void test_capture_dkb_buyAndSaleUseTheSamePositionalRule()
     {
-        const QList<BankEntry> banks = m_config.entries();
-        const BankEntry* dkb = nullptr;
-        for (const BankEntry& b : banks) {
-            if (b.name == QStringLiteral("DKB")) { dkb = &b; break; }
-        }
+        const DepotEntry* dkb = m_config.findByDepotNumber(QString::fromLatin1(kDepotDkb));
         QVERIFY(dkb);
 
         for (const DocumentType type : { DocumentType::Buy, DocumentType::Sale }) {

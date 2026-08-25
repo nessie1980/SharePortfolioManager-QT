@@ -19,7 +19,7 @@
  *
  * Parse pipeline is identical to PresenterBuyEdit:
  * 1. onDocumentSelected() → PdfTextExtractor → onPdfTextExtracted()
- * 2. startParserForText() → DocumentClassifier::matchBankIndex()/
+ * 2. startParserForText() → DocumentClassifier::matchDepotIndex()/
  *    detectDocumentType() → ParserLib
  * 3. onParserUpdated() → populateFromResult() → setFieldOk/Error + onParseFinished
  *
@@ -29,11 +29,11 @@
  *                   dividendPayoutWithTaxes, yield.
  * - Foreign currency mode: enableForeignCurrency checkbox toggles extra fields.
  *
- * @note PDF-to-text conversion and bank-/document-type detection now
+ * @note PDF-to-text conversion and depot-/document-type detection now
  * delegate to the shared `PdfTextExtractor`/`DocumentClassifier` utility
  * classes (see ARCHITECTURE.md, "PDF-Erkennungslogik gebündelt in
  * DocumentClassifier"). Behaviour unchanged, including the fallback to
- * `DocumentType::Dividend` when the bank matched but no explicit
+ * `DocumentType::Dividend` when the depot matched but no explicit
  * identifier did.
  */
 class PresenterDividendEdit : public QObject

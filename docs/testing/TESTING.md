@@ -396,6 +396,18 @@ ARCHITECTURE.md für Details.
 
 Laden und Parsen von `WebSites.xml` und `Documents.xml` — `tst_websitesconfig` und `tst_documentsconfig`.
 
+Ein `<Bank>`-Eintrag in `Documents.xml` beschreibt genau EIN DEPOT bei einer
+Bank; die Depotnummer aus `BankIdentifierValue` ist sein eineindeutiges
+Merkmal, der Bankname ist reiner Anzeigetext (Nessies Klarstellung
+25.08.2026, siehe ARCHITECTURE.md, "Bankerkennung: Mehrdeutigkeit ueber die
+Depotnummer"). Danach richten sich seit dem 25.08.2026 diese Pruefungen in
+`tst_documentsconfig`:
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_findByDepotNumber_found` / `test_findByDepotNumber_notFound` | Nachfolgerin von `findByName()`, das ersatzlos entfallen ist |
+| `test_findByDepotNumber_twoDepotsSameBank_areDistinguished` | Zwei Eintraege mit demselben `Name`, verschiedenen Nummern — beide behalten ihren eigenen Regelsatz |
+
 ---
 
 ### tests/utils/ — Utility Unit-Tests (neu 27.07.2026)
@@ -414,12 +426,12 @@ nach demselben Muster wie `tst_documentsconfig` (`writeXml()`-Helper).
 | `test_classify_buyDocument_matched` | BankIdentifier + BuyIdentifier treffen | `matched = true`, `type = Buy` |
 | `test_classify_saleDocument_matched` | BankIdentifier + SaleIdentifier treffen | `matched = true`, `type = Sale` |
 | `test_classify_dividendDocument_matched` | BankIdentifier + DividendIdentifier treffen | `matched = true`, `type = Dividend` |
-| `test_classify_unknownBank_notMatched` | Kein BankIdentifier trifft | `matched = false` |
-| `test_classify_knownBank_unknownType_notMatched` | Bank erkannt, aber kein Dokumenttyp-Identifier trifft | `matched = false` — bewusst kein Fallback (anders als in den vier Presentern) |
+| `test_classify_unknownDepot_notMatched` | Kein BankIdentifier trifft | `matched = false` |
+| `test_classify_knownDepot_unknownType_notMatched` | Depot erkannt, aber kein Dokumenttyp-Identifier trifft | `matched = false` — bewusst kein Fallback (anders als in den vier Presentern) |
 | `test_classify_emptyConfig_notMatched` | `DocumentsConfig` nie geladen | `matched = false`, kein Absturz |
 | `test_classify_emptySaleIdentifier_doesNotSwallowDividend` | Bank mit LEERER `SaleIdentifier`-Regel (Aufbau von Cortal Consors) | Die Gutschrift wird als `Dividend` erkannt — ein leeres Muster identifiziert nichts |
 | `test_detectDocumentType_emptyIdentifier_isSkipped` | dasselbe für den Presenter-Weg | Leere Kennung wird übersprungen, kein Fehltreffer |
-| `test_classify_unknownDocumentType_reportsBankMatched` / `test_classify_unknownBank_reportsBankNotMatched` / `test_classify_success_alsoSetsBankMatched` | `Result::bankMatched` | Aufrufer kann "Bank unbekannt" von "Belegtyp unbekannt" unterscheiden |
+| `test_classify_unknownDocumentType_reportsDepotMatched` / `test_classify_unknownDepot_reportsDepotNotMatched` / `test_classify_success_alsoSetsDepotMatched` | `Result::depotMatched` | Aufrufer kann "Depot unbekannt" von "Belegtyp unbekannt" unterscheiden |
 | `test_extractWkn_found` / `test_extractIsin_found` | Regel mit Capture-Gruppe im Text vorhanden | Getrimmter Wert der ersten Capture-Gruppe |
 | `test_extractWkn_notPresentInDocType_returnsEmpty` | Dokumenttyp (hier: Sale) hat keine `Wkn`-Regel | Leerer String, kein Absturz |
 | `test_extractFieldValue_noMatch_returnsEmpty` | Regel vorhanden, aber Text enthält keinen Treffer | Leerer String |
@@ -427,17 +439,40 @@ nach demselben Muster wie `tst_documentsconfig` (`writeXml()`-Helper).
 | `test_extractFieldValue_skipsEmptyCaptureGroups` | Ausdruck mit Alternativen, erste Gruppe bleibt leer | Erste NICHT-LEERE Fanggruppe, wie im `Parser` |
 | `test_extractWkn_foundIndexBeyondLastMatch_returnsEmpty` | Geforderter Trefferindex existiert im Text nicht | Leerer String — geraten wird nicht |
 | `test_extractFieldValue_emptyExpression_returnsEmpty` | Leeres Muster als Regel | Leerer String statt "trifft überall" |
-| `test_matchBankIndex_found` / `test_matchBankIndex_notFound_leavesIndexUnchanged` | Bank-Erkennung isoliert (ohne Typ-Erkennung) | Index gesetzt bzw. unverändert |
+| `test_matchDepotIndex_found` / `test_matchDepotIndex_notFound_leavesIndexUnchanged` | Depot-Erkennung isoliert (ohne Typ-Erkennung) | Index gesetzt bzw. unverändert |
 | `test_detectDocumentType_matches_buyIdentifier` | Identifier-Treffer gewinnt gegen einen absichtlich "falschen" Fallback | Erkannter Typ, nicht der Fallback |
-| `test_detectDocumentType_noIdentifierMatch_returnsFallback` | Bank erkannt, kein Identifier trifft | Übergebener Fallback-Typ (spiegelt z. B. `PresenterSaleEdit`s Default auf `DocumentType::Sale`) |
+| `test_detectDocumentType_noIdentifierMatch_returnsFallback` | Depot erkannt, kein Identifier trifft | Übergebener Fallback-Typ (spiegelt z. B. `PresenterSaleEdit`s Default auf `DocumentType::Sale`) |
 
-@note **`matchBankIndex()`/`detectDocumentType()` (ergänzt 27.07.2026):**
-Diese beiden Bausteine wurden zusätzlich zu `classify()` eingeführt, damit
+Erkennung ueber die Depotnummer (Bugfix 25.08.2026). Das Fixture
+`xmlWithTwoDepotsSharingLabel()` baut DKB und Cortal Consors mit ihren
+ECHTEN Regeln und Nummern nach — nur ihr Zusammenspiel erzeugt den Fehler:
+beide beschriften mit "Depotnummer", die DKB steht zuerst und sucht bis zu
+neun Ziffern, was auf der zehnstelligen Consors-Nummer ebenfalls trifft.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_matchDepotIndex_sharedLabel_picksDepotWithMatchingNumber` | Consors-Beleg bei gleicher Beschriftung | Landet bei Consors — vor dem Bugfix bei der DKB |
+| `test_matchDepotIndex_sharedLabel_firstDepotStillFound` | DKB-Beleg | Die DKB verliert ihren eigenen Beleg nicht |
+| `test_matchDepotIndex_firstDepotRuleStillMatchesForeignDocument` | DKB-Regel gegen den Consors-Text | Sie trifft und faengt `087803142` — der Treffer besteht fort, entscheidet aber nicht mehr |
+| `test_matchDepotIndex_alternation_colonForm` | Consors-Schreibweise MIT Doppelpunkt | Wert aus Fanggruppe 2 kommt an — deshalb laeuft die Entnahme ueber `extractFieldValue()` |
+| `test_matchDepotIndex_unknownDepotNumber_notFound` | Passende Beschriftung, fremde Nummer | Nicht erkannt, Index unveraendert |
+| `test_classify_sharedLabel_usesOwnDocumentRules` | derselbe Befund auf `classify()`-Ebene | Der CONSORS-Regelsatz gilt: `Date` sucht "Valuta", nicht "Zahlbarkeitstag" |
+| `test_matchDepotIndex_emptyBankIdentifierRule_notFound` | Leere `BankIdentifier`-Regel | Identifiziert nichts — die Zusage von `regexMatches()` gilt nach der Umstellung auf `extractFieldValue()` weiter |
+
+@note **`matchDepotIndex()`/`detectDocumentType()` (ergänzt 27.07.2026, damals
+`matchBankIndex()`):** Diese beiden Bausteine wurden zusätzlich zu
+`classify()` eingeführt, damit
 `PresenterBuyEdit`/`PresenterSaleEdit`/`PresenterDividendEdit`/
 `PresenterShareAdd` nach ihrem Refactoring (s. ARCHITECTURE.md, "Schritt 2")
 weiterhin ihren jeweils eigenen Dokumenttyp-Fallback verwenden können, wenn
-die Bank erkannt wurde, aber kein Identifier eindeutig trifft — anders als
+das Depot erkannt wurde, aber kein Identifier eindeutig trifft — anders als
 `classify()`, das für die Direkterfassung bewusst nie rät.
+
+@note Warum `test_matchDepotIndex_firstDepotRuleStillMatchesForeignDocument`
+kein ueberfluessiger Test ist: ohne ihn waere die Aussage der beiden Tests
+darueber mehrdeutig. Sie waeren auch dann gruen, wenn die DKB-Regel gar nicht
+mehr anschluege — und die ganze Umstellung haette ihre Rechtfertigung
+verloren.
 
 @note **Kein Test für `PdfTextExtractor`:** Die Klasse kapselt nur den
 `QProcess`-Aufruf von `pdftotext` — konsistent mit der bestehenden
@@ -3196,7 +3231,7 @@ echten Datei liefert die Compile-Definition `SPM_DOCUMENTS_XML`.
 | `test_ing_usd_endToEndAmountMatchesDocument` | Aus den geparsten Werten entsteht der auf dem Beleg ausgewiesene Auszahlungsbetrag (51,53 EUR) |
 | `test_capture_dkb_extractWknIsTheNumberNotTheHeading` | DKB-WKN über `FoundIndex="1"`: geliefert wird die Kennnummer, nicht die Spaltenüberschrift `(WKN)` |
 | `test_capture_ing_extractWkn` | WKN und ISIN der ING über den Weg der Dokumentenerfassung |
-| `test_capture_extractWknMatchesParserResult_allBanks` | Beide Lesewege — `ParserLib::Parser` (Dialog) und `DocumentClassifier` (Drag&Drop) — holen aus derselben Regel denselben Wert, für jede hinterlegte Bank |
+| `test_capture_extractWknMatchesParserResult_allDepots` | Beide Lesewege — `ParserLib::Parser` (Dialog) und `DocumentClassifier` (Drag&Drop) — holen aus derselben Regel denselben Wert, für jedes hinterlegte Depot |
 | `test_capture_dkb_buyAndSaleUseTheSamePositionalRule` | Kauf und Verkauf der DKB teilen die positionsabhängige WKN-Regel — der Fehler betraf alle drei Belegarten |
 | `test_dkb_sale_date` / `test_dkb_sale_time` | "Schlusstag/-Zeit" liefert Datum und Uhrzeit getrennt an ihre Felder |
 | `test_dkb_sale_dateDoesNotDependOnNeighbouringColumn` | Die Regel hängt an ihrer eigenen Beschriftung, nicht am Wort "Auftraggeber" der Nachbarspalte |
@@ -3206,6 +3241,32 @@ echten Datei liefert die Compile-Definition `SPM_DOCUMENTS_XML`.
 | `test_dkb_sale_volumeAndPrice` | Regressionsschutz für die übrigen Pflichtfelder dieses Belegtyps |
 | `test_dkb_sale_wkn` / `test_capture_dkb_sale_extractWkn` | Auch der Verkaufsbeleg trägt die WKN in Klammern neben der ISIN — beide Lesewege finden sie, die Direkte Dokumentenerfassung kann den Beleg also zuordnen |
 
+Depoterkennung gegen echte Belege (Bugfix 25.08.2026). Diese fuenf
+Pruefungen sind das eigentliche Netz der Umstellung, und sie stehen hier und
+nicht in `tst_documentclassifier`: nur dieses Ziel arbeitet gegen die
+AUSGELIEFERTE `Documents.xml` und gegen nachgebaute echte Belegtexte. Ein
+synthetisches Fixture beweist, dass die Regel stimmt — nicht, dass sie auf
+Nessies Belegen greift.
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_bankDetection_everyDocumentMatchesItsOwnDepot` | Jeder hinterlegte Beleg landet bei SEINEM Depot; laeuft ueber alle Eintraege und meldet fehlende Belegtexte |
+| `test_bankDetection_consorsDocumentIsNotAssignedToDkb` | Die Gegenprobe zum Feldfall, beim Namen genannt |
+| `test_bankDetection_dkbRuleStillMatchesConsorsDocument` | Die DKB-Regel trifft auf dem Consors-Beleg sehr wohl — nur mit der falschen Nummer |
+| `test_bankDetection_dkbSaleDocumentMatchesDkb` | Auch der Verkaufsbeleg mit eingerueckter Depotnummer im Briefkopf |
+| `test_bankDetection_unknownDepotNumber_notMatched` | Ein Beleg aus einem nicht eingetragenen Depot gilt als nicht erkannt |
+
+@note Mit `kDkbSale` liegt seit dem 22.08.2026 der erste VERKAUFSbeleg im
+Fixture-Bestand; bis dahin prüfte dieses Ziel ausschliesslich
+Dividendengutschriften. Dafür ist `parseDividend()` zu `parseDocument(depot,
+type, text)` verallgemeinert — `parseDividend()` bleibt als Kurzform.
+
+@note Die Helfer schlagen den Regelsatz seit dem 25.08.2026 ueber die
+DEPOTNUMMER nach, nicht mehr ueber den Banknamen (Konstanten `kDepotDkb`,
+`kDepotIng`, `kDepotConsors`). Der Name ist nicht eindeutig, sobald eine Bank
+ein zweites Depot fuehrt — dieses Ziel haette dann heimlich den falschen
+Regelsatz geprueft.
+
 @note Das Fixture `kCortalEur` trug bis zum 25.08.2026 die Consors-
 Depotnummer OHNE ihre fuehrende Null. Folgenlos, solange die Erkennung nur
 die Beschriftung prueft; sobald sie die Nummer vergleicht, waere der Beleg
@@ -3213,11 +3274,6 @@ seinem eigenen Depot nicht mehr zugeordnet worden, und der Test haette einen
 Fehler gemeldet, den es nicht gibt. Lehre: ein Fixture, das an der
 entscheidenden Stelle von der Wirklichkeit abweicht, prueft nicht die
 Wirklichkeit.
-
-@note Mit `kDkbSale` liegt seit dem 22.08.2026 der erste VERKAUFSbeleg im
-Fixture-Bestand; bis dahin prüfte dieses Ziel ausschliesslich
-Dividendengutschriften. Dafür ist `parseDividend()` zu `parseDocument(bank,
-type, text)` verallgemeinert — `parseDividend()` bleibt als Kurzform.
 
 @note Seit dem 21.08.2026 wird `DocumentClassifier.cpp` mit übersetzt. Grund
 ist der Bugfix "Zwei Lesewege, zwei Auswahlregeln" (siehe ARCHITECTURE.md):

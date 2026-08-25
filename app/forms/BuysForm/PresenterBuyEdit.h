@@ -19,17 +19,17 @@
  *
  * Parse pipeline is identical to PresenterShareAdd:
  * 1. onDocumentSelected() → PdfTextExtractor → onPdfTextExtracted()
- * 2. startParserForText() → DocumentClassifier::matchBankIndex()/
+ * 2. startParserForText() → DocumentClassifier::matchDepotIndex()/
  *    detectDocumentType() → ParserLib
  * 3. onParserUpdated() → populateFromResult() → setFieldOk/Error + onParseFinished
  *
- * @note PDF-to-text conversion and bank-/document-type detection used to be
+ * @note PDF-to-text conversion and depot-/document-type detection used to be
  * duplicated inline here (see ARCHITECTURE.md, "PDF-Erkennungslogik
  * gebündelt in DocumentClassifier" / "PDF-Text-Extraktion gebündelt in
  * PdfTextExtractor") — both now delegate to the shared `PdfTextExtractor`
  * and `DocumentClassifier` utility classes in `app/utils/`. Behaviour is
  * unchanged: `startParserForText()` still falls back to
- * `DocumentType::Buy` when the bank matched but no explicit
+ * `DocumentType::Buy` when the depot matched but no explicit
  * Buy-/Sale-/Dividend-/BrokerageIdentifier does, exactly as before —
  * `DocumentClassifier::detectDocumentType()` takes that fallback as a
  * parameter for precisely this reason.

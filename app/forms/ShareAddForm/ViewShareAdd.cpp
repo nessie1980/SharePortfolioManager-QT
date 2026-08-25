@@ -232,14 +232,16 @@ QGroupBox* ViewShareAdd::createBuyDataGroup()
     m_depotNumber = new QComboBox;
     m_depotNumber->setEditable(false);  // Only known depot numbers from Documents.xml allowed
     m_depotNumber->addItem(tr("— bitte wählen —"));
-    // Populate from Documents.xml BankIdentifierValues
+    // Ein Eintrag JE DEPOT aus Documents.xml. Der Bankname allein ist nicht
+    // eindeutig (zwei Depots bei derselben Bank tragen ihn beide), deshalb
+    // steht die Depotnummer im Anzeigetext und dient zugleich als item data.
     if (m_config) {
-        for (const auto& bank : m_config->entries()) {
-            if (!bank.identifier.isEmpty())
+        for (const auto& depot : m_config->entries()) {
+            if (!depot.depotNumber.isEmpty())
                 // Show "BankName (DepotNr)" so the user knows which bank it belongs to
                 m_depotNumber->addItem(
-                    QStringLiteral("%1 (%2)").arg(bank.name, bank.identifier),
-                    bank.identifier);  // store raw identifier as item data
+                    QStringLiteral("%1 (%2)").arg(depot.bankName, depot.depotNumber),
+                    depot.depotNumber);  // store raw depot number as item data
         }
     }
     m_statusLabels["depotNumber"] = addRow(grid, row, tr("Depot number:"), m_depotNumber);

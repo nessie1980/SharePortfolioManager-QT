@@ -183,7 +183,46 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Abhängigkeit von `tst_mainwindow` (über `MainWindow`), werden dort aber
   nicht mehr getestet.
 
+### Changed
+
+- `Documents.xml` beschreibt je Eintrag ein DEPOT, nicht eine Bank — das war
+  immer schon so gemeint, stand aber nirgends, und die Bezeichner im Code
+  legten das Gegenteil nahe. Der Bankname ist reiner Anzeigetext und nicht
+  eindeutig: zwei Depots bei derselben Bank tragen ihn beide. Eineindeutig
+  ist die Depotnummer.
+
+  Entsprechend umbenannt: `BankEntry` heisst `DepotEntry`, seine Felder
+  `name`/`identifier` heissen `bankName`/`depotNumber`,
+  `DocumentsConfig::findByName()` ist durch `findByDepotNumber()` ersetzt
+  und `DocumentClassifier::matchBankIndex()` durch `matchDepotIndex()`. Die
+  XML-Datei selbst bleibt unverändert — sie ist ein Konfigurationsformat im
+  Feld, ein Schemawechsel wäre ein Bruch ohne fachlichen Gewinn.
+
 ### Fixed
+
+- **Ein Consors-Beleg wurde als DKB-Beleg ausgewertet** (Nessies Bugreport
+  25.08.2026). Die Depoterkennung prüfte nur, DASS die Depotnummer-Regel
+  einer Bank irgendwo im Text traf — welche Nummer sie dabei fing, sah sich
+  niemand an. Das Attribut `BankIdentifierValue`, das genau diese Nummer je
+  Depot enthält, wurde für die Erkennung überhaupt nicht herangezogen.
+
+  DKB und Cortal Consors beschriften ihre Depotnummer gleich. Die DKB-Regel
+  sucht bis zu neun Ziffern und trifft damit auch auf der zehnstelligen
+  Consors-Nummer — sie fängt die ersten neun und lässt die letzte liegen,
+  was für einen Treffer genügt. Da die DKB in `Documents.xml` zuerst steht,
+  landete jeder Consors-Beleg bei ihr und wurde mit ihren Regeln
+  ausgewertet: andere Beschriftungen für Datum, Stückzahl und Kurs, also
+  leere oder falsche Felder — ohne jeden Hinweis.
+
+  Erkannt wird ein Depot jetzt nur noch, wenn die Regel trifft UND die
+  gefangene Nummer der hinterlegten entspricht. Der Vergleich ist bewusst
+  hart: ein Eintrag in `Documents.xml` beschreibt genau ein Depot, und die
+  dort hinterlegte Nummer steht zeichengetreu so auf dem Beleg. Ein Beleg
+  aus einem noch nicht eingetragenen Depot gilt damit als nicht erkannt —
+  auch dann, wenn die Bank längst eingetragen ist. Das ist die richtige
+  Antwort: für ein neues Depot gehört ein neuer Eintrag in die Datei. Die
+  Meldung beim Ablegen per Drag&Drop nennt die Depotnummer jetzt
+  ausdrücklich als Ursache.
 
 - Der Prüfbestand für Consors-Belege wich an der entscheidenden Stelle von
   der Wirklichkeit ab: der Testbeleg trug die Depotnummer ohne ihre führende

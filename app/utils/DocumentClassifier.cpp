@@ -31,9 +31,14 @@ namespace {
  * Die Prüfung sitzt bewusst hier und nicht im Lader: `DocumentsConfig` gibt
  * die Konfiguration unverfälscht wieder (ein leeres Element bleibt ein leeres
  * Element), und die Bedeutung "leer = identifiziert nichts" gehört zur
- * Auswertung. Gleichzeitig schützt sie beide Aufrufwege — `matchBankIndex()`
- * ebenso, wo eine leere `BankIdentifier`-Regel sonst jedes Dokument dieser
- * Bank zugeschlagen hätte.
+ * Auswertung. Gleichzeitig schützt sie `findMatchingType()`
+ * auf beiden Aufrufwegen — aus `classify()` heraus ebenso wie aus
+ * `detectDocumentType()`.
+ *
+ * @note Für die `BankIdentifier`-Regel greift diese Prüfung seit dem
+ * 25.08.2026 nicht mehr: `matchDepotIndex()` geht dort über
+ * `extractFieldValue()`, die eine leere Regel aus demselben Grund als "kein
+ * Wert" behandelt. Der Schutz ist damit derselbe, nur an anderer Stelle.
  */
 bool regexMatches(const ParserLib::RegExElement& element, const QString& text)
 {
@@ -52,7 +57,7 @@ bool regexMatches(const ParserLib::RegExElement& element, const QString& text)
  * (pre-refactoring) duplicated logic in the four presenters.
  * @return true and sets @p outType if one of the four identifiers matches.
  */
-bool findMatchingType(const QString& pdfText, const BankEntry& bank, DocumentType& outType)
+bool findMatchingType(const QString& pdfText, const DepotEntry& depot, DocumentType& outType)
 {
     static const struct { const char* key; DocumentType type; } kTypeChecks[] = {
         { "BuyIdentifier",       DocumentType::Buy       },
@@ -62,8 +67,8 @@ bool findMatchingType(const QString& pdfText, const BankEntry& bank, DocumentTyp
     };
 
     for (const auto& check : kTypeChecks) {
-        const auto it = bank.identifierRegexList.constFind(QString::fromLatin1(check.key));
-        if (it == bank.identifierRegexList.constEnd())
+        const auto it = depot.identifierRegexList.constFind(QString::fromLatin1(check.key));
+        if (it == depot.identifierRegexList.constEnd())
             continue;
         if (regexMatches(*it, pdfText)) {
             outType = check.type;
@@ -75,19 +80,57 @@ bool findMatchingType(const QString& pdfText, const BankEntry& bank, DocumentTyp
 
 } // namespace
 
-// ── matchBankIndex ────────────────────────────────────────────────────────────
+// ── matchDepotIndex ───────────────────────────────────────────────────────────
 
-bool DocumentClassifier::matchBankIndex(const QString& pdfText,
-                                        const DocumentsConfig& config,
-                                        int& outIndex)
+/**
+ * @brief Sucht das Depot, dessen `BankIdentifier`-Regel trifft UND dessen
+ * gefangene Nummer der hinterlegten `BankIdentifierValue` entspricht.
+ *
+ * Bugfix 25.08.2026 (Nessie). Bis dahin fragte diese Funktion nur, OB die
+ * Regel irgendwo trifft — welche Nummer sie dabei gefangen hatte, sah sich
+ * niemand an; `BankIdentifierValue` wurde für die Erkennung gar nicht
+ * herangezogen und füllte nur die Depotnummer-Auswahlfelder.
+ *
+ * Beleg für die Fehlwirkung: DKB und Cortal Consors beschriften beide mit
+ * "Depotnummer". Die DKB-Regel lautet `Depotnummer\s+([0-9]{1,9})` und trifft
+ * damit auch auf einer Consors-Depotnummer (`0878031421`) — sie fängt die
+ * ersten NEUN Ziffern und lässt die letzte liegen, was für einen Treffer
+ * genügt. Da die DKB in `Documents.xml` zuerst steht, wurde ein
+ * Consors-Beleg der DKB zugeschlagen und mit deren Regeln ausgewertet:
+ * andere Beschriftungen für Datum, Stückzahl und Kurs, also leere oder
+ * falsche Felder — ohne jeden Hinweis.
+ *
+ * Die Nummer wird über `extractFieldValue()` entnommen, also mit derselben
+ * Auswahlregel wie im `ParserLib::Parser` (gewünschter Trefferindex, daraus
+ * die erste nicht-leere Fanggruppe). Das ist kein Schönheitsgrund: die
+ * Consors-Regel besteht aus zwei Alternativen
+ * (`Depotnummer\s+(…)|Depotnummer:\s+(…)`), und je nach Schreibweise ist
+ * Gruppe 1 oder Gruppe 2 gefüllt. Ein dritter, eigener Auswerter wäre genau
+ * die Bauform, die am 21.08.2026 schon einmal zu zwei uneinigen Lesarten
+ * derselben Regel geführt hat.
+ *
+ * @note Der Vergleich ist bewusst HART — kein Trimmen führender Nullen, kein
+ * Angleichen der Länge. Ein Eintrag in `Documents.xml` beschreibt genau ein
+ * Depot; die dort hinterlegte Nummer steht zeichengetreu so auf dem Beleg.
+ * Weicht sie ab, gehört der Beleg zu einem Depot, das die Konfiguration nicht
+ * kennt, und "nicht erkannt" ist die richtige Antwort. Ein neues Depot —
+ * auch bei einer bereits eingetragenen Bank — verlangt einen eigenen
+ * `<Bank>`-Eintrag.
+ */
+bool DocumentClassifier::matchDepotIndex(const QString& pdfText,
+                                         const DocumentsConfig& config,
+                                         int& outIndex)
 {
-    const QList<BankEntry> entries = config.entries();
+    const QList<DepotEntry> entries = config.entries();
     for (int i = 0; i < entries.size(); ++i) {
-        const BankEntry& bank = entries.at(i);
-        const auto it = bank.identifierRegexList.constFind(QStringLiteral("BankIdentifier"));
-        if (it == bank.identifierRegexList.constEnd())
+        const DepotEntry& depot = entries.at(i);
+
+        const QString found = extractFieldValue(
+            pdfText, depot.identifierRegexList, QStringLiteral("BankIdentifier"));
+        if (found.isEmpty())
             continue;
-        if (regexMatches(*it, pdfText)) {
+
+        if (found == depot.depotNumber) {
             outIndex = i;
             return true;
         }
@@ -98,11 +141,11 @@ bool DocumentClassifier::matchBankIndex(const QString& pdfText,
 // ── detectDocumentType ────────────────────────────────────────────────────────
 
 DocumentType DocumentClassifier::detectDocumentType(const QString& pdfText,
-                                                     const BankEntry& bank,
+                                                     const DepotEntry& depot,
                                                      DocumentType fallbackType)
 {
     DocumentType type = fallbackType;
-    findMatchingType(pdfText, bank, type); // leaves `type` at fallbackType if nothing matches
+    findMatchingType(pdfText, depot, type); // leaves `type` at fallbackType if nothing matches
     return type;
 }
 
@@ -113,37 +156,37 @@ DocumentClassifier::Result DocumentClassifier::classify(const QString& pdfText,
 {
     Result result;
 
-    int bankIndex = -1;
-    if (!matchBankIndex(pdfText, config, bankIndex))
+    int depotIndex = -1;
+    if (!matchDepotIndex(pdfText, config, depotIndex))
         return result; // matched stays false
 
     // Re-fetch entries() here rather than threading the list through
-    // matchBankIndex() — keeps that helper's signature simple (index only).
-    // Cheap: QList<BankEntry> is implicitly shared, and this runs once per
+    // matchDepotIndex() — keeps that helper's signature simple (index only).
+    // Cheap: QList<DepotEntry> is implicitly shared, and this runs once per
     // dropped document, not in a hot loop.
-    const QList<BankEntry> entries = config.entries();
-    const BankEntry& matchedBank = entries.at(bankIndex);
+    const QList<DepotEntry> entries = config.entries();
+    const DepotEntry& matchedDepot = entries.at(depotIndex);
 
-    // Bank ab hier festhalten, damit ein Aufrufer im Fehlerfall unterscheiden
-    // kann, WORAN es lag (siehe Result::bankMatched). BankEntry ist ein
+    // Depot ab hier festhalten, damit ein Aufrufer im Fehlerfall unterscheiden
+    // kann, WORAN es lag (siehe Result::depotMatched). DepotEntry ist ein
     // Wertetyp; die Kopie bleibt auch nach dem Verlassen dieser Funktion gültig.
-    result.bankMatched = true;
-    result.bank        = matchedBank;
+    result.depotMatched = true;
+    result.depot        = matchedDepot;
 
     DocumentType matchedType = DocumentType::Buy;
-    if (!findMatchingType(pdfText, matchedBank, matchedType))
+    if (!findMatchingType(pdfText, matchedDepot, matchedType))
         return result; // matched stays false — we deliberately do not guess
                         // (unlike detectDocumentType(), which the four
                         // presenters use with their own dialog-specific
                         // fallback — classify() has no such context)
 
-    const DocumentEntry* docEntry = DocumentsConfig::findDocument(matchedBank, matchedType);
+    const DocumentEntry* docEntry = DocumentsConfig::findDocument(matchedDepot, matchedType);
     if (!docEntry)
         return result;
 
-    // Copy into the result now, while `entries` (and therefore `matchedBank`/
+    // Copy into the result now, while `entries` (and therefore `matchedDepot`/
     // `docEntry`, which points into it) is still alive within this function.
-    // `bank` steht bereits oben; hier kommen nur die typabhängigen Felder dazu.
+    // `depot` steht bereits oben; hier kommen nur die typabhängigen Felder dazu.
     result.matched  = true;
     result.docEntry = *docEntry;
     result.type     = matchedType;

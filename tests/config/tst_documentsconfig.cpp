@@ -184,30 +184,30 @@ private slots:
         QCOMPARE(config.count(), 2);
     }
 
-    // ── Bank entry content ────────────────────────────────────────────────
+    // ── Depot entry content ───────────────────────────────────────────────
 
-    void test_bank_attributes()
+    void test_depot_attributes()
     {
         DocumentsConfig config;
         config.load(writeXml(QStringLiteral("valid2.xml"), validXml()));
 
-        const BankEntry bank = config.entries().first();
-        QCOMPARE(bank.name,       QStringLiteral("TestBank"));
-        QCOMPARE(bank.identifier, QStringLiteral("123456"));
-        QCOMPARE(bank.encoding,   QStringLiteral("UTF-8"));
+        const DepotEntry depot = config.entries().first();
+        QCOMPARE(depot.bankName,    QStringLiteral("TestBank"));
+        QCOMPARE(depot.depotNumber, QStringLiteral("123456"));
+        QCOMPARE(depot.encoding,    QStringLiteral("UTF-8"));
     }
 
-    void test_bank_identifierRegexList()
+    void test_depot_identifierRegexList()
     {
         DocumentsConfig config;
         config.load(writeXml(QStringLiteral("valid3.xml"), validXml()));
 
-        const BankEntry bank = config.entries().first();
-        QVERIFY(bank.identifierRegexList.contains(QStringLiteral("BankIdentifier")));
-        QVERIFY(bank.identifierRegexList.contains(QStringLiteral("BuyIdentifier")));
-        QVERIFY(bank.identifierRegexList.contains(QStringLiteral("SaleIdentifier")));
-        QVERIFY(bank.identifierRegexList.contains(QStringLiteral("DividendIdentifier")));
-        QVERIFY(bank.identifierRegexList.contains(QStringLiteral("BrokerageIdentifier")));
+        const DepotEntry depot = config.entries().first();
+        QVERIFY(depot.identifierRegexList.contains(QStringLiteral("BankIdentifier")));
+        QVERIFY(depot.identifierRegexList.contains(QStringLiteral("BuyIdentifier")));
+        QVERIFY(depot.identifierRegexList.contains(QStringLiteral("SaleIdentifier")));
+        QVERIFY(depot.identifierRegexList.contains(QStringLiteral("DividendIdentifier")));
+        QVERIFY(depot.identifierRegexList.contains(QStringLiteral("BrokerageIdentifier")));
     }
 
     void test_document_loaded()
@@ -215,8 +215,8 @@ private slots:
         DocumentsConfig config;
         config.load(writeXml(QStringLiteral("valid4.xml"), validXml()));
 
-        const BankEntry bank = config.entries().first();
-        QVERIFY(bank.documents.contains(DocumentType::Buy));
+        const DepotEntry depot = config.entries().first();
+        QVERIFY(depot.documents.contains(DocumentType::Buy));
     }
 
     void test_document_typeIdentifier()
@@ -224,8 +224,8 @@ private slots:
         DocumentsConfig config;
         config.load(writeXml(QStringLiteral("valid5.xml"), validXml()));
 
-        const BankEntry bank = config.entries().first();
-        const DocumentEntry* doc = DocumentsConfig::findDocument(bank, DocumentType::Buy);
+        const DepotEntry depot = config.entries().first();
+        const DocumentEntry* doc = DocumentsConfig::findDocument(depot, DocumentType::Buy);
         QVERIFY(doc != nullptr);
         QCOMPARE(doc->typeIdentifier, QStringLiteral("Kauf"));
         QCOMPARE(doc->encoding,       QStringLiteral("UTF-8"));
@@ -236,8 +236,8 @@ private slots:
         DocumentsConfig config;
         config.load(writeXml(QStringLiteral("valid6.xml"), validXml()));
 
-        const BankEntry bank = config.entries().first();
-        const DocumentEntry* doc = DocumentsConfig::findDocument(bank, DocumentType::Buy);
+        const DepotEntry depot = config.entries().first();
+        const DocumentEntry* doc = DocumentsConfig::findDocument(depot, DocumentType::Buy);
         QVERIFY(doc != nullptr);
         QVERIFY(doc->regexList.contains(QStringLiteral("Wkn")));
         QVERIFY(doc->regexList.contains(QStringLiteral("Date")));
@@ -249,32 +249,91 @@ private slots:
         DocumentsConfig config;
         config.load(writeXml(QStringLiteral("valid7.xml"), validXml()));
 
-        const BankEntry bank = config.entries().first();
-        const DocumentEntry* doc = DocumentsConfig::findDocument(bank, DocumentType::Buy);
+        const DepotEntry depot = config.entries().first();
+        const DocumentEntry* doc = DocumentsConfig::findDocument(depot, DocumentType::Buy);
         QVERIFY(doc != nullptr);
         // Price has RegexOptions="Multiline"
         const auto& priceRule = doc->regexList.value(QStringLiteral("Price"));
         QVERIFY(priceRule.regexOptions.contains(QRegularExpression::MultilineOption));
     }
 
-    // ── findByName ────────────────────────────────────────────────────────
+    // ── findByDepotNumber ─────────────────────────────────────────────────
+    //
+    // Ersetzt das frühere findByName() (25.08.2026). Der Bankname ist kein
+    // eindeutiges Merkmal: zwei Depots bei derselben Bank tragen ihn beide,
+    // und die Suche hätte stillschweigend den erstbesten Eintrag geliefert.
+    // Eineindeutig ist die Depotnummer — siehe DepotEntry.
 
-    void test_findByName_found()
+    void test_findByDepotNumber_found()
     {
         DocumentsConfig config;
         config.load(writeXml(QStringLiteral("valid8.xml"), validXml()));
 
-        const BankEntry* bank = config.findByName(QStringLiteral("TestBank"));
-        QVERIFY(bank != nullptr);
-        QCOMPARE(bank->name, QStringLiteral("TestBank"));
+        const DepotEntry* depot = config.findByDepotNumber(QStringLiteral("123456"));
+        QVERIFY(depot != nullptr);
+        QCOMPARE(depot->bankName,    QStringLiteral("TestBank"));
+        QCOMPARE(depot->depotNumber, QStringLiteral("123456"));
     }
 
-    void test_findByName_notFound()
+    void test_findByDepotNumber_notFound()
     {
         DocumentsConfig config;
         config.load(writeXml(QStringLiteral("valid9.xml"), validXml()));
 
-        QVERIFY(config.findByName(QStringLiteral("NonExistentBank")) == nullptr);
+        QVERIFY(config.findByDepotNumber(QStringLiteral("999999")) == nullptr);
+    }
+
+    /**
+     * @brief Der Bankname taugt NICHT als Schlüssel — belegt an zwei Depots
+     *        derselben Bank.
+     *
+     * Genau die Lage, für die findByName() falsch gewesen wäre: beide
+     * Einträge heissen "DKB", nur die Depotnummer unterscheidet sie. Der
+     * Test hält fest, dass die Suche über die Nummer beide auseinanderhält.
+     */
+    void test_findByDepotNumber_twoDepotsSameBank_areDistinguished()
+    {
+        const QString path = writeXml(QStringLiteral("twodepots.xml"),
+            QStringLiteral(
+                "<?xml version=\"1.0\"?><Documents>"
+                "<Bank Name=\"DKB\" BankIdentifierValue=\"501403950\" Encoding=\"UTF-8\">"
+                "<BankIdentifier Name=\"BankIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</BankIdentifier>"
+                "<BuyIdentifier Name=\"BuyIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</BuyIdentifier>"
+                "<SaleIdentifier Name=\"SaleIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</SaleIdentifier>"
+                "<DividendIdentifier Name=\"DividendIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</DividendIdentifier>"
+                "<BrokerageIdentifier Name=\"BrokerageIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">a</BrokerageIdentifier>"
+                "<Document Type=\"Buy\" TypeIdentifierValue=\"Erstes Depot\" Encoding=\"UTF-8\">"
+                "<Wkn Name=\"Wkn\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">x</Wkn>"
+                "</Document></Bank>"
+                "<Bank Name=\"DKB\" BankIdentifierValue=\"501403951\" Encoding=\"UTF-8\">"
+                "<BankIdentifier Name=\"BankIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</BankIdentifier>"
+                "<BuyIdentifier Name=\"BuyIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</BuyIdentifier>"
+                "<SaleIdentifier Name=\"SaleIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</SaleIdentifier>"
+                "<DividendIdentifier Name=\"DividendIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</DividendIdentifier>"
+                "<BrokerageIdentifier Name=\"BrokerageIdentifier\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">b</BrokerageIdentifier>"
+                "<Document Type=\"Buy\" TypeIdentifierValue=\"Zweites Depot\" Encoding=\"UTF-8\">"
+                "<Wkn Name=\"Wkn\" FoundIndex=\"0\" ResultEmpty=\"true\" RegexOptions=\"None\">y</Wkn>"
+                "</Document></Bank>"
+                "</Documents>"));
+
+        DocumentsConfig config;
+        QCOMPARE(config.load(path), DocumentsConfig::LoadResult::Success);
+        QCOMPARE(config.count(), 2);
+
+        const DepotEntry* first  = config.findByDepotNumber(QStringLiteral("501403950"));
+        const DepotEntry* second = config.findByDepotNumber(QStringLiteral("501403951"));
+        QVERIFY(first  != nullptr);
+        QVERIFY(second != nullptr);
+        QCOMPARE(first->bankName,  QStringLiteral("DKB"));
+        QCOMPARE(second->bankName, QStringLiteral("DKB"));
+
+        // Und sie führen tatsächlich verschiedene Regelsätze.
+        const DocumentEntry* d1 = DocumentsConfig::findDocument(*first,  DocumentType::Buy);
+        const DocumentEntry* d2 = DocumentsConfig::findDocument(*second, DocumentType::Buy);
+        QVERIFY(d1 != nullptr);
+        QVERIFY(d2 != nullptr);
+        QCOMPARE(d1->typeIdentifier, QStringLiteral("Erstes Depot"));
+        QCOMPARE(d2->typeIdentifier, QStringLiteral("Zweites Depot"));
     }
 
     // ── findDocument ──────────────────────────────────────────────────────
@@ -284,8 +343,8 @@ private slots:
         DocumentsConfig config;
         config.load(writeXml(QStringLiteral("valid10.xml"), validXml()));
 
-        const BankEntry bank = config.entries().first();
-        QVERIFY(DocumentsConfig::findDocument(bank, DocumentType::Buy) != nullptr);
+        const DepotEntry depot = config.entries().first();
+        QVERIFY(DocumentsConfig::findDocument(depot, DocumentType::Buy) != nullptr);
     }
 
     void test_findDocument_notFound()
@@ -294,8 +353,8 @@ private slots:
         config.load(writeXml(QStringLiteral("valid11.xml"), validXml()));
 
         // Only Buy document was defined in validXml()
-        const BankEntry bank = config.entries().first();
-        QVERIFY(DocumentsConfig::findDocument(bank, DocumentType::Sale) == nullptr);
+        const DepotEntry depot = config.entries().first();
+        QVERIFY(DocumentsConfig::findDocument(depot, DocumentType::Sale) == nullptr);
     }
 
     // ── documentTypeFromString ────────────────────────────────────────────
@@ -343,7 +402,7 @@ private slots:
                 "</Documents>"));
         config.load(path2);
         QCOMPARE(config.count(), 2);
-        QVERIFY(config.findByName(QStringLiteral("TestBank")) == nullptr);
+        QVERIFY(config.findByDepotNumber(QStringLiteral("123456")) == nullptr);
     }
 };
 

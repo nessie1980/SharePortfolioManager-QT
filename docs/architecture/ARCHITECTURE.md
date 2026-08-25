@@ -4478,41 +4478,6 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### Bankerkennung: Mehrdeutigkeit über die Depotnummer (offen, 21.08.2026)
-
-Beim Aufspüren des obigen Fehlers fiel eine zweite Schwäche auf, die noch
-nicht behoben ist. `matchBankIndex()` nimmt die ERSTE Bank, deren
-`BankIdentifier`-Regel irgendwo im Text trifft — geprüft wird nur, DASS eine
-Depotnummer dasteht, nicht ob es die dieser Bank ist. Das Attribut
-`BankIdentifierValue`, das genau diese Nummer je Bank enthält, wird für die
-Erkennung überhaupt nicht herangezogen; es füllt nur die
-Depotnummer-Auswahlfelder.
-
-DKB und Cortal Consors beschriften beide mit "Depotnummer". Die DKB-Regel
-lautet `Depotnummer\s+([0-9]{1,9})`, die Consors-Regel
-`Depotnummer\s+([0-9]{1,10})|Depotnummer:\s+([0-9]{1,10})`, und die DKB steht
-in `Documents.xml` zuerst. Ein Consors-Beleg, der "Depotnummer 878031421"
-OHNE Doppelpunkt schreibt, wird daher der DKB zugeschlagen und mit deren
-Regeln ausgewertet. Nur die Doppelpunkt-Schreibweise landet bei Consors —
-was erklärt, warum diese Alternative überhaupt in der Regel steht.
-
-Ein tragfähiger Ansatz wäre, die gefangene Nummer gegen
-`BankIdentifierValue` zu vergleichen, statt nur die Beschriftung zu prüfen.
-Bewusst nicht zusammen mit dem obigen Bugfix umgesetzt: die Änderung berührt
-die Erkennung ALLER Banken, und ein Fehlgriff dort führt dazu, dass gar
-nichts mehr erkannt wird. Sie gehört für sich geprüft, gegen echte Belege
-aller drei Banken.
-
-@note Der bislang einzige BELEGTE Fehlgriff betrifft Consors (siehe
-"Consors-Themen"). Der Punkt steht trotzdem hier und nicht dort: die Schwäche
-liegt in `matchBankIndex()` und damit in der Erkennung aller Banken. Sobald
-eine vierte Bank hinzukommt, die ihre Depotnummer ebenso beschriftet, tritt
-dasselbe zwischen zwei aktiv genutzten Banken auf.
-
-@note Nessies Vorgabe 22.08.2026: als eigenes Vorhaben in einem separaten
-Chat. Passt zur obigen Einschätzung — die Änderung gehört für sich geprüft,
-nicht als Beifang einer anderen Arbeit.
-
 ### Analyse-Statuszeile und Feldsymbole können sich widersprechen (offen, 22.08.2026)
 
 Nach dem Einlesen eines Belegs kann die Statuszeile "Analyse OK — 5/5
@@ -4606,10 +4571,16 @@ Kennungen schlucken jedes Dokument") und wurden vor dem Bugfix gar nicht
 gelesen. Dass sie es jetzt tun, ist plausibel, aber nicht nachgewiesen — es
 lag kein Consors-Kostenbeleg vor.
 
-@note Die Bankerkennung über die Depotnummer ist bei Consors ebenfalls
-brüchig (ohne Doppelpunkt gewinnt die DKB). Der Punkt steht bewusst weiter
-oben unter "Bankerkennung: Mehrdeutigkeit über die Depotnummer", weil die
-Ursache allgemein ist und nicht an Consors hängt.
+@note Die Depoterkennung war bei Consors ebenfalls bruechig — ohne
+Doppelpunkt gewann die DKB. Am 25.08.2026 behoben; die Darstellung steht
+unter "Erledigt / Archiv", "Bankerkennung: Mehrdeutigkeit ueber die
+Depotnummer". Sie stand nie hier, weil die Ursache allgemein war und nicht an
+Consors hing.
+
+@note Punkt 4 hat sich durch den Bugfix vom 25.08.2026 nicht erledigt: ein
+Consors-Kostenbeleg liegt weiterhin nicht vor. Die Erkennung findet jetzt
+zwar zuverlaessig den Consors-Regelsatz, aber ob dessen `Brokerage`-Regeln
+auf einem echten Kostenbeleg greifen, ist damit nicht gezeigt.
 
 ### Parsing von Split-Mitteilungen der Banken prüfen (08.08.2026)
 
@@ -4829,7 +4800,7 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 
 ## Erledigt / Archiv
 
-@note Die folgenden acht Abschnitte standen bis zum 25.08.2026 unter "Offene
+@note Die folgenden neun Abschnitte standen bis zum 25.08.2026 unter "Offene
 Punkte" und sind dorthin verschoben worden, weil sie vollstaendig umgesetzt
 sind. Sie bleiben als Begruendungsdokument stehen: die Entscheidungen darin
 (Beleg-Wahrheit, Zurueckhaltung gegenueber stillen Korrekturen, enge
@@ -4837,6 +4808,121 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Bankerkennung: Mehrdeutigkeit ueber die Depotnummer (21.08.2026, behoben 25.08.2026)
+
+`matchBankIndex()` nahm die ERSTE Bank, deren `BankIdentifier`-Regel
+irgendwo im Text traf — geprueft wurde nur, DASS eine Depotnummer dastand,
+nicht ob es die dieser Bank war. Das Attribut `BankIdentifierValue`, das
+genau diese Nummer je Eintrag enthaelt, wurde fuer die Erkennung ueberhaupt
+nicht herangezogen; es fuellte nur die Depotnummer-Auswahlfelder.
+
+**Der belegte Fehlgriff.** DKB und Cortal Consors beschriften beide mit
+"Depotnummer". Die DKB-Regel lautet `Depotnummer\s+([0-9]{1,9})`, die
+Consors-Regel `Depotnummer\s+([0-9]{1,10})|Depotnummer:\s+([0-9]{1,10})`,
+und die DKB steht in `Documents.xml` zuerst. Auf einer zehnstelligen
+Consors-Depotnummer trifft die DKB-Regel ebenfalls: sie faengt die ersten
+NEUN Ziffern und laesst die zehnte liegen, was fuer einen Treffer genuegt.
+Jeder Consors-Beleg wurde daher der DKB zugeschlagen und mit deren Regeln
+ausgewertet — andere Beschriftungen fuer Datum, Stueckzahl und Kurs, also
+leere oder falsche Felder, ohne jeden Hinweis.
+
+@note Die Doppelpunkt-Schreibweise war der Gegenbeweis: `Depotnummer: 0878…`
+laesst die DKB-Regel scheitern, weil `\s` keinen Doppelpunkt frisst — erst
+dadurch kam Consors ueberhaupt an die Reihe. Das erklaert, warum diese
+Alternative in der Consors-Regel steht.
+
+**Was ein Eintrag in Documents.xml bedeutet** (Nessies Klarstellung
+25.08.2026, vorher nirgends festgehalten). Ein `<Bank>`-Element beschreibt
+genau EIN DEPOT bei einer Bank, nicht die Bank im Allgemeinen:
+
+- Die Regeln sind auf das Layout der Dokumente zugeschnitten, die dieses
+  Depot erzeugt.
+- Ein zweites Depot — auch bei einer bereits eingetragenen Bank — verlangt
+  einen eigenen Eintrag. Beide tragen dann denselben `Name`, unterscheiden
+  sich aber in `BankIdentifierValue`.
+- Aendert eine Bank ihr Layout oder verlaengert ihre Depotnummern, gehoert
+  die Regel dieses Eintrags nachgezogen. Dass die DKB-Regel auf neun Stellen
+  begrenzt ist, ist deshalb kein Mangel, sondern Absicht.
+
+Damit ist die Depotnummer das eineindeutige Merkmal, und ein HARTER
+Vergleich ist nicht bloss zulaessig, sondern die einzig richtige Auslegung.
+
+**Behoben** in `matchDepotIndex()` (so heisst die Funktion jetzt): ein Depot
+gilt als erkannt, wenn seine `BankIdentifier`-Regel trifft UND die gefangene
+Nummer der hinterlegten entspricht. Kein Normalisieren, kein Angleichen der
+Laenge — weicht die Nummer ab, gehoert der Beleg zu einem Depot, das die
+Konfiguration nicht kennt, und "nicht erkannt" ist die richtige Antwort.
+
+Die Nummer wird ueber `extractFieldValue()` entnommen, also mit derselben
+Auswahlregel wie im `ParserLib::Parser`. Das ist kein Schoenheitsgrund: die
+Consors-Regel besteht aus zwei Alternativen, und je nach Schreibweise ist
+Fanggruppe 1 oder Fanggruppe 2 gefuellt. Ein dritter, eigener Auswerter
+waere genau die Bauform, die am 21.08.2026 schon einmal zu zwei uneinigen
+Lesarten derselben Regel gefuehrt hat.
+
+**Umbenennungen im selben Zug.** Die alten Bezeichner legten nahe, ein
+Eintrag beschreibe eine Bank — was ein Teil des Grundes war, warum die
+Erkennung die Depotnummer nie verglich:
+
+| alt | neu |
+| --- | --- |
+| `BankEntry` | `DepotEntry` |
+| `BankEntry::name` | `DepotEntry::bankName` |
+| `BankEntry::identifier` | `DepotEntry::depotNumber` |
+| `DocumentsConfig::findByName()` | `DocumentsConfig::findByDepotNumber()` |
+| `DocumentClassifier::matchBankIndex()` | `matchDepotIndex()` |
+| `Result::bank` / `bankMatched` | `Result::depot` / `depotMatched` |
+
+`findByName()` ist dabei ersatzlos entfallen statt umbenannt: eine Suche
+ueber den Banknamen liefert beim zweiten Depot derselben Bank
+stillschweigend den erstbesten Eintrag. Im Anwendungscode gab es keinen
+Aufrufer; gefaehrlich war sie trotzdem, weil sie einladend aussah.
+
+Die XML-Datei bleibt unveraendert (`<Bank Name=… BankIdentifierValue=…>`).
+Sie ist ein Konfigurationsformat im Feld; ein Schemawechsel waere ein Bruch
+ohne fachlichen Gewinn. Die Zuordnung XML-Attribut zu Feldname steht in
+`DocumentsConfig.h`. Aus demselben Grund heissen die `LoadResult`-Werte
+weiterhin `BankAttributeError`/`BankElementError` — sie benennen das
+XML-Element, nicht den C++-Typ.
+
+**Nebenbefund: das Fixture war falsch.** `kCortalEur` in `tst_documentsxml`
+trug die Consors-Depotnummer ohne ihre fuehrende Null. Solange nur die
+Beschriftung geprueft wurde, war das folgenlos; mit dem Wertvergleich haette
+der Beleg seinem eigenen Depot nicht mehr zugeordnet werden koennen, und der
+Test haette einen Fehler gemeldet, den es nicht gibt. Korrigiert nach
+Nessies Abgleich mit dem Original. Die Zeile "Netto zugunsten Konto …" traegt
+eine Konto-, keine Depotnummer und bleibt wie sie ist.
+
+@note Lehre: ein Fixture, das an der entscheidenden Stelle von der
+Wirklichkeit abweicht, prueft nicht die Wirklichkeit. Der Unterschied fiel
+erst auf, als eine Aenderung genau diese Stelle zur Entscheidungsgrundlage
+machte — vorher haette ihn niemand bemerken koennen.
+
+**Verhaltensaenderung, die man kennen muss.** Ein Beleg aus einem noch nicht
+eingetragenen Depot wird nicht mehr erkannt, auch wenn die BANK in
+`Documents.xml` steht. Der Dialog markiert dann alle Pflichtfelder rot, wie
+bei einer unbekannten Bank. Das ist ehrlicher als die frueher moegliche
+falsche Zuordnung, aber es ist eine Aenderung: wer ein Depot eroeffnet, muss
+die Datei erweitern. Die Meldung beim Ablegen per Drag&Drop nennt die
+Depotnummer deshalb ausdruecklich als Ursache — ohne den Zusatz suchte der
+Benutzer den Fehler an der falschen Stelle.
+
+**Geprueft** in drei Testzielen. `tst_documentclassifier` deckt die Regel
+selbst gegen ein synthetisches Fixture ab, das DKB und Consors mit ihren
+echten Regeln nachbaut; `tst_documentsconfig` das Verhalten von
+`findByDepotNumber()` an zwei Depots derselben Bank; `tst_documentsxml` die
+Zuordnung gegen die AUSGELIEFERTE `Documents.xml` und die nachgebauten
+Belegtexte. Nur das dritte kann belegen, dass die Regel auf Nessies Belegen
+greift — ein synthetisches Fixture beweist, dass die Regel stimmt, nicht dass
+sie passt.
+
+@note Eine Pruefung dort verdient Erwaehnung, weil sie leicht als ueberfluessig
+erscheint: `test_bankDetection_dkbRuleStillMatchesConsorsDocument` haelt fest,
+dass die DKB-Regel auf dem Consors-Beleg SEHR WOHL trifft — nur eben mit der
+falschen Nummer. Ohne sie waere die Gegenprobe mehrdeutig: sie waere auch dann
+gruen, wenn die DKB-Regel gar nicht mehr anschluege, und die Umstellung haette
+ihre Rechtfertigung verloren.
 
 ### Aktiensplits werden nicht behandelt (wichtig, 06.08.2026, vollstaendig umgesetzt 25.08.2026)
 
@@ -5618,9 +5704,15 @@ Behoben in `regexMatches()` (dem gemeinsamen Helfer beider Aufrufwege): ein
 leeres Muster identifiziert nichts und liefert `false`. Die Prüfung sitzt
 bewusst dort und nicht im Lader — `DocumentsConfig` gibt die Konfiguration
 unverfälscht wieder, die Bedeutung "leer = identifiziert nichts" gehört zur
-Auswertung. Sie schützt zugleich `matchBankIndex()`, wo eine leere
-`BankIdentifier`-Regel sonst jedes beliebige Dokument dieser Bank
+Auswertung. Sie schützte zugleich die damalige `matchBankIndex()`, wo eine
+leere `BankIdentifier`-Regel sonst jedes beliebige Dokument dieser Bank
 zugeschlagen hätte.
+
+@note Fuer die Depoterkennung greift `regexMatches()` seit dem 25.08.2026
+nicht mehr: die Nachfolgerin `matchDepotIndex()` geht ueber
+`extractFieldValue()`, die eine leere Regel aus demselben Grund als "kein
+Wert" behandelt. Der Schutz ist derselbe, nur an anderer Stelle — geprueft
+in `test_matchDepotIndex_emptyBankIdentifierRule_notFound`.
 
 @note Der Fehler war seit Einführung der Consors-Konfiguration latent und
 betraf neben Dividenden auch die Kostenbelege dieser Bank (auch sie landen
@@ -6594,15 +6686,15 @@ Logik musste also so oder so aus den Presentern herausgelöst werden.
 Neue Klasse `app/utils/DocumentClassifier.h/.cpp` (statisch, kein
 QObject, keine GUI-Abhängigkeit):
 - `DocumentClassifier::classify(pdfText, config)` → `Result { matched,
-  bank, docEntry, type }`. Anders als die vier Presenter (die beim
+  depot, docEntry, type }`. Anders als die vier Presenter (die beim
   Ausbleiben eines Identifier-Treffers auf ihren eigenen Dialogtyp
   zurückfallen, weil der Benutzer den Dialog ja bereits bewusst gewählt
   hat) liefert `classify()` bei fehlendem Bank- **oder** Typ-Treffer
   `matched = false` zurück — ohne Vorwissen darf hier nicht geraten
   werden.
-- `Result` speichert `BankEntry`/`DocumentEntry` **als Kopie**, nicht als
-  Zeiger: `DocumentsConfig::entries()` liefert `QList<BankEntry>` *by
-  value* zurück; ein `const BankEntry*` in den (bisherigen) Presentern
+- `Result` speichert `DepotEntry`/`DocumentEntry` **als Kopie**, nicht als
+  Zeiger: `DocumentsConfig::entries()` liefert `QList<DepotEntry>` *by
+  value* zurück; ein `const DepotEntry*` in den (bisherigen) Presentern
   wird nur innerhalb derselben Funktion verwendet und übersteht das nie.
   Für `DocumentClassifier` muss das Ergebnis aber auch nach Rückkehr aus
   `classify()` noch gültig sein (der Aufrufer in `MainWindow` prüft erst
@@ -6658,16 +6750,16 @@ Reines Refactoring, bewusst ohne Verhaltensänderung:
   (unterschiedliche Required-Felder-Listen bei Bank-Fehltreffer,
   unterschiedlicher `ParsingValues`-Aufbau), aber die Bank-/Typ-Erkennung
   selbst ist durch zwei Aufrufe ersetzt:
-  `DocumentClassifier::matchBankIndex(pdfText, *m_config, bankIndex)` und
-  `DocumentClassifier::detectDocumentType(pdfText, matchedBank,
+  `DocumentClassifier::matchDepotIndex(pdfText, *m_config, depotIndex)` und
+  `DocumentClassifier::detectDocumentType(pdfText, matchedDepot,
   fallbackType)`. Der jeweilige `fallbackType` entspricht exakt der
   bisherigen lokalen Default-Initialisierung (`PresenterBuyEdit`/
   `PresenterShareAdd` → `DocumentType::Buy`, `PresenterSaleEdit` →
   `DocumentType::Sale`, `PresenterDividendEdit` → `DocumentType::Dividend`)
-  — Verhalten bei "Bank erkannt, aber kein Dokumenttyp-Identifier trifft"
+  — Verhalten bei "Depot erkannt, aber kein Dokumenttyp-Identifier trifft"
   bleibt damit identisch.
 - `DocumentClassifier` wurde dafür um zwei neue Bausteine ergänzt:
-  `matchBankIndex()` (liefert nur den Index statt eines potenziell
+  `matchDepotIndex()` (liefert nur den Index statt eines potenziell
   wackligen Zeigers) und `detectDocumentType()` (mit Fallback-Parameter,
   im Unterschied zu `classify()`, das bewusst nie rät). `classify()` selbst
   wurde intern auf dieselben beiden Bausteine umgestellt, um Code-Doppelung
@@ -6678,6 +6770,12 @@ Reines Refactoring, bewusst ohne Verhaltensänderung:
 - Alles andere (WKN/ISIN-Gegenprüfung in `populateFromResult()`,
   `xmlNameToViewField()`, Validierung, Speichern) ist unverändert
   übernommen.
+
+@note Die Bezeichner in diesem Abschnitt sind auf den Stand vom 25.08.2026
+gebracht: `matchBankIndex()` hiess damals noch so und heisst seither
+`matchDepotIndex()`, `BankEntry` heisst `DepotEntry`. Die Beschreibung des
+Umbaus selbst ist unveraendert — siehe "Bankerkennung: Mehrdeutigkeit ueber
+die Depotnummer".
 
 @note **Noch nicht automatisiert nachgetestet:** Die bestehenden
 Presenter-Tests (`tst_buysform`, `tst_mainwindow` u. a.) wurden nicht

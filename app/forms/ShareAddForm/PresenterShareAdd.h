@@ -27,10 +27,10 @@
  * 1. `PdfTextExtractor` converts the PDF to a plain-text string (QProcess,
  *    wrapped — see ARCHITECTURE.md, "PDF-Text-Extraktion gebündelt in
  *    PdfTextExtractor").
- * 2. `DocumentClassifier` provides the matched `BankEntry`/`DocumentEntry`
+ * 2. `DocumentClassifier` provides the matched `DepotEntry`/`DocumentEntry`
  *    from Documents.xml (see ARCHITECTURE.md, "PDF-Erkennungslogik
  *    gebündelt in DocumentClassifier"). Behaviour unchanged, including the
- *    fallback to `DocumentType::Buy` when the bank matched but no explicit
+ *    fallback to `DocumentType::Buy` when the depot matched but no explicit
  *    identifier did.
  * 3. `ParserLib::Parser` applies the regex rules and emits a result map.
  * 4. onParseFinished() distributes the results back to the view.
@@ -92,7 +92,7 @@ private:
     // ── Helpers ───────────────────────────────────────────────────────────
 
     /**
-     * @brief Determine bank + document type from the PDF text, then start
+     * @brief Determine depot + document type from the PDF text, then start
      *        the ParserLib::Parser with the matching RegExList.
      * @param pdfText  Plain text extracted from the PDF.
      */

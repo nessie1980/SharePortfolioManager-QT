@@ -177,12 +177,15 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
     m_depotNumber = new QComboBox;
     m_depotNumber->setEditable(false);
     m_depotNumber->addItem(tr("— bitte wählen —"));
+    // Ein Eintrag je Depot; die Depotnummer ist der eindeutige Schlüssel und
+    // steht deshalb sowohl im Anzeigetext als auch in den item data
+    // (siehe DepotEntry).
     if (m_config) {
-        for (const auto& bank : m_config->entries()) {
-            if (!bank.identifier.isEmpty())
+        for (const auto& depot : m_config->entries()) {
+            if (!depot.depotNumber.isEmpty())
                 m_depotNumber->addItem(
-                    QStringLiteral("%1 (%2)").arg(bank.name, bank.identifier),
-                    bank.identifier);
+                    QStringLiteral("%1 (%2)").arg(depot.bankName, depot.depotNumber),
+                    depot.depotNumber);
         }
     }
     m_statusLabels[QStringLiteral("depotNumber")] =

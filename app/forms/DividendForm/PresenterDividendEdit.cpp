@@ -342,17 +342,17 @@ void PresenterDividendEdit::onPdfTextExtracted(bool success, const QString& text
 }
 
 // ── startParserForText ────────────────────────────────────────────────────────
-// Bank-/document-type detection now delegates to DocumentClassifier
+// Depot-/document-type detection now delegates to DocumentClassifier
 // (see ARCHITECTURE.md) — behaviour unchanged, including the fallback to
-// DocumentType::Dividend when the bank matched but no identifier did.
+// DocumentType::Dividend when the depot matched but no identifier did.
 
 void PresenterDividendEdit::startParserForText(const QString& pdfText)
 {
     if (!m_config) { m_view->onParseFinished(); return; }
 
-    int bankIndex = -1;
-    if (!DocumentClassifier::matchBankIndex(pdfText, *m_config, bankIndex)) {
-        // Bank nicht erkannt: alle Pflichtfelder rot markieren, damit klar
+    int depotIndex = -1;
+    if (!DocumentClassifier::matchDepotIndex(pdfText, *m_config, depotIndex)) {
+        // Depot nicht erkannt: alle Pflichtfelder rot markieren, damit klar
         // ist, dass nichts übernommen wurde. Seit Phase 2 gehören Ex-Tag und
         // Depotnummer dazu (ergänzt in Phase 5, 21.08.2026).
         const QStringList required = {
@@ -363,12 +363,12 @@ void PresenterDividendEdit::startParserForText(const QString& pdfText)
         return;
     }
 
-    const BankEntry matchedBank = m_config->entries().at(bankIndex);
+    const DepotEntry matchedDepot = m_config->entries().at(depotIndex);
     const DocumentType docType = DocumentClassifier::detectDocumentType(
-        pdfText, matchedBank, DocumentType::Dividend);
+        pdfText, matchedDepot, DocumentType::Dividend);
 
     const DocumentEntry* docEntry =
-        DocumentsConfig::findDocument(matchedBank, docType);
+        DocumentsConfig::findDocument(matchedDepot, docType);
     if (!docEntry) {
         m_view->onParseFinished();
         return;
