@@ -29,6 +29,10 @@ enum Column { kColDate = 0, kColRatio, kColConversion, kColAdjusted, kColComment
 /// Breite der Dokument-Spalte, projektweit vereinheitlicht (17.07.2026).
 constexpr int kDocumentColumnWidth = 36;
 
+/// "Ex-Tag noch nicht gesetzt" — gleicher Sentinel wie in allen anderen
+/// Formen und identisch mit der Minimaldatums-Grenze des Feldes.
+const QDate kDateSentinel(2000, 1, 1);
+
 // Textfarben fuer das Pruefergebnis (14.08.2026, Nessies Vorgabe): trotz
 // vier Ergebnistypen in SplitPriceJumpDetector::Result gibt es fuers Auge
 // nur zwei Zustaende, siehe IViewShareSplitEdit::PriceJumpTone. Dieselben
@@ -133,7 +137,19 @@ QGroupBox* ViewShareSplitEdit::createSplitDataGroup()
     // Ex-Tag. Zukünftige Daten sind erlaubt (Nessies Entscheidung 08.08.2026):
     // ein angekündigter Split darf sofort erfasst werden — ShareSplitAdjuster
     // rechnet ohnehin nur Datensätze VOR dem Splittag um.
-    m_date = new QDateEdit(QDate::currentDate());
+    //
+    // Startwert bewusst der Sentinel 01.01.2000 statt des heutigen Datums
+    // (25.08.2026, Punkt 5 der Split-Plausibilitätsprüfung) — dieselbe
+    // Konvention wie beim Ex-Tag in ViewDividendEdit: ein QDateEdit kann kein
+    // echtes "leer" darstellen, der Sentinel steht deshalb für "vom Benutzer
+    // noch nicht gesetzt". PresenterShareSplitEdit::validateInput() weist ihn
+    // ab und verlangt eine Eingabe.
+    //
+    // Anlass ist der Feldfall Alphabet: das Feld war mit dem heutigen Datum
+    // vorbelegt, dieses wurde unverändert übernommen und stand als 10.08.2026
+    // in der Datenbank. Die Sentinel-Prüfung im Presenter existierte damals
+    // schon, konnte aber nie auslösen — vorbelegt ist nie leer.
+    m_date = new QDateEdit(kDateSentinel);
     m_date->setObjectName(QStringLiteral("splitDate"));
     m_date->setCalendarPopup(true);
     m_date->setDisplayFormat(tr("dd.MM.yyyy"));
@@ -443,7 +459,9 @@ void ViewShareSplitEdit::loadSplit(const ShareSplitObject& split)
 
 void ViewShareSplitEdit::clearForm()
 {
-    m_date->setDate(QDate::currentDate());
+    // Zurück auf "noch nicht gesetzt", nicht auf heute — siehe die Begründung
+    // beim Anlegen des Feldes in createSplitDataGroup().
+    m_date->setDate(kDateSentinel);
     m_ratioNew->setText(QStringLiteral("1"));
     m_ratioOld->setText(QStringLiteral("1"));
     m_pricesAdjusted->setChecked(false);

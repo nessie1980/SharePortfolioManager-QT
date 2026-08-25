@@ -390,6 +390,11 @@ private slots:
         // Nessies Entscheidung 08.08.2026: ein angekündigter Split darf sofort
         // erfasst werden. Technisch folgenlos, da volumeFactor() nur
         // Datensätze VOR dem Splittag umrechnet.
+        //
+        // Seit 25.08.2026 (Punkt 5) kommt dabei eine Rückfrage — erlaubt
+        // bleibt es trotzdem. Ohne die zweite Zusicherung unten liesse sich
+        // aus diesem Test nicht ablesen, ob "erlaubt" heisst "ohne Frage
+        // gespeichert" oder "nach bestätigter Frage gespeichert".
         StubViewShareSplitEdit  view;
         StubModelShareSplitEdit model;
         view.dateToReturn = QDate::currentDate().addYears(1);
@@ -398,7 +403,8 @@ private slots:
         p.onSave();
 
         QVERIFY(model.addCalled);
-        QVERIFY(view.lastError.isEmpty());
+        QVERIFY(view.lastError.isEmpty());   // Rückfrage, kein Fehler
+        QVERIFY(view.confirmCalled);
     }
 
     void test_presenter_onSave_zeroRatio_showsErrorAndDoesNotSave()
@@ -471,6 +477,114 @@ private slots:
         p.onSave();
 
         QCOMPARE(view.lastError, model.errorMsg);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Ex-Tag in der Zukunft (Punkt 5 der Split-Plausibilitätsprüfung,
+    // 25.08.2026, siehe ARCHITECTURE.md). Zukünftige Ex-Tage bleiben
+    // erlaubt — die Rückfrage ist ein Hinweis, keine Hürde.
+    //
+    // Für den heutigen Tag wird bewusst NICHT gefragt: seit das Datumsfeld
+    // unbelegt startet (Sentinel statt "heute"), ist jedes eingetragene
+    // Datum eine bewusste Eingabe.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_presenter_onSave_futureExDate_asksAndNamesTheDate()
+    {
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        const QDate future = QDate::currentDate().addDays(30);
+        view.dateToReturn = future;
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY(view.confirmCalled);
+        // Das Datum gehört in den Text — ohne es bleibt unklar, welches
+        // Datum der Benutzer gegen die Bankmitteilung halten soll.
+        QVERIFY2(view.lastConfirmMessage.contains(
+                     QLocale().toString(future, QLocale::ShortFormat)),
+                 qPrintable(view.lastConfirmMessage));
+        QVERIFY(model.addCalled);
+    }
+
+    void test_presenter_onSave_futureExDate_declined_doesNotSave()
+    {
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn  = QDate::currentDate().addDays(30);
+        view.confirmResult = false;
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY(view.confirmCalled);
+        QVERIFY(!model.addCalled);
+    }
+
+    void test_presenter_onSave_todayAsExDate_savesWithoutAsking()
+    {
+        // Der eigentliche Ertrag der Sentinel-Vorbelegung: "heute" ist keine
+        // Vorgabe mehr, die versehentlich stehen bleibt, sondern eine
+        // getippte Eingabe. Eine Rückfrage wäre hier reiner Lärm.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn = QDate::currentDate();
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY(!view.confirmCalled);
+        QVERIFY(model.addCalled);
+    }
+
+    void test_presenter_onSave_pastExDate_savesWithoutAsking()
+    {
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.dateToReturn = QDate::currentDate().addDays(-1);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY(!view.confirmCalled);
+        QVERIFY(model.addCalled);
+    }
+
+    void test_presenter_onSave_editFutureSplitWithUnchangedDate_doesNotAskAgain()
+    {
+        // Wer den angekündigten Split einmal bestätigt hat, soll nicht bei
+        // jeder Kommentar- oder Belegänderung erneut gefragt werden.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        const QDate future = QDate::currentDate().addDays(30);
+        model.splits << makeSplit(QStringLiteral("s1"), future, 20.0, 1.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onRowSelected(QStringLiteral("s1"));
+        view.dateToReturn      = future;                     // unverändert
+        view.commentToReturn   = QStringLiteral("nachgetragen");
+        p.onSave();
+
+        QVERIFY(!view.confirmCalled);
+        QVERIFY(model.updateCalled);
+    }
+
+    void test_presenter_onSave_editMovesDateIntoFuture_asksAgain()
+    {
+        // Ein NEUES Datum in der Zukunft ist eine neue Aussage und wird
+        // erneut hinterfragt — sonst liesse sich ein Vertipper an einem
+        // bestehenden Split ungefragt einschleusen.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        model.splits << makeSplit(QStringLiteral("s1"), QDate(2022, 7, 18), 20.0, 1.0);
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onRowSelected(QStringLiteral("s1"));
+        view.dateToReturn = QDate::currentDate().addYears(1);
+        p.onSave();
+
+        QVERIFY(view.confirmCalled);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -2046,6 +2160,38 @@ private slots:
         const QDate future = QDate::currentDate().addYears(1);
         date->setDate(future);
         QCOMPARE(dlg.splitDate(), future);
+    }
+
+    void test_view_exDateStartsUnset()
+    {
+        // Punkt 5 der Split-Plausibilitätsprüfung (25.08.2026): das Feld
+        // startet auf dem Sentinel, NICHT auf heute. Nur so kann die
+        // Sentinel-Prüfung in validateInput() überhaupt auslösen — der
+        // Feldfall Alphabet entstand daraus, dass ein vorbelegtes "heute"
+        // unverändert übernommen wurde.
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        QCOMPARE(dlg.splitDate(), QDate(2000, 1, 1));
+    }
+
+    void test_view_clearFormResetsExDateToUnset()
+    {
+        // Zweite Stelle mit derselben Aussage: nach einem Reset darf nicht
+        // wieder das heutige Datum dastehen, sonst wäre die Vorbelegung nur
+        // beim allerersten Öffnen des Dialogs entschärft.
+        openMemoryDb();
+        const QString guid = insertTestShare();
+        ViewShareSplitEdit dlg(guid);
+
+        auto* date = dlg.findChild<QDateEdit*>(QStringLiteral("splitDate"));
+        if (!date) QFAIL("splitDate not found");
+        date->setDate(QDate(2022, 7, 18));
+
+        dlg.clearForm();
+
+        QCOMPARE(dlg.splitDate(), QDate(2000, 1, 1));
     }
 
     void test_view_ratioFieldsAcceptGermanDecimalComma()

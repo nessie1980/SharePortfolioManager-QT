@@ -38,7 +38,11 @@
  * Zukünftige Ex-Tage sind ausdrücklich erlaubt (Nessies Entscheidung
  * 08.08.2026): ein angekündigter Split darf sofort erfasst werden. Technisch
  * ist das folgenlos, da `ShareSplitAdjuster::volumeFactor()` nur Datensätze
- * VOR dem Splittag umrechnet.
+ * VOR dem Splittag umrechnet. Seit 25.08.2026 fragt der Presenter dabei
+ * einmal nach (Punkt 5 der Split-Plausibilitätsprüfung) — erlaubt bleibt es,
+ * aber ein zufällig stehengebliebenes Datum soll nicht unbemerkt in die
+ * Datenbank wandern. Beim Bearbeiten eines Splits mit unverändertem Datum
+ * kommt die Frage nicht erneut.
  */
 class PresenterShareSplitEdit : public QObject
 {
@@ -126,6 +130,32 @@ private:
      *         Benutzer hat bestätigt).
      */
     bool confirmSaveDespiteConflict(const ShareSplitObject& candidate) const;
+
+    /**
+     * @brief Holt bei einem Ex-Tag in der Zukunft die Bestätigung des
+     * Benutzers ein (Punkt 5 der Split-Plausibilitätsprüfung, 25.08.2026).
+     *
+     * Zukünftige Ex-Tage bleiben erlaubt — die Rückfrage ist ein Hinweis,
+     * keine Hürde. Ein Ex-Tag von heute oder früher fragt gar nicht erst:
+     * seit das Datumsfeld unbelegt startet (Sentinel statt "heute", siehe
+     * `ViewShareSplitEdit`), ist jedes eingetragene Datum eine bewusste
+     * Eingabe. Beim Bearbeiten mit unverändertem Datum entfällt die Frage
+     * ebenfalls, sonst käme sie bei jeder Kommentaränderung erneut.
+     *
+     * @param date  Ex-Tag aus dem Formular.
+     * @return true, wenn gespeichert werden darf.
+     */
+    bool confirmSaveDespiteFutureExDate(const QDate& date) const;
+
+    /**
+     * @brief true, wenn ein Split geladen ist und sein gespeichertes Datum
+     * mit dem übergebenen übereinstimmt.
+     *
+     * Gemeinsam genutzt von der Duplikat-Prüfung in validateInput() (das
+     * eigene Datum ist kein Duplikat) und der Zukunfts-Rückfrage (keine
+     * Wiederholung für ein bereits bestätigtes Datum).
+     */
+    bool dateIsUnchangedForLoadedSplit(const QDate& date) const;
 
     /**
      * @brief Zusatztext für die Löschabfrage, wenn das Entfernen des Splits

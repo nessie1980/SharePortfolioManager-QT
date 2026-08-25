@@ -47,7 +47,7 @@ ctest --output-on-failure
 ./bin/tst_documentfieldvalue
 ./bin/tst_sharesplithint
 ./bin/tst_splitpricejumpdetector
-./bin/tst_splitadjustmentaudit
+./bin/tst_splitaudit
 ./bin/tst_splitratiochecker
 ./bin/tst_shareupdaterules
 ./bin/tst_mainwindow
@@ -80,7 +80,7 @@ Projekts; seit `tst_sharesplitrepository`/`tst_sharesplitadjuster`
 `tst_sharesplitsform` (08.08.2026, Phase 3a) waren es 35, seit
 `tst_sharesplithint` (09.08.2026, Phase 3b) waren es 36, seit
 `tst_splitpricejumpdetector` (13.08.2026, "Prüfen"-Knopf im Split-Dialog)
-waren es 37, seit `tst_splitadjustmentaudit` (20.08.2026, Phase 4b —
+waren es 37, seit `tst_splitaudit` (20.08.2026, Phase 4b —
 automatische Nachprüfung nach Tageswert-Abruf) 38 und seit
 `tst_dividendvolumechecker` (21.08.2026, Phase 3 der Ex-Tag-Behandlung bei
 Dividenden) 39, seit `tst_documentsxml` (21.08.2026, Phase 5 — prüft die
@@ -849,10 +849,15 @@ Text der Start-Meldung (`MainWindow`, statische Helfer):
 | `test_buildDailyValuesWarningMessage_containsNameWknAndType` | Eine Aktie | Name, WKN und Update-Typ stehen im Text |
 | `test_buildDailyValuesWarningMessage_listsAllSharesInOrder` | Zwei Aktien | Beide genannt, Reihenfolge des Grids erhalten |
 | `test_buildDailyValuesWarningMessage_explainsConsequenceAndUrgency` | Eine Aktie | Text nennt "Depotwert-Chart" und "dauerhaft verloren" |
-| `test_buildSplitAdjustmentWarningMessage_emptyList_returnsEmpty` | Leere Liste | Leerer String — belegt den Frühausstieg, ohne Widerspruch geht kein Dialog auf (Phase 4b, 20.08.2026) |
-| `test_buildSplitAdjustmentWarningMessage_containsNameWknAndSplitDescription` | Ein Widerspruch | Aktienname, WKN und Split-Beschreibung (`ShareSplitHint::describeSplit()`) stehen im Text |
-| `test_buildSplitAdjustmentWarningMessage_listsAllWarningsInOrder` | Zwei Widersprüche | Beide genannt, Reihenfolge der Eingabeliste erhalten |
-| `test_buildSplitAdjustmentWarningMessage_explainsNoAutomaticChange` | Ein Widerspruch | Text stellt klar, dass nichts automatisch geändert wird, und verweist auf den "Prüfen"-Knopf |
+| `test_buildSplitAuditWarningMessage_emptyList_returnsEmpty` | Leere Liste | Leerer String — belegt den Frühausstieg, ohne Widerspruch geht kein Dialog auf (Phase 4b, 20.08.2026) |
+| `test_buildSplitAuditWarningMessage_containsNameWknAndSplitDescription` | Ein Widerspruch | Aktienname, WKN und Split-Beschreibung (`ShareSplitHint::describeSplit()`) stehen im Text |
+| `test_buildSplitAuditWarningMessage_listsAllWarningsInOrder` | Zwei Widersprüche | Beide genannt, Reihenfolge der Eingabeliste erhalten |
+| `test_buildSplitAuditWarningMessage_explainsNoAutomaticChange` | Ein Widerspruch | Text stellt klar, dass nichts automatisch geändert wird, und verweist auf den Split-Dialog |
+| `test_buildSplitAuditWarningMessage_ratioFromPrices_namesMeasuredRatio` | Verhältnis-Befund aus dem Kurssprung | Das gemessene Verhältnis steht im Text (Punkt 4, 22.08.2026) |
+| `test_buildSplitAuditWarningMessage_ratioFromHoldings_namesQuantitiesAndProposal` | Verhältnis-Befund aus der Verkaufshistorie | Beide Mengen, das Depot und der Korrekturvorschlag stehen im Text |
+| `test_buildSplitAuditWarningMessage_groupsKindsSeparately` | Gemischte Befundarten | Beide Einleitungen im selben Text — es gibt bewusst nur einen Dialog |
+| `test_buildSplitAuditWarningMessage_closingHintAppearsOnlyOnce` | Gemischte Befundarten | Der Schlusssatz gilt für beide Gruppen und steht genau einmal |
+| `test_describeFactorAsRatio_normalAndReverseSplit` | Faktor als Verhältnis | "20:1" und "1:10", leer bei ungültigem Faktor |
 
 @note Der letzte Test der ersten Gruppe wirkt zunächst wie eine Prüfung auf
 Wortlaut, ist aber der eigentliche Zweck der Meldung: ohne die Folge
@@ -860,8 +865,8 @@ Wortlaut, ist aber der eigentliche Zweck der Meldung: ohne die Folge
 abrufbare Historie) wäre sie eine folgenlose Notiz, die der Nutzer wegklickt.
 Fiele einer der beiden Teile bei einer späteren Textänderung heraus, bliebe
 das sonst unbemerkt — eine Meldung erscheint ja weiterhin. Bei
-`buildSplitAdjustmentWarningMessage()` gilt dieselbe Überlegung für
-`test_buildSplitAdjustmentWarningMessage_explainsNoAutomaticChange`: die
+`buildSplitAuditWarningMessage()` gilt dieselbe Überlegung für
+`test_buildSplitAuditWarningMessage_explainsNoAutomaticChange`: die
 Zusicherung "automatisch geändert wird hier nichts" ist der Kern von Phase
 4b (siehe ARCHITECTURE.md, "Automatische Nachprüfung nach
 Tageswert-Abruf") — ohne sie könnte der Nutzer die Meldung für eine bereits
@@ -1229,12 +1234,37 @@ PresenterShareSplitEdit — Validierung beim Speichern:
 | `test_presenter_onSave_validSplit_callsAdd` | Gültige Eingabe | `addSplit()` aufgerufen, Werte korrekt übernommen |
 | `test_presenter_onSave_emitsDataChanged` | Gültige Eingabe | `dataChanged()` genau einmal gesendet |
 | `test_presenter_onSave_sentinelDate_showsErrorAndDoesNotSave` | Ex-Tag = 01.01.2000 | Kein Speichern, Fehlermeldung |
-| `test_presenter_onSave_futureDate_isAllowed` | Ex-Tag ein Jahr in der Zukunft | Speichern erfolgt, keine Meldung |
+| `test_presenter_onSave_futureDate_isAllowed` | Ex-Tag ein Jahr in der Zukunft | Speichern erfolgt nach bestätigter Rückfrage, keine Fehlermeldung |
 | `test_presenter_onSave_zeroRatio_showsErrorAndDoesNotSave` | Verhältnis-Seite = 0 | Kein Speichern, Fehlermeldung |
 | `test_presenter_onSave_ratioOneToOne_isRejected` | Verhältnis 1:1 | Kein Speichern, Fehlermeldung |
 | `test_presenter_onSave_equivalentRatio_isAlsoRejected` | Verhältnis 2:2 | Kein Speichern — geprüft wird der Quotient, nicht der Wortlaut |
 | `test_presenter_onSave_duplicateDate_showsErrorAndDoesNotSave` | Tag bereits belegt | Kein Speichern, Fehlermeldung |
 | `test_presenter_onSave_modelFails_showsError` | Modell meldet Fehler | `showError()` mit der Modell-Meldung |
+
+PresenterShareSplitEdit — Ex-Tag in der Zukunft (Punkt 5 der
+Split-Plausibilitätsprüfung, 25.08.2026):
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_presenter_onSave_futureExDate_asksAndNamesTheDate` | Ex-Tag in 30 Tagen | Rückfrage kommt, Text nennt das Datum, danach gespeichert |
+| `test_presenter_onSave_futureExDate_declined_doesNotSave` | Rückfrage verneint | Kein Speichern |
+| `test_presenter_onSave_todayAsExDate_savesWithoutAsking` | Ex-Tag = heute | Keine Rückfrage |
+| `test_presenter_onSave_pastExDate_savesWithoutAsking` | Ex-Tag = gestern | Keine Rückfrage |
+| `test_presenter_onSave_editFutureSplitWithUnchangedDate_doesNotAskAgain` | Kommentar an einem angekündigten Split geändert | Keine erneute Rückfrage, `updateSplit()` läuft |
+| `test_presenter_onSave_editMovesDateIntoFuture_asksAgain` | Bestehender Split auf ein Zukunftsdatum verschoben | Rückfrage kommt erneut |
+
+@note `test_presenter_onSave_todayAsExDate_savesWithoutAsking` haelt eine
+bewusste Entscheidung fest (Nessie, 25.08.2026) und ist kein blosser
+Negativtest. Ursprünglich war die Warnung auch für den heutigen Tag
+vorgesehen — sie zielte aber allein auf die Vorbelegung des Datumsfeldes mit
+"heute", und die gibt es seit demselben Tag nicht mehr. Wer die Warnung
+später doch für heute einschaltet, muss an diesem Test vorbei und trifft die
+Entscheidung damit erneut.
+
+@note Die beiden Bearbeiten-Faelle sind das Gegenstueck zueinander: unveraendert
+kommt die Frage nicht wieder (sonst erschiene sie bei jeder Kommentaraenderung
+an einem angekuendigten Split), ein NEU eingetragenes Zukunftsdatum wird
+dagegen erneut hinterfragt.
 
 PresenterShareSplitEdit — Bearbeiten:
 
@@ -1367,6 +1397,8 @@ ViewShareSplitEdit — Widget-Ebene:
 | `test_view_setButtonStates_removeDisabledWithoutSelection` | `canRemove` = false | Entfernen-Button gesperrt |
 | `test_view_setFactorPreview_setsField` | Vorschautext gesetzt | Feldtext exakt übernommen |
 | `test_view_futureDateIsAccepted` | Datum ein Jahr in der Zukunft | `splitDate()` liefert es unverändert |
+| `test_view_exDateStartsUnset` | Frisch geöffneter Dialog | Datumsfeld steht auf dem Sentinel 01.01.2000, nicht auf heute |
+| `test_view_clearFormResetsExDateToUnset` | Nach `clearForm()` | Wieder Sentinel, nicht heute |
 | `test_view_ratioFieldsAcceptGermanDecimalComma` | Eingabe "1,5" | `ratioNew()` = 1.5 |
 | `test_view_presenterIsAccessible` | `presenter()`-Getter | Nicht `nullptr` |
 
@@ -1391,6 +1423,16 @@ solcher Aufruf den Testlauf nicht blockiert.
 `QFileDialog` und meldet den Fehlerfall über `OwnMessageBox::critical()`.
 Dieselbe Konvention wie bei den fünf anderen Dialogen; die zugrundeliegende
 `isPathWithinRoot()`-Logik ist in `tst_documentssettingsform.cpp` abgedeckt.
+
+@note `test_view_exDateStartsUnset` und
+`test_view_clearFormResetsExDateToUnset` sichern den eigentlichen Ertrag von
+Punkt 5 der Split-Plausibilitätsprüfung (25.08.2026). Die
+Sentinel-Prüfung in `PresenterShareSplitEdit::validateInput()` gab es
+vorher schon, sie konnte bei einer Neuanlage aber nie auslösen: das Feld war
+mit dem heutigen Datum vorbelegt, und vorbelegt ist nie leer. Genau daraus
+entstand der Feldfall Alphabet. Beide Stellen brauchen einen eigenen Test —
+eine Vorbelegung nur beim Öffnen zu entschärfen und beim Reset wieder
+einzuführen wäre der halbe Weg.
 
 @note `test_view_hasNoOverviewTabWidget` hält die bewusste Abweichung von
 BuysForm/SalesForm/DividendForm fest. Er ist kein Selbstzweck: er schlägt an,
@@ -3030,20 +3072,27 @@ damit die Zeile nicht Entwarnung signalisiert, während etwas zu prüfen ist.
 
 ---
 
-### SplitAdjustmentAudit (tests/utils/tst_splitadjustmentaudit.cpp)
+### SplitAudit (tests/utils/tst_splitaudit.cpp)
 
-Executable: `tst_splitadjustmentaudit`
-Klasse unter Test: `SplitAdjustmentAudit` — zustandsloser, DB-freier
+Executable: `tst_splitaudit`
+Klasse unter Test: `SplitAudit` — zustandsloser, DB-freier
 Helfer hinter Phase 4b der Aktiensplit-Behandlung (20.08.2026, siehe
 ARCHITECTURE.md, "Automatische Nachprüfung nach Tageswert-Abruf"). Baut auf
-`SplitPriceJumpDetector` auf: `check(splits, dailyValues)` vergleicht dessen
-Ergebnis je Split gegen das gespeicherte `ShareSplitObject::pricesAdjusted()`
-und meldet Widersprüche, schreibt selbst nichts. Fixture-Werte teils
-identisch mit `tst_splitpricejumpdetector` (Alphabet-Fall, 20:1-Split,
-Ex-Tag 18.07.2022).
+`SplitPriceJumpDetector` auf: `check()` vergleicht dessen Ergebnis je Split
+gegen das gespeicherte `ShareSplitObject::pricesAdjusted()` und meldet
+Widersprüche, schreibt selbst nichts. Fixture-Werte teils identisch mit
+`tst_splitpricejumpdetector` (Alphabet-Fall, 20:1-Split, Ex-Tag 18.07.2022).
+
+Hiess bis zum 22.08.2026 `SplitAdjustmentAudit` und prüfte nur den
+`prices_adjusted`-Zustand. Mit Punkt 4 der Split-Plausibilitätsprüfung kamen
+zwei Verhältnis-Prüfungen dazu, weshalb der alte Name nicht mehr zutraf. Die
+Signatur nimmt seither zusätzlich Käufe und Verkäufe; ohne sie entfällt die
+Bestandsprüfung.
 
 @note Kein `QCoreApplication` in `main()`, gleiche Bauweise wie
 `tst_splitpricejumpdetector`.
+
+Bereinigungs-Zustand (`Kind::AdjustmentFlag`, unveraendert seit Phase 4b):
 
 | Test | Prüft |
 | ---- | ----- |
@@ -3052,18 +3101,60 @@ Ex-Tag 18.07.2022).
 | `test_check_storedAdjusted_detectedNotAdjusted_reportsDiscrepancy` | Gespeichert bereinigt, aber Kurssprung um den Faktor erkannt -> Widerspruch |
 | `test_check_storedNotAdjusted_detectedNotAdjusted_noDiscrepancy` | Gespeicherter Zustand passt zur Historie -> kein Widerspruch |
 | `test_check_storedAdjusted_detectedAdjusted_noDiscrepancy` | Gespeicherter Zustand passt zur Historie -> kein Widerspruch |
-| `test_check_ambiguousResult_neverReportsDiscrepancy` | `Ambiguous`-Ergebnis zählt nie als Widerspruch, unabhängig vom gespeicherten Zustand |
+| `test_check_ambiguousResult_neverReportsAdjustmentFlag` | `Ambiguous`-Ergebnis wird nie zum Bereinigungs-Befund, unabhängig vom gespeicherten Zustand |
 | `test_check_insufficientData_neverReportsDiscrepancy` | `InsufficientData`-Ergebnis zählt nie als Widerspruch, unabhängig vom gespeicherten Zustand |
 | `test_check_multipleSplits_onlyContradictingOneReported` | Von zwei Splits landet nur der tatsächlich widersprechende im Ergebnis |
 | `test_check_neighborSplit_boundsWindow_perSplit` | Nachbar-Splits begrenzen das Suchfenster je geprüftem Split — dieselbe Logik wie `PresenterShareSplitEdit::onCheckPriceJump()` |
 | `test_check_resultOrder_matchesInputOrder` | Mehrere Widersprüche erscheinen in der Reihenfolge der Eingabeliste |
 
-@note `test_check_ambiguousResult_neverReportsDiscrepancy` und
+Verhältnis gegen den gemessenen Kurssprung (`Kind::RatioFromPrices`,
+22.08.2026) — kostet nichts, weil `detect()` die Gegenprobe ohnehin
+mitrechnet:
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_check_ratioMismatchFromPrices_reportsFinding` | 19:1 eingetragen, gemessen 19,98 -> ein Befund, Vorschlag 20 |
+| `test_check_correctRatio_noRatioFinding` | Richtiges Verhältnis -> kein Befund |
+| `test_check_flagAndRatio_reportedSeparately` | Beides zugleich -> zwei Befunde, sie sagen Verschiedenes |
+| `test_check_flagDiscrepancy_hasAdjustmentFlagKind` | Aggregat-Initialisierung ohne `kind` ergibt weiterhin `AdjustmentFlag` |
+
+Verhältnis gegen die Verkaufshistorie (`Kind::RatioFromHoldings`,
+22.08.2026):
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_check_holdingsConflict_reportsFinding` | Feldfall in der Datenbank: 10 gekauft, 19:1, Verkauf über 200 |
+| `test_check_holdingsConflict_withoutProposal_notReported` | Unzuordenbarer Widerspruch bleibt still |
+| `test_check_noBuysOrSales_skipsHoldingsCheck` | Ohne Belege keine Bestandsprüfung — alle drei Kombinationen |
+| `test_check_holdingsConflict_reportedOncePerShare` | Zwei ungedeckte Verkäufe -> ein Befund, die früheste Fundstelle |
+| `test_check_twoSplitsBetween_holdingsConflictNotAttributable` | Zwei Splits dazwischen -> nicht zuzuordnen, kein Befund |
+
+@note `test_check_holdingsConflict_withoutProposal_notReported` ist hier der
+wichtigste Test. Anders als in den Dialogen erscheint dieser Befund als
+modaler Dialog bei JEDEM Programmstart, den niemand abstellen kann, solange
+er besteht. Eine unvollständig erfasste Kaufhistorie — etwa nach einem
+Depotübertrag — erzeugt denselben rechnerischen Widerspruch, ohne dass es
+etwas zu korrigieren gäbe.
+
+@note `test_check_flagDiscrepancy_hasAdjustmentFlagKind` sichert, dass das
+neue `kind`-Feld hinter `split` und `outcome` steht. Andernfalls hätten alle
+bestehenden `Discrepancy{ split, outcome }`-Initialisierungen still eine
+andere Bedeutung bekommen.
+
+@note `test_check_ambiguousResult_neverReportsAdjustmentFlag` und
 `test_check_insufficientData_neverReportsDiscrepancy` sind der eigentliche
 Kern der Klasse: falscher Alarm bei unsicherer Datenlage wäre schädlicher
 als ein übersehener echter Widerspruch, weil er das Vertrauen in die
 Startmeldung untergräbt (dieselbe Vorsicht wie beim "Prüfen"-Knopf, siehe
 `tst_splitpricejumpdetector` oben).
+
+@note Der erste der beiden prüft seit dem 25.08.2026 die BEFUNDART statt die
+Anzahl, und hiess bis dahin `..._neverReportsDiscrepancy`. Seine Fixture
+(Sprung 100 auf 20 bei eingetragenen 20:1) lässt die Haken-Frage
+unbeantwortet, misst aber ein sauberes 5:1 und liefert deshalb einen
+`RatioFromPrices`-Befund — das Ergebnis ist nicht mehr leer. Die alte
+Fassung schlug nach Punkt 4 fehl, ohne dass etwas kaputt war; sie fiel erst
+auf, als der Testlauf wieder durchlief.
 
 ---
 
@@ -3280,6 +3371,13 @@ Fehler), Depot und beide Mengen im Text, Rückfrage ohne Zahl bei
 unzuordenbarem Widerspruch, getrennte Depots, Ausklammerung des eigenen alten
 Stands beim Bearbeiten sowie die drei Löschfälle.
 
+Nicht dazu gehören die sechs Tests des Abschnitts "Ex-Tag in der Zukunft" in
+derselben Datei: sie prüfen Punkt 5 und damit das DATUM, nicht das
+Verhältnis. Beide Rückfragen sitzen zwar in `onSave()`, beantworten aber
+verschiedene Fragen — die Zukunfts-Rückfrage läuft zuerst, weil bei einem
+Ex-Tag nach heute ohnehin keine Verkäufe dahinter liegen können und so nie
+zwei Dialoge hintereinander erscheinen.
+
 @note `test_presenter_onSave_editedSplit_comparesAgainstNewRatioOnly` sichert
 die Ausklammerung von `m_currentGuid`: ohne sie träte beim Bearbeiten der alte
 Stand desselben Splits gegen seine eigene neue Fassung an, und ein
@@ -3431,7 +3529,7 @@ Geschäftslogik.
 | `test_onRefreshShare_dailyValuesOnly_upsertsIntoDailyValuesRepository_viaFakeNetwork` | Einzel-Aktie, `ShareUpdateType::DailyValues`, Yahoo-History mit 2 Handelstagen | `DailyValuesRepository::findByShare()` liefert 2 Einträge (aufsteigend nach Datum, closingPrice 141.5 / 143.0); Statusmeldung "Tageswerte aktualisiert: ... 2 Einträge geholt (Eingefügt: 2 / Aktualisiert: 0 / Unverändert: 0)" erscheint im Status-Log |
 | `test_onRefreshAll_dailyValuesQueue_chainsAcrossTwoShares_viaFakeNetwork` | 2-Aktien-Queue, beide `DailyValues`-only | Reentrante Verkettung analog zu den `MarketPrice`-Queue-Tests (`m_marketDone` ist bei `DailyValues`-only von vornherein `true`, sodass `onDailyValuesUpdated()` allein `onRefreshShareFinished()` auslöst); `requestCount() == 2`; Selektion springt danach via `selectFirstShareRow()` auf Zeile 0; beide Aktien haben je 2 Tageswerte-Einträge |
 | `test_onRefreshShare_bothUpdateType_updatesMarketPriceAndDailyValues_viaFakeNetwork` | Einzel-Aktie, `ShareUpdateType::Both` (OnVista-Realtime + Yahoo-History gleichzeitig) | Beide Parser laufen unabhängig; `onRefreshShareFinished()` (sichtbar über `finaliseRefresh()`/Re-Enable der Action) feuert erst nachdem **beide** `m_marketDone` und `m_dailyDone` `true` sind; `ShareObject::curPrice()` UND `DailyValuesRepository`-Einträge sind beide aktualisiert |
-| `test_onRefreshShare_dailyValuesOnly_splitAdjustmentDiscrepancy_addsStatusMessage_viaFakeNetwork` | Einzel-Aktie mit einem `ShareSplitObject` (Ex-Tag 15.01.2024, 20:1, `pricesAdjusted=false`), dieselbe Yahoo-History-Fixture wie oben (141.5 am 15.01. / 143.0 am 16.01.) | `refreshSplitAdjustmentWarningsForShare()` (Phase 4b, siehe ARCHITECTURE.md "Automatische Nachprüfung nach Tageswert-Abruf") erkennt den Widerspruch — kein Kurssprung, aber als unbereinigt gespeichert — direkt nach dem Abruf; Statusmeldung "... — 1 Split(s) mit abweichendem Bereinigungs-Zustand erkannt" erscheint im Status-Log |
+| `test_onRefreshShare_dailyValuesOnly_splitAuditFinding_addsStatusMessage_viaFakeNetwork` | Einzel-Aktie mit einem `ShareSplitObject` (Ex-Tag 15.01.2024, 20:1, `pricesAdjusted=false`), dieselbe Yahoo-History-Fixture wie oben (141.5 am 15.01. / 143.0 am 16.01.) | `refreshSplitAuditWarningsForShare()` (Phase 4b, siehe ARCHITECTURE.md "Automatische Nachprüfung nach Tageswert-Abruf") erkennt den Widerspruch — kein Kurssprung, aber als unbereinigt gespeichert — direkt nach dem Abruf; Statusmeldung "... — 1 auffällige(r) Split(s) erkannt" erscheint im Status-Log (Wortlaut seit Punkt 4 befundartneutral, weil dieselbe Zeile auch Verhältnis-Befunde meldet) |
 
 Da für frisch angelegte Aktien noch keine `daily_values` existieren, löst
 `buildDailyValuesUrl()` für `ApiYahoo` deterministisch immer den

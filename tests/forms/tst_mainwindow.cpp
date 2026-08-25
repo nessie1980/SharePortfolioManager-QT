@@ -80,7 +80,7 @@
 #include "../../app/utils/ShareSplitHint.h"
 #include "../../app/repositories/ShareSplitRepository.h"
 #include "../../app/utils/SplitPriceJumpDetector.h"
-#include "../../app/utils/SplitAdjustmentAudit.h"
+#include "../../app/utils/SplitAudit.h"
 #include <QDateEdit>
 #include <QTimeEdit>
 #include <QProgressBar>
@@ -2386,7 +2386,7 @@ private slots:
     // als "davor" zählt. 141.5 -> 143.0 zeigt keinen Kurssprung, die
     // Kurshistorie wirkt also bereits bereinigt — im Widerspruch zum absichtlich
     // als unbereinigt gespeicherten Split.
-    void test_onRefreshShare_dailyValuesOnly_splitAdjustmentDiscrepancy_addsStatusMessage_viaFakeNetwork()
+    void test_onRefreshShare_dailyValuesOnly_splitAuditFinding_addsStatusMessage_viaFakeNetwork()
     {
         const QString dbPath = m_tempDir.path() + QStringLiteral("/RefreshDailyValuesSplitMismatch.db");
         QFile::remove(dbPath);
@@ -2434,9 +2434,13 @@ private slots:
 
         const auto* te = window.findChild<QTextEdit*>();
         QVERIFY(te);
+        // Der Wortlaut nennt seit Punkt 4 bewusst nicht mehr den
+        // Bereinigungs-Zustand: dieselbe Zeile meldet inzwischen auch
+        // Verhältnis-Befunde, und eine Meldung, die alle drei Befundarten als
+        // "abweichender Bereinigungs-Zustand" ausgibt, führte in die Irre.
         QVERIFY2(te->toPlainText().contains(
-                     QStringLiteral("SplitMismatch AG\" — 1 Split(s) mit abweichendem "
-                                    "Bereinigungs-Zustand erkannt")),
+                     QStringLiteral("SplitMismatch AG\" — 1 auffällige(r) Split(s) "
+                                    "erkannt")),
                  qPrintable(te->toPlainText()));
     }
 
@@ -4932,7 +4936,7 @@ private slots:
         QVERIFY(msg.contains(QStringLiteral("dauerhaft verloren")));
     }
 
-    // ── buildSplitAdjustmentWarningMessage() ────────────────────────────────────
+    // ── buildSplitAuditWarningMessage() ────────────────────────────────────
     // Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene
     // Punkte"). Public static aus demselben Grund wie
     // buildDailyValuesWarningMessage() oben.
@@ -4952,32 +4956,150 @@ private slots:
         return o;
     }
 
-    void test_buildSplitAdjustmentWarningMessage_emptyList_returnsEmpty()
+    void test_buildSplitAuditWarningMessage_emptyList_returnsEmpty()
     {
         // Belegt den Frühausstieg: ohne Widersprüche darf kein Dialog aufgehen.
-        QVERIFY(MainWindow::buildSplitAdjustmentWarningMessage({}).isEmpty());
+        QVERIFY(MainWindow::buildSplitAuditWarningMessage({}).isEmpty());
     }
 
-    void test_buildSplitAdjustmentWarningMessage_containsNameWknAndSplitDescription()
+    void test_buildSplitAuditWarningMessage_containsNameWknAndSplitDescription()
     {
         const ShareSplitObject s(QStringLiteral("split-1"), QStringLiteral("share-1"),
                                  QDate(2022, 7, 18), 20.0, 1.0, /*pricesAdjusted=*/false);
         const auto outcome = makeOutcome(SplitPriceJumpDetector::Result::Adjusted,
                                          QDate(2022, 7, 15), 49.80,
                                          QDate(2022, 7, 19), 50.60);
-        MainWindow::SplitAdjustmentWarning w;
+        MainWindow::SplitAuditWarning w;
         w.shareName = QStringLiteral("Alphabet Inc.");
         w.wkn       = QStringLiteral("A14Y6H");
-        w.discrepancy = SplitAdjustmentAudit::Discrepancy{ s, outcome };
+        w.discrepancy = SplitAudit::Discrepancy{ s, outcome };
 
-        const QString msg = MainWindow::buildSplitAdjustmentWarningMessage({ w });
+        const QString msg = MainWindow::buildSplitAuditWarningMessage({ w });
 
         QVERIFY(msg.contains(QStringLiteral("Alphabet Inc.")));
         QVERIFY(msg.contains(QStringLiteral("A14Y6H")));
         QVERIFY(msg.contains(ShareSplitHint::describeSplit(s)));
     }
 
-    void test_buildSplitAdjustmentWarningMessage_listsAllWarningsInOrder()
+    void test_buildSplitAuditWarningMessage_ratioFromPrices_namesMeasuredRatio()
+    {
+        // Punkt 4 der Split-Plausibilitätsprüfung (22.08.2026): der gemessene
+        // Kurssprung passt eher zu 20:1 als zum eingetragenen 19:1.
+        const ShareSplitObject s(QStringLiteral("split-1"), QStringLiteral("share-1"),
+                                 QDate(2022, 7, 18), 19.0, 1.0, /*pricesAdjusted=*/false);
+        auto outcome = makeOutcome(SplitPriceJumpDetector::Result::NotAdjusted,
+                                   QDate(2022, 7, 18), 1003.0,
+                                   QDate(2022, 7, 19), 50.20);
+        outcome.ratioMismatch = true;
+        outcome.impliedFactor = 20.0;
+
+        MainWindow::SplitAuditWarning w;
+        w.shareName   = QStringLiteral("Alphabet Inc.");
+        w.wkn         = QStringLiteral("A14Y6H");
+        w.discrepancy = SplitAudit::Discrepancy{ s, outcome,
+                                                 SplitAudit::Kind::RatioFromPrices, {} };
+
+        const QString msg = MainWindow::buildSplitAuditWarningMessage({ w });
+
+        QVERIFY2(msg.contains(QStringLiteral("20:1")), qPrintable(msg));
+        QVERIFY2(msg.contains(QStringLiteral("Alphabet Inc.")), qPrintable(msg));
+    }
+
+    void test_buildSplitAuditWarningMessage_ratioFromHoldings_namesQuantitiesAndProposal()
+    {
+        const ShareSplitObject s(QStringLiteral("split-1"), QStringLiteral("share-1"),
+                                 QDate(2022, 7, 18), 19.0, 1.0, /*pricesAdjusted=*/false);
+
+        SplitHistoryConflict conflict;
+        conflict.hasConflict    = true;
+        conflict.depotNumber    = QStringLiteral("1234567");
+        conflict.conflictDate   = QDate(2022, 12, 5);
+        conflict.requiredToday  = 200.0;
+        conflict.availableToday = 190.0;
+        conflict.suspicion.hasProposal      = true;
+        conflict.suspicion.proposedRatioNew = 20.0;
+        conflict.suspicion.proposedRatioOld = 1.0;
+
+        MainWindow::SplitAuditWarning w;
+        w.shareName   = QStringLiteral("Alphabet Inc.");
+        w.wkn         = QStringLiteral("A14Y6H");
+        w.discrepancy = SplitAudit::Discrepancy{ s, {},
+                                                 SplitAudit::Kind::RatioFromHoldings,
+                                                 conflict };
+
+        const QString msg = MainWindow::buildSplitAuditWarningMessage({ w });
+
+        const QLocale locale;
+        QVERIFY2(msg.contains(locale.toString(200.0, 'f', 4)), qPrintable(msg));
+        QVERIFY2(msg.contains(locale.toString(190.0, 'f', 4)), qPrintable(msg));
+        QVERIFY2(msg.contains(QStringLiteral("1234567")), qPrintable(msg));
+        QVERIFY2(msg.contains(QStringLiteral("20:1")), qPrintable(msg));
+    }
+
+    void test_buildSplitAuditWarningMessage_groupsKindsSeparately()
+    {
+        // Bereinigungs-Zustand und Verhältnis sagen Verschiedenes und
+        // brauchen unterschiedliche Erklärungen — beide Einleitungen müssen
+        // im selben Text vorkommen, denn es gibt bewusst nur einen Dialog.
+        const ShareSplitObject s(QStringLiteral("split-1"), QStringLiteral("share-1"),
+                                 QDate(2022, 7, 18), 19.0, 1.0, /*pricesAdjusted=*/true);
+        const auto flagOutcome = makeOutcome(SplitPriceJumpDetector::Result::NotAdjusted,
+                                             QDate(2022, 7, 18), 1003.0,
+                                             QDate(2022, 7, 19), 50.20);
+        auto ratioOutcome = flagOutcome;
+        ratioOutcome.ratioMismatch = true;
+        ratioOutcome.impliedFactor = 20.0;
+
+        MainWindow::SplitAuditWarning flag;
+        flag.shareName   = QStringLiteral("Alphabet Inc.");
+        flag.wkn         = QStringLiteral("A14Y6H");
+        flag.discrepancy = SplitAudit::Discrepancy{ s, flagOutcome,
+                                                    SplitAudit::Kind::AdjustmentFlag, {} };
+
+        MainWindow::SplitAuditWarning ratio = flag;
+        ratio.discrepancy = SplitAudit::Discrepancy{ s, ratioOutcome,
+                                                     SplitAudit::Kind::RatioFromPrices, {} };
+
+        const QString msg = MainWindow::buildSplitAuditWarningMessage({ flag, ratio });
+
+        QVERIFY2(msg.contains(QStringLiteral("Bereinigungs-Zustand")), qPrintable(msg));
+        QVERIFY2(msg.contains(QStringLiteral("eingetragene Verhältnis")), qPrintable(msg));
+    }
+
+    void test_buildSplitAuditWarningMessage_closingHintAppearsOnlyOnce()
+    {
+        // Der Schlusssatz gilt für beide Gruppen. Zweimal derselbe Hinweis
+        // liest sich wie ein Fehler in der Meldung.
+        const ShareSplitObject s(QStringLiteral("split-1"), QStringLiteral("share-1"),
+                                 QDate(2022, 7, 18), 19.0, 1.0, /*pricesAdjusted=*/true);
+        const auto flagOutcome = makeOutcome(SplitPriceJumpDetector::Result::NotAdjusted,
+                                             QDate(2022, 7, 18), 1003.0,
+                                             QDate(2022, 7, 19), 50.20);
+        auto ratioOutcome = flagOutcome;
+        ratioOutcome.ratioMismatch = true;
+        ratioOutcome.impliedFactor = 20.0;
+
+        MainWindow::SplitAuditWarning flag;
+        flag.shareName   = QStringLiteral("Alphabet Inc.");
+        flag.discrepancy = SplitAudit::Discrepancy{ s, flagOutcome,
+                                                    SplitAudit::Kind::AdjustmentFlag, {} };
+        MainWindow::SplitAuditWarning ratio = flag;
+        ratio.discrepancy = SplitAudit::Discrepancy{ s, ratioOutcome,
+                                                     SplitAudit::Kind::RatioFromPrices, {} };
+
+        const QString msg = MainWindow::buildSplitAuditWarningMessage({ flag, ratio });
+
+        QCOMPARE(msg.count(QStringLiteral("automatisch geändert wird hier nichts")), 1);
+    }
+
+    void test_describeFactorAsRatio_normalAndReverseSplit()
+    {
+        QCOMPARE(MainWindow::describeFactorAsRatio(20.0), QStringLiteral("20:1"));
+        QCOMPARE(MainWindow::describeFactorAsRatio(0.1),  QStringLiteral("1:10"));
+        QVERIFY(MainWindow::describeFactorAsRatio(0.0).isEmpty());
+    }
+
+    void test_buildSplitAuditWarningMessage_listsAllWarningsInOrder()
     {
         const ShareSplitObject sa(QStringLiteral("split-a"), QStringLiteral("share-a"),
                                   QDate(2022, 7, 18), 20.0, 1.0, false);
@@ -4990,17 +5112,17 @@ private slots:
                                           QDate(2021, 1, 4), 200.0,
                                           QDate(2021, 1, 5), 100.0);
 
-        MainWindow::SplitAdjustmentWarning wa;
+        MainWindow::SplitAuditWarning wa;
         wa.shareName = QStringLiteral("Erste AG");
         wa.wkn       = QStringLiteral("AAA111");
-        wa.discrepancy = SplitAdjustmentAudit::Discrepancy{ sa, outcomeA };
+        wa.discrepancy = SplitAudit::Discrepancy{ sa, outcomeA };
 
-        MainWindow::SplitAdjustmentWarning wb;
+        MainWindow::SplitAuditWarning wb;
         wb.shareName = QStringLiteral("Zweite AG");
         wb.wkn       = QStringLiteral("BBB222");
-        wb.discrepancy = SplitAdjustmentAudit::Discrepancy{ sb, outcomeB };
+        wb.discrepancy = SplitAudit::Discrepancy{ sb, outcomeB };
 
-        const QString msg = MainWindow::buildSplitAdjustmentWarningMessage({ wa, wb });
+        const QString msg = MainWindow::buildSplitAuditWarningMessage({ wa, wb });
 
         QVERIFY(msg.contains(QStringLiteral("Erste AG")));
         QVERIFY(msg.contains(QStringLiteral("Zweite AG")));
@@ -5009,25 +5131,29 @@ private slots:
                 < msg.indexOf(QStringLiteral("Zweite AG")));
     }
 
-    void test_buildSplitAdjustmentWarningMessage_explainsNoAutomaticChange()
+    void test_buildSplitAuditWarningMessage_explainsNoAutomaticChange()
     {
         // Zentrale Zusicherung der Meldung: sie liest nur, sie schreibt
-        // nichts — siehe SplitAdjustmentAudit.h. Ohne diesen Hinweis könnte
+        // nichts — siehe SplitAudit.h. Ohne diesen Hinweis könnte
         // der Nutzer annehmen, der Haken sei bereits korrigiert worden.
         const ShareSplitObject s(QStringLiteral("split-1"), QStringLiteral("share-1"),
                                  QDate(2022, 7, 18), 20.0, 1.0, false);
         const auto outcome = makeOutcome(SplitPriceJumpDetector::Result::Adjusted,
                                          QDate(2022, 7, 15), 49.80,
                                          QDate(2022, 7, 19), 50.60);
-        MainWindow::SplitAdjustmentWarning w;
+        MainWindow::SplitAuditWarning w;
         w.shareName = QStringLiteral("Alphabet Inc.");
         w.wkn       = QStringLiteral("A14Y6H");
-        w.discrepancy = SplitAdjustmentAudit::Discrepancy{ s, outcome };
+        w.discrepancy = SplitAudit::Discrepancy{ s, outcome };
 
-        const QString msg = MainWindow::buildSplitAdjustmentWarningMessage({ w });
+        const QString msg = MainWindow::buildSplitAuditWarningMessage({ w });
 
         QVERIFY(msg.contains(QStringLiteral("automatisch geändert wird hier nichts")));
-        QVERIFY(msg.contains(QStringLiteral("Prüfen")));
+        // Geprüft wird, dass der Text sagt WO zu korrigieren ist. Bis Punkt 4
+        // verwies er auf den "Prüfen"-Knopf; der löst aber nur die Frage nach
+        // dem Bereinigungs-Zustand, nicht die beiden Verhältnis-Befunde.
+        // Seither zeigt der Satz auf den Split-Dialog als Ganzes.
+        QVERIFY2(msg.contains(QStringLiteral("Split-Dialog")), qPrintable(msg));
     }
 
     // ── onDeleteShare ─────────────────────────────────────────────────────────

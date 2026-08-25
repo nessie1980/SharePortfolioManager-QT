@@ -71,8 +71,8 @@ set(APP_SOURCES
     utils/ShareSplitHint.cpp
     utils/SplitPriceJumpDetector.h
     utils/SplitPriceJumpDetector.cpp
-    utils/SplitAdjustmentAudit.h
-    utils/SplitAdjustmentAudit.cpp
+    utils/SplitAudit.h
+    utils/SplitAudit.cpp
     utils/SplitRatioChecker.h
     utils/SplitRatioChecker.cpp
     utils/DividendVolumeChecker.h

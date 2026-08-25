@@ -227,36 +227,45 @@ target_link_libraries(tst_splitpricejumpdetector
 
 add_test(NAME tst_splitpricejumpdetector COMMAND tst_splitpricejumpdetector)
 
-# ── SplitAdjustmentAudit tests ───────────────────────────────────────────────────
+# ── SplitAudit tests ───────────────────────────────────────────────────
 # Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene Punkte",
 # "Aktiensplits werden nicht behandelt"): "Automatische Nachprüfung des
 # prices_adjusted-Zustands nach jedem Tageswert-Abruf (Kurssprung um den
 # Splittag vergleichen) + Startmeldung bei Widerspruch, analog
-# warnAboutSharesWithoutDailyValues()". SplitAdjustmentAudit vergleicht dafür
+# warnAboutSharesWithoutDailyValues()". SplitAudit vergleicht dafür
 # je Split das gespeicherte ShareSplitObject::pricesAdjusted() mit dem
 # Ergebnis von SplitPriceJumpDetector::detect() und meldet Widersprüche —
 # schreibt selbst nichts in die Datenbank.
 #
+# Umbenannt von SplitAdjustmentAudit am 22.08.2026 (Punkt 4 der
+# Split-Plausibilitätsprüfung): die Klasse prüft seither auch Verhältnisse,
+# der alte Name traf nicht mehr zu. Daher kommen SplitRatioChecker und dessen
+# Model-Abhängigkeiten (BuyObject/SaleObject) sowie ShareSplitAdjuster dazu.
+#
 # Zustandslos und datenbankfrei, gleiche Begründung wie bei
 # tst_splitpricejumpdetector oben.
-qt_add_executable(tst_splitadjustmentaudit tst_splitadjustmentaudit.cpp
+qt_add_executable(tst_splitaudit tst_splitaudit.cpp
     ../../app/models/DailyValuesObject.cpp
     ../../app/models/ShareSplitObject.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/utils/ShareSplitAdjuster.cpp
     ../../app/utils/SplitPriceJumpDetector.cpp
-    ../../app/utils/SplitAdjustmentAudit.cpp
+    ../../app/utils/SplitRatioChecker.cpp
+    ../../app/utils/SplitAudit.cpp
 )
 
-target_include_directories(tst_splitadjustmentaudit
+target_include_directories(tst_splitaudit
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
 )
 
-set_target_properties(tst_splitadjustmentaudit PROPERTIES AUTOMOC ON)
+set_target_properties(tst_splitaudit PROPERTIES AUTOMOC ON)
 
-target_link_libraries(tst_splitadjustmentaudit
+target_link_libraries(tst_splitaudit
     PRIVATE Qt6::Test
 )
 
-add_test(NAME tst_splitadjustmentaudit COMMAND tst_splitadjustmentaudit)
+add_test(NAME tst_splitaudit COMMAND tst_splitaudit)
 
 # ── SplitRatioChecker tests ──────────────────────────────────────────────────────
 # Punkt 1 der Split-Plausibilitätsprüfung (22.08.2026, siehe ARCHITECTURE.md,

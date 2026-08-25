@@ -56,6 +56,16 @@ void PresenterShareSplitEdit::onSave()
         m_view->comment().trimmed(),
         m_view->documentPath().trimmed());
 
+    // Rückfrage bei einem Ex-Tag in der Zukunft (Punkt 5, siehe
+    // ARCHITECTURE.md). Steht VOR der Historienprüfung: liegt der Ex-Tag in
+    // der Zukunft, findet checkAgainstHistory() ohnehin praktisch nie einen
+    // Widerspruch — Verkäufe nach dem heutigen Tag gibt es nicht. In der
+    // Praxis erscheint damit genau ein Dialog und nie zwei hintereinander.
+    // Und wer verneint, korrigiert das Datum; die Verhältnisprüfung läuft
+    // danach gegen den richtigen Stichtag.
+    if (!confirmSaveDespiteFutureExDate(split.date()))
+        return;
+
     // Plausibilitätsprüfung des Verhältnisses gegen die eigenen Belege
     // (Punkt 2, siehe ARCHITECTURE.md, "Plausibilitätsprüfung des
     // Split-Verhältnisses"). Rückfrage statt Blockade — die Begründung steht
@@ -379,16 +389,8 @@ QString PresenterShareSplitEdit::validateInput() const
 
     // UNIQUE(share_guid, date) vorweggenommen. Beim Bearbeiten zählt das
     // eigene, unveränderte Datum nicht als Duplikat.
-    bool dateIsUnchanged = false;
-    if (!m_currentGuid.isEmpty()) {
-        for (const ShareSplitObject& s : m_splits) {
-            if (s.guid() == m_currentGuid) {
-                dateIsUnchanged = (s.date() == date);
-                break;
-            }
-        }
-    }
-    if (!dateIsUnchanged && m_model->existsForDate(m_shareGuid, date)) {
+    if (!dateIsUnchangedForLoadedSplit(date)
+        && m_model->existsForDate(m_shareGuid, date)) {
         return QObject::tr("Für diese Aktie ist am %1 bereits ein Split erfasst.")
             .arg(QLocale().toString(date, QLocale::ShortFormat));
     }
@@ -461,6 +463,51 @@ bool PresenterShareSplitEdit::confirmSaveDespiteConflict(const ShareSplitObject&
     message += QObject::tr("\n\nTrotzdem speichern?");
 
     return m_view->confirm(QObject::tr("Split speichern"), message);
+}
+
+// ── confirmSaveDespiteFutureExDate ────────────────────────────────────────────
+
+bool PresenterShareSplitEdit::confirmSaveDespiteFutureExDate(const QDate& date) const
+{
+    // Heute oder früher: keine Frage. Das Datumsfeld startet seit dem
+    // 25.08.2026 unbelegt (Sentinel statt "heute", siehe ViewShareSplitEdit),
+    // ein eingetragenes Datum ist damit immer eine bewusste Eingabe. Genau
+    // deshalb entfällt hier die ursprünglich erwogene Warnung für den
+    // heutigen Tag: sie wäre nur gegen die alte Vorbelegung gerichtet
+    // gewesen, die es nicht mehr gibt.
+    if (!date.isValid() || date <= QDate::currentDate())
+        return true;
+
+    // Keine Wiederholung für ein bereits bestätigtes Datum — sonst käme die
+    // Frage bei jeder Kommentar- oder Belegänderung an einem angekündigten
+    // Split erneut.
+    if (dateIsUnchangedForLoadedSplit(date))
+        return true;
+
+    return m_view->confirm(
+        QObject::tr("Split speichern"),
+        QObject::tr("Der Ex-Tag %1 liegt in der Zukunft.\n\n"
+                    "Das ist zulässig — ein angekündigter Split darf sofort "
+                    "erfasst werden und bleibt bis zu seinem Ex-Tag ohne "
+                    "Wirkung auf Bestände und Kurse.\n\n"
+                    "Bitte nur prüfen, ob das Datum wirklich so auf der "
+                    "Bankmitteilung steht.\n\n"
+                    "Speichern?")
+            .arg(QLocale().toString(date, QLocale::ShortFormat)));
+}
+
+// ── dateIsUnchangedForLoadedSplit ─────────────────────────────────────────────
+
+bool PresenterShareSplitEdit::dateIsUnchangedForLoadedSplit(const QDate& date) const
+{
+    if (m_currentGuid.isEmpty())
+        return false;
+
+    for (const ShareSplitObject& s : m_splits) {
+        if (s.guid() == m_currentGuid)
+            return s.date() == date;
+    }
+    return false;
 }
 
 // ── removalConflictHint ───────────────────────────────────────────────────────

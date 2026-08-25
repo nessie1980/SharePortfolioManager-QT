@@ -10,6 +10,52 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Added
 
+- Plausibilitätsprüfung des Split-Verhältnisses, fünfter und letzter
+  Prüfzeitpunkt: das Ex-Tag-Feld im Split-Dialog startet nicht mehr mit dem
+  heutigen Datum, und ein Ex-Tag in der Zukunft wird beim Speichern einmal
+  hinterfragt.
+
+  Der Ertrag liegt bei der Vorbelegung, nicht bei der Warnung. Das Feld war
+  mit dem heutigen Tag belegt; im Feldfall wurde dieser Vorschlag unverändert
+  übernommen und stand als Ex-Tag in der Datenbank. Eine Prüfung auf "Ex-Tag
+  nicht angegeben" gab es zwar längst, sie konnte aber nie auslösen — ein
+  vorbelegtes Feld ist nie leer. Jetzt startet es unbelegt, dieselbe
+  Konvention wie beim Ex-Tag im Dividenden-Dialog, und ein Split ohne aktiv
+  eingetragenes Datum lässt sich nicht mehr speichern.
+
+  Zukünftige Ex-Tage bleiben ausdrücklich erlaubt — ein angekündigter Split
+  darf sofort erfasst werden und bleibt bis zu seinem Ex-Tag ohne Wirkung auf
+  Bestände und Kurse. Die Rückfrage sagt das auch so und bittet nur um einen
+  Abgleich mit der Bankmitteilung. Beim Bearbeiten eines solchen Splits mit
+  unverändertem Datum kommt sie nicht erneut.
+
+  Für den heutigen Tag wird bewusst nicht gefragt: seit das Feld unbelegt
+  startet, ist "heute" eine getippte Eingabe wie jede andere.
+
+  Damit stehen alle fünf Prüfzeitpunkte.
+
+- Plausibilitätsprüfung des Split-Verhältnisses, vierter von fünf
+  Prüfzeitpunkten: die Nachprüfung im Hintergrund meldet beim Programmstart
+  und nach jedem Tageswert-Abruf jetzt auch Splits, deren Verhältnis nicht
+  zum gemessenen Kurssprung oder nicht zur Verkaufshistorie passt.
+
+  Die drei bisherigen Stufen setzen alle eine Nutzeraktion voraus — einen
+  Verkauf, ein Speichern, einen Knopfdruck. Was bereits fehlerhaft in der
+  Datenbank steht und von sich aus nie wieder angefasst wird, fiel damit
+  niemandem auf. Genau das war der Feldfall: der Split lag monatelang
+  falsch da, ohne dass irgendetwas ihn noch einmal angesehen hätte.
+
+  Gemeldet wird nur bei eindeutiger Zuordnung. Hier erscheint ein modaler
+  Dialog bei jedem Programmstart, den niemand abstellen kann, solange der
+  Befund besteht — eine unvollständig erfasste Kaufhistorie etwa nach einem
+  Depotübertrag erzeugt denselben rechnerischen Widerspruch, ohne dass es
+  etwas zu korrigieren gäbe. Solche Fälle bleiben hier still und werden
+  weiterhin beim Speichern eines Splits oder eines Verkaufs sichtbar.
+
+  Die Befunde stehen in einem Dialog, nach Art gruppiert. Titel jetzt
+  "Splits prüfen" statt "Split-Bereinigung prüfen". Geschrieben wird
+  weiterhin nichts, die Korrektur bleibt dem Split-Dialog überlassen.
+
 - Plausibilitätsprüfung des Split-Verhältnisses, dritter von fünf
   Prüfzeitpunkten: der "Prüfen"-Knopf im Split-Dialog vergleicht den
   gemessenen Kurssprung um den Ex-Tag jetzt auch mit dem eingetragenen
@@ -89,6 +135,12 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Changed
 
+- `SplitAdjustmentAudit` heisst jetzt `SplitAudit`. Der alte Name kam von
+  `prices_adjusted`; seit die Klasse auch Verhältnisse prüft, traf er nicht
+  mehr zu. In `MainWindow` sind die zugehörigen Bezeichner
+  (`SplitAuditWarning`, `buildSplitAuditWarningMessage()`,
+  `populateSplitAuditWarnings()`, `refreshSplitAuditWarningsForShare()`,
+  `warnAboutSplitAuditFindings()`) mit umbenannt.
 - Die DividendForm-Tests haben ein eigenes Testziel `tst_dividendform`
   (Datei `tests/forms/tst_dividendform.cpp`). `tst_mainwindow.cpp` war auf
   11.273 Zeilen mit fünf Testklassen gewachsen, obwohl die Konvention ein

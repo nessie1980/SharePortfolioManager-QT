@@ -17,6 +17,8 @@
 #include "../../repositories/ShareRepository.h"
 #include "../../repositories/DailyValuesRepository.h"
 #include "../../repositories/ShareSplitRepository.h"
+#include "../../repositories/BuyRepository.h"
+#include "../../repositories/SaleRepository.h"
 #include "../../models/ShareObject.h"
 #include "../../utils/ShareCalculator.h"
 #include "../../utils/DocumentClassifier.h"
@@ -152,11 +154,11 @@ void MainWindow::initialize()
         updateStatusBarPortfolio(portfolioPath);
         populatePortfolioTables();
 
-        // Splits mit abweichendem Bereinigungs-Zustand (Phase 4 der
-        // Aktiensplit-Behandlung, siehe ARCHITECTURE.md, "Offene Punkte").
+        // Auffällige Splits: Bereinigungs-Zustand und Verhältnis (siehe
+        // ARCHITECTURE.md, "Plausibilitätsprüfung des Split-Verhältnisses").
         // Bewusst ein eigener Durchlauf statt Teil von
-        // populatePortfolioTables() — siehe populateSplitAdjustmentWarnings().
-        populateSplitAdjustmentWarnings();
+        // populatePortfolioTables() — siehe populateSplitAuditWarnings().
+        populateSplitAuditWarnings();
 
         // Hinweis auf Aktien ohne Tageswert-Historie (06.08.2026). Verzögert
         // per singleShot(0), damit das Hauptfenster erst fertig gezeichnet
@@ -166,7 +168,7 @@ void MainWindow::initialize()
         if (m_showStartupWarnings) {
             QTimer::singleShot(0, this, [this]() {
                 warnAboutSharesWithoutDailyValues();
-                warnAboutSplitAdjustmentDiscrepancies();
+                warnAboutSplitAuditFindings();
             });
         }
     }
@@ -1501,85 +1503,167 @@ void MainWindow::warnAboutSharesWithoutDailyValues()
                      MessageType::Warning);
 }
 
-// ── buildSplitAdjustmentWarningMessage ────────────────────────────────────────
+// ── buildSplitAuditWarningMessage ────────────────────────────────────────
 
-QString MainWindow::buildSplitAdjustmentWarningMessage(
-    const QList<SplitAdjustmentWarning>& warnings)
+QString MainWindow::buildSplitAuditWarningMessage(
+    const QList<SplitAuditWarning>& warnings)
 {
     if (warnings.isEmpty())
         return QString();
 
     const QLocale locale;
-    QStringList lines;
-    lines.reserve(warnings.size());
-    for (const SplitAdjustmentWarning& w : warnings) {
-        const SplitAdjustmentAudit::Discrepancy& d = w.discrepancy;
-        const QString storedLabel = d.split.pricesAdjusted()
-            ? tr("gespeichert: bereinigt")
-            : tr("gespeichert: unbereinigt");
-        const QString detectedLabel =
-            (d.outcome.result == SplitPriceJumpDetector::Result::Adjusted)
-                ? tr("erkannt: bereinigt")
-                : tr("erkannt: unbereinigt");
+    QStringList flagLines;
+    QStringList ratioLines;
 
-        lines.append(tr("• %1 (%2), Split %3 — %4, aber %5 (%6: %7 → %8: %9)")
-                     .arg(w.shareName, w.wkn, ShareSplitHint::describeSplit(d.split))
-                     .arg(storedLabel, detectedLabel)
-                     .arg(locale.toString(d.outcome.dateBefore, QLocale::ShortFormat),
-                          locale.toString(d.outcome.priceBefore, 'f', 2))
-                     .arg(locale.toString(d.outcome.dateAfter, QLocale::ShortFormat),
-                          locale.toString(d.outcome.priceAfter, 'f', 2)));
+    for (const SplitAuditWarning& w : warnings) {
+        const SplitAudit::Discrepancy& d = w.discrepancy;
+        const QString head = tr("%1 (%2), Split %3")
+            .arg(w.shareName, w.wkn, ShareSplitHint::describeSplit(d.split));
+
+        switch (d.kind) {
+        case SplitAudit::Kind::AdjustmentFlag: {
+            const QString storedLabel = d.split.pricesAdjusted()
+                ? tr("gespeichert: bereinigt")
+                : tr("gespeichert: unbereinigt");
+            const QString detectedLabel =
+                (d.outcome.result == SplitPriceJumpDetector::Result::Adjusted)
+                    ? tr("erkannt: bereinigt")
+                    : tr("erkannt: unbereinigt");
+
+            flagLines.append(tr("• %1 — %2, aber %3 (%4: %5 → %6: %7)")
+                             .arg(head, storedLabel, detectedLabel)
+                             .arg(locale.toString(d.outcome.dateBefore, QLocale::ShortFormat),
+                                  locale.toString(d.outcome.priceBefore, 'f', 2))
+                             .arg(locale.toString(d.outcome.dateAfter, QLocale::ShortFormat),
+                                  locale.toString(d.outcome.priceAfter, 'f', 2)));
+            break;
+        }
+
+        case SplitAudit::Kind::RatioFromPrices:
+            ratioLines.append(tr("• %1 — der Kurssprung um den Ex-Tag passt eher zu %2 "
+                                 "(%3: %4 → %5: %6)")
+                              .arg(head, describeFactorAsRatio(d.outcome.impliedFactor))
+                              .arg(locale.toString(d.outcome.dateBefore, QLocale::ShortFormat),
+                                   locale.toString(d.outcome.priceBefore, 'f', 2))
+                              .arg(locale.toString(d.outcome.dateAfter, QLocale::ShortFormat),
+                                   locale.toString(d.outcome.priceAfter, 'f', 2)));
+            break;
+
+        case SplitAudit::Kind::RatioFromHoldings: {
+            const QString depot = d.conflict.depotNumber.isEmpty()
+                ? tr("ohne Depotnummer")
+                : tr("Depot %1").arg(d.conflict.depotNumber);
+            const double proposed = (d.conflict.suspicion.proposedRatioOld > 0.0)
+                ? d.conflict.suspicion.proposedRatioNew / d.conflict.suspicion.proposedRatioOld
+                : 0.0;
+
+            ratioLines.append(tr("• %1 — bis zum %2 sind %3 Stk. verkauft, gekauft wurden "
+                                 "nur %4 Stk. (%5). Mit %6 ginge die Rechnung exakt auf.")
+                              .arg(head,
+                                   locale.toString(d.conflict.conflictDate, QLocale::ShortFormat),
+                                   locale.toString(d.conflict.requiredToday,  'f', 4),
+                                   locale.toString(d.conflict.availableToday, 'f', 4),
+                                   depot,
+                                   describeFactorAsRatio(proposed)));
+            break;
+        }
+        }
     }
 
-    return tr("Bei den folgenden Splits weicht der gespeicherte "
-              "Bereinigungs-Zustand von dem ab, was die aktuelle "
-              "Kurshistorie um den Ex-Tag zeigt:\n\n%1\n\n"
-              "Das kann bedeuten, dass die Kursquelle die Historie inzwischen "
-              "anders liefert als beim Erfassen des Splits. Bitte im "
-              "Split-Dialog der jeweiligen Aktie (Stift-Button \"Splits\") "
-              "mit \"Prüfen\" gegenchecken und bei Bedarf korrigieren — "
-              "automatisch geändert wird hier nichts.")
-        .arg(lines.join(QStringLiteral("\n")));
+    QStringList blocks;
+
+    if (!flagLines.isEmpty()) {
+        blocks.append(tr("Bei den folgenden Splits weicht der gespeicherte "
+                         "Bereinigungs-Zustand von dem ab, was die aktuelle "
+                         "Kurshistorie um den Ex-Tag zeigt:\n\n%1\n\n"
+                         "Das kann bedeuten, dass die Kursquelle die Historie inzwischen "
+                         "anders liefert als beim Erfassen des Splits.")
+                      .arg(flagLines.join(QStringLiteral("\n"))));
+    }
+
+    if (!ratioLines.isEmpty()) {
+        blocks.append(tr("Bei den folgenden Splits spricht die Datenlage gegen das "
+                         "eingetragene Verhältnis:\n\n%1\n\n"
+                         "Bankmitteilungen nennen das Zuteilungsverhältnis häufig als "
+                         "\"1:19\" — das sind die ZUSÄTZLICHEN Stücke je gehaltenem Stück, "
+                         "nicht das von der Anwendung erwartete Umrechnungsverhältnis "
+                         "(20:1).")
+                      .arg(ratioLines.join(QStringLiteral("\n"))));
+    }
+
+    // Der Schlusssatz steht einmal am Ende und nicht je Block: er gilt für
+    // beide gleichermassen, und zweimal derselbe Hinweis liest sich wie ein
+    // Fehler in der Meldung.
+    blocks.append(tr("Bitte im Split-Dialog der jeweiligen Aktie (Stift-Button "
+                     "\"Splits\") gegenprüfen und bei Bedarf korrigieren — "
+                     "automatisch geändert wird hier nichts."));
+
+    return blocks.join(QStringLiteral("\n\n"));
 }
 
-// ── populateSplitAdjustmentWarnings ───────────────────────────────────────────
+// ── describeFactorAsRatio ─────────────────────────────────────────────────────
 
-void MainWindow::populateSplitAdjustmentWarnings()
+QString MainWindow::describeFactorAsRatio(double factor)
 {
-    m_splitAdjustmentWarnings.clear();
+    if (factor <= 0.0)
+        return QString();
+
+    const QLocale locale;
+    // Faktor >= 1 ist ein normaler Split ("20:1"), darunter ein
+    // Reverse-Split, den man als "1:10" schreibt. Dieselbe Schreibweise wie
+    // PresenterShareSplitEdit::describeImpliedRatio() — hier eine eigene
+    // Fassung, weil MainWindow den Presenter nicht kennt und ihn fuer eine
+    // Formatierung nicht kennen sollte.
+    if (factor >= 1.0)
+        return locale.toString(factor, 'f', 0) + QStringLiteral(":1");
+
+    return QStringLiteral("1:") + locale.toString(1.0 / factor, 'f', 0);
+}
+
+// ── populateSplitAuditWarnings ───────────────────────────────────────────
+
+void MainWindow::populateSplitAuditWarnings()
+{
+    m_splitAuditWarnings.clear();
 
     ShareRepository shareRepo;
     ShareSplitRepository splitRepo;
     DailyValuesRepository dvRepo;
+    BuyRepository buyRepo;
+    SaleRepository saleRepo;
 
     for (const ShareObject& share : shareRepo.findAll()) {
         const QList<ShareSplitObject> splits = splitRepo.findByShare(share.guid());
         if (splits.isEmpty())
             continue; // Aktien ohne Split sind für diese Prüfung irrelevant.
 
+        // Käufe und Verkäufe für die Bestandsprüfung (Punkt 4). Sie stehen
+        // hinter der Splits-Abfrage, damit Aktien ohne Split gar nicht erst
+        // dafür bezahlen — das ist die Mehrheit.
         const QList<DailyValuesObject> dailyValues = dvRepo.findByShare(share.guid());
-        const QList<SplitAdjustmentAudit::Discrepancy> found =
-            SplitAdjustmentAudit::check(splits, dailyValues);
+        const QList<SplitAudit::Discrepancy> found = SplitAudit::check(
+            splits, dailyValues,
+            buyRepo.findByShare(share.guid()), saleRepo.findByShare(share.guid()));
 
-        for (const SplitAdjustmentAudit::Discrepancy& d : found) {
-            m_splitAdjustmentWarnings.append(
-                SplitAdjustmentWarning{ share.name(), share.wkn(), d });
+        for (const SplitAudit::Discrepancy& d : found) {
+            m_splitAuditWarnings.append(
+                SplitAuditWarning{ share.name(), share.wkn(), d });
         }
     }
 }
 
-// ── refreshSplitAdjustmentWarningsForShare ────────────────────────────────────
+// ── refreshSplitAuditWarningsForShare ────────────────────────────────────
 
-int MainWindow::refreshSplitAdjustmentWarningsForShare(const QString& shareGuid,
+int MainWindow::refreshSplitAuditWarningsForShare(const QString& shareGuid,
                                                         const QString& shareName,
                                                         const QString& wkn)
 {
     // Vorherige Einträge dieser Aktie entfernen — sie könnten durch den
     // gerade abgeschlossenen Tageswert-Abruf überholt sein (Widerspruch
     // behoben oder neu entstanden).
-    for (int i = m_splitAdjustmentWarnings.size() - 1; i >= 0; --i) {
-        if (m_splitAdjustmentWarnings.at(i).discrepancy.split.shareGuid() == shareGuid)
-            m_splitAdjustmentWarnings.removeAt(i);
+    for (int i = m_splitAuditWarnings.size() - 1; i >= 0; --i) {
+        if (m_splitAuditWarnings.at(i).discrepancy.split.shareGuid() == shareGuid)
+            m_splitAuditWarnings.removeAt(i);
     }
 
     ShareSplitRepository splitRepo;
@@ -1588,30 +1672,36 @@ int MainWindow::refreshSplitAdjustmentWarningsForShare(const QString& shareGuid,
         return 0;
 
     DailyValuesRepository dvRepo;
+    BuyRepository         buyRepo;
+    SaleRepository        saleRepo;
     const QList<DailyValuesObject> dailyValues = dvRepo.findByShare(shareGuid);
-    const QList<SplitAdjustmentAudit::Discrepancy> found =
-        SplitAdjustmentAudit::check(splits, dailyValues);
+    // Die Bestandsprüfung hängt nicht an Kursdaten und könnte hier entfallen.
+    // Sie läuft trotzdem mit: sonst bliebe ein Bestandsbefund stehen, den ein
+    // zwischenzeitlich korrigierter Split längst aufgelöst hat.
+    const QList<SplitAudit::Discrepancy> found = SplitAudit::check(
+        splits, dailyValues,
+        buyRepo.findByShare(shareGuid), saleRepo.findByShare(shareGuid));
 
-    for (const SplitAdjustmentAudit::Discrepancy& d : found)
-        m_splitAdjustmentWarnings.append(SplitAdjustmentWarning{ shareName, wkn, d });
+    for (const SplitAudit::Discrepancy& d : found)
+        m_splitAuditWarnings.append(SplitAuditWarning{ shareName, wkn, d });
 
     return found.size();
 }
 
-// ── warnAboutSplitAdjustmentDiscrepancies ─────────────────────────────────────
+// ── warnAboutSplitAuditFindings ─────────────────────────────────────
 
-void MainWindow::warnAboutSplitAdjustmentDiscrepancies()
+void MainWindow::warnAboutSplitAuditFindings()
 {
     // Bewusst dünn gehalten, gleiche Begründung wie
     // warnAboutSharesWithoutDailyValues() oben.
-    const QString message = buildSplitAdjustmentWarningMessage(m_splitAdjustmentWarnings);
+    const QString message = buildSplitAuditWarningMessage(m_splitAuditWarnings);
     if (message.isEmpty())
         return;
 
-    OwnMessageBox::information(this, tr("Split-Bereinigung prüfen"), message);
+    OwnMessageBox::information(this, tr("Splits prüfen"), message);
 
-    addStatusMessage(tr("%n Split(s) mit abweichendem Bereinigungs-Zustand gefunden.",
-                        nullptr, m_splitAdjustmentWarnings.size()),
+    addStatusMessage(tr("%n auffällige(r) Split(s) gefunden.",
+                        nullptr, m_splitAuditWarnings.size()),
                      MessageType::Warning);
 }
 
@@ -2965,16 +3055,15 @@ void MainWindow::onDailyValuesUpdated(const ParserLib::ParserInfoState& state)
         // gespeicherte prices_adjusted-Zustand der Splits dieser Aktie noch
         // zur (jetzt ggf. frisch aktualisierten) Kurshistorie passt. Läuft
         // unabhängig davon, ob dvList oben neue Zeilen brachte — siehe
-        // refreshSplitAdjustmentWarningsForShare(). Schreibt nichts in die
+        // refreshSplitAuditWarningsForShare(). Schreibt nichts in die
         // Datenbank; die eigentliche Korrektur bleibt dem ShareSplitsForm
         // überlassen.
-        const int splitIssues = refreshSplitAdjustmentWarningsForShare(
+        const int splitIssues = refreshSplitAuditWarningsForShare(
             m_refreshShare.guid(), m_refreshShare.name(), m_refreshShare.wkn());
         if (splitIssues > 0) {
             addStatusMessage(
-                tr("Tageswerte: \"%1\" — %2 Split(s) mit abweichendem "
-                   "Bereinigungs-Zustand erkannt, bitte im Split-Dialog "
-                   "prüfen.")
+                tr("Tageswerte: \"%1\" — %2 auffällige(r) Split(s) erkannt, "
+                   "bitte im Split-Dialog prüfen.")
                     .arg(m_refreshShare.name())
                     .arg(splitIssues),
                 MessageType::Warning);

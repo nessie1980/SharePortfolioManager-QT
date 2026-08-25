@@ -30,7 +30,7 @@
 #include "../../utils/ShareCalculator.h"
 #include "../../utils/ShareUpdateRules.h"
 #include "../../utils/PdfTextExtractor.h"
-#include "../../utils/SplitAdjustmentAudit.h"
+#include "../../utils/SplitAudit.h"
 
 #include <QList>
 #include <QQueue>
@@ -229,38 +229,53 @@ public:
         const QList<ShareUpdateRules::ShareState>& shares);
 
     /**
-     * @brief Ein Split, dessen gespeicherter `prices_adjusted`-Zustand der
-     * aus der Kurshistorie erkannten Bereinigung widerspricht, angereichert
-     * um Aktienname/WKN für die Meldung.
+     * @brief Ein Befund aus der Split-Nachprüfung, angereichert um
+     * Aktienname/WKN für die Meldung.
      *
-     * Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene
-     * Punkte"). `SplitAdjustmentAudit::Discrepancy` selbst kennt nur den
-     * Split (siehe dort) — Name und WKN sind hier ergänzt, damit
-     * buildSplitAdjustmentWarningMessage() sie für den Text verwenden kann,
-     * ohne dafür je Zeile erneut die Datenbank abzufragen.
+     * `SplitAudit::Discrepancy` selbst kennt nur den Split (siehe dort) —
+     * Name und WKN sind hier ergänzt, damit buildSplitAuditWarningMessage()
+     * sie für den Text verwenden kann, ohne dafür je Zeile erneut die
+     * Datenbank abzufragen.
+     *
+     * Hiess bis zum 22.08.2026 `SplitAdjustmentWarning`; seit Punkt 4 der
+     * Split-Plausibilitätsprüfung trägt die Liste auch Verhältnis-Befunde
+     * (siehe ARCHITECTURE.md).
      */
-    struct SplitAdjustmentWarning
+    struct SplitAuditWarning
     {
         QString shareName;
         QString wkn;
-        SplitAdjustmentAudit::Discrepancy discrepancy;
+        SplitAudit::Discrepancy discrepancy;
     };
 
     /**
-     * @brief Baut den Text der Start-Meldung über Splits mit abweichendem
-     * Bereinigungs-Zustand.
+     * @brief Baut den Text der Start-Meldung über auffällige Splits.
      *
-     * Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene
-     * Punkte", "Aktiensplits werden nicht behandelt"). Als `public static`
-     * herausgezogen, gleiche Begründung wie bei
+     * Als `public static` herausgezogen, gleiche Begründung wie bei
      * buildDailyValuesWarningMessage() oben: der Meldungstext bleibt damit
      * ohne MainWindow und ohne modalen Dialog prüfbar.
      *
-     * @param warnings  Splits, deren gespeicherter Zustand widerspricht.
+     * Die Befunde werden nach Art gruppiert — Bereinigungs-Zustand und
+     * Verhältnis sagen Verschiedenes und brauchen unterschiedliche
+     * Erklärungen. Bewusst EIN Text statt zweier Dialoge (Nessies
+     * Entscheidung 22.08.2026): zwei modale Fenster hintereinander beim
+     * Programmstart wären lästig.
+     *
+     * @param warnings  Auffällige Splits, beliebig gemischte Befundarten.
      * @return Fertiger Meldungstext, oder ein leerer String bei leerer Liste.
      */
-    static QString buildSplitAdjustmentWarningMessage(
-        const QList<SplitAdjustmentWarning>& warnings);
+    static QString buildSplitAuditWarningMessage(
+        const QList<SplitAuditWarning>& warnings);
+
+    /**
+     * @brief Schreibt einen Umrechnungsfaktor als Verhältnis, z. B. "20:1".
+     *
+     * Faktor >= 1 als "20:1", darunter — Reverse-Split — als "1:10". Eigene
+     * Fassung neben PresenterShareSplitEdit::describeImpliedRatio(), weil
+     * MainWindow den Presenter nicht kennt und ihn für eine Formatierung
+     * auch nicht kennen sollte.
+     */
+    static QString describeFactorAsRatio(double factor);
 
     /**
      * @brief Restore the main window to the foreground.
@@ -748,7 +763,7 @@ private:
     void warnAboutSharesWithoutDailyValues();
 
     /**
-     * @brief Füllt m_splitAdjustmentWarnings neu, über alle Aktien mit
+     * @brief Füllt m_splitAuditWarnings neu, über alle Aktien mit
      * mindestens einem Split.
      *
      * Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene
@@ -760,14 +775,14 @@ private:
      * (das bei jeder Tabellen-Neuaufbau läuft, auch nach einzelnen
      * Beleg-Änderungen ohne jeden Bezug zu Splits).
      *
-     * @see refreshSplitAdjustmentWarningsForShare() für die gezielte
+     * @see refreshSplitAuditWarningsForShare() für die gezielte
      * Aktualisierung einer einzelnen Aktie nach ihrem Tageswert-Abruf.
      */
-    void populateSplitAdjustmentWarnings();
+    void populateSplitAuditWarnings();
 
     /**
      * @brief Prüft eine einzelne Aktie erneut und aktualisiert ihren Anteil
-     * an m_splitAdjustmentWarnings.
+     * an m_splitAuditWarnings.
      *
      * Phase 4 der Aktiensplit-Behandlung — "automatische Nachprüfung des
      * prices_adjusted-Zustands nach jedem Tageswert-Abruf" (siehe
@@ -775,27 +790,28 @@ private:
      * onDailyValuesUpdated() nach jedem erfolgreichen Abruf, unabhängig
      * davon, ob dabei neue Tageswerte hinzukamen — ein Split kann auch ohne
      * neuen Tageswert-Abruf zwischenzeitlich angelegt oder geändert worden
-     * sein. Schreibt nichts in die Datenbank, siehe SplitAdjustmentAudit.h.
+     * sein. Schreibt nichts in die Datenbank, siehe SplitAudit.h.
      *
      * @param shareGuid  GUID der geprüften Aktie.
      * @param shareName  Name der Aktie, für die Statusmeldung.
      * @param wkn        WKN der Aktie, für eine spätere Startmeldung.
      * @return Anzahl der für diese Aktie gefundenen Widersprüche.
      */
-    int refreshSplitAdjustmentWarningsForShare(const QString& shareGuid,
+    int refreshSplitAuditWarningsForShare(const QString& shareGuid,
                                                const QString& shareName,
                                                const QString& wkn);
 
     /**
-     * @brief Weist beim Start auf Splits mit abweichendem
-     * Bereinigungs-Zustand hin.
+     * @brief Weist beim Start auf auffällige Splits hin.
      *
-     * Phase 4 der Aktiensplit-Behandlung (siehe ARCHITECTURE.md, "Offene
-     * Punkte"), analog warnAboutSharesWithoutDailyValues() oben.
+     * Analog warnAboutSharesWithoutDailyValues() oben. Deckt seit Punkt 4
+     * der Split-Plausibilitätsprüfung drei Befundarten ab: abweichender
+     * Bereinigungs-Zustand, Verhältnis gegen den gemessenen Kurssprung und
+     * Verhältnis gegen die Verkaufshistorie (siehe ARCHITECTURE.md).
      *
-     * @see m_splitAdjustmentWarnings
+     * @see m_splitAuditWarnings
      */
-    void warnAboutSplitAdjustmentDiscrepancies();
+    void warnAboutSplitAuditFindings();
 
     /**
      * @brief Refresh the summary footer rows for both portfolio tabs.
@@ -936,12 +952,13 @@ private:
      *  warnAboutSharesWithoutDailyValues(). */
     QList<ShareUpdateRules::ShareState> m_sharesMissingDailyValues;
 
-    /** Splits mit abweichendem Bereinigungs-Zustand — von
-     *  populateSplitAdjustmentWarnings() (Programmstart) bzw.
-     *  refreshSplitAdjustmentWarningsForShare() (je Tageswert-Abruf)
-     *  gefüllt, ausgewertet von warnAboutSplitAdjustmentDiscrepancies().
-     *  Phase 4 der Aktiensplit-Behandlung, siehe ARCHITECTURE.md. */
-    QList<SplitAdjustmentWarning> m_splitAdjustmentWarnings;
+    /** Auffällige Splits (Bereinigungs-Zustand und Verhältnis) — von
+     *  populateSplitAuditWarnings() (Programmstart) bzw.
+     *  refreshSplitAuditWarningsForShare() (je Tageswert-Abruf)
+     *  gefüllt, ausgewertet von warnAboutSplitAuditFindings().
+     *  Siehe ARCHITECTURE.md, "Plausibilitätsprüfung des
+     *  Split-Verhältnisses". */
+    QList<SplitAuditWarning> m_splitAuditWarnings;
 
     /**
      * @brief Dürfen beim Start modale Hinweis-Dialoge erscheinen?

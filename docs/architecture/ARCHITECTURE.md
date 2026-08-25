@@ -156,7 +156,7 @@ tst_appstartup / tst_iconprovider / tst_singleinstanceguard  ← AppStartup, Ico
 tst_sharesplitsform     ← ShareSplitsForm MVP (ModelShareSplitEdit, PresenterShareSplitEdit, ViewShareSplitEdit) — Phase 3a, 08.08.2026
 tst_sharesplithint      ← ShareSplitHint Hilfsklasse (Phase 3b, 09.08.2026)
 tst_splitpricejumpdetector ← SplitPriceJumpDetector (Phase 4c, 13.08.2026)
-tst_splitadjustmentaudit ← SplitAdjustmentAudit (Phase 4b, 20.08.2026)
+tst_splitaudit ← SplitAudit (Phase 4b, 20.08.2026)
 tst_websitesconfig / tst_documentsconfig  ← WebSitesConfig bzw. DocumentsConfig, linken Parser
 tst_xmlportfolioparser / tst_portfoliovalidator / tst_portfolioimporter  ← tools/xml-importer + Repositories
 @endcode
@@ -169,7 +169,7 @@ tst_xmlportfolioparser / tst_portfoliovalidator / tst_portfolioimporter  ← too
 `tst_sharesplitsform` (08.08.2026, Phase 3a) waren es 35, seit
 `tst_sharesplithint` (09.08.2026, Phase 3b) 36, seit
 `tst_splitpricejumpdetector` (13.08.2026) 37, seit
-`tst_splitadjustmentaudit` (20.08.2026, Phase 4b) 38 und seit
+`tst_splitaudit` (20.08.2026, Phase 4b) 38 und seit
 `tst_dividendvolumechecker` (21.08.2026, Phase 3 der Ex-Tag-Behandlung) 39,
 seit `tst_documentsxml` (21.08.2026, Phase 5) 40, seit `tst_dividendform` (22.08.2026, Auslagerung aus `tst_mainwindow`) und `tst_salesform` (22.08.2026, Auslagerung aus `tst_mainwindow`) waren es 43 und seit `tst_ownmessagebox` und `tst_backupform` (22.08.2026, beide Auslagerung aus `tst_mainwindow`) sind es 45. Die vollständige Startbefehl-Liste steht in TESTING.md,
 "Einzelnen Test direkt starten".
@@ -179,7 +179,7 @@ seit `tst_documentsxml` (21.08.2026, Phase 5) 40, seit `tst_dividendform` (22.08
    nie mitgezählt. Nachgezählt sind es 42 Ziele. Mit `tst_salesform` waren es 43.
 2. Die Aufstellung im Block oben ist jetzt vollständig aktualisiert — alle 
    fehlenden Tests (`tst_documentfieldvalue`, `tst_documentsxml`, 
-   `tst_sharesplithint`, `tst_sharesplitsform`, `tst_splitadjustmentaudit`, 
+   `tst_sharesplithint`, `tst_sharesplitsform`, `tst_splitaudit`, 
    `tst_splitpricejumpdetector`) wurden hinzugefügt. Die Startbefehl-Liste in 
    TESTING.md ist vollständig und in beide Richtungen abgeglichen.
 
@@ -3702,7 +3702,7 @@ gesammelt vor.
 | Prüfung | Verhalten |
 | --- | --- |
 | Ex-Tag <= 01.01.2000 (Sentinel wie in allen anderen Formen) | abgewiesen |
-| Ex-Tag in der Zukunft | ausdrücklich ERLAUBT |
+| Ex-Tag in der Zukunft | ERLAUBT, einmalige Rückfrage |
 | Verhältnis-Seite <= 0 | abgewiesen |
 | Faktor = 1,0 (also 1:1, 2:2, …) | abgewiesen |
 | Zweiter Split derselben Aktie am selben Tag | abgewiesen |
@@ -3711,7 +3711,14 @@ Zukünftige Ex-Tage sind erlaubt (Nessies Entscheidung 08.08.2026), damit ein
 angekündigter Split sofort erfasst werden kann. Das ist technisch folgenlos:
 `ShareSplitAdjuster::volumeFactor()` rechnet nur Datensätze mit einem Datum
 ECHT VOR dem Splittag um, ein Split in der Zukunft trifft also schlicht noch
-nichts.
+nichts. Seit dem 25.08.2026 fragt der Presenter dabei einmal nach (Punkt 5
+der Split-Plausibilitätsprüfung, siehe dort) — erlaubt bleibt es, aber ein
+zufällig stehengebliebenes Datum soll nicht unbemerkt gespeichert werden.
+
+Das Datumsfeld startet seit dem 25.08.2026 auf dem Sentinel statt auf dem
+heutigen Tag. Erst dadurch kann die Sentinel-Prüfung oben bei einer Neuanlage
+überhaupt auslösen; vorher war sie wirkungslos, weil ein vorbelegtes Feld nie
+leer ist. Die Begründung steht ausführlich unter "Punkt 5".
 
 Der Faktor-1,0-Fall wird hart abgewiesen statt still gespeichert (Nessies
 Entscheidung 08.08.2026): er wäre fachlich kein Split, würde nichts umrechnen
@@ -4337,16 +4344,133 @@ die Einfaerbung wechselt im Zweig `NotAdjusted` von "uebernommen" auf
 "manuelle Entscheidung noetig", damit die Zeile nicht Entwarnung signalisiert,
 waehrend etwas zu pruefen ist.
 
-### Was auch nach Punkt 3 offen bleibt
+### Punkt 4 — Nachpruefung im Hintergrund (22.08.2026)
 
-Alle drei Stufen setzen eine Nutzeraktion voraus — einen Verkauf, ein
+Die Punkte 1 bis 3 setzen alle eine Nutzeraktion voraus: einen Verkauf, ein
 Speichern, einen Knopfdruck. Was bereits fehlerhaft in der Datenbank steht
-und von sich aus nie wieder angefasst wird, faellt weiterhin niemandem auf.
-Das ist Punkt 4 der Arbeitsliste.
+und von sich aus nie wieder angefasst wird, faellt damit niemandem auf. Genau
+das war der Feldfall Alphabet — der Split lag monatelang falsch da, ohne dass
+irgendetwas ihn noch einmal angesehen haette. Punkt 4 schliesst diese Luecke.
 
-Tests: `tst_splitratiochecker.cpp` und `tst_splitpricejumpdetector.cpp` fuer
-die Rechenkerne, dazu vier Presenter-Tests in `tst_salesform.cpp` und sechzehn
-in `tst_sharesplitsform.cpp`.
+**Umbenennung: `SplitAudit` wird `SplitAudit`** (Nessies
+Entscheidung 22.08.2026). Der alte Name kommt von `prices_adjusted`; prueft
+die Klasse auch Verhaeltnisse, luegt er. Mit umbenannt sind in `MainWindow`
+`SplitAuditWarning` und die zugehoerigen Methoden und das Member — die
+Liste traegt jetzt Verhaeltnis-Befunde, und ein Name, der das verschweigt,
+waere derselbe Fehler eine Ebene hoeher.
+
+**Drei Befundarten** unter `SplitAudit::Kind`:
+
+- `AdjustmentFlag` — die urspruengliche Pruefung aus Phase 4 der
+  Aktiensplit-Behandlung, unveraendert.
+- `RatioFromPrices` — der gemessene Kurssprung passt besser zu einem anderen
+  Verhaeltnis. Kostet nichts: `detect()` rechnet die Gegenprobe aus Punkt 3
+  ohnehin mit, das Ergebnis wurde bisher nur weggeworfen.
+- `RatioFromHoldings` — die Verkaufshistorie geht mit den eingetragenen
+  Verhaeltnissen nicht auf. Braucht Kaeufe und Verkaeufe je Aktie, also zwei
+  zusaetzliche Repository-Abfragen. Sie stehen hinter der Splits-Abfrage,
+  damit Aktien ohne Split gar nicht erst dafuer bezahlen — das ist die
+  Mehrheit.
+
+`Kind` steht in `Discrepancy` bewusst NACH `split` und `outcome`, damit
+`Discrepancy{ split, outcome }` weiterhin gueltig bleibt und `AdjustmentFlag`
+ergibt.
+
+**Die Bestandspruefung laeuft einmal je Aktie, nicht je Split.**
+`SplitRatioChecker::checkAgainstHistory()` liefert die frueheste Fundstelle
+ueber alle Depots; ein Aufruf je Split wuerde fuer den frueheren Split
+dieselbe Stelle ein zweites Mal melden. Als Stichtag dient deshalb der
+frueheste Ex-Tag. Zugeordnet wird der Befund dem Split, den die Rueckrechnung
+benennt — das ist nicht geraten, denn gemeldet wird ohnehin nur bei
+eindeutiger Zuordnung, und die setzt voraus, dass genau ein Split in Frage
+kommt.
+
+**Beide Verhaeltnis-Pruefungen melden nur bei eindeutiger Zuordnung**
+(Nessies Entscheidung 22.08.2026). Das ist hier wichtiger als in den
+Dialogen: dort steht eine Rueckfrage mit Kontext, hier erscheint ein modaler
+Dialog bei JEDEM Programmstart, den niemand abstellen kann, solange der
+Befund besteht. Eine unvollstaendig erfasste Kaufhistorie — etwa nach einem
+Depotuebertrag — erzeugt denselben rechnerischen Widerspruch, ohne dass es
+etwas zu korrigieren gaebe. Solche Faelle bleiben hier still und werden
+weiterhin beim Speichern eines Splits oder eines Verkaufs sichtbar.
+
+**Ein Dialog, nach Art gruppiert** (Nessies Entscheidung 22.08.2026). Zwei
+modale Fenster hintereinander beim Programmstart waeren laestig.
+Bereinigungs-Zustand und Verhaeltnis sagen aber Verschiedenes und brauchen
+unterschiedliche Erklaerungen, deshalb zwei Bloecke im selben Text. Der
+Schlusssatz ("automatisch geaendert wird hier nichts") steht einmal am Ende
+und nicht je Block — zweimal derselbe Hinweis liest sich wie ein Fehler in
+der Meldung. Titel jetzt "Splits pruefen" statt "Split-Bereinigung pruefen".
+
+**Geschrieben wird weiterhin nichts.** Die Zurueckhaltung von
+`SplitPriceJumpDetector` (Nessies Vorgabe 13.08.2026) gilt unveraendert: die
+Pruefung liest und meldet, die Korrektur bleibt dem Nutzer im
+`ShareSplitsForm` ueberlassen.
+
+### Punkt 5 — Ex-Tag in der Zukunft (25.08.2026)
+
+Der letzte Punkt der Arbeitsliste, und der einzige, der nichts mit dem
+Verhaeltnis zu tun hat: das DATUM kann ebenso falsch sein. Im Feldfall
+Alphabet war es das auch — der Split stand mit dem 10.08.2026 in der
+Datenbank, dem Tag der Erfassung, statt mit seinem tatsaechlichen Ex-Tag.
+
+**Die eigentliche Ursache lag in der Vorbelegung.** `ViewShareSplitEdit` legte
+das Datumsfeld mit `QDate::currentDate()` an, und `clearForm()` setzte es
+ebenso zurueck. `PresenterShareSplitEdit::validateInput()` prueft zwar seit
+jeher gegen den Sentinel 01.01.2000 ("nicht gesetzt") — dieser Zweig konnte
+bei einer Neuanlage aber nie ausloesen: vorbelegt ist nie leer. Der Schutz
+gegen "Ex-Tag nicht angegeben" existierte nur formal, und wer das Feld
+uebersah, speicherte ein plausibel aussehendes, falsches Datum.
+
+**Das Feld startet jetzt unbelegt**, auf demselben Sentinel und mit derselben
+Begruendung wie der Ex-Tag in `ViewDividendEdit` (21.08.2026): ein `QDateEdit`
+kann kein echtes "leer" darstellen, der Sentinel steht deshalb fuer "vom
+Benutzer noch nicht gesetzt". Damit wird der vorhandene Sentinel-Zweig scharf,
+und ein Split ohne aktiv eingetragenen Ex-Tag laesst sich nicht mehr
+speichern. Preis ist ein zusaetzlicher Handgriff je Erfassung; dafuer ist der
+Feldfall strukturell ausgeschlossen statt nur beantwortbar.
+
+**Die Warnung selbst gilt nur der Zukunft.** Urspruenglich war sie auch fuer
+den heutigen Tag vorgesehen — das zielte aber allein auf die Vorbelegung, die
+es nicht mehr gibt (Nessies Entscheidung 25.08.2026). Seit das Feld unbelegt
+startet, ist "heute" eine getippte Eingabe wie jede andere, und eine
+Rueckfrage darauf waere Laerm. Ein Ex-Tag NACH dem heutigen Tag bleibt
+ausdruecklich erlaubt (Nessies Entscheidung 08.08.2026, unveraendert); der
+Text sagt das auch so und bittet lediglich um einen Abgleich mit der
+Bankmitteilung.
+
+**Vor der Historienpruefung.** `confirmSaveDespiteFutureExDate()` laeuft in
+`onSave()` vor `confirmSaveDespiteConflict()`. Liegt der Ex-Tag in der
+Zukunft, findet `checkAgainstHistory()` ohnehin praktisch nie einen
+Widerspruch — Verkaeufe nach dem heutigen Tag gibt es nicht. In der Praxis
+erscheint damit genau ein Dialog und nie zwei hintereinander. Verneint der
+Benutzer, korrigiert er das Datum, und die Verhaeltnispruefung laeuft danach
+gegen den richtigen Stichtag.
+
+**Keine Wiederholung bei unveraendertem Datum** (Nessies Entscheidung
+25.08.2026). Wer einen angekuendigten Split einmal bestaetigt hat, soll nicht
+bei jeder Kommentar- oder Belegaenderung erneut gefragt werden. Die dafuer
+noetige Feststellung — ist das Datum das des geladenen Splits? — brauchte die
+Duplikat-Pruefung in `validateInput()` schon vorher; sie steht jetzt als
+`dateIsUnchangedForLoadedSplit()` an einer Stelle statt an zweien.
+
+### Damit ist die Split-Plausibilitaet abgedeckt
+
+Alle fuenf Punkte der Arbeitsliste stehen. Jeder Erfassungsweg hat eine
+Gegenprobe, was bereits in der Datenbank liegt wird beim Start geprueft, und
+das Datum kommt nicht mehr aus einer Vorbelegung.
+
+Was bewusst nicht abgedeckt bleibt: ein falsches Verhaeltnis, das WEDER eine
+Unterdeckung erzeugt NOCH sich im Kurssprung zeigt — etwa wenn zur fraglichen
+Zeit keine Kurshistorie vorliegt und nie verkauft wurde. Dafuer gibt es keine
+Datengrundlage, und Raten waere schlechter als Schweigen.
+
+Tests: `tst_splitratiochecker.cpp`, `tst_splitpricejumpdetector.cpp` und
+`tst_splitaudit.cpp` fuer die Rechenkerne, dazu Presenter- und View-Tests in
+`tst_salesform.cpp` und `tst_sharesplitsform.cpp` sowie die
+Meldungstext-Tests in `tst_mainwindow.cpp`. Punkt 5 haengt als einziger auch
+an der View: zwei Tests halten fest, dass das Datumsfeld beim Oeffnen UND
+nach einem Reset unbelegt ist.
 
 ---
 
@@ -5349,9 +5473,12 @@ Drei Massnahmen waren denkbar, alle im Split-Dialog:
   (`SplitRatioChecker`, siehe "Plausibilitaetspruefung des
   Split-Verhaeltnisses" weiter oben); die uebrigen Zeitpunkte stehen in der
   Arbeitsliste unmittelbar unter diesem Abschnitt.
-- Offen: Warnung, wenn der Ex-Tag in der Zukunft oder auf dem heutigen Tag
-  liegt. Der Dialog schlaegt das aktuelle Datum vor; im Feldfall wurde es
-  unveraendert uebernommen und stand als 10.08.2026 in der Datenbank.
+- **Umgesetzt (25.08.2026):** Warnung, wenn der Ex-Tag in der Zukunft liegt,
+  und — wirksamer — das Ende der Vorbelegung mit dem heutigen Datum. Der
+  Dialog schlug das aktuelle Datum vor; im Feldfall wurde es unveraendert
+  uebernommen und stand als 10.08.2026 in der Datenbank. Siehe
+  "Plausibilitaetspruefung des Split-Verhaeltnisses" weiter oben, Abschnitt
+  "Punkt 5".
 
 Ebenfalls erwogen (13.08.2026) und bewusst zurueckgestellt: die Eingabe von
 "neu:alt" auf "alt:neu" zu drehen, um sich an die Bank-Schreibweise "1:19"
@@ -5385,8 +5512,8 @@ Sessions.
 | 1 | Rechenkern `SplitRatioChecker` + Diagnose in der Verkaufs-Mengenpruefung | beim Speichern eines Verkaufs | umgesetzt 22.08.2026 |
 | 2 | Derselbe Kern beim Speichern und Loeschen eines Splits | im Split-Dialog | umgesetzt 22.08.2026 |
 | 3 | Verhaeltnis-Gegenprobe aus der Kurshistorie | "Pruefen"-Knopf im Split-Dialog | umgesetzt 22.08.2026 |
-| 4 | Nachpruefung im Hintergrund | Programmstart / nach Tageswert-Abruf | offen |
-| 5 | Warnung bei Ex-Tag heute oder in der Zukunft | beim Speichern eines Splits | offen |
+| 4 | Nachpruefung im Hintergrund | Programmstart / nach Tageswert-Abruf | umgesetzt 22.08.2026 |
+| 5 | Warnung bei Ex-Tag in der Zukunft, Datumsfeld startet unbelegt | beim Speichern eines Splits | umgesetzt 25.08.2026 |
 
 Zu den einzelnen Punkten:
 
@@ -5400,14 +5527,16 @@ Ex-Tag ohnehin misst. Umgesetzt am 22.08.2026, siehe
 "Plausibilitaetspruefung des Split-Verhaeltnisses" weiter oben, Abschnitt
 "Punkt 3".
 
-**4** waere eine reine Lese-Pruefung ueber alle Aktien mit Splits, gebaut wie
-`SplitAdjustmentAudit`. Faengt auch das ab, was bereits fehlerhaft in der
-Datenbank steht und von sich aus nie wieder angefasst wird.
+**4** ist eine reine Lese-Pruefung ueber alle Aktien mit Splits. Umgesetzt am
+22.08.2026, siehe "Plausibilitaetspruefung des Split-Verhaeltnisses" weiter
+oben, Abschnitt "Punkt 4".
 
-**5** ist der zweite offene Punkt aus dem Abschnitt darueber. Zukuenftige
-Ex-Tage bleiben ausdruecklich erlaubt (Nessies Entscheidung 08.08.2026), es
-waere also nur ein Hinweis. Steht bewusst am Ende: kleinster Nutzen, kein
-Bezug zum Rechenkern.
+**5** hat mit dem Verhaeltnis nichts zu tun und stand deshalb am Ende.
+Zukuenftige Ex-Tage bleiben ausdruecklich erlaubt (Nessies Entscheidung
+08.08.2026), es ist also nur ein Hinweis. Umgesetzt am 25.08.2026, siehe
+"Plausibilitaetspruefung des Split-Verhaeltnisses" weiter oben, Abschnitt
+"Punkt 5" — der Ertrag lag dabei nicht bei der Warnung selbst, sondern beim
+Datumsfeld, das nicht mehr mit dem heutigen Tag vorbelegt ist.
 
 ### Automatische Erkennung split-bereinigter Kurshistorie ("Prüfen"-Knopf, 13.08.2026, Layout korrigiert 14.08.2026)
 
@@ -5510,7 +5639,7 @@ für Fälle, die der Nutzer nicht von sich aus erneut prüft (typischerweise:
 die Kursquelle liefert die Historie zu einem späteren Abrufzeitpunkt anders
 bereinigt als beim Erfassen des Splits).
 
-**`SplitAdjustmentAudit` (`app/utils/`).** Zustandslos und datenbankfrei wie
+**`SplitAudit` (`app/utils/`).** Zustandslos und datenbankfrei wie
 `SplitPriceJumpDetector`, auf dem es direkt aufbaut: `check(splits,
 dailyValues)` prüft für jeden übergebenen Split, ob dessen
 `SplitPriceJumpDetector::detect()`-Ergebnis dem gespeicherten
@@ -5526,13 +5655,13 @@ Meldung erscheinen.
 
 | Zeitpunkt | Methode | Wirkung |
 | --- | --- | --- |
-| Jeder abgeschlossene Tageswert-Abruf (`onDailyValuesUpdated()`, Zweig `Finished`) | `refreshSplitAdjustmentWarningsForShare()` | Prüft NUR die gerade aktualisierte Aktie neu (ersetzt ihre vorherigen Einträge in `m_splitAdjustmentWarnings`); bei ≥ 1 Widerspruch sofort eine Statusmeldung, kein modaler Dialog — ein "Alle aktualisieren"-Lauf über N Aktien soll nicht N Dialoge auslösen. Läuft unabhängig davon, ob der Abruf neue Tageswert-Zeilen brachte: ein Split kann auch ohne neuen Abruf zwischenzeitlich angelegt/geändert worden sein. |
-| Programmstart, nach `populatePortfolioTables()` | `populateSplitAdjustmentWarnings()` | Baut `m_splitAdjustmentWarnings` komplett neu auf, über alle Aktien mit mindestens einem Split — deckt auch Widersprüche ab, die während der letzten Sitzung entstanden sind, ohne dass die betroffene Aktie danach erneut aktualisiert wurde. |
-| Programmstart, verzögert per `QTimer::singleShot(0, …)` | `warnAboutSplitAdjustmentDiscrepancies()` | Modaler Hinweis, analog `warnAboutSharesWithoutDailyValues()` — nur wenn `m_showStartupWarnings` (Produktivkonstruktor), aus demselben Grund untestbar (siehe dort). |
+| Jeder abgeschlossene Tageswert-Abruf (`onDailyValuesUpdated()`, Zweig `Finished`) | `refreshSplitAuditWarningsForShare()` | Prüft NUR die gerade aktualisierte Aktie neu (ersetzt ihre vorherigen Einträge in `m_splitAuditWarnings`); bei ≥ 1 Widerspruch sofort eine Statusmeldung, kein modaler Dialog — ein "Alle aktualisieren"-Lauf über N Aktien soll nicht N Dialoge auslösen. Läuft unabhängig davon, ob der Abruf neue Tageswert-Zeilen brachte: ein Split kann auch ohne neuen Abruf zwischenzeitlich angelegt/geändert worden sein. |
+| Programmstart, nach `populatePortfolioTables()` | `populateSplitAuditWarnings()` | Baut `m_splitAuditWarnings` komplett neu auf, über alle Aktien mit mindestens einem Split — deckt auch Widersprüche ab, die während der letzten Sitzung entstanden sind, ohne dass die betroffene Aktie danach erneut aktualisiert wurde. |
+| Programmstart, verzögert per `QTimer::singleShot(0, …)` | `warnAboutSplitAuditFindings()` | Modaler Hinweis, analog `warnAboutSharesWithoutDailyValues()` — nur wenn `m_showStartupWarnings` (Produktivkonstruktor), aus demselben Grund untestbar (siehe dort). |
 
-`buildSplitAdjustmentWarningMessage()` ist `public static`, gleiche
+`buildSplitAuditWarningMessage()` ist `public static`, gleiche
 Begründung wie `buildDailyValuesWarningMessage()`: der Meldungstext bleibt
-ohne `MainWindow` und ohne modalen Dialog prüfbar. `populateSplitAdjustmentWarnings()`
+ohne `MainWindow` und ohne modalen Dialog prüfbar. `populateSplitAuditWarnings()`
 ist bewusst NICHT Teil von `populatePortfolioTables()`
 — anders als `m_sharesMissingDailyValues` (das ohne zusätzlichen
 Datenbankzugriff aus der ohnehin laufenden Schleife mitfällt) bräuchte das
