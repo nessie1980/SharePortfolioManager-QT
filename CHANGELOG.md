@@ -185,6 +185,12 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Fixed
 
+- Der Prüfbestand für Consors-Belege wich an der entscheidenden Stelle von
+  der Wirklichkeit ab: der Testbeleg trug die Depotnummer ohne ihre führende
+  Null. Folgenlos, solange nur die Beschriftung geprüft wird — mit einem
+  Wertvergleich wäre der Beleg seinem eigenen Depot nicht mehr zugeordnet
+  worden, und der Test hätte einen Fehler gemeldet, den es gar nicht gibt.
+
 - **Die Ordernummer wurde verfälscht** (Nessies Bugreport 22.08.2026). Der
   Beleg zeigt "670835/66.00", im Formular stand "670835/66,00". Die
   Eingabemasken schrieben in JEDEM einzeiligen Feld den Punkt in ein Komma um

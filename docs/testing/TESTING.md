@@ -3206,6 +3206,14 @@ echten Datei liefert die Compile-Definition `SPM_DOCUMENTS_XML`.
 | `test_dkb_sale_volumeAndPrice` | Regressionsschutz für die übrigen Pflichtfelder dieses Belegtyps |
 | `test_dkb_sale_wkn` / `test_capture_dkb_sale_extractWkn` | Auch der Verkaufsbeleg trägt die WKN in Klammern neben der ISIN — beide Lesewege finden sie, die Direkte Dokumentenerfassung kann den Beleg also zuordnen |
 
+@note Das Fixture `kCortalEur` trug bis zum 25.08.2026 die Consors-
+Depotnummer OHNE ihre fuehrende Null. Folgenlos, solange die Erkennung nur
+die Beschriftung prueft; sobald sie die Nummer vergleicht, waere der Beleg
+seinem eigenen Depot nicht mehr zugeordnet worden, und der Test haette einen
+Fehler gemeldet, den es nicht gibt. Lehre: ein Fixture, das an der
+entscheidenden Stelle von der Wirklichkeit abweicht, prueft nicht die
+Wirklichkeit.
+
 @note Mit `kDkbSale` liegt seit dem 22.08.2026 der erste VERKAUFSbeleg im
 Fixture-Bestand; bis dahin prüfte dieses Ziel ausschliesslich
 Dividendengutschriften. Dafür ist `parseDividend()` zu `parseDocument(bank,

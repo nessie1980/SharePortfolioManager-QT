@@ -157,20 +157,32 @@ Ausmachender Betrag                                               1.573,73+  EUR
 /// `BankIdentifier`-Regel dieser Bank, und die sucht genau danach. Ohne sie
 /// würde der Beleg gar nicht als Consors-Dokument erkannt.
 ///
-/// @note Ob der echte Beleg "Depotnummer 878…" oder "Depotnummer: 878…"
-/// schreibt, ist von hier aus nicht zu sehen. Für DIESE Tests ist es
-/// gleichgültig — `parseDividend()` schlägt die Bank am Namen nach und
-/// umgeht die Erkennung —, und die `DepotNumber`-Regel deckt beide Formen ab.
-/// Für die Bankerkennung ist der Unterschied dagegen erheblich: ohne
-/// Doppelpunkt trifft schon die DKB-Regel (`Depotnummer\s+([0-9]{1,9})`), und
-/// da die DKB in Documents.xml zuerst steht, würde der Consors-Beleg ihr
-/// zugeschlagen. Siehe ARCHITECTURE.md, "Bankerkennung: Mehrdeutigkeit über
-/// die Depotnummer".
+/// @note Die Depotnummer trug hier bis zum 25.08.2026 die Form `878031421`
+/// — ohne die führende Null. Nessie hat bestätigt, dass der echte Beleg
+/// `0878031421` schreibt, also genau den Wert aus `Documents.xml`. Die
+/// Abweichung ist folgenlos, solange die Erkennung nur die BESCHRIFTUNG
+/// prüft; sobald sie die Nummer vergleicht, wäre der Beleg mit der alten
+/// Fassung seinem eigenen Depot nicht mehr zugeordnet worden. Ein Fixture,
+/// das an der entscheidenden Stelle von der Wirklichkeit abweicht, prüft
+/// eben nicht die Wirklichkeit.
+///
+/// @note Die Zeile "Netto zugunsten Konto 878031421" bleibt bewusst wie sie
+/// ist: sie trägt eine KONTO-, keine Depotnummer und wird von keiner Regel
+/// gelesen.
+///
+/// @note Der Unterschied zwischen `Depotnummer 0878…` und `Depotnummer: 0878…`
+/// ist für die Bankerkennung erheblich: ohne Doppelpunkt trifft auch die
+/// DKB-Regel (`Depotnummer\s+([0-9]{1,9})`, die ersten neun Ziffern), und da
+/// die DKB in Documents.xml zuerst steht, wird der Consors-Beleg ihr
+/// zugeschlagen. Für DIESE Tests ist es gleichgültig — `parseDividend()`
+/// schlägt die Bank am Namen nach und umgeht die Erkennung —, und die
+/// `DepotNumber`-Regel deckt beide Formen ab. Siehe ARCHITECTURE.md,
+/// "Bankerkennung: Mehrdeutigkeit über die Depotnummer".
 ///
 /// @note Dieser Beleg kennt KEINE Beschriftung "Ex-Tag" — siehe
 /// test_cortal_hasNoExDateLabel().
 const char* kCortalEur = R"(Cortal Consors
-Depotnummer 878031421
+Depotnummer 0878031421
 
 Dividendengutschrift
 
@@ -531,7 +543,7 @@ private slots:
     {
         const auto r = parseDividend(QStringLiteral("Cortal Consors"),
                                      QString::fromUtf8(kCortalEur));
-        QCOMPARE(first(r, "DepotNumber"), QStringLiteral("878031421"));
+        QCOMPARE(first(r, "DepotNumber"), QStringLiteral("0878031421"));
         QCOMPARE(first(r, "Currency"),    QStringLiteral("EUR"));
     }
 

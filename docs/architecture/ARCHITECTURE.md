@@ -2873,8 +2873,8 @@ niemals `QSqlDatabase::database()` ohne Argument (gibt ungültige Default-Verbin
 
 ### ShareSplitObject / ShareSplitRepository / ShareSplitAdjuster (Aktiensplit-Behandlung, Phase 1: 07.08.2026, Phase 2a/2b/2c: 07.08.2026)
 
-Grundlage für den offenen Punkt "Aktiensplits werden nicht behandelt" (siehe
-"Offene Punkte" unten). Phase 1 legte reines Datenmodell und Rechenkern ohne
+Grundlage für "Aktiensplits werden nicht behandelt" (seit 25.08.2026 unter
+"Erledigt / Archiv"). Phase 1 legte reines Datenmodell und Rechenkern ohne
 jede sichtbare Änderung an; Phase 2a wendet den Rechenkern in
 `ShareCalculator` an (siehe eigenen Absatz unten), Phase 2b in den
 Chart-Modellen `ModelPortfolioChart`/`ModelChart` (ebenfalls eigener Absatz
@@ -2882,9 +2882,11 @@ unten), Phase 2c in der FIFO-Verkaufszuteilung (`SaleFifoAllocator`,
 ebenfalls eigener Absatz unten) — damit ist die Umrechnung an allen Stellen
 angewendet, an denen Käufe, Verkäufe oder Tageswerte in Berechnungen
 einfliessen. Phase 3a ergänzte die Erfassungsmaske (`ShareSplitsForm`, siehe
-eigenen Abschnitt unten). Offen bleiben Phase 3b (Split-Hinweis in den
-Editier-Dialogen für Käufe und Verkäufe) und Phase 4 (automatische
-Nachprüfung des `prices_adjusted`-Zustands).
+eigenen Abschnitt unten). Phase 3b (Split-Hinweis in den Editier-Dialogen),
+Phase 3c (Marker und Summen in den Übersichtstabellen) und Phase 4
+(Nachprüfung des `prices_adjusted`-Zustands) kamen bis zum 20.08.2026 dazu;
+seit dem 25.08.2026 ist die Behandlung vollständig — siehe "Erledigt /
+Archiv".
 
 `share_splits` (Schema siehe oben): eigene GUID je Split, wie bei
 `BuyObject`/`BrokerageObject` — nicht wie bei `DailyValuesObject` mit
@@ -3857,7 +3859,7 @@ zu Käufen und Verkäufen keine Stückzahlen (Spalten: Jahr, Dividende).
 Bleibt das Risiko, dass ein Nutzer die Beleg-Stückzahl für veraltet hält und
 "korrigiert" — womit die Ausschüttung nicht mehr zum Beleg passt. Dagegen
 hilft aber keine Anzeige, sondern eine Prüfung, die tatsächlich rechnet; siehe
-"Offene Punkte", "Plausibilitätsprüfung der Dividenden-Stückzahl".
+"Erledigt / Archiv", "Plausibilitätsprüfung der Dividenden-Stückzahl".
 
 @note Teilweise überholt durch Phase 3c (11.08.2026). Die Aussage zum
 Fusszeilen-Hinweis gilt weiterhin — `ViewDividendEdit` hat keinen. Die
@@ -4129,7 +4131,7 @@ systematische Ursache. Bankmitteilungen nennen das Zuteilungsverhaeltnis als
 "1:19" — je einem gehaltenen Stueck 19 ZUSAETZLICHE. Die Anwendung erwartet
 das Umrechnungsverhaeltnis, hier 20:1. Der Fehler ist damit immer genau eins
 zu klein (siehe "Split-Verhaeltnis: Notation der Bankmitteilungen" unter
-"Offene Punkte", sowie die dortige Arbeitsliste fuer die uebrigen
+"Erledigt / Archiv", sowie die dortige Arbeitsliste fuer die uebrigen
 Pruefzeitpunkte).
 
 ### Warum die Pruefung am Verkauf haengt und nicht am Split
@@ -4476,7 +4478,367 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### Aktiensplits werden nicht behandelt (wichtig, 06.08.2026, Umsetzung begonnen 07.08.2026)
+### Bankerkennung: Mehrdeutigkeit über die Depotnummer (offen, 21.08.2026)
+
+Beim Aufspüren des obigen Fehlers fiel eine zweite Schwäche auf, die noch
+nicht behoben ist. `matchBankIndex()` nimmt die ERSTE Bank, deren
+`BankIdentifier`-Regel irgendwo im Text trifft — geprüft wird nur, DASS eine
+Depotnummer dasteht, nicht ob es die dieser Bank ist. Das Attribut
+`BankIdentifierValue`, das genau diese Nummer je Bank enthält, wird für die
+Erkennung überhaupt nicht herangezogen; es füllt nur die
+Depotnummer-Auswahlfelder.
+
+DKB und Cortal Consors beschriften beide mit "Depotnummer". Die DKB-Regel
+lautet `Depotnummer\s+([0-9]{1,9})`, die Consors-Regel
+`Depotnummer\s+([0-9]{1,10})|Depotnummer:\s+([0-9]{1,10})`, und die DKB steht
+in `Documents.xml` zuerst. Ein Consors-Beleg, der "Depotnummer 878031421"
+OHNE Doppelpunkt schreibt, wird daher der DKB zugeschlagen und mit deren
+Regeln ausgewertet. Nur die Doppelpunkt-Schreibweise landet bei Consors —
+was erklärt, warum diese Alternative überhaupt in der Regel steht.
+
+Ein tragfähiger Ansatz wäre, die gefangene Nummer gegen
+`BankIdentifierValue` zu vergleichen, statt nur die Beschriftung zu prüfen.
+Bewusst nicht zusammen mit dem obigen Bugfix umgesetzt: die Änderung berührt
+die Erkennung ALLER Banken, und ein Fehlgriff dort führt dazu, dass gar
+nichts mehr erkannt wird. Sie gehört für sich geprüft, gegen echte Belege
+aller drei Banken.
+
+@note Der bislang einzige BELEGTE Fehlgriff betrifft Consors (siehe
+"Consors-Themen"). Der Punkt steht trotzdem hier und nicht dort: die Schwäche
+liegt in `matchBankIndex()` und damit in der Erkennung aller Banken. Sobald
+eine vierte Bank hinzukommt, die ihre Depotnummer ebenso beschriftet, tritt
+dasselbe zwischen zwei aktiv genutzten Banken auf.
+
+@note Nessies Vorgabe 22.08.2026: als eigenes Vorhaben in einem separaten
+Chat. Passt zur obigen Einschätzung — die Änderung gehört für sich geprüft,
+nicht als Beifang einer anderen Arbeit.
+
+### Analyse-Statuszeile und Feldsymbole können sich widersprechen (offen, 22.08.2026)
+
+Nach dem Einlesen eines Belegs kann die Statuszeile "Analyse OK — 5/5
+Pflicht" melden, während daneben ein Pflichtfeld ein rotes Fehlersymbol
+trägt. Beides stimmt für sich, misst aber Verschiedenes:
+
+| | zählt | Ort |
+| --- | --- | --- |
+| Statuszeile | was der PARSER aus dem Beleg herausgeholt hat | `Presenter*Edit::populateFromResult()` |
+| Feldsymbol | was die MASKE mit dem Rohwert anfangen konnte | `View*Edit::setFieldOk()` |
+
+Entstanden ist die Doppelung am 22.08.2026 (siehe "Rohwerte aus Belegen: eine
+Regel je Zieltyp"). Vorher gab es sie nicht, weil eine misslungene Umwandlung
+gar nichts anzeigte: das Feld behielt still seinen Vorgabewert. Bei einem
+`QDateEdit` ist dieser Vorgabewert das heutige Datum — genau daran scheiterte
+das Verkaufsdatum aus einem Beleg von 2020, ohne dass irgendetwas darauf
+hingewiesen hätte. Das Fehlersymbol ist also die Verbesserung; der
+Widerspruch ist ihr Nebeneffekt, bewusst in Kauf genommen (Nessie,
+22.08.2026: "Ist auch so okay" — mit dem Auftrag, den Punkt festzuhalten).
+
+**Warum es überhaupt zwei Zähler gibt.** Der Presenter kennt nur die
+Rohwerte, die der `ParserLib::Parser` geliefert hat, und zählt sie gegen
+`requiredXmlNames`. Ob ein solcher Rohwert im Zielwidget ankommt, entscheidet
+sich erst eine Ebene tiefer, in `setFieldOk()` — und deren Ergebnis fliesst
+nirgends zurück. Der Presenter hat schon gezählt, wenn die View noch gar
+nicht weiss, ob sie den Wert brauchen kann.
+
+**Drei Wege, das aufzulösen** (Reihenfolge ist meine Empfehlung):
+
+1. **Rückmeldung statt Ansage.** `setFieldOk()` gibt zurück, ob die
+   Übernahme gelungen ist; der Presenter zählt nur die gelungenen. Damit
+   sagt "5/5 Pflicht" wieder, was der Leser erwartet: fünf Felder stehen
+   gefüllt in der Maske. Berührt vier Views und vier Presenter plus die
+   vier `IView*`-Schnittstellen und die Stubs in den Tests — mechanisch, aber
+   breit.
+2. **Zweiter Zähler in der Statuszeile.** Etwa "5/5 Pflicht gelesen, 1
+   nicht übernehmbar". Ehrlicher als heute, aber die Zeile wird länger und
+   erklärt einen Unterschied, den der Benutzer gar nicht kennen will.
+3. **So lassen.** Der Fall tritt nur auf, wenn eine Regel etwas fängt, das
+   das Zielfeld nicht verarbeiten kann — nach dem 22.08.2026 also selten,
+   weil `DocumentFieldValue` genau dafür da ist. Das Fehlersymbol steht am
+   richtigen Feld, und wer es sieht, schaut dort hin und nicht auf die
+   Zusammenfassung.
+
+@note Nicht zu verwechseln mit dem Fall "Wert fehlt ganz". Liefert der Parser
+für ein Pflichtfeld nichts, zählt die Statuszeile es korrekt NICHT mit und
+meldet "Analyse fehlgeschlagen — 4/5 Pflicht"; `markMissingFieldsAsFailed()`
+setzt zusätzlich das Symbol. Dort stimmen beide überein. Der Widerspruch
+entsteht ausschliesslich bei einem gefangenen, aber unbrauchbaren Wert.
+
+@note Nessies Vorgabe 22.08.2026: als eigenes Vorhaben in einem separaten
+Chat.
+
+### Consors-Themen (offen, aktuell ohne Priorität)
+
+Nessie handelt derzeit nicht mehr über Cortal Consors. Die folgenden Punkte
+bleiben festgehalten, damit sie nicht verlorengehen, sind aber **bewusst
+zurückgestellt** — sie treten nur bei Consors-Belegen auf und haben deshalb
+keine praktische Dringlichkeit. Wer sie später aufgreift, braucht dazu in
+jedem Fall echte, ungeschwärzte Consors-Belege; ohne die ist keiner der
+Punkte sinnvoll zu prüfen.
+
+**1. Ex-Tag ist bei Consors nicht auslesbar.** Der Beleg nennt nur
+"Schlusstag" und "Valuta". Warum daraus kein Ex-Tag abgeleitet wird und
+warum stattdessen ein Hinweis am Feld erscheint, steht ausführlich unter
+"Nachtrag Cortal Consors (21.08.2026)". Das ist kein Fehler, sondern eine
+getroffene Entscheidung — der Punkt steht hier nur, damit die Einschränkung
+auffindbar bleibt: bei Consors muss der Ex-Tag von Hand nachgetragen werden.
+Erst ein Beleg, der den Ex-Tag ausdrücklich benennt, würde das ändern.
+
+**2. Der `Wkn`-Ausdruck ist unspezifisch.** `  ((?:[A-Za-z0-9]{6,6}))  `
+trifft im Testbeleg an 25 Stellen; die echte WKN lag auf dem vorliegenden
+Screenshot im geschwärzten Bereich, ein Ersatz wäre ungeprüft geraten.
+Symptom im Betrieb wäre der Abbruch mit "Das gewählte Dokument gehört nicht
+zur aktuell geöffneten Aktie", weil `populateFromResult()` die geparste WKN
+gegen die geöffnete Aktie prüft. Erschwerend: der Consors-Dividendenblock
+führt keinen `Isin`-Ausdruck, der einen Fehlgriff auffangen könnte.
+
+**3. Bereits erfasste Consors-Dividenden können den falschen Zahltag
+tragen.** Bis zum 21.08.2026 stand `Date` auf "das erste Datum im Text" und
+lieferte damit den Schlusstag statt der Valuta. Alles, was vor der Korrektur
+aus einem Consors-Beleg übernommen wurde, hat also möglicherweise den
+Stichtag als Auszahlungsdatum. Meist sind das wenige Tage Unterschied und
+folgenlos; liegt der Jahreswechsel dazwischen, landet die Ausschüttung im
+falschen Steuerjahr. Eine Gegenprobe wäre: Consors-Dividenden aufrufen und
+das Datum gegen den Beleg halten.
+
+**4. Consors-Kostenbelege sind ungeprüft.** Sie waren vom selben Fehler
+betroffen wie die Dividenden (leere `SaleIdentifier`-Regel, siehe "Leere
+Kennungen schlucken jedes Dokument") und wurden vor dem Bugfix gar nicht
+gelesen. Dass sie es jetzt tun, ist plausibel, aber nicht nachgewiesen — es
+lag kein Consors-Kostenbeleg vor.
+
+@note Die Bankerkennung über die Depotnummer ist bei Consors ebenfalls
+brüchig (ohne Doppelpunkt gewinnt die DKB). Der Punkt steht bewusst weiter
+oben unter "Bankerkennung: Mehrdeutigkeit über die Depotnummer", weil die
+Ursache allgemein ist und nicht an Consors hängt.
+
+### Parsing von Split-Mitteilungen der Banken prüfen (08.08.2026)
+
+Seit Phase 3a kann einem Split ein Beleg zugeordnet werden, ausgewertet wird er
+aber nicht. Beim Entwurf war ich davon ausgegangen, dass es zu einem Split gar
+keinen Beleg gibt; Nessies Einwand am 08.08.2026: seine Banken verschicken sehr
+wohl Mitteilungen über anstehende Kapitalmassnahmen.
+
+Ob sich eine Parse-Pipeline lohnt, lässt sich ohne echte Beispieldokumente nicht
+entscheiden. Offen sind mindestens:
+
+- **Welche Felder?** Ex-Tag und Verhältnis sind das Minimum. Die eingebuchte
+  Stückzahl wäre als Gegenprobe wertvoll — sie erlaubte, das erfasste Verhältnis
+  gegen den tatsächlichen Depotbestand zu prüfen.
+- **Wie stabil ist die Formulierung?** "20:1", "im Verhältnis 1:20", "je 1 alte
+  Aktie 19 zusätzliche" meinen dasselbe und lesen sich völlig verschieden. Bei
+  Kauf- und Verkaufsabrechnungen half die feste Tabellenstruktur; eine
+  Kapitalmassnahmen-Mitteilung ist eher Fliesstext.
+- **Eigener `DocumentType::Split` in `Documents.xml`?** Das hiesse je Bank eine
+  weitere Konfigurationssektion pflegen — für ein Ereignis, das je Aktie alle
+  paar Jahre einmal vorkommt.
+- **Lohnt die Erkennung per Drag+Drop?** `MainWindow::handleDroppedDocument()`
+  müsste den neuen Typ mitbehandeln und `ViewShareSplitEdit` öffnen.
+
+Nächster Schritt: zwei, drei reale Split-Mitteilungen sammeln und daran prüfen,
+ob die Felder überhaupt zuverlässig zu treffen sind. Da der Dokumentpfad seit
+Phase 3a gespeichert wird, sammeln sich die Belege dafür ohnehin an.
+
+---
+
+### Spin-offs und Kapitalmaßnahmen mit Barkomponente nicht abgedeckt (07.08.2026)
+
+Bewusst aus "Aktiensplits werden nicht behandelt" ausgeklammert (Nessies
+Entscheidung 07.08.2026, Punkt 4 dort): Spin-offs (ein Teil der Position
+wird zu einer neuen, eigenständigen Aktie) und Kapitalmaßnahmen mit
+Barkomponente sind fachlich keine reine Stückelungsänderung — anders als
+beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
+Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
+Feature, falls der Fall in einem realen Depot auftritt.
+
+### Kopfzeile des Details-Dialogs im Neuberechnungs-Fall irrefuehrend (11.08.2026)
+
+`ViewSaleEdit::showBuyDetails()` beschriftet den Dialog anhand von
+`SaleBuyDetailSummary::editMode`, also danach, ob ein gespeicherter Verkauf
+geladen ist. Beim juengsten Verkauf wird die Zuteilung aber live neu
+gerechnet — die Beschriftung "Tatsaechliche FIFO-Zuteilung des gespeicherten
+Verkaufs" trifft dann nicht zu.
+
+Sinnvoll waere ein dritter Zustand, der die Neuberechnung des juengsten
+Verkaufs als solche benennt. Bewusst nicht im Rahmen des Brokerage-Bugfixes
+geaendert (ein Anliegen pro Commit).
+
+### Kaufkurs im Details-Dialog nur mit zwei Nachkommastellen (11.08.2026)
+
+Die Spalte Kaufkurs zeigt `formatMoney()`, also zwei Stellen. Bei
+split-bereinigten Kursen entsteht dadurch eine Zeile, die zum Nachrechnen
+einlaedt und dabei scheitert: 200,0000 Stk. mal 48,59 EUR ergibt 9.718,00 EUR,
+angezeigt werden korrekt 9.719,00 EUR (tatsaechlicher Kurs 48,595 EUR). Weil
+die Zeile als Gleichung mit Mal- und Gleichheitszeichen aufgebaut ist, faellt
+das auf. Vier Nachkommastellen wie in der Anteile-Spalte wuerden es aufloesen.
+
+### Diagnose-Knopf hinter einen Debug-Modus legen (06.08.2026)
+
+Der Knopf "Diagnose speichern…" im Depotwert-Chart bleibt vorerst dauerhaft
+sichtbar, da sich der Export als nützlich erwiesen hat. Später sollte er über
+eine Einstellung ein- und ausblendbar sein, damit er im Normalbetrieb nicht
+im Weg steht.
+
+### Zeitraum-Einstellungen des Charts persistieren (05.08.2026)
+
+Start-Datum, Interval und Anzahl des Depotwert-Charts werden bei jedem Start
+auf die Vorgabe zurückgesetzt (heute / Jahr / 1). Sinnvoll wäre, sie je Chart
+in `AppSettings` zu speichern.
+
+### Marktwert-Chart (05.08.2026)
+
+Das Gegenstück zum Depotwert-Chart, das nur reine Kursgewinne berücksichtigt
+(keine Dividenden, keine Kosten, keine Steuern). Bewusst zurückgestellt, bis
+der Depotwert-Chart im Alltag steht — die Formel dafür ist noch nicht
+abgestimmt. `ViewPortfolioChart` ist so gebaut, dass ein Modus-Flag analog zu
+`ViewShareDetails` nachgerüstet werden kann.
+
+### Vermögenskurve als zweite Darstellung (05.08.2026)
+
+Der Depotwert-Chart zeigt die reine Wertentwicklung; Ein- und Auszahlungen
+verschieben ihn nicht. Daneben wäre eine echte Vermögenskurve denkbar, die
+bei einem Kauf über 5.000 Euro auch um 5.000 Euro nach oben springt. Die
+Datenbasis ist dieselbe, nur die Aggregation unterscheidet sich —
+sinnvollerweise später als per Checkbox umschaltbare zweite Serie im selben
+Chart.
+
+### Verwaistes Verzeichnis tests/widgets entfernen (05.08.2026)
+
+`tests/widgets/` enthält `tst_overviewtabwidget.cpp`, hat aber keine
+`CMakeLists.txt` und wird von der Root-`CMakeLists.txt` nicht eingebunden.
+Dieselbe Datei liegt zusätzlich in `tests/forms/` und wird von dort gebaut —
+`tests/widgets/` ist also eine verwaiste Dublette und kann gelöscht werden.
+
+### Übersetzung ist vollständig offen (07.08.2026)
+
+Die Oberfläche ist durchgängig deutsch. Alle Benutzertexte stehen zwar
+korrekt in `tr()` und werden von `qt_add_translations()` erfasst, aber
+übersetzt wurde bisher nichts: `translations/spm_de.ts` und
+`translations/spm_en.ts` sind unbearbeitet, `spm_en.ts` enthält also keine
+einzige englische Zeichenkette.
+
+Praktische Folge: ein Start mit englischem Systemgebietsschema zeigt trotzdem
+die deutschen Quelltexte, weil Qt bei fehlender Übersetzung auf den
+`tr()`-Ausgangstext zurückfällt. Es sieht damit nicht kaputt aus, sondern
+schlicht unübersetzt — der Zustand fällt beim Entwickeln deshalb nie auf.
+
+Zu klären wäre zuerst, ob Englisch überhaupt ein Ziel ist. Falls ja, kommen
+zwei Punkte hinzu, die heute nirgends geregelt sind: die Zahlen- und
+Datumsformatierung hängt an `QLocale::setDefault(QLocale::German)` in
+`main.cpp` und im Test-`main()` und müsste dann mitziehen (siehe auch
+"Konfigurierbare Locale für Zahlenformat"), und die `.ts`-Dateien müssten in
+den regulären Commit-Rhythmus aufgenommen werden, statt nur beim Bauen
+erzeugt zu werden.
+
+### Aktien ohne verfügbare Tageswert-Quelle dauerhaft ausnehmen (07.08.2026)
+
+Seit "Tageswert-Historie bei Bestand > 0 erzwingen" (siehe "Erledigt /
+Archiv") meldet `MainWindow::warnAboutSharesWithoutDailyValues()` bei jedem
+Start alle Aktien mit Bestand, die keine Tageswerte abrufen.
+
+Für ein Papier, zu dem es gar keine Tageswert-Quelle gibt — ein delistetes
+etwa, oder eines, das die konfigurierte Quelle schlicht nicht führt — ist
+diese Meldung nicht abstellbar, weil der Nutzer den beanstandeten Zustand
+nicht beheben kann. Der einzige Ausweg wäre der Verkauf.
+
+Wiederkehrende Meldungen, gegen die sich nichts tun lässt, werden
+erfahrungsgemäß pauschal weggeklickt. Damit verliert die Meldung ihre Wirkung
+auch für die Fälle, in denen sie berechtigt ist — das ist der eigentliche
+Schaden, nicht die Unbequemlichkeit.
+
+Lösungsrichtung: ein Kennzeichen an der Aktie ("keine Tageswert-Quelle
+verfügbar"), das sie aus der Meldung herausnimmt und zugleich als bewusste
+Entscheidung dokumentiert. Die Aktie bliebe weiterhin aus dem Depotwert-Chart
+ausgeschlossen — daran ändert das Kennzeichen nichts, es macht die Lücke nur
+gewollt statt versehentlich. Zu klären wäre, ob der Chart solche Positionen
+dann sichtbar ausweisen sollte, damit die Kurve nicht unbemerkt zu niedrig
+liegt.
+
+@note Noch nicht belegt, dass der Fall in einem realen Depot überhaupt
+auftritt (Nessie, 07.08.2026). Erst umsetzen, wenn er auftritt — vorher wäre
+es Aufwand für ein hypothetisches Problem.
+
+### Manuelles Theme (Hell/Dunkel) erzwingbar machen (Backlog-Idee, nicht priorisiert, 24.07.2026)
+
+Im Zuge des Bugfixes "Log-Meldungsfarben theme-neutral" (siehe Erledigt/
+Archiv weiter unten) kam die Frage auf, ob sich ein Dark Theme künftig
+*manuell* in der App aktivieren lassen sollte — unabhängig von der
+automatischen System-Theme-Erkennung, die im Linux-AppImage mangels
+Platform-Theme-Plugin nicht funktioniert (siehe dort für die genaue
+Ursache).
+
+Der entscheidende Unterschied zur (fehlschlagenden) automatischen Erkennung:
+ein manuell erzwungenes Theme über `QStyleFactory::create("Fusion")` +
+eine fest definierte `QPalette` läuft komplett innerhalb von Qt selbst,
+ohne jede Abfrage ans Betriebssystem oder ein externes Plugin — würde also
+auch im AppImage zuverlässig funktionieren, wo die automatische Erkennung
+versagt.
+
+Mögliche Umsetzung, grob skizziert:
+- Neue `AppSettings`-Einstellung, z. B. `theme()` mit Werten "System"
+  (aktuelles Verhalten, unverändert) / "Hell" / "Dunkel".
+- Bei "Hell"/"Dunkel" wird beim Start `QApplication::setStyle("Fusion")`
+  + eine passende `QPalette` gesetzt.
+- Ein Theme-Wechsel würde vermutlich einen Neustart der App erfordern —
+  Qt-Stile lassen sich zwar zur Laufzeit umschalten, aber nicht alle
+  Widgets aktualisieren sich dabei zuverlässig live.
+
+Zu bedenken: `IconProvider` kennt aktuell nur ein einziges Icon-Set
+(`default`), das nicht hell/dunkel-optimiert ist — ein erzwungenes Dark
+Theme würde also nur Fenster-Hintergründe/Widgets betreffen, nicht die
+Icons selbst (kein Blocker, nur ein kosmetischer Nebenaspekt, den man bei
+der Umsetzung im Hinterkopf behalten sollte).
+
+Bewusst zurückgestellt (24.07.2026): reine Idee aus der Diskussion um den
+Log-Farben-Bugfix, keine konkrete Anfrage/aktive Aufgabe. Nur vermerkt,
+falls später tatsächlich Bedarf für ein erzwingbares Theme entsteht.
+
+### GitHub-Release-Automatisierung für Installer (Backlog-Idee, nicht priorisiert)
+
+Seit 23.07.2026 existiert `.github/workflows/package.yml` (manuell auslösbar
+via `workflow_dispatch`), der einen Windows-Installer (Inno Setup) sowie ein
+Linux-AppImage baut. Die fertigen Dateien landen dabei aktuell nur als
+GitHub-Actions-**Artefakte** am jeweiligen Workflow-Lauf — nicht öffentlich
+zugänglich (nur für Personen mit Repo-Zugriff), mit Standard-Aufbewahrung von
+90 Tagen, und ohne Verknüpfung zu einer offiziell markierten Version.
+
+Für eine echte Veröffentlichung fehlt noch: ein GitHub-Release-Schritt (z. B.
+via `softprops/action-gh-release`), der beide Installer an ein GitHub Release
+anhängt — sinnvollerweise ausgelöst durch einen Git-Tag (z. B. `v1.0.0`)
+statt weiterhin nur manuell. Damit könnte der Ablauf künftig lauten: Tag
+pushen → Installer bauen → automatisch als Release veröffentlichen.
+
+Bewusst zurückgestellt (23.07.2026): Es ist noch keine erste Version zur
+Veröffentlichung vorgesehen. Nur als Idee für später vermerkt, sobald
+tatsächlich veröffentlicht werden soll — keine aktive Aufgabe.
+
+### Konfigurierbare Locale für Zahlenformat (Backlog-Idee, nicht priorisiert)
+
+Im Zuge des Locale-Bugfixes vom 23.07.2026 (siehe Erledigt/Archiv weiter unten)
+kam die Frage auf, ob das Zahlenformat (Dezimaltrennzeichen etc.) künftig pro
+Benutzer einstellbar sein sollte, unabhängig von der (ohnehin fest deutschen)
+UI-Sprache — z. B. für Schweizer/österreichische Formatierungskonventionen.
+
+Bewusst zurückgestellt (23.07.2026): Die Anwendung ist komplett
+deutschsprachig, es gibt aktuell keine konkrete Anfrage dafür, und der Aufwand
+(neue `AppSettings`-Einstellung, UI-Dialog, `QLocale::setDefault()` beim Start
+aus der gespeicherten Einstellung ableiten, zusätzliche Testfälle) steht in
+keinem Verhältnis zum eigentlichen Bugfix. Nur als Idee für die Zukunft
+vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
+
+---
+
+## Erledigt / Archiv
+
+@note Die folgenden acht Abschnitte standen bis zum 25.08.2026 unter "Offene
+Punkte" und sind dorthin verschoben worden, weil sie vollstaendig umgesetzt
+sind. Sie bleiben als Begruendungsdokument stehen: die Entscheidungen darin
+(Beleg-Wahrheit, Zurueckhaltung gegenueber stillen Korrekturen, enge
+Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
+ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
+weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
+Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Aktiensplits werden nicht behandelt (wichtig, 06.08.2026, vollstaendig umgesetzt 25.08.2026)
 
 Die Anwendung kennt keine Aktiensplits. Solange nur der heutige Kurs
 betrachtet wird, fällt das nicht auf — sobald aber historische Kurse gegen
@@ -4547,7 +4909,301 @@ bereinigt liefert, ist je Anbieter unterschiedlich.
 | 4a | "Prüfen"-Knopf im Split-Dialog (`SplitPriceJumpDetector`): vergleicht auf Nutzeraktion hin die Kurshistorie um den Ex-Tag, setzt bei eindeutigem Ergebnis automatisch den `prices_adjusted`-Haken. Siehe "Automatische Erkennung split-bereinigter Kurshistorie" unten. | ✅ umgesetzt 14.08.2026 |
 | 4b | Automatische Nachprüfung des `prices_adjusted`-Zustands nach jedem Tageswert-Abruf (Kurssprung um den Splittag vergleichen) + Startmeldung bei Widerspruch, analog `warnAboutSharesWithoutDailyValues()`. Ursprünglich zugunsten von 4a zurückgestellt (13.08.2026) — auf Nessies Wunsch 20.08.2026 doch umgesetzt, siehe "Automatische Nachprüfung nach Tageswert-Abruf" unten für die Begründung, warum das der ursprünglichen Zurückhaltung nicht widerspricht. | ✅ umgesetzt 20.08.2026 |
 
-### Plausibilitätsprüfung der Dividenden-Stückzahl (09.08.2026, Entscheidungen 21.08.2026)
+---
+
+### Split-Verhaeltnis: Notation der Bankmitteilungen (11.08.2026, Hinweistext umgesetzt 13.08.2026, restliche Punkte 25.08.2026)
+
+Bankmitteilungen zu Splits nennen ueblicherweise das Zuteilungsverhaeltnis in
+der Form "1:19" — je einem gehaltenen Stueck werden 19 ZUSAETZLICHE
+eingebucht. Die Anwendung erwartet das Umrechnungsverhaeltnis, hier also 20.
+Im Feldfall Alphabet wurde 19 eingetragen; der Fehler ist systematisch immer
+genau eins zu klein.
+
+Drei Massnahmen waren denkbar, alle im Split-Dialog:
+
+- **Umgesetzt (13.08.2026):** Ein Hinweistext, der beide Notationen benennt.
+  Erste Fassung war ein dauerhaft sichtbares Label unter der Umrechnungszeile
+  (`QLabel`, eigene Grid-Zeile in `createSplitDataGroup()`); wirkte im Dialog
+  zu aufdringlich (Nessies Einwand 13.08.2026) und wurde durch einen Tooltip
+  auf dem Umrechnungs-Feld ersetzt (`m_factorPreview->setToolTip()`), analog
+  zum bestehenden Tooltip auf "Kurshistorie" direkt darunter. Text mit
+  explizitem Zeilenumbruch nach dem ersten Satz (`\n` im `tr()`-String — Qt
+  rendert das im nativen Tooltip als Umbruch, kein Rich-Text noetig). Reine
+  Textaenderung, kein Interface- oder Modellzugriff noetig, deshalb ohne
+  eigenen Test (der Text ist statisch und immer sichtbar).
+- **Teilweise umgesetzt (22.08.2026):** Eine Plausibilitaetspruefung gegen die
+  eigenen Daten: Bestand vor dem Ex-Tag mal Faktor gegen die Stueckzahl auf
+  spaeteren Verkaufsbelegen. Im Feldfall haette das den Fehler sofort
+  gemeldet — Bestand 10 mal 19 ergibt 190, der Verkaufsbeleg lautet auf 200.
+  Kein Parsen noetig. Verwandt, aber NICHT dasselbe wie der "Prüfen"-Knopf
+  (`SplitPriceJumpDetector`, siehe "Automatische Erkennung split-bereinigter
+  Kurshistorie" unten): dieser prueft die Kurshistorie gegen den
+  eingetragenen Faktor, nicht den Bestand gegen spaetere Verkaufsbelege.
+  Umgesetzt sind seit dem 25.08.2026 alle fuenf Pruefzeitpunkte
+  (`SplitRatioChecker` und `SplitAudit`, siehe "Plausibilitaetspruefung des
+  Split-Verhaeltnisses" weiter oben); die Reihenfolge und die Begruendung
+  dazu stehen in der Arbeitsliste weiter unten in diesem Archiv.
+- **Umgesetzt (25.08.2026):** Warnung, wenn der Ex-Tag in der Zukunft liegt,
+  und — wirksamer — das Ende der Vorbelegung mit dem heutigen Datum. Der
+  Dialog schlug das aktuelle Datum vor; im Feldfall wurde es unveraendert
+  uebernommen und stand als 10.08.2026 in der Datenbank. Siehe
+  "Plausibilitaetspruefung des Split-Verhaeltnisses" weiter oben, Abschnitt
+  "Punkt 5".
+
+Ebenfalls erwogen (13.08.2026) und bewusst zurueckgestellt: die Eingabe von
+"neu:alt" auf "alt:neu" zu drehen, um sich an die Bank-Schreibweise "1:19"
+anzunaehern. Loest das eigentliche Problem nicht — "19" in der Bankmitteilung
+ist die ZUSAETZLICHE Stueckzahl, nicht die neue Gesamtzahl; das Delta-vs-
+Gesamt-Missverstaendnis besteht unabhaengig von der Feldreihenfolge weiter.
+Ein Modell, das stattdessen "alt" + "zusaetzlich" abfragt und "neu" daraus
+berechnet, wuerde den Fehler strukturell verhindern, aendert aber
+`IViewShareSplitEdit::ratioNew()`/`ratioOld()` und damit mehr als nur den
+Hinweistext — eigenes Feature, falls gewuenscht.
+
+@note Ein Parser fuer die Split-Mitteilung haette hier nicht geholfen — im
+Dokument steht woertlich "1:19". Siehe "Parsing von Split-Mitteilungen der
+Banken pruefen".
+
+---
+
+### Automatische Erkennung split-bereinigter Kurshistorie ("Prüfen"-Knopf, 13.08.2026, Layout korrigiert 14.08.2026)
+
+Der Haken "Kurshistorie vor dem Ex-Tag liegt bereits split-bereinigt vor"
+(`prices_adjusted`, siehe "ShareSplitObject / ShareSplitRepository /
+ShareSplitAdjuster" oben) musste bislang von Hand eingeschätzt werden.
+Nessies Vorschlag 13.08.2026: die App soll selbst in den gespeicherten
+Tageswerten nachsehen, ob rund um den Ex-Tag ein Kurssprung erkennbar ist.
+
+**Bewusst kein automatischer/stiller SCHREIBender Lauf.** Erwogen war
+13.08.2026, die Prüfung automatisch nach jedem Tageswert-Abruf laufen zu
+lassen und bei Widerspruch eine Startmeldung zu zeigen (Phase 4b im
+Phasenplan oben) — zunächst zugunsten dieses expliziten "Prüfen"-Knopfs
+zurückgestellt, den der Nutzer selbst betätigt. Grund war dieselbe
+Zurückhaltung gegenüber stillen Korrekturen gespeicherter Daten wie bei
+`ShareUpdateRules` (siehe dort). Nessies eigene Spezifikation vom 13.08.2026:
+"Wenn alle Daten für eine Ermittlung vorhanden sind und die Ermittlung
+eindeutig ist, wird der Hinweis angezeigt und der Haken gesetzt. Sollte es
+nicht eindeutig sein, kommt der Hinweis, dass der Haken nicht automatisch
+gesetzt werden konnte und ein manuelles Setzen nötig ist."
+
+Phase 4b wurde am 20.08.2026 doch noch nachgezogen — als reine LESE-Prüfung,
+die diese Zurückhaltung fortsetzt statt ihr zu widersprechen: siehe
+"Automatische Nachprüfung nach Tageswert-Abruf" unten.
+
+**Algorithmus (`SplitPriceJumpDetector`, `app/utils/`).** Zustandslos und
+datenbankfrei wie `ShareSplitAdjuster`/`ShareSplitHint` — die Kurshistorie
+kommt als Parameter herein (`IModelShareSplitEdit::dailyValuesInRange()`,
+reine Weiterleitung an `DailyValuesRepository::findByShareAndDateRange()`).
+Verglichen wird der letzte verfügbare Schlusskurs vor mit dem ersten
+verfügbaren Schlusskurs nach dem Ex-Tag, in einem Suchfenster von
+standardmässig 15 Kalendertagen (`kDefaultMaxLookbackDays`), begrenzt durch
+benachbarte Splits derselben Aktie (der Ex-Tag selbst zählt als "davor",
+dieselbe Konvention wie `ShareSplitAdjuster::volumeFactor()`). Vier
+Ergebnisse:
+
+| Ergebnis | Bedeutung | Wirkung |
+| --- | --- | --- |
+| `Adjusted` | Kein Sprung — Verhältnis nah bei 1,0 (±15 %) | Haken automatisch GESETZT |
+| `NotAdjusted` | Sprung nah beim erwarteten Faktor (±20 %) | Haken automatisch ENTFERNT |
+| `Ambiguous` | Kurse vorhanden, aber weder eindeutig Sprung noch eindeutig kein Sprung | Haken unverändert, Hinweistext |
+| `InsufficientData` | Keine (ausreichenden) Kursdaten im Suchfenster | Haken unverändert, Hinweistext |
+
+@note Bei Split-Verhältnissen nah bei 1 (z. B. 5:4, Faktor 1,25) überlappen
+sich die beiden Toleranzbänder (um 1,0 und um den Faktor) — das Ergebnis
+fällt dann bewusst häufiger auf `Ambiguous`, statt auf Verdacht zu raten.
+Bekannte, akzeptierte Einschränkung.
+
+**Bedienung und Layout (mehrfach korrigiert 14.08.2026).** Der
+"Prüfen"-Knopf sitzt in einer eigenen "Prüfung:"-Zeile unterhalb von
+"Kurshistorie:", zusammen mit einem read-only, zweizeiligen Ergebnisfeld
+(`QPlainTextEdit`, Objektname `priceJumpResult`). Erste Fassung zeigte das
+Ergebnis in einem `QLabel` direkt neben der Checkbox — wirkte unruhig, weil
+sich seine Höhe je nach Textlänge änderte und dadurch alles darunter
+(Kommentar, Dokument, Buttons) beim Prüfen bzw. Zurücksetzen im Dialog nach
+unten bzw. wieder nach oben sprang. Das Ergebnisfeld hat seither eine feste,
+aus der Zeilenhöhe der Schrift abgeleitete Zweizeilen-Höhe (`QFontMetrics`
+statt fester Pixelwert, bleibt so auch bei grösseren Systemschriften
+zweizeilig). Label und Knopf sind an der Oberkante des Feldes ausgerichtet
+(`Qt::AlignTop`) statt vertikal zentriert — bei einer zweizeiligen Box wirkte
+Zentrierung "abgesackt". Die Checkbox-Zeile bekam aus demselben Grund eine
+explizite `UiConstants::kFieldHeight`-Höhe zurück: solange sie sich die Zeile
+mit dem Knopf teilte, sorgte dessen Höhe automatisch für ein einheitliches
+Zeilenmass; seit der Knopf in die eigene "Prüfung:"-Zeile umgezogen ist,
+musste die Checkbox das selbst bekommen — sonst wirkte der Zeilenabstand zu
+ihren Nachbarn kleiner als überall sonst im Dialog.
+
+**Einfärbung.** Trotz vier Ergebnistypen gibt es fürs Auge nur zwei Zustände
+(`IViewShareSplitEdit::PriceJumpTone`): `Adopted` (Haken automatisch
+gesetzt/entfernt, grüner Text) oder `ManualDecisionNeeded` (Ergebnis
+uneindeutig oder Daten fehlen, roter Text). Dieselben Hex-Werte wie
+`AppSettings`' Erfolg-/Fehler-Logfarben (`#388e3c`/`#d32f2f`) — laut deren
+Kommentar bewusst kontrastreich auf hellem wie dunklem Hintergrund, nicht an
+ein bestimmtes Theme angepasst. Bewusst eine eigene Konstante in
+`ViewShareSplitEdit.cpp` statt über `AppSettings::logColorAt()` bezogen: die
+Logfarben sind über `LoggerSettingsForm` frei änderbar, das Ergebnisfeld hat
+mit dem Log-Fenster nichts zu tun. Beim Zurücksetzen der Maske bzw. beim
+Laden eines anderen Splits wird die Farbe mit auf den ungefärbten
+Ausgangszustand zurückgesetzt (`resetPriceJumpResult()`), sonst bliebe der
+Platzhaltertext "Noch nicht geprüft …" fälschlich rot oder grün gefärbt.
+
+---
+
+### Automatische Nachprüfung nach Tageswert-Abruf (Phase 4b, 20.08.2026)
+
+Phase 4b des Phasenplans oben — am 13.08.2026 zugunsten des "Prüfen"-Knopfs
+zurückgestellt (siehe "Automatische Erkennung split-bereinigter
+Kurshistorie" oben) — auf Nessies Wunsch am 20.08.2026 doch nachgezogen.
+
+**Warum das der Zurückhaltung vom 13.08.2026 nicht widerspricht.** Die
+damalige Entscheidung richtete sich gegen ein stilles SCHREIBEN von
+`prices_adjusted` ohne Nutzeraktion — dieselbe Linie wie `ShareUpdateRules`.
+Phase 4b schreibt nichts: sie LIEST nach jedem Tageswert-Abruf nach, ob der
+gespeicherte Haken noch zur (jetzt ggf. aktualisierten) Kurshistorie passt,
+und macht bei einem Widerspruch lediglich sichtbar darauf aufmerksam — exakt
+die gleiche Holschuld-Umkehr wie bei `warnAboutSharesWithoutDailyValues()`
+(siehe dort): der Nutzer wird informiert, die eigentliche Korrektur bleibt
+ihm im Split-Dialog (dem "Prüfen"-Knopf von Phase 4a) überlassen. Der
+"Prüfen"-Knopf bleibt damit der einzige Weg, wie `prices_adjusted`
+tatsächlich verändert wird — Phase 4b ist ein zusätzliches Sicherheitsnetz
+für Fälle, die der Nutzer nicht von sich aus erneut prüft (typischerweise:
+die Kursquelle liefert die Historie zu einem späteren Abrufzeitpunkt anders
+bereinigt als beim Erfassen des Splits).
+
+**`SplitAudit` (`app/utils/`).** Zustandslos und datenbankfrei wie
+`SplitPriceJumpDetector`, auf dem es direkt aufbaut: `check(splits,
+dailyValues)` prüft für jeden übergebenen Split, ob dessen
+`SplitPriceJumpDetector::detect()`-Ergebnis dem gespeicherten
+`pricesAdjusted()` widerspricht — Nachbar-Splits derselben Aktie begrenzen je
+geprüftem Split das Suchfenster, exakt dieselbe Logik wie
+`PresenterShareSplitEdit::onCheckPriceJump()` (der geprüfte Split zählt nicht
+als eigener Nachbar). `Ambiguous`- und `InsufficientData`-Ergebnisse zählen
+NIE als Widerspruch — dieselbe Vorsicht wie beim "Prüfen"-Knopf: ein
+Verdachtsfall, den der Nutzer ohnehin nicht auflösen könnte, soll nicht als
+Meldung erscheinen.
+
+**Verdrahtung in `MainWindow`.**
+
+| Zeitpunkt | Methode | Wirkung |
+| --- | --- | --- |
+| Jeder abgeschlossene Tageswert-Abruf (`onDailyValuesUpdated()`, Zweig `Finished`) | `refreshSplitAuditWarningsForShare()` | Prüft NUR die gerade aktualisierte Aktie neu (ersetzt ihre vorherigen Einträge in `m_splitAuditWarnings`); bei ≥ 1 Widerspruch sofort eine Statusmeldung, kein modaler Dialog — ein "Alle aktualisieren"-Lauf über N Aktien soll nicht N Dialoge auslösen. Läuft unabhängig davon, ob der Abruf neue Tageswert-Zeilen brachte: ein Split kann auch ohne neuen Abruf zwischenzeitlich angelegt/geändert worden sein. |
+| Programmstart, nach `populatePortfolioTables()` | `populateSplitAuditWarnings()` | Baut `m_splitAuditWarnings` komplett neu auf, über alle Aktien mit mindestens einem Split — deckt auch Widersprüche ab, die während der letzten Sitzung entstanden sind, ohne dass die betroffene Aktie danach erneut aktualisiert wurde. |
+| Programmstart, verzögert per `QTimer::singleShot(0, …)` | `warnAboutSplitAuditFindings()` | Modaler Hinweis, analog `warnAboutSharesWithoutDailyValues()` — nur wenn `m_showStartupWarnings` (Produktivkonstruktor), aus demselben Grund untestbar (siehe dort). |
+
+`buildSplitAuditWarningMessage()` ist `public static`, gleiche
+Begründung wie `buildDailyValuesWarningMessage()`: der Meldungstext bleibt
+ohne `MainWindow` und ohne modalen Dialog prüfbar. `populateSplitAuditWarnings()`
+ist bewusst NICHT Teil von `populatePortfolioTables()`
+— anders als `m_sharesMissingDailyValues` (das ohne zusätzlichen
+Datenbankzugriff aus der ohnehin laufenden Schleife mitfällt) bräuchte das
+hier je Aktie mit Splits einen eigenen Zugriff auf Splits UND komplette
+Kurshistorie; `populatePortfolioTables()` läuft aber bei jeder
+Tabellen-Neuaufbau, auch nach Beleg-Änderungen ganz ohne Split-Bezug.
+
+---
+
+### Split-Plausibilitaet: Arbeitsliste (22.08.2026, alle fuenf Punkte umgesetzt 25.08.2026)
+
+Ein falsches Split-Verhaeltnis laesst sich nur dort bemerken, wo eine
+Gegenprobe vorliegt — und die trifft je nach Erfassungsreihenfolge zu
+unterschiedlichen Zeitpunkten ein. Beim Speichern des Splits selbst gibt es
+im normalen Ablauf (Kauf, dann Split, dann Verkauf) noch gar nichts zu
+vergleichen; erst der spaetere Verkaufsbeleg liefert die Zahl, an der sich
+der Fehler zeigt. Nachtraeglich erfasst — so entstand der Feldfall Alphabet —
+liegt die Gegenprobe dagegen schon beim Speichern des Splits vor.
+
+Daraus die Reihenfolge der Umsetzung, festgehalten fuer nachfolgende
+Sessions.
+
+| Nr. | Punkt | Pruefzeitpunkt | Stand |
+| --- | --- | --- | --- |
+| 1 | Rechenkern `SplitRatioChecker` + Diagnose in der Verkaufs-Mengenpruefung | beim Speichern eines Verkaufs | umgesetzt 22.08.2026 |
+| 2 | Derselbe Kern beim Speichern und Loeschen eines Splits | im Split-Dialog | umgesetzt 22.08.2026 |
+| 3 | Verhaeltnis-Gegenprobe aus der Kurshistorie | "Pruefen"-Knopf im Split-Dialog | umgesetzt 22.08.2026 |
+| 4 | Nachpruefung im Hintergrund | Programmstart / nach Tageswert-Abruf | umgesetzt 22.08.2026 |
+| 5 | Warnung bei Ex-Tag in der Zukunft, Datumsfeld startet unbelegt | beim Speichern eines Splits | umgesetzt 25.08.2026 |
+
+Zu den einzelnen Punkten:
+
+**2** greift, wenn nach dem Ex-Tag bereits Verkaeufe erfasst sind — also bei
+nachtraeglicher Erfassung. Im chronologischen Ablauf meldet er nichts.
+Umgesetzt am 22.08.2026, siehe "Plausibilitaetspruefung des
+Split-Verhaeltnisses" weiter oben, Abschnitt "Punkt 2".
+
+**3** nutzt `SplitPriceJumpDetector::detect()`, das den Kurssprung um den
+Ex-Tag ohnehin misst. Umgesetzt am 22.08.2026, siehe
+"Plausibilitaetspruefung des Split-Verhaeltnisses" weiter oben, Abschnitt
+"Punkt 3".
+
+**4** ist eine reine Lese-Pruefung ueber alle Aktien mit Splits. Umgesetzt am
+22.08.2026, siehe "Plausibilitaetspruefung des Split-Verhaeltnisses" weiter
+oben, Abschnitt "Punkt 4".
+
+**5** hat mit dem Verhaeltnis nichts zu tun und stand deshalb am Ende.
+Zukuenftige Ex-Tage bleiben ausdruecklich erlaubt (Nessies Entscheidung
+08.08.2026), es ist also nur ein Hinweis. Umgesetzt am 25.08.2026, siehe
+"Plausibilitaetspruefung des Split-Verhaeltnisses" weiter oben, Abschnitt
+"Punkt 5" — der Ertrag lag dabei nicht bei der Warnung selbst, sondern beim
+Datumsfeld, das nicht mehr mit dem heutigen Tag vorbelegt ist.
+
+---
+
+### Bruchstücke bei Reverse-Splits nicht abgedeckt (07.08.2026, Lösung ohne neuen Code gefunden 14.08.2026)
+
+Bewusst aus "Aktiensplits werden nicht behandelt" ausgeklammert (Nessies
+Entscheidung 07.08.2026, Punkt 5 dort): bei einem Reverse-Split zahlt die
+Bank Bruchstücke (Spitzen, die sich nicht glatt zusammenlegen lassen) bar
+aus. `ShareSplitAdjuster` bildet nur die glatte Umrechnung ab; eine solche
+Barkomponente lässt sich mit dem aktuellen Modell nicht abbilden.
+
+**Nessies Gegenfrage (14.08.2026):** Braucht es dafür wirklich ein eigenes
+Feature (eine vollständige, FIFO-basierte Abbildung der Bruchstücks-
+Teilveräußerung), oder reicht es, die Bruchstücke als ganz normalen Verkauf
+zu erfassen und den Split separat einzutragen?
+
+**Antwort: Ja, das reicht — kein neuer Code nötig.** Ausschlaggebend ist die
+Randregel in `ShareSplitAdjuster::volumeFactor()`: ein Beleg, der EXAKT AUF
+dem Split-Stichtag datiert ist, wird von genau diesem Split nicht mehr
+mitgerechnet (`split.date() > date`, echt größer) — er gilt bereits als im
+NEUEN (Nach-Split-)Maßstab erfasst. Ein auf den Stichtag datierter Verkauf
+für die Bruchstücke ist damit automatisch korrekt vom Split entkoppelt,
+sofern seine Menge im neuen statt im alten Maßstab eingetragen wird.
+
+**Vorgehen:**
+
+1. Verkauf erfassen: Datum = Ex-Tag des Splits, Menge = Bruchstücke im
+   NEUEN Maßstab (alte Bruchstücks-Stückzahl × Split-Faktor), Kurs =
+   Auszahlungsbetrag der Bank ÷ diese Menge.
+2. Den Split wie gewohnt erfassen (Verhältnis, Ex-Tag). Die Reihenfolge der
+   Erfassung (Verkauf zuerst oder Split zuerst) spielt keine Rolle, da
+   `ShareSplitAdjuster`/`SaleFifoAllocator` beide Datensätze bei jeder
+   Anzeige aus der Datenbank neu berechnen, nicht inkrementell fortschreiben.
+
+**Beispielrechnung** (105 alte Stücke, Reverse-Split 1:10, Faktor 0,1):
+100 alte Stücke legen sich glatt zu 10 neuen zusammen; 5 alte Stücke sind
+das Bruchstück. Verkauf: Datum = Stichtag, Menge = 5 × 0,1 = 0,5, Kurs =
+Auszahlungsbetrag ÷ 0,5. Nachgerechnet über `SaleFifoAllocator::allocate()`:
+die Kauf-Reste (105 alt) werden auf 10,5 heutige Stücke skaliert, der
+Verkauf (0,5, wegen Stichtag-Datum nicht nochmal skaliert) wird abgezogen →
+10,0 verbleiben, zurückgerechnet auf die Beleg-Skala der Käufe = 100 alte
+Stücke. Stimmt mit der erwarteten Aufteilung überein.
+
+**Umsetzung (14.08.2026):** Da kein neuer Fachcode nötig ist, bleibt es bei
+dieser Dokumentation plus einem eigenen Hinweis-Knopf im Split-Dialog.
+Ein erster Anlauf mit einem Tooltip auf den Verhältnis-Feldern wurde
+verworfen (Nessies Feedback): der Tooltip verschwand beim Wegbewegen der
+Maus wieder und verwies auf diese Datei, auf die der Benutzer keinen
+Zugriff hat. Stattdessen jetzt der Knopf "Hinweis Reverse-Split" direkt in
+der Verhältnis-Zeile (`ViewShareSplitEdit::createSplitDataGroup()`,
+`m_btnReverseSplitHint`), dauerhaft sichtbar. Er öffnet einen
+`OwnMessageBox::information()`-Dialog mit dem obigen Vorgehen in
+Klartext — bewusst ohne Verweis auf diese Datei oder auf interne
+Klassennamen (`reverseSplitHintMessage()`). Ist im Formular ein echtes
+Reverse-Split-Verhältnis eingetragen (neu < alt, beide > 0), rechnet der
+Text mit genau diesem Verhältnis statt mit dem festen 1:10-Beispiel oben.
+
+---
+
+### Plausibilitätsprüfung der Dividenden-Stückzahl (09.08.2026, alle fuenf Phasen umgesetzt 21.08.2026)
 
 Die Stückzahl in `ViewDividendEdit` ist ein Eingabefeld, und aus ihr wird die
 Ausschüttung gerechnet (`rate × volume`). Wer eine Dividende von 2021 öffnet,
@@ -5174,138 +5830,7 @@ einer überflüssigen `Isin`-Regel geführt, deren Fehlgriff den Import mit "Das
 gewählte Dokument gehört nicht zur aktuell geöffneten Aktie" abgebrochen
 hätte.
 
-### Bankerkennung: Mehrdeutigkeit über die Depotnummer (offen, 21.08.2026)
-
-Beim Aufspüren des obigen Fehlers fiel eine zweite Schwäche auf, die noch
-nicht behoben ist. `matchBankIndex()` nimmt die ERSTE Bank, deren
-`BankIdentifier`-Regel irgendwo im Text trifft — geprüft wird nur, DASS eine
-Depotnummer dasteht, nicht ob es die dieser Bank ist. Das Attribut
-`BankIdentifierValue`, das genau diese Nummer je Bank enthält, wird für die
-Erkennung überhaupt nicht herangezogen; es füllt nur die
-Depotnummer-Auswahlfelder.
-
-DKB und Cortal Consors beschriften beide mit "Depotnummer". Die DKB-Regel
-lautet `Depotnummer\s+([0-9]{1,9})`, die Consors-Regel
-`Depotnummer\s+([0-9]{1,10})|Depotnummer:\s+([0-9]{1,10})`, und die DKB steht
-in `Documents.xml` zuerst. Ein Consors-Beleg, der "Depotnummer 878031421"
-OHNE Doppelpunkt schreibt, wird daher der DKB zugeschlagen und mit deren
-Regeln ausgewertet. Nur die Doppelpunkt-Schreibweise landet bei Consors —
-was erklärt, warum diese Alternative überhaupt in der Regel steht.
-
-Ein tragfähiger Ansatz wäre, die gefangene Nummer gegen
-`BankIdentifierValue` zu vergleichen, statt nur die Beschriftung zu prüfen.
-Bewusst nicht zusammen mit dem obigen Bugfix umgesetzt: die Änderung berührt
-die Erkennung ALLER Banken, und ein Fehlgriff dort führt dazu, dass gar
-nichts mehr erkannt wird. Sie gehört für sich geprüft, gegen echte Belege
-aller drei Banken.
-
-@note Der bislang einzige BELEGTE Fehlgriff betrifft Consors (siehe
-"Consors-Themen"). Der Punkt steht trotzdem hier und nicht dort: die Schwäche
-liegt in `matchBankIndex()` und damit in der Erkennung aller Banken. Sobald
-eine vierte Bank hinzukommt, die ihre Depotnummer ebenso beschriftet, tritt
-dasselbe zwischen zwei aktiv genutzten Banken auf.
-
-@note Nessies Vorgabe 22.08.2026: als eigenes Vorhaben in einem separaten
-Chat. Passt zur obigen Einschätzung — die Änderung gehört für sich geprüft,
-nicht als Beifang einer anderen Arbeit.
-
-### Analyse-Statuszeile und Feldsymbole können sich widersprechen (offen, 22.08.2026)
-
-Nach dem Einlesen eines Belegs kann die Statuszeile "Analyse OK — 5/5
-Pflicht" melden, während daneben ein Pflichtfeld ein rotes Fehlersymbol
-trägt. Beides stimmt für sich, misst aber Verschiedenes:
-
-| | zählt | Ort |
-| --- | --- | --- |
-| Statuszeile | was der PARSER aus dem Beleg herausgeholt hat | `Presenter*Edit::populateFromResult()` |
-| Feldsymbol | was die MASKE mit dem Rohwert anfangen konnte | `View*Edit::setFieldOk()` |
-
-Entstanden ist die Doppelung am 22.08.2026 (siehe "Rohwerte aus Belegen: eine
-Regel je Zieltyp"). Vorher gab es sie nicht, weil eine misslungene Umwandlung
-gar nichts anzeigte: das Feld behielt still seinen Vorgabewert. Bei einem
-`QDateEdit` ist dieser Vorgabewert das heutige Datum — genau daran scheiterte
-das Verkaufsdatum aus einem Beleg von 2020, ohne dass irgendetwas darauf
-hingewiesen hätte. Das Fehlersymbol ist also die Verbesserung; der
-Widerspruch ist ihr Nebeneffekt, bewusst in Kauf genommen (Nessie,
-22.08.2026: "Ist auch so okay" — mit dem Auftrag, den Punkt festzuhalten).
-
-**Warum es überhaupt zwei Zähler gibt.** Der Presenter kennt nur die
-Rohwerte, die der `ParserLib::Parser` geliefert hat, und zählt sie gegen
-`requiredXmlNames`. Ob ein solcher Rohwert im Zielwidget ankommt, entscheidet
-sich erst eine Ebene tiefer, in `setFieldOk()` — und deren Ergebnis fliesst
-nirgends zurück. Der Presenter hat schon gezählt, wenn die View noch gar
-nicht weiss, ob sie den Wert brauchen kann.
-
-**Drei Wege, das aufzulösen** (Reihenfolge ist meine Empfehlung):
-
-1. **Rückmeldung statt Ansage.** `setFieldOk()` gibt zurück, ob die
-   Übernahme gelungen ist; der Presenter zählt nur die gelungenen. Damit
-   sagt "5/5 Pflicht" wieder, was der Leser erwartet: fünf Felder stehen
-   gefüllt in der Maske. Berührt vier Views und vier Presenter plus die
-   vier `IView*`-Schnittstellen und die Stubs in den Tests — mechanisch, aber
-   breit.
-2. **Zweiter Zähler in der Statuszeile.** Etwa "5/5 Pflicht gelesen, 1
-   nicht übernehmbar". Ehrlicher als heute, aber die Zeile wird länger und
-   erklärt einen Unterschied, den der Benutzer gar nicht kennen will.
-3. **So lassen.** Der Fall tritt nur auf, wenn eine Regel etwas fängt, das
-   das Zielfeld nicht verarbeiten kann — nach dem 22.08.2026 also selten,
-   weil `DocumentFieldValue` genau dafür da ist. Das Fehlersymbol steht am
-   richtigen Feld, und wer es sieht, schaut dort hin und nicht auf die
-   Zusammenfassung.
-
-@note Nicht zu verwechseln mit dem Fall "Wert fehlt ganz". Liefert der Parser
-für ein Pflichtfeld nichts, zählt die Statuszeile es korrekt NICHT mit und
-meldet "Analyse fehlgeschlagen — 4/5 Pflicht"; `markMissingFieldsAsFailed()`
-setzt zusätzlich das Symbol. Dort stimmen beide überein. Der Widerspruch
-entsteht ausschliesslich bei einem gefangenen, aber unbrauchbaren Wert.
-
-@note Nessies Vorgabe 22.08.2026: als eigenes Vorhaben in einem separaten
-Chat.
-
-### Consors-Themen (offen, aktuell ohne Priorität)
-
-Nessie handelt derzeit nicht mehr über Cortal Consors. Die folgenden Punkte
-bleiben festgehalten, damit sie nicht verlorengehen, sind aber **bewusst
-zurückgestellt** — sie treten nur bei Consors-Belegen auf und haben deshalb
-keine praktische Dringlichkeit. Wer sie später aufgreift, braucht dazu in
-jedem Fall echte, ungeschwärzte Consors-Belege; ohne die ist keiner der
-Punkte sinnvoll zu prüfen.
-
-**1. Ex-Tag ist bei Consors nicht auslesbar.** Der Beleg nennt nur
-"Schlusstag" und "Valuta". Warum daraus kein Ex-Tag abgeleitet wird und
-warum stattdessen ein Hinweis am Feld erscheint, steht ausführlich unter
-"Nachtrag Cortal Consors (21.08.2026)". Das ist kein Fehler, sondern eine
-getroffene Entscheidung — der Punkt steht hier nur, damit die Einschränkung
-auffindbar bleibt: bei Consors muss der Ex-Tag von Hand nachgetragen werden.
-Erst ein Beleg, der den Ex-Tag ausdrücklich benennt, würde das ändern.
-
-**2. Der `Wkn`-Ausdruck ist unspezifisch.** `  ((?:[A-Za-z0-9]{6,6}))  `
-trifft im Testbeleg an 25 Stellen; die echte WKN lag auf dem vorliegenden
-Screenshot im geschwärzten Bereich, ein Ersatz wäre ungeprüft geraten.
-Symptom im Betrieb wäre der Abbruch mit "Das gewählte Dokument gehört nicht
-zur aktuell geöffneten Aktie", weil `populateFromResult()` die geparste WKN
-gegen die geöffnete Aktie prüft. Erschwerend: der Consors-Dividendenblock
-führt keinen `Isin`-Ausdruck, der einen Fehlgriff auffangen könnte.
-
-**3. Bereits erfasste Consors-Dividenden können den falschen Zahltag
-tragen.** Bis zum 21.08.2026 stand `Date` auf "das erste Datum im Text" und
-lieferte damit den Schlusstag statt der Valuta. Alles, was vor der Korrektur
-aus einem Consors-Beleg übernommen wurde, hat also möglicherweise den
-Stichtag als Auszahlungsdatum. Meist sind das wenige Tage Unterschied und
-folgenlos; liegt der Jahreswechsel dazwischen, landet die Ausschüttung im
-falschen Steuerjahr. Eine Gegenprobe wäre: Consors-Dividenden aufrufen und
-das Datum gegen den Beleg halten.
-
-**4. Consors-Kostenbelege sind ungeprüft.** Sie waren vom selben Fehler
-betroffen wie die Dividenden (leere `SaleIdentifier`-Regel, siehe "Leere
-Kennungen schlucken jedes Dokument") und wurden vor dem Bugfix gar nicht
-gelesen. Dass sie es jetzt tun, ist plausibel, aber nicht nachgewiesen — es
-lag kein Consors-Kostenbeleg vor.
-
-@note Die Bankerkennung über die Depotnummer ist bei Consors ebenfalls
-brüchig (ohne Doppelpunkt gewinnt die DKB). Der Punkt steht bewusst weiter
-oben unter "Bankerkennung: Mehrdeutigkeit über die Depotnummer", weil die
-Ursache allgemein ist und nicht an Consors hängt.
+---
 
 ### tst_mainwindow.cpp in eigene Testdateien aufteilen (09.08.2026, abgeschlossen 22.08.2026)
 
@@ -5381,505 +5906,7 @@ dagegen NICHT mit übernommen; die braucht nur der Fenstertitel-Versionstest in
 Umstrukturierung ohne sichtbaren Nutzen sollte für sich stehen, damit bei
 einem Fehlschlag nicht gleichzeitig ein neues Feature im Verdacht steht.
 
-### Parsing von Split-Mitteilungen der Banken prüfen (08.08.2026)
-
-Seit Phase 3a kann einem Split ein Beleg zugeordnet werden, ausgewertet wird er
-aber nicht. Beim Entwurf war ich davon ausgegangen, dass es zu einem Split gar
-keinen Beleg gibt; Nessies Einwand am 08.08.2026: seine Banken verschicken sehr
-wohl Mitteilungen über anstehende Kapitalmassnahmen.
-
-Ob sich eine Parse-Pipeline lohnt, lässt sich ohne echte Beispieldokumente nicht
-entscheiden. Offen sind mindestens:
-
-- **Welche Felder?** Ex-Tag und Verhältnis sind das Minimum. Die eingebuchte
-  Stückzahl wäre als Gegenprobe wertvoll — sie erlaubte, das erfasste Verhältnis
-  gegen den tatsächlichen Depotbestand zu prüfen.
-- **Wie stabil ist die Formulierung?** "20:1", "im Verhältnis 1:20", "je 1 alte
-  Aktie 19 zusätzliche" meinen dasselbe und lesen sich völlig verschieden. Bei
-  Kauf- und Verkaufsabrechnungen half die feste Tabellenstruktur; eine
-  Kapitalmassnahmen-Mitteilung ist eher Fliesstext.
-- **Eigener `DocumentType::Split` in `Documents.xml`?** Das hiesse je Bank eine
-  weitere Konfigurationssektion pflegen — für ein Ereignis, das je Aktie alle
-  paar Jahre einmal vorkommt.
-- **Lohnt die Erkennung per Drag+Drop?** `MainWindow::handleDroppedDocument()`
-  müsste den neuen Typ mitbehandeln und `ViewShareSplitEdit` öffnen.
-
-Nächster Schritt: zwei, drei reale Split-Mitteilungen sammeln und daran prüfen,
-ob die Felder überhaupt zuverlässig zu treffen sind. Da der Dokumentpfad seit
-Phase 3a gespeichert wird, sammeln sich die Belege dafür ohnehin an.
-
 ---
-
-### Spin-offs und Kapitalmaßnahmen mit Barkomponente nicht abgedeckt (07.08.2026)
-
-Bewusst aus "Aktiensplits werden nicht behandelt" ausgeklammert (Nessies
-Entscheidung 07.08.2026, Punkt 4 dort): Spin-offs (ein Teil der Position
-wird zu einer neuen, eigenständigen Aktie) und Kapitalmaßnahmen mit
-Barkomponente sind fachlich keine reine Stückelungsänderung — anders als
-beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
-Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
-Feature, falls der Fall in einem realen Depot auftritt.
-
-### Kopfzeile des Details-Dialogs im Neuberechnungs-Fall irrefuehrend (11.08.2026)
-
-`ViewSaleEdit::showBuyDetails()` beschriftet den Dialog anhand von
-`SaleBuyDetailSummary::editMode`, also danach, ob ein gespeicherter Verkauf
-geladen ist. Beim juengsten Verkauf wird die Zuteilung aber live neu
-gerechnet — die Beschriftung "Tatsaechliche FIFO-Zuteilung des gespeicherten
-Verkaufs" trifft dann nicht zu.
-
-Sinnvoll waere ein dritter Zustand, der die Neuberechnung des juengsten
-Verkaufs als solche benennt. Bewusst nicht im Rahmen des Brokerage-Bugfixes
-geaendert (ein Anliegen pro Commit).
-
-### Kaufkurs im Details-Dialog nur mit zwei Nachkommastellen (11.08.2026)
-
-Die Spalte Kaufkurs zeigt `formatMoney()`, also zwei Stellen. Bei
-split-bereinigten Kursen entsteht dadurch eine Zeile, die zum Nachrechnen
-einlaedt und dabei scheitert: 200,0000 Stk. mal 48,59 EUR ergibt 9.718,00 EUR,
-angezeigt werden korrekt 9.719,00 EUR (tatsaechlicher Kurs 48,595 EUR). Weil
-die Zeile als Gleichung mit Mal- und Gleichheitszeichen aufgebaut ist, faellt
-das auf. Vier Nachkommastellen wie in der Anteile-Spalte wuerden es aufloesen.
-
-### Split-Verhaeltnis: Notation der Bankmitteilungen (11.08.2026, Hinweistext umgesetzt 13.08.2026)
-
-Bankmitteilungen zu Splits nennen ueblicherweise das Zuteilungsverhaeltnis in
-der Form "1:19" — je einem gehaltenen Stueck werden 19 ZUSAETZLICHE
-eingebucht. Die Anwendung erwartet das Umrechnungsverhaeltnis, hier also 20.
-Im Feldfall Alphabet wurde 19 eingetragen; der Fehler ist systematisch immer
-genau eins zu klein.
-
-Drei Massnahmen waren denkbar, alle im Split-Dialog:
-
-- **Umgesetzt (13.08.2026):** Ein Hinweistext, der beide Notationen benennt.
-  Erste Fassung war ein dauerhaft sichtbares Label unter der Umrechnungszeile
-  (`QLabel`, eigene Grid-Zeile in `createSplitDataGroup()`); wirkte im Dialog
-  zu aufdringlich (Nessies Einwand 13.08.2026) und wurde durch einen Tooltip
-  auf dem Umrechnungs-Feld ersetzt (`m_factorPreview->setToolTip()`), analog
-  zum bestehenden Tooltip auf "Kurshistorie" direkt darunter. Text mit
-  explizitem Zeilenumbruch nach dem ersten Satz (`\n` im `tr()`-String — Qt
-  rendert das im nativen Tooltip als Umbruch, kein Rich-Text noetig). Reine
-  Textaenderung, kein Interface- oder Modellzugriff noetig, deshalb ohne
-  eigenen Test (der Text ist statisch und immer sichtbar).
-- **Teilweise umgesetzt (22.08.2026):** Eine Plausibilitaetspruefung gegen die
-  eigenen Daten: Bestand vor dem Ex-Tag mal Faktor gegen die Stueckzahl auf
-  spaeteren Verkaufsbelegen. Im Feldfall haette das den Fehler sofort
-  gemeldet — Bestand 10 mal 19 ergibt 190, der Verkaufsbeleg lautet auf 200.
-  Kein Parsen noetig. Verwandt, aber NICHT dasselbe wie der "Prüfen"-Knopf
-  (`SplitPriceJumpDetector`, siehe "Automatische Erkennung split-bereinigter
-  Kurshistorie" unten): dieser prueft die Kurshistorie gegen den
-  eingetragenen Faktor, nicht den Bestand gegen spaetere Verkaufsbelege.
-  Umgesetzt ist bisher der Pruefzeitpunkt "beim Speichern eines Verkaufs"
-  (`SplitRatioChecker`, siehe "Plausibilitaetspruefung des
-  Split-Verhaeltnisses" weiter oben); die uebrigen Zeitpunkte stehen in der
-  Arbeitsliste unmittelbar unter diesem Abschnitt.
-- **Umgesetzt (25.08.2026):** Warnung, wenn der Ex-Tag in der Zukunft liegt,
-  und — wirksamer — das Ende der Vorbelegung mit dem heutigen Datum. Der
-  Dialog schlug das aktuelle Datum vor; im Feldfall wurde es unveraendert
-  uebernommen und stand als 10.08.2026 in der Datenbank. Siehe
-  "Plausibilitaetspruefung des Split-Verhaeltnisses" weiter oben, Abschnitt
-  "Punkt 5".
-
-Ebenfalls erwogen (13.08.2026) und bewusst zurueckgestellt: die Eingabe von
-"neu:alt" auf "alt:neu" zu drehen, um sich an die Bank-Schreibweise "1:19"
-anzunaehern. Loest das eigentliche Problem nicht — "19" in der Bankmitteilung
-ist die ZUSAETZLICHE Stueckzahl, nicht die neue Gesamtzahl; das Delta-vs-
-Gesamt-Missverstaendnis besteht unabhaengig von der Feldreihenfolge weiter.
-Ein Modell, das stattdessen "alt" + "zusaetzlich" abfragt und "neu" daraus
-berechnet, wuerde den Fehler strukturell verhindern, aendert aber
-`IViewShareSplitEdit::ratioNew()`/`ratioOld()` und damit mehr als nur den
-Hinweistext — eigenes Feature, falls gewuenscht.
-
-@note Ein Parser fuer die Split-Mitteilung haette hier nicht geholfen — im
-Dokument steht woertlich "1:19". Siehe "Parsing von Split-Mitteilungen der
-Banken pruefen".
-
-### Split-Plausibilitaet: Arbeitsliste (22.08.2026)
-
-Ein falsches Split-Verhaeltnis laesst sich nur dort bemerken, wo eine
-Gegenprobe vorliegt — und die trifft je nach Erfassungsreihenfolge zu
-unterschiedlichen Zeitpunkten ein. Beim Speichern des Splits selbst gibt es
-im normalen Ablauf (Kauf, dann Split, dann Verkauf) noch gar nichts zu
-vergleichen; erst der spaetere Verkaufsbeleg liefert die Zahl, an der sich
-der Fehler zeigt. Nachtraeglich erfasst — so entstand der Feldfall Alphabet —
-liegt die Gegenprobe dagegen schon beim Speichern des Splits vor.
-
-Daraus die Reihenfolge der Umsetzung, festgehalten fuer nachfolgende
-Sessions.
-
-| Nr. | Punkt | Pruefzeitpunkt | Stand |
-| --- | --- | --- | --- |
-| 1 | Rechenkern `SplitRatioChecker` + Diagnose in der Verkaufs-Mengenpruefung | beim Speichern eines Verkaufs | umgesetzt 22.08.2026 |
-| 2 | Derselbe Kern beim Speichern und Loeschen eines Splits | im Split-Dialog | umgesetzt 22.08.2026 |
-| 3 | Verhaeltnis-Gegenprobe aus der Kurshistorie | "Pruefen"-Knopf im Split-Dialog | umgesetzt 22.08.2026 |
-| 4 | Nachpruefung im Hintergrund | Programmstart / nach Tageswert-Abruf | umgesetzt 22.08.2026 |
-| 5 | Warnung bei Ex-Tag in der Zukunft, Datumsfeld startet unbelegt | beim Speichern eines Splits | umgesetzt 25.08.2026 |
-
-Zu den einzelnen Punkten:
-
-**2** greift, wenn nach dem Ex-Tag bereits Verkaeufe erfasst sind — also bei
-nachtraeglicher Erfassung. Im chronologischen Ablauf meldet er nichts.
-Umgesetzt am 22.08.2026, siehe "Plausibilitaetspruefung des
-Split-Verhaeltnisses" weiter oben, Abschnitt "Punkt 2".
-
-**3** nutzt `SplitPriceJumpDetector::detect()`, das den Kurssprung um den
-Ex-Tag ohnehin misst. Umgesetzt am 22.08.2026, siehe
-"Plausibilitaetspruefung des Split-Verhaeltnisses" weiter oben, Abschnitt
-"Punkt 3".
-
-**4** ist eine reine Lese-Pruefung ueber alle Aktien mit Splits. Umgesetzt am
-22.08.2026, siehe "Plausibilitaetspruefung des Split-Verhaeltnisses" weiter
-oben, Abschnitt "Punkt 4".
-
-**5** hat mit dem Verhaeltnis nichts zu tun und stand deshalb am Ende.
-Zukuenftige Ex-Tage bleiben ausdruecklich erlaubt (Nessies Entscheidung
-08.08.2026), es ist also nur ein Hinweis. Umgesetzt am 25.08.2026, siehe
-"Plausibilitaetspruefung des Split-Verhaeltnisses" weiter oben, Abschnitt
-"Punkt 5" — der Ertrag lag dabei nicht bei der Warnung selbst, sondern beim
-Datumsfeld, das nicht mehr mit dem heutigen Tag vorbelegt ist.
-
-### Automatische Erkennung split-bereinigter Kurshistorie ("Prüfen"-Knopf, 13.08.2026, Layout korrigiert 14.08.2026)
-
-Der Haken "Kurshistorie vor dem Ex-Tag liegt bereits split-bereinigt vor"
-(`prices_adjusted`, siehe "ShareSplitObject / ShareSplitRepository /
-ShareSplitAdjuster" oben) musste bislang von Hand eingeschätzt werden.
-Nessies Vorschlag 13.08.2026: die App soll selbst in den gespeicherten
-Tageswerten nachsehen, ob rund um den Ex-Tag ein Kurssprung erkennbar ist.
-
-**Bewusst kein automatischer/stiller SCHREIBender Lauf.** Erwogen war
-13.08.2026, die Prüfung automatisch nach jedem Tageswert-Abruf laufen zu
-lassen und bei Widerspruch eine Startmeldung zu zeigen (Phase 4b im
-Phasenplan oben) — zunächst zugunsten dieses expliziten "Prüfen"-Knopfs
-zurückgestellt, den der Nutzer selbst betätigt. Grund war dieselbe
-Zurückhaltung gegenüber stillen Korrekturen gespeicherter Daten wie bei
-`ShareUpdateRules` (siehe dort). Nessies eigene Spezifikation vom 13.08.2026:
-"Wenn alle Daten für eine Ermittlung vorhanden sind und die Ermittlung
-eindeutig ist, wird der Hinweis angezeigt und der Haken gesetzt. Sollte es
-nicht eindeutig sein, kommt der Hinweis, dass der Haken nicht automatisch
-gesetzt werden konnte und ein manuelles Setzen nötig ist."
-
-Phase 4b wurde am 20.08.2026 doch noch nachgezogen — als reine LESE-Prüfung,
-die diese Zurückhaltung fortsetzt statt ihr zu widersprechen: siehe
-"Automatische Nachprüfung nach Tageswert-Abruf" unten.
-
-**Algorithmus (`SplitPriceJumpDetector`, `app/utils/`).** Zustandslos und
-datenbankfrei wie `ShareSplitAdjuster`/`ShareSplitHint` — die Kurshistorie
-kommt als Parameter herein (`IModelShareSplitEdit::dailyValuesInRange()`,
-reine Weiterleitung an `DailyValuesRepository::findByShareAndDateRange()`).
-Verglichen wird der letzte verfügbare Schlusskurs vor mit dem ersten
-verfügbaren Schlusskurs nach dem Ex-Tag, in einem Suchfenster von
-standardmässig 15 Kalendertagen (`kDefaultMaxLookbackDays`), begrenzt durch
-benachbarte Splits derselben Aktie (der Ex-Tag selbst zählt als "davor",
-dieselbe Konvention wie `ShareSplitAdjuster::volumeFactor()`). Vier
-Ergebnisse:
-
-| Ergebnis | Bedeutung | Wirkung |
-| --- | --- | --- |
-| `Adjusted` | Kein Sprung — Verhältnis nah bei 1,0 (±15 %) | Haken automatisch GESETZT |
-| `NotAdjusted` | Sprung nah beim erwarteten Faktor (±20 %) | Haken automatisch ENTFERNT |
-| `Ambiguous` | Kurse vorhanden, aber weder eindeutig Sprung noch eindeutig kein Sprung | Haken unverändert, Hinweistext |
-| `InsufficientData` | Keine (ausreichenden) Kursdaten im Suchfenster | Haken unverändert, Hinweistext |
-
-@note Bei Split-Verhältnissen nah bei 1 (z. B. 5:4, Faktor 1,25) überlappen
-sich die beiden Toleranzbänder (um 1,0 und um den Faktor) — das Ergebnis
-fällt dann bewusst häufiger auf `Ambiguous`, statt auf Verdacht zu raten.
-Bekannte, akzeptierte Einschränkung.
-
-**Bedienung und Layout (mehrfach korrigiert 14.08.2026).** Der
-"Prüfen"-Knopf sitzt in einer eigenen "Prüfung:"-Zeile unterhalb von
-"Kurshistorie:", zusammen mit einem read-only, zweizeiligen Ergebnisfeld
-(`QPlainTextEdit`, Objektname `priceJumpResult`). Erste Fassung zeigte das
-Ergebnis in einem `QLabel` direkt neben der Checkbox — wirkte unruhig, weil
-sich seine Höhe je nach Textlänge änderte und dadurch alles darunter
-(Kommentar, Dokument, Buttons) beim Prüfen bzw. Zurücksetzen im Dialog nach
-unten bzw. wieder nach oben sprang. Das Ergebnisfeld hat seither eine feste,
-aus der Zeilenhöhe der Schrift abgeleitete Zweizeilen-Höhe (`QFontMetrics`
-statt fester Pixelwert, bleibt so auch bei grösseren Systemschriften
-zweizeilig). Label und Knopf sind an der Oberkante des Feldes ausgerichtet
-(`Qt::AlignTop`) statt vertikal zentriert — bei einer zweizeiligen Box wirkte
-Zentrierung "abgesackt". Die Checkbox-Zeile bekam aus demselben Grund eine
-explizite `UiConstants::kFieldHeight`-Höhe zurück: solange sie sich die Zeile
-mit dem Knopf teilte, sorgte dessen Höhe automatisch für ein einheitliches
-Zeilenmass; seit der Knopf in die eigene "Prüfung:"-Zeile umgezogen ist,
-musste die Checkbox das selbst bekommen — sonst wirkte der Zeilenabstand zu
-ihren Nachbarn kleiner als überall sonst im Dialog.
-
-**Einfärbung.** Trotz vier Ergebnistypen gibt es fürs Auge nur zwei Zustände
-(`IViewShareSplitEdit::PriceJumpTone`): `Adopted` (Haken automatisch
-gesetzt/entfernt, grüner Text) oder `ManualDecisionNeeded` (Ergebnis
-uneindeutig oder Daten fehlen, roter Text). Dieselben Hex-Werte wie
-`AppSettings`' Erfolg-/Fehler-Logfarben (`#388e3c`/`#d32f2f`) — laut deren
-Kommentar bewusst kontrastreich auf hellem wie dunklem Hintergrund, nicht an
-ein bestimmtes Theme angepasst. Bewusst eine eigene Konstante in
-`ViewShareSplitEdit.cpp` statt über `AppSettings::logColorAt()` bezogen: die
-Logfarben sind über `LoggerSettingsForm` frei änderbar, das Ergebnisfeld hat
-mit dem Log-Fenster nichts zu tun. Beim Zurücksetzen der Maske bzw. beim
-Laden eines anderen Splits wird die Farbe mit auf den ungefärbten
-Ausgangszustand zurückgesetzt (`resetPriceJumpResult()`), sonst bliebe der
-Platzhaltertext "Noch nicht geprüft …" fälschlich rot oder grün gefärbt.
-
-### Automatische Nachprüfung nach Tageswert-Abruf (Phase 4b, 20.08.2026)
-
-Phase 4b des Phasenplans oben — am 13.08.2026 zugunsten des "Prüfen"-Knopfs
-zurückgestellt (siehe "Automatische Erkennung split-bereinigter
-Kurshistorie" oben) — auf Nessies Wunsch am 20.08.2026 doch nachgezogen.
-
-**Warum das der Zurückhaltung vom 13.08.2026 nicht widerspricht.** Die
-damalige Entscheidung richtete sich gegen ein stilles SCHREIBEN von
-`prices_adjusted` ohne Nutzeraktion — dieselbe Linie wie `ShareUpdateRules`.
-Phase 4b schreibt nichts: sie LIEST nach jedem Tageswert-Abruf nach, ob der
-gespeicherte Haken noch zur (jetzt ggf. aktualisierten) Kurshistorie passt,
-und macht bei einem Widerspruch lediglich sichtbar darauf aufmerksam — exakt
-die gleiche Holschuld-Umkehr wie bei `warnAboutSharesWithoutDailyValues()`
-(siehe dort): der Nutzer wird informiert, die eigentliche Korrektur bleibt
-ihm im Split-Dialog (dem "Prüfen"-Knopf von Phase 4a) überlassen. Der
-"Prüfen"-Knopf bleibt damit der einzige Weg, wie `prices_adjusted`
-tatsächlich verändert wird — Phase 4b ist ein zusätzliches Sicherheitsnetz
-für Fälle, die der Nutzer nicht von sich aus erneut prüft (typischerweise:
-die Kursquelle liefert die Historie zu einem späteren Abrufzeitpunkt anders
-bereinigt als beim Erfassen des Splits).
-
-**`SplitAudit` (`app/utils/`).** Zustandslos und datenbankfrei wie
-`SplitPriceJumpDetector`, auf dem es direkt aufbaut: `check(splits,
-dailyValues)` prüft für jeden übergebenen Split, ob dessen
-`SplitPriceJumpDetector::detect()`-Ergebnis dem gespeicherten
-`pricesAdjusted()` widerspricht — Nachbar-Splits derselben Aktie begrenzen je
-geprüftem Split das Suchfenster, exakt dieselbe Logik wie
-`PresenterShareSplitEdit::onCheckPriceJump()` (der geprüfte Split zählt nicht
-als eigener Nachbar). `Ambiguous`- und `InsufficientData`-Ergebnisse zählen
-NIE als Widerspruch — dieselbe Vorsicht wie beim "Prüfen"-Knopf: ein
-Verdachtsfall, den der Nutzer ohnehin nicht auflösen könnte, soll nicht als
-Meldung erscheinen.
-
-**Verdrahtung in `MainWindow`.**
-
-| Zeitpunkt | Methode | Wirkung |
-| --- | --- | --- |
-| Jeder abgeschlossene Tageswert-Abruf (`onDailyValuesUpdated()`, Zweig `Finished`) | `refreshSplitAuditWarningsForShare()` | Prüft NUR die gerade aktualisierte Aktie neu (ersetzt ihre vorherigen Einträge in `m_splitAuditWarnings`); bei ≥ 1 Widerspruch sofort eine Statusmeldung, kein modaler Dialog — ein "Alle aktualisieren"-Lauf über N Aktien soll nicht N Dialoge auslösen. Läuft unabhängig davon, ob der Abruf neue Tageswert-Zeilen brachte: ein Split kann auch ohne neuen Abruf zwischenzeitlich angelegt/geändert worden sein. |
-| Programmstart, nach `populatePortfolioTables()` | `populateSplitAuditWarnings()` | Baut `m_splitAuditWarnings` komplett neu auf, über alle Aktien mit mindestens einem Split — deckt auch Widersprüche ab, die während der letzten Sitzung entstanden sind, ohne dass die betroffene Aktie danach erneut aktualisiert wurde. |
-| Programmstart, verzögert per `QTimer::singleShot(0, …)` | `warnAboutSplitAuditFindings()` | Modaler Hinweis, analog `warnAboutSharesWithoutDailyValues()` — nur wenn `m_showStartupWarnings` (Produktivkonstruktor), aus demselben Grund untestbar (siehe dort). |
-
-`buildSplitAuditWarningMessage()` ist `public static`, gleiche
-Begründung wie `buildDailyValuesWarningMessage()`: der Meldungstext bleibt
-ohne `MainWindow` und ohne modalen Dialog prüfbar. `populateSplitAuditWarnings()`
-ist bewusst NICHT Teil von `populatePortfolioTables()`
-— anders als `m_sharesMissingDailyValues` (das ohne zusätzlichen
-Datenbankzugriff aus der ohnehin laufenden Schleife mitfällt) bräuchte das
-hier je Aktie mit Splits einen eigenen Zugriff auf Splits UND komplette
-Kurshistorie; `populatePortfolioTables()` läuft aber bei jeder
-Tabellen-Neuaufbau, auch nach Beleg-Änderungen ganz ohne Split-Bezug.
-
-### Bruchstücke bei Reverse-Splits nicht abgedeckt (07.08.2026, Lösung ohne neuen Code gefunden 14.08.2026)
-
-Bewusst aus "Aktiensplits werden nicht behandelt" ausgeklammert (Nessies
-Entscheidung 07.08.2026, Punkt 5 dort): bei einem Reverse-Split zahlt die
-Bank Bruchstücke (Spitzen, die sich nicht glatt zusammenlegen lassen) bar
-aus. `ShareSplitAdjuster` bildet nur die glatte Umrechnung ab; eine solche
-Barkomponente lässt sich mit dem aktuellen Modell nicht abbilden.
-
-**Nessies Gegenfrage (14.08.2026):** Braucht es dafür wirklich ein eigenes
-Feature (eine vollständige, FIFO-basierte Abbildung der Bruchstücks-
-Teilveräußerung), oder reicht es, die Bruchstücke als ganz normalen Verkauf
-zu erfassen und den Split separat einzutragen?
-
-**Antwort: Ja, das reicht — kein neuer Code nötig.** Ausschlaggebend ist die
-Randregel in `ShareSplitAdjuster::volumeFactor()`: ein Beleg, der EXAKT AUF
-dem Split-Stichtag datiert ist, wird von genau diesem Split nicht mehr
-mitgerechnet (`split.date() > date`, echt größer) — er gilt bereits als im
-NEUEN (Nach-Split-)Maßstab erfasst. Ein auf den Stichtag datierter Verkauf
-für die Bruchstücke ist damit automatisch korrekt vom Split entkoppelt,
-sofern seine Menge im neuen statt im alten Maßstab eingetragen wird.
-
-**Vorgehen:**
-
-1. Verkauf erfassen: Datum = Ex-Tag des Splits, Menge = Bruchstücke im
-   NEUEN Maßstab (alte Bruchstücks-Stückzahl × Split-Faktor), Kurs =
-   Auszahlungsbetrag der Bank ÷ diese Menge.
-2. Den Split wie gewohnt erfassen (Verhältnis, Ex-Tag). Die Reihenfolge der
-   Erfassung (Verkauf zuerst oder Split zuerst) spielt keine Rolle, da
-   `ShareSplitAdjuster`/`SaleFifoAllocator` beide Datensätze bei jeder
-   Anzeige aus der Datenbank neu berechnen, nicht inkrementell fortschreiben.
-
-**Beispielrechnung** (105 alte Stücke, Reverse-Split 1:10, Faktor 0,1):
-100 alte Stücke legen sich glatt zu 10 neuen zusammen; 5 alte Stücke sind
-das Bruchstück. Verkauf: Datum = Stichtag, Menge = 5 × 0,1 = 0,5, Kurs =
-Auszahlungsbetrag ÷ 0,5. Nachgerechnet über `SaleFifoAllocator::allocate()`:
-die Kauf-Reste (105 alt) werden auf 10,5 heutige Stücke skaliert, der
-Verkauf (0,5, wegen Stichtag-Datum nicht nochmal skaliert) wird abgezogen →
-10,0 verbleiben, zurückgerechnet auf die Beleg-Skala der Käufe = 100 alte
-Stücke. Stimmt mit der erwarteten Aufteilung überein.
-
-**Umsetzung (14.08.2026):** Da kein neuer Fachcode nötig ist, bleibt es bei
-dieser Dokumentation plus einem eigenen Hinweis-Knopf im Split-Dialog.
-Ein erster Anlauf mit einem Tooltip auf den Verhältnis-Feldern wurde
-verworfen (Nessies Feedback): der Tooltip verschwand beim Wegbewegen der
-Maus wieder und verwies auf diese Datei, auf die der Benutzer keinen
-Zugriff hat. Stattdessen jetzt der Knopf "Hinweis Reverse-Split" direkt in
-der Verhältnis-Zeile (`ViewShareSplitEdit::createSplitDataGroup()`,
-`m_btnReverseSplitHint`), dauerhaft sichtbar. Er öffnet einen
-`OwnMessageBox::information()`-Dialog mit dem obigen Vorgehen in
-Klartext — bewusst ohne Verweis auf diese Datei oder auf interne
-Klassennamen (`reverseSplitHintMessage()`). Ist im Formular ein echtes
-Reverse-Split-Verhältnis eingetragen (neu < alt, beide > 0), rechnet der
-Text mit genau diesem Verhältnis statt mit dem festen 1:10-Beispiel oben.
-
-### Diagnose-Knopf hinter einen Debug-Modus legen (06.08.2026)
-
-Der Knopf "Diagnose speichern…" im Depotwert-Chart bleibt vorerst dauerhaft
-sichtbar, da sich der Export als nützlich erwiesen hat. Später sollte er über
-eine Einstellung ein- und ausblendbar sein, damit er im Normalbetrieb nicht
-im Weg steht.
-
-### Zeitraum-Einstellungen des Charts persistieren (05.08.2026)
-
-Start-Datum, Interval und Anzahl des Depotwert-Charts werden bei jedem Start
-auf die Vorgabe zurückgesetzt (heute / Jahr / 1). Sinnvoll wäre, sie je Chart
-in `AppSettings` zu speichern.
-
-### Marktwert-Chart (05.08.2026)
-
-Das Gegenstück zum Depotwert-Chart, das nur reine Kursgewinne berücksichtigt
-(keine Dividenden, keine Kosten, keine Steuern). Bewusst zurückgestellt, bis
-der Depotwert-Chart im Alltag steht — die Formel dafür ist noch nicht
-abgestimmt. `ViewPortfolioChart` ist so gebaut, dass ein Modus-Flag analog zu
-`ViewShareDetails` nachgerüstet werden kann.
-
-### Vermögenskurve als zweite Darstellung (05.08.2026)
-
-Der Depotwert-Chart zeigt die reine Wertentwicklung; Ein- und Auszahlungen
-verschieben ihn nicht. Daneben wäre eine echte Vermögenskurve denkbar, die
-bei einem Kauf über 5.000 Euro auch um 5.000 Euro nach oben springt. Die
-Datenbasis ist dieselbe, nur die Aggregation unterscheidet sich —
-sinnvollerweise später als per Checkbox umschaltbare zweite Serie im selben
-Chart.
-
-### Verwaistes Verzeichnis tests/widgets entfernen (05.08.2026)
-
-`tests/widgets/` enthält `tst_overviewtabwidget.cpp`, hat aber keine
-`CMakeLists.txt` und wird von der Root-`CMakeLists.txt` nicht eingebunden.
-Dieselbe Datei liegt zusätzlich in `tests/forms/` und wird von dort gebaut —
-`tests/widgets/` ist also eine verwaiste Dublette und kann gelöscht werden.
-
-### Übersetzung ist vollständig offen (07.08.2026)
-
-Die Oberfläche ist durchgängig deutsch. Alle Benutzertexte stehen zwar
-korrekt in `tr()` und werden von `qt_add_translations()` erfasst, aber
-übersetzt wurde bisher nichts: `translations/spm_de.ts` und
-`translations/spm_en.ts` sind unbearbeitet, `spm_en.ts` enthält also keine
-einzige englische Zeichenkette.
-
-Praktische Folge: ein Start mit englischem Systemgebietsschema zeigt trotzdem
-die deutschen Quelltexte, weil Qt bei fehlender Übersetzung auf den
-`tr()`-Ausgangstext zurückfällt. Es sieht damit nicht kaputt aus, sondern
-schlicht unübersetzt — der Zustand fällt beim Entwickeln deshalb nie auf.
-
-Zu klären wäre zuerst, ob Englisch überhaupt ein Ziel ist. Falls ja, kommen
-zwei Punkte hinzu, die heute nirgends geregelt sind: die Zahlen- und
-Datumsformatierung hängt an `QLocale::setDefault(QLocale::German)` in
-`main.cpp` und im Test-`main()` und müsste dann mitziehen (siehe auch
-"Konfigurierbare Locale für Zahlenformat"), und die `.ts`-Dateien müssten in
-den regulären Commit-Rhythmus aufgenommen werden, statt nur beim Bauen
-erzeugt zu werden.
-
-### Aktien ohne verfügbare Tageswert-Quelle dauerhaft ausnehmen (07.08.2026)
-
-Seit "Tageswert-Historie bei Bestand > 0 erzwingen" (siehe "Erledigt /
-Archiv") meldet `MainWindow::warnAboutSharesWithoutDailyValues()` bei jedem
-Start alle Aktien mit Bestand, die keine Tageswerte abrufen.
-
-Für ein Papier, zu dem es gar keine Tageswert-Quelle gibt — ein delistetes
-etwa, oder eines, das die konfigurierte Quelle schlicht nicht führt — ist
-diese Meldung nicht abstellbar, weil der Nutzer den beanstandeten Zustand
-nicht beheben kann. Der einzige Ausweg wäre der Verkauf.
-
-Wiederkehrende Meldungen, gegen die sich nichts tun lässt, werden
-erfahrungsgemäß pauschal weggeklickt. Damit verliert die Meldung ihre Wirkung
-auch für die Fälle, in denen sie berechtigt ist — das ist der eigentliche
-Schaden, nicht die Unbequemlichkeit.
-
-Lösungsrichtung: ein Kennzeichen an der Aktie ("keine Tageswert-Quelle
-verfügbar"), das sie aus der Meldung herausnimmt und zugleich als bewusste
-Entscheidung dokumentiert. Die Aktie bliebe weiterhin aus dem Depotwert-Chart
-ausgeschlossen — daran ändert das Kennzeichen nichts, es macht die Lücke nur
-gewollt statt versehentlich. Zu klären wäre, ob der Chart solche Positionen
-dann sichtbar ausweisen sollte, damit die Kurve nicht unbemerkt zu niedrig
-liegt.
-
-@note Noch nicht belegt, dass der Fall in einem realen Depot überhaupt
-auftritt (Nessie, 07.08.2026). Erst umsetzen, wenn er auftritt — vorher wäre
-es Aufwand für ein hypothetisches Problem.
-
-### Manuelles Theme (Hell/Dunkel) erzwingbar machen (Backlog-Idee, nicht priorisiert, 24.07.2026)
-
-Im Zuge des Bugfixes "Log-Meldungsfarben theme-neutral" (siehe Erledigt/
-Archiv weiter unten) kam die Frage auf, ob sich ein Dark Theme künftig
-*manuell* in der App aktivieren lassen sollte — unabhängig von der
-automatischen System-Theme-Erkennung, die im Linux-AppImage mangels
-Platform-Theme-Plugin nicht funktioniert (siehe dort für die genaue
-Ursache).
-
-Der entscheidende Unterschied zur (fehlschlagenden) automatischen Erkennung:
-ein manuell erzwungenes Theme über `QStyleFactory::create("Fusion")` +
-eine fest definierte `QPalette` läuft komplett innerhalb von Qt selbst,
-ohne jede Abfrage ans Betriebssystem oder ein externes Plugin — würde also
-auch im AppImage zuverlässig funktionieren, wo die automatische Erkennung
-versagt.
-
-Mögliche Umsetzung, grob skizziert:
-- Neue `AppSettings`-Einstellung, z. B. `theme()` mit Werten "System"
-  (aktuelles Verhalten, unverändert) / "Hell" / "Dunkel".
-- Bei "Hell"/"Dunkel" wird beim Start `QApplication::setStyle("Fusion")`
-  + eine passende `QPalette` gesetzt.
-- Ein Theme-Wechsel würde vermutlich einen Neustart der App erfordern —
-  Qt-Stile lassen sich zwar zur Laufzeit umschalten, aber nicht alle
-  Widgets aktualisieren sich dabei zuverlässig live.
-
-Zu bedenken: `IconProvider` kennt aktuell nur ein einziges Icon-Set
-(`default`), das nicht hell/dunkel-optimiert ist — ein erzwungenes Dark
-Theme würde also nur Fenster-Hintergründe/Widgets betreffen, nicht die
-Icons selbst (kein Blocker, nur ein kosmetischer Nebenaspekt, den man bei
-der Umsetzung im Hinterkopf behalten sollte).
-
-Bewusst zurückgestellt (24.07.2026): reine Idee aus der Diskussion um den
-Log-Farben-Bugfix, keine konkrete Anfrage/aktive Aufgabe. Nur vermerkt,
-falls später tatsächlich Bedarf für ein erzwingbares Theme entsteht.
-
-### GitHub-Release-Automatisierung für Installer (Backlog-Idee, nicht priorisiert)
-
-Seit 23.07.2026 existiert `.github/workflows/package.yml` (manuell auslösbar
-via `workflow_dispatch`), der einen Windows-Installer (Inno Setup) sowie ein
-Linux-AppImage baut. Die fertigen Dateien landen dabei aktuell nur als
-GitHub-Actions-**Artefakte** am jeweiligen Workflow-Lauf — nicht öffentlich
-zugänglich (nur für Personen mit Repo-Zugriff), mit Standard-Aufbewahrung von
-90 Tagen, und ohne Verknüpfung zu einer offiziell markierten Version.
-
-Für eine echte Veröffentlichung fehlt noch: ein GitHub-Release-Schritt (z. B.
-via `softprops/action-gh-release`), der beide Installer an ein GitHub Release
-anhängt — sinnvollerweise ausgelöst durch einen Git-Tag (z. B. `v1.0.0`)
-statt weiterhin nur manuell. Damit könnte der Ablauf künftig lauten: Tag
-pushen → Installer bauen → automatisch als Release veröffentlichen.
-
-Bewusst zurückgestellt (23.07.2026): Es ist noch keine erste Version zur
-Veröffentlichung vorgesehen. Nur als Idee für später vermerkt, sobald
-tatsächlich veröffentlicht werden soll — keine aktive Aufgabe.
-
-### Konfigurierbare Locale für Zahlenformat (Backlog-Idee, nicht priorisiert)
-
-Im Zuge des Locale-Bugfixes vom 23.07.2026 (siehe Erledigt/Archiv weiter unten)
-kam die Frage auf, ob das Zahlenformat (Dezimaltrennzeichen etc.) künftig pro
-Benutzer einstellbar sein sollte, unabhängig von der (ohnehin fest deutschen)
-UI-Sprache — z. B. für Schweizer/österreichische Formatierungskonventionen.
-
-Bewusst zurückgestellt (23.07.2026): Die Anwendung ist komplett
-deutschsprachig, es gibt aktuell keine konkrete Anfrage dafür, und der Aufwand
-(neue `AppSettings`-Einstellung, UI-Dialog, `QLocale::setDefault()` beim Start
-aus der gespeicherten Einstellung ableiten, zusätzliche Testfälle) steht in
-keinem Verhältnis zum eigentlichen Bugfix. Nur als Idee für die Zukunft
-vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
-
----
-
-## Erledigt / Archiv
 
 ### Skalenbewusste Mengenprüfung im Verkaufsformular (Bug, 11.08.2026, gefixt 20.08.2026)
 
