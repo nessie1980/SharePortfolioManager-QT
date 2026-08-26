@@ -396,6 +396,22 @@ ARCHITECTURE.md für Details.
 
 Laden und Parsen von `WebSites.xml` und `Documents.xml` — `tst_websitesconfig` und `tst_documentsconfig`.
 
+Seit dem 26.08.2026 liegt hier ausserdem `tst_appsettings` (10 Tests): Setzen
+und Zuruecklesen von Logger-Farben, -Leveln und -Komponenten, der
+Sound-Optionen, des Yahoo-API-Schluessels und des Portfolio-Pfades. Die Faelle
+standen bis dahin in `tst_mainwindow.cpp` zwischen den MainWindow-Tests,
+obwohl sie weder Dialog noch MainWindow beruehren. Das Ziel laeuft mit einer
+`QCoreApplication` statt `QApplication` und braucht damit auch in der CI
+keinen Offscreen-QPA; `Qt6::Gui` kommt allein wegen `QColor` dazu,
+`Qt6::Sql`/`Database` allein wegen des einen Tests, der einen Portfolio-Pfad
+oeffnet.
+
+@note Weil `AppSettings` ein prozessweiter Singleton ist, setzen die Tests
+jeden geaenderten Wert am Ende wieder auf den Ausgangswert zurueck — das
+Muster stammt aus `tst_mainwindow.cpp` und ist unveraendert uebernommen. Ein
+`AppSettings::instance().load(QString())` in `cleanupTestCase()` bleibt auch
+hier verboten (siehe "Haeufige Fehlerquellen").
+
 Ein `<Bank>`-Eintrag in `Documents.xml` beschreibt genau EIN DEPOT bei einer
 Bank; die Depotnummer aus `BankIdentifierValue` ist sein eineindeutiges
 Merkmal, der Bankname ist reiner Anzeigetext (Nessies Klarstellung
@@ -537,12 +553,23 @@ muss losgelöst von allen dreien prüfbar bleiben. Siehe ARCHITECTURE.md,
 
 ### tests/forms/ — Forms Unit-Tests
 
-#### tst_mainwindow — MainWindow + ShareAddForm + ShareEditForm + BrokeragesForm
+#### tst_mainwindow — MainWindow
 
 Executable: `tst_mainwindow`  
-Klassen unter Test: `MainWindow`, `Database`, `ModelShareAdd`, `PresenterShareAdd`,
-`ViewShareAdd`, `ModelShareEdit`, `PresenterShareEdit`,
-`ModelBrokerageEdit`, `PresenterBrokerageEdit`, `ViewBrokerageEdit`
+Klassen unter Test: `MainWindow`, `Database`
+
+@note Seit dem 26.08.2026 testet dieses Ziel nur noch `MainWindow` selbst.
+`ModelShareAdd`/`PresenterShareAdd`/`ViewShareAdd` sind nach
+`tst_shareaddform` gewandert, `ModelBrokerageEdit`/`PresenterBrokerageEdit`/
+`ViewBrokerageEdit` nach `tst_brokeragesform`, `ModelShareEdit`/
+`PresenterShareEdit` nach `tst_shareeditform` und die zehn
+AppSettings-Faelle nach `tests/config/tst_appsettings.cpp`. Von 255 Tests
+sind 114 geblieben — die Chart- und ShareDetails-Faelle darunter bleiben
+bewusst hier, weil sie ein echtes `MainWindow` konstruieren bzw. dessen
+Fixture (`seedDepotwertPortfolio()`, `findFinalTable()`) brauchen; sie nach
+`tst_chartform`/`tst_sharedetailsform` zu verschieben haette diesen beiden
+bewusst schlanken Zielen `MainWindow.cpp`, Qt6::Charts und die Datenbank
+aufgehalst.
 
 @note `ModelBuyEdit`/`PresenterBuyEdit`/`ViewBuyEdit` sind weiterhin als
 Produktionsquellen Teil von `tst_mainwindow` (Compile-Abhängigkeit über
@@ -779,6 +806,73 @@ void test_resolveShareGuidForDocument_noWknIsinRuleInDocEntry_returnsEmpty()
 }
 ```
 
+Text der Start-Meldung (`MainWindow`, statische Helfer):
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_updateTypeLabel_allFourValues` | Alle vier `ShareUpdateType`-Werte | Beschriftungen wortgleich zu den Radios in `ViewShareEdit` |
+| `test_buildDailyValuesWarningMessage_emptyList_returnsEmpty` | Leere Liste | Leerer String — belegt den Frühausstieg, ohne Verstösse geht kein Dialog auf |
+| `test_buildDailyValuesWarningMessage_containsNameWknAndType` | Eine Aktie | Name, WKN und Update-Typ stehen im Text |
+| `test_buildDailyValuesWarningMessage_listsAllSharesInOrder` | Zwei Aktien | Beide genannt, Reihenfolge des Grids erhalten |
+| `test_buildDailyValuesWarningMessage_explainsConsequenceAndUrgency` | Eine Aktie | Text nennt "Depotwert-Chart" und "dauerhaft verloren" |
+| `test_buildSplitAuditWarningMessage_emptyList_returnsEmpty` | Leere Liste | Leerer String — belegt den Frühausstieg, ohne Widerspruch geht kein Dialog auf (Phase 4b, 20.08.2026) |
+| `test_buildSplitAuditWarningMessage_containsNameWknAndSplitDescription` | Ein Widerspruch | Aktienname, WKN und Split-Beschreibung (`ShareSplitHint::describeSplit()`) stehen im Text |
+| `test_buildSplitAuditWarningMessage_listsAllWarningsInOrder` | Zwei Widersprüche | Beide genannt, Reihenfolge der Eingabeliste erhalten |
+| `test_buildSplitAuditWarningMessage_explainsNoAutomaticChange` | Ein Widerspruch | Text stellt klar, dass nichts automatisch geändert wird, und verweist auf den Split-Dialog |
+| `test_buildSplitAuditWarningMessage_ratioFromPrices_namesMeasuredRatio` | Verhältnis-Befund aus dem Kurssprung | Das gemessene Verhältnis steht im Text (Punkt 4, 22.08.2026) |
+| `test_buildSplitAuditWarningMessage_ratioFromHoldings_namesQuantitiesAndProposal` | Verhältnis-Befund aus der Verkaufshistorie | Beide Mengen, das Depot und der Korrekturvorschlag stehen im Text |
+| `test_buildSplitAuditWarningMessage_groupsKindsSeparately` | Gemischte Befundarten | Beide Einleitungen im selben Text — es gibt bewusst nur einen Dialog |
+| `test_buildSplitAuditWarningMessage_closingHintAppearsOnlyOnce` | Gemischte Befundarten | Der Schlusssatz gilt für beide Gruppen und steht genau einmal |
+| `test_describeFactorAsRatio_normalAndReverseSplit` | Faktor als Verhältnis | "20:1" und "1:10", leer bei ungültigem Faktor |
+
+@note Der letzte Test der ersten Gruppe wirkt zunächst wie eine Prüfung auf
+Wortlaut, ist aber der eigentliche Zweck der Meldung: ohne die Folge
+(Ausschluss aus dem Chart) und ohne die Dringlichkeit (rückwirkend nicht mehr
+abrufbare Historie) wäre sie eine folgenlose Notiz, die der Nutzer wegklickt.
+Fiele einer der beiden Teile bei einer späteren Textänderung heraus, bliebe
+das sonst unbemerkt — eine Meldung erscheint ja weiterhin. Bei
+`buildSplitAuditWarningMessage()` gilt dieselbe Überlegung für
+`test_buildSplitAuditWarningMessage_explainsNoAutomaticChange`: die
+Zusicherung "automatisch geändert wird hier nichts" ist der Kern von Phase
+4b (siehe ARCHITECTURE.md, "Automatische Nachprüfung nach
+Tageswert-Abruf") — ohne sie könnte der Nutzer die Meldung für eine bereits
+erfolgte Korrektur halten.
+
+@note Zwei Anpassungen an den Stubs waren dafür nötig (06.08.2026).
+`StubViewShareEdit::updateType()` lieferte fest `ShareUpdateType::None` und
+`StubModelShareEdit::currentVolume()` fest `10,0` — seit
+`PresenterShareEdit::validateInput()` beides gegeneinander prüft, ist diese
+Kombination unzulässig, und `test_presenterShareEdit_onSave_success_closesView`
+wäre am Validierungsfehler gescheitert statt am eigentlichen Prüfgegenstand.
+Beide Werte sind jetzt je Test setzbar, die Vorgabe des Update-Typs ist
+`Both`. Zusätzlich zeichnet `StubModelShareEdit::saveShare()` über
+`saveShareCalled` auf, ob es überhaupt erreicht wurde — nur so lässt sich
+belegen, dass die Validierung wirklich vorher abbricht und nicht bloss
+nachträglich eine Meldung anzeigt.
+
+ViewShareEdit: Tests wurden in `tst_shareeditform` ausgelagert — siehe Abschnitt unten.
+
+---
+
+#### tst_shareaddform — ShareAddForm (ausgelagert 26.08.2026)
+
+Executable: `tst_shareaddform`
+Klassen unter Test: `ModelShareAdd`, `PresenterShareAdd`, `ViewShareAdd`
+
+Aus `tst_mainwindow.cpp` ausgelagert, damit jede Form ihre eigene Executable
+hat — gleiche Begruendung wie seinerzeit bei `tst_buysform`. Die 32 Tests sind
+unveraendert uebernommen; `MainWindow` braucht keiner von ihnen.
+
+@note `test_shareAddDialog_canBeConstructed` ist bewusst in `tst_mainwindow`
+geblieben: der Test oeffnet den Dialog AUS dem MainWindow heraus und prueft
+damit dessen Verdrahtung, nicht den Dialog.
+
+@note Die Helfer `openMemoryDb()`/`loadSandboxedSettings()` sind dupliziert
+statt geteilt — siehe "Auslagerung der Form-Tests" weiter unten. Die Tests
+uebergeben eine echte `DocumentsConfig` an den Dialog, deshalb kopiert
+`tests/forms/CMakeLists.txt` `Documents.xml` per POST_BUILD neben die
+Executable.
+
 ModelShareAdd:
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
@@ -851,91 +945,6 @@ deckt daher nur ab, dass das Widget existiert (`findChild<QLabel*>
 ("docTypeIcon")`) und vor einer Dokumentauswahl korrekt leer ist —
 konsistent mit der bewusst unveränderten Testlücke bei
 `DocumentPreviewPanel` selbst.
-
-ModelShareEdit (Datenbanktests):
-
-| Test | Beschreibung | Prüft |
-|------|--------------|-------|
-| `test_modelShareEdit_loadShare_returnsValidShare` | Share per GUID geladen | `isValid()` = true, WKN/Name korrekt |
-| `test_modelShareEdit_loadShare_notFound_returnsInvalid` | Unbekannte GUID | `isValid()` = false, `lastError()` nicht leer |
-| `test_modelShareEdit_saveShare_success` | Geänderter Name wird persistiert | Neu geladener Share zeigt neuen Namen |
-| `test_modelShareEdit_currentVolume_sumsBuyMinusSold` | Zwei Käufe, einer teilverkauft | Summe `volume − volumeSold` über alle Käufe korrekt |
-| `test_modelShareEdit_currentVolume_noBuys_returnsZero` | Keine Käufe vorhanden | `currentVolume()` = 0.0 |
-| `test_modelShareEdit_firstBuyDate_returnsEarliestBuyDate` | Zwei Käufe in unterschiedlichen Jahren | Rückgabe = `dateAsStr()` des ältesten Kaufs |
-| `test_modelShareEdit_firstBuyDate_noBuys_returnsEmpty` | Keine Käufe vorhanden | `firstBuyDate()` leer |
-| `test_modelShareEdit_totalBuyValue_delegatesToRepository` | Reine Delegations-Smoke-Test | Wert identisch zu `BuyRepository::totalBuyValueBrokerageReduction()` |
-
-@note `currentVolume()` und `firstBuyDate()` enthalten eigene Aggregationslogik
-(Summenbildung bzw. Auswahl des ältesten Eintrags) und sind daher trotz Delegation an
-`BuyRepository` separat getestet. Die übrigen Aggregat-Methoden (`totalSaleValue`,
-`totalProfitLoss`, `totalDividendValue`, `totalBrokerageValue`, …) sind reine
-1:1-Weiterleitungen ohne eigene Logik und werden über die bereits bestehenden
-Repository-Tests in `tests/repositories/` abgedeckt.
-
-PresenterShareEdit (via StubView + StubModel):
-| Test | Beschreibung | Prüft |
-|------|--------------|-------|
-| `test_presenterShareEdit_loadsShareOnConstruction` | Share wird beim Öffnen geladen | `view.loadShareCalled` = true |
-| `test_presenterShareEdit_populatesSummaryOnConstruction` | Aggregate werden befüllt | `setTotalBuys/Sales/...` aufgerufen |
-| `test_presenterShareEdit_onSave_success_closesView` | Gültige Eingaben → View akzeptiert | `view.closed` = true |
-| `test_presenterShareEdit_refreshSummary_callsPopulate` | `refreshSummary()` aktualisiert Aggregate | `setTotalBuys` erneut aufgerufen |
-| `test_presenterShareEdit_onEditBuys_emitsSignal` | Pencil-Button Käufe → Signal | `openBuysRequested` emittiert |
-| `test_presenterShareEdit_onEditSales_emitsSignal` | Pencil-Button Verkäufe → Signal | `openSalesRequested` emittiert |
-| `test_presenterShareEdit_onEditDividends_emitsSignal` | Pencil-Button Dividenden → Signal | `openDividendsRequested` emittiert |
-| `test_presenterShareEdit_onEditBrokerages_emitsSignal` | Pencil-Button Kosten → Signal | `openBrokeragesRequested` emittiert |
-| `test_presenterShareEdit_withHolding_requiresDailyValues` | Bestand 12,5 | `setDailyValuesRequired(true)` an die View gereicht |
-| `test_presenterShareEdit_withoutHolding_doesNotRequireDailyValues` | Bestand 0 | Aufruf findet statt, Argument `false` |
-| `test_presenterShareEdit_onSave_changingToForbiddenType_showsErrorAndDoesNotSave` | Aktiv von "Beide" auf "Keine", Bestand 10,0 | View nicht geschlossen, `saveShare()` NICHT erreicht, Fehlermeldung gesetzt |
-| `test_presenterShareEdit_onSave_marketPriceWithoutHolding_saves` | "Markt-Preis", Bestand 0 | Gespeichert und geschlossen — die Sperre greift nicht pauschal |
-| `test_presenterShareEdit_onSave_dailyValuesWithHolding_saves` | "Tages-Werte", Bestand 10,0 | Gespeichert und geschlossen |
-| `test_presenterShareEdit_onSave_unchangedLegacyType_stillSaves` | Gespeichert "Keine", unverändert gelassen, Bestand 10,0 | Gespeichert und geschlossen, keine Fehlermeldung |
-| `test_presenterShareEdit_onSave_legacyTypeChangedToOtherForbidden_blocked` | Gespeichert "Keine", gewählt "Markt-Preis", Bestand 10,0 | Abgewiesen — die Ausnahme gilt nur für den unveränderten Wert |
-
-Text der Start-Meldung (`MainWindow`, statische Helfer):
-
-| Test | Beschreibung | Prüft |
-|------|--------------|-------|
-| `test_updateTypeLabel_allFourValues` | Alle vier `ShareUpdateType`-Werte | Beschriftungen wortgleich zu den Radios in `ViewShareEdit` |
-| `test_buildDailyValuesWarningMessage_emptyList_returnsEmpty` | Leere Liste | Leerer String — belegt den Frühausstieg, ohne Verstösse geht kein Dialog auf |
-| `test_buildDailyValuesWarningMessage_containsNameWknAndType` | Eine Aktie | Name, WKN und Update-Typ stehen im Text |
-| `test_buildDailyValuesWarningMessage_listsAllSharesInOrder` | Zwei Aktien | Beide genannt, Reihenfolge des Grids erhalten |
-| `test_buildDailyValuesWarningMessage_explainsConsequenceAndUrgency` | Eine Aktie | Text nennt "Depotwert-Chart" und "dauerhaft verloren" |
-| `test_buildSplitAuditWarningMessage_emptyList_returnsEmpty` | Leere Liste | Leerer String — belegt den Frühausstieg, ohne Widerspruch geht kein Dialog auf (Phase 4b, 20.08.2026) |
-| `test_buildSplitAuditWarningMessage_containsNameWknAndSplitDescription` | Ein Widerspruch | Aktienname, WKN und Split-Beschreibung (`ShareSplitHint::describeSplit()`) stehen im Text |
-| `test_buildSplitAuditWarningMessage_listsAllWarningsInOrder` | Zwei Widersprüche | Beide genannt, Reihenfolge der Eingabeliste erhalten |
-| `test_buildSplitAuditWarningMessage_explainsNoAutomaticChange` | Ein Widerspruch | Text stellt klar, dass nichts automatisch geändert wird, und verweist auf den Split-Dialog |
-| `test_buildSplitAuditWarningMessage_ratioFromPrices_namesMeasuredRatio` | Verhältnis-Befund aus dem Kurssprung | Das gemessene Verhältnis steht im Text (Punkt 4, 22.08.2026) |
-| `test_buildSplitAuditWarningMessage_ratioFromHoldings_namesQuantitiesAndProposal` | Verhältnis-Befund aus der Verkaufshistorie | Beide Mengen, das Depot und der Korrekturvorschlag stehen im Text |
-| `test_buildSplitAuditWarningMessage_groupsKindsSeparately` | Gemischte Befundarten | Beide Einleitungen im selben Text — es gibt bewusst nur einen Dialog |
-| `test_buildSplitAuditWarningMessage_closingHintAppearsOnlyOnce` | Gemischte Befundarten | Der Schlusssatz gilt für beide Gruppen und steht genau einmal |
-| `test_describeFactorAsRatio_normalAndReverseSplit` | Faktor als Verhältnis | "20:1" und "1:10", leer bei ungültigem Faktor |
-
-@note Der letzte Test der ersten Gruppe wirkt zunächst wie eine Prüfung auf
-Wortlaut, ist aber der eigentliche Zweck der Meldung: ohne die Folge
-(Ausschluss aus dem Chart) und ohne die Dringlichkeit (rückwirkend nicht mehr
-abrufbare Historie) wäre sie eine folgenlose Notiz, die der Nutzer wegklickt.
-Fiele einer der beiden Teile bei einer späteren Textänderung heraus, bliebe
-das sonst unbemerkt — eine Meldung erscheint ja weiterhin. Bei
-`buildSplitAuditWarningMessage()` gilt dieselbe Überlegung für
-`test_buildSplitAuditWarningMessage_explainsNoAutomaticChange`: die
-Zusicherung "automatisch geändert wird hier nichts" ist der Kern von Phase
-4b (siehe ARCHITECTURE.md, "Automatische Nachprüfung nach
-Tageswert-Abruf") — ohne sie könnte der Nutzer die Meldung für eine bereits
-erfolgte Korrektur halten.
-
-@note Zwei Anpassungen an den Stubs waren dafür nötig (06.08.2026).
-`StubViewShareEdit::updateType()` lieferte fest `ShareUpdateType::None` und
-`StubModelShareEdit::currentVolume()` fest `10,0` — seit
-`PresenterShareEdit::validateInput()` beides gegeneinander prüft, ist diese
-Kombination unzulässig, und `test_presenterShareEdit_onSave_success_closesView`
-wäre am Validierungsfehler gescheitert statt am eigentlichen Prüfgegenstand.
-Beide Werte sind jetzt je Test setzbar, die Vorgabe des Update-Typs ist
-`Both`. Zusätzlich zeichnet `StubModelShareEdit::saveShare()` über
-`saveShareCalled` auf, ob es überhaupt erreicht wurde — nur so lässt sich
-belegen, dass die Validierung wirklich vorher abbricht und nicht bloss
-nachträglich eine Meldung anzeigt.
-
-ViewShareEdit: Tests wurden in `tst_shareeditform` ausgelagert — siehe Abschnitt unten.
 
 ---
 
@@ -1145,13 +1154,22 @@ naheliegendes `setVisible(hasSplit)` würde hier auffliegen.
 #### tst_shareeditform — ShareEditForm
 
 Executable: `tst_shareeditform`
-Klassen unter Test: `ViewShareEdit`
+Klassen unter Test: `ViewShareEdit`, `ModelShareEdit`, `PresenterShareEdit`
 
 @note `ViewShareEdit.cpp` zieht alle fünf Sub-Form-Trios (`BuysForm`,
 `SalesForm`, `DividendForm`, `BrokeragesForm` und seit 08.08.2026
 `ShareSplitsForm`) als Compile-Abhängigkeit rein — diese werden in
-`tst_shareeditform` nur kompiliert und gelinkt, aber nicht getestet. `ModelShareEdit` und `PresenterShareEdit` sind ebenfalls Compile-
-Abhängigkeiten; ihre Tests verbleiben in `tst_mainwindow`.
+`tst_shareeditform` nur kompiliert und gelinkt, aber nicht getestet.
+
+@note Seit dem 26.08.2026 liegen auch die `ModelShareEdit`- und
+`PresenterShareEdit`-Tests hier statt in `tst_mainwindow` (27 Faelle) — die
+Testklasse heisst deshalb `TestShareEditForm` statt `TestViewShareEdit`. Die
+uebernommenen Faelle brauchen zwei Helfer, deren Namen mit den hier bereits
+vorhandenen kollidierten; sie heissen darum `insertFixedTestShare()`
+(feste GUID `share-test-1`, oeffnet die In-Memory-DB selbst) und
+`insertTestBuyForShare()`. Das bestehende `insertTestShare(wkn, name)` mit
+zufaelliger GUID bleibt unveraendert. `main()` setzt seither
+`QLocale::setDefault(QLocale::German)` — das fehlte hier bisher.
 
 ViewShareEdit:
 
@@ -1242,6 +1260,49 @@ das Speichern eines solchen Werts blockiert wird — braucht ein Stub-Paar und
 liegt deshalb in `tst_mainwindow.cpp`, siehe dort
 `test_presenterShareEdit_onSave_forbiddenUpdateType_showsErrorAndDoesNotSave`.
 `tst_shareeditform` selbst arbeitet durchgehend gegen den echten Dialog.
+
+---
+
+Aus `tst_mainwindow` uebernommen (26.08.2026):
+
+ModelShareEdit (Datenbanktests):
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_modelShareEdit_loadShare_returnsValidShare` | Share per GUID geladen | `isValid()` = true, WKN/Name korrekt |
+| `test_modelShareEdit_loadShare_notFound_returnsInvalid` | Unbekannte GUID | `isValid()` = false, `lastError()` nicht leer |
+| `test_modelShareEdit_saveShare_success` | Geänderter Name wird persistiert | Neu geladener Share zeigt neuen Namen |
+| `test_modelShareEdit_currentVolume_sumsBuyMinusSold` | Zwei Käufe, einer teilverkauft | Summe `volume − volumeSold` über alle Käufe korrekt |
+| `test_modelShareEdit_currentVolume_noBuys_returnsZero` | Keine Käufe vorhanden | `currentVolume()` = 0.0 |
+| `test_modelShareEdit_firstBuyDate_returnsEarliestBuyDate` | Zwei Käufe in unterschiedlichen Jahren | Rückgabe = `dateAsStr()` des ältesten Kaufs |
+| `test_modelShareEdit_firstBuyDate_noBuys_returnsEmpty` | Keine Käufe vorhanden | `firstBuyDate()` leer |
+| `test_modelShareEdit_totalBuyValue_delegatesToRepository` | Reine Delegations-Smoke-Test | Wert identisch zu `BuyRepository::totalBuyValueBrokerageReduction()` |
+
+@note `currentVolume()` und `firstBuyDate()` enthalten eigene Aggregationslogik
+(Summenbildung bzw. Auswahl des ältesten Eintrags) und sind daher trotz Delegation an
+`BuyRepository` separat getestet. Die übrigen Aggregat-Methoden (`totalSaleValue`,
+`totalProfitLoss`, `totalDividendValue`, `totalBrokerageValue`, …) sind reine
+1:1-Weiterleitungen ohne eigene Logik und werden über die bereits bestehenden
+Repository-Tests in `tests/repositories/` abgedeckt.
+
+PresenterShareEdit (via StubView + StubModel):
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_presenterShareEdit_loadsShareOnConstruction` | Share wird beim Öffnen geladen | `view.loadShareCalled` = true |
+| `test_presenterShareEdit_populatesSummaryOnConstruction` | Aggregate werden befüllt | `setTotalBuys/Sales/...` aufgerufen |
+| `test_presenterShareEdit_onSave_success_closesView` | Gültige Eingaben → View akzeptiert | `view.closed` = true |
+| `test_presenterShareEdit_refreshSummary_callsPopulate` | `refreshSummary()` aktualisiert Aggregate | `setTotalBuys` erneut aufgerufen |
+| `test_presenterShareEdit_onEditBuys_emitsSignal` | Pencil-Button Käufe → Signal | `openBuysRequested` emittiert |
+| `test_presenterShareEdit_onEditSales_emitsSignal` | Pencil-Button Verkäufe → Signal | `openSalesRequested` emittiert |
+| `test_presenterShareEdit_onEditDividends_emitsSignal` | Pencil-Button Dividenden → Signal | `openDividendsRequested` emittiert |
+| `test_presenterShareEdit_onEditBrokerages_emitsSignal` | Pencil-Button Kosten → Signal | `openBrokeragesRequested` emittiert |
+| `test_presenterShareEdit_withHolding_requiresDailyValues` | Bestand 12,5 | `setDailyValuesRequired(true)` an die View gereicht |
+| `test_presenterShareEdit_withoutHolding_doesNotRequireDailyValues` | Bestand 0 | Aufruf findet statt, Argument `false` |
+| `test_presenterShareEdit_onSave_changingToForbiddenType_showsErrorAndDoesNotSave` | Aktiv von "Beide" auf "Keine", Bestand 10,0 | View nicht geschlossen, `saveShare()` NICHT erreicht, Fehlermeldung gesetzt |
+| `test_presenterShareEdit_onSave_marketPriceWithoutHolding_saves` | "Markt-Preis", Bestand 0 | Gespeichert und geschlossen — die Sperre greift nicht pauschal |
+| `test_presenterShareEdit_onSave_dailyValuesWithHolding_saves` | "Tages-Werte", Bestand 10,0 | Gespeichert und geschlossen |
+| `test_presenterShareEdit_onSave_unchangedLegacyType_stillSaves` | Gespeichert "Keine", unverändert gelassen, Bestand 10,0 | Gespeichert und geschlossen, keine Fehlermeldung |
+| `test_presenterShareEdit_onSave_legacyTypeChangedToOtherForbidden_blocked` | Gespeichert "Keine", gewählt "Markt-Preis", Bestand 10,0 | Abgewiesen — die Ausnahme gilt nur für den unveränderten Wert |
 
 ---
 
@@ -2498,6 +2559,18 @@ In BuysForm/SalesForm würde dieselbe Konstellation (`isLastBuy=false, isEdit=tr
 den `readOnlyMode` auslösen — im DividendForm gibt es diesen Modus nicht.
 
 ### tests/forms/ — BrokeragesForm
+
+Executable: `tst_brokeragesform` (ausgelagert aus `tst_mainwindow` am
+26.08.2026, 72 Tests)
+Klassen unter Test: `ModelBrokerageEdit`, `PresenterBrokerageEdit`,
+`ViewBrokerageEdit`
+
+Der Block lag in `tst_mainwindow.cpp` zusammenhaengend und ist unveraendert
+uebernommen. `MainWindow` braucht keiner der Tests, `MainWindow.cpp` ist
+deshalb keine Compile-Abhaengigkeit dieses Ziels. Dupliziert wurden die
+Helfer `openMemoryDb()`, `insertTestShare()`, `loadSandboxedSettings()` und
+`dataTableFromContainer()` — letzterer liest die `QTableWidget`, die
+`OverviewTabWidget` als Property `dataTable` am Tab-Container ablegt.
 
 @note Stub-Pattern: `StubViewBrokerageEdit` und `StubModelBrokerageEdit` implementieren
 die jeweiligen Interfaces ohne echte UI oder Datenbank.
@@ -4094,7 +4167,67 @@ target_link_libraries(tst_shareeditform
 )
 
 add_test(NAME tst_shareeditform COMMAND tst_shareeditform)
+
+# Auslagerung 26.08.2026 — BrokeragesForm und ShareAddForm. Beide Ziele
+# brauchen KEIN MainWindow.cpp: keiner ihrer Tests konstruiert ein
+# MainWindow. Quellenliste deshalb wie bei tst_buysform zugeschnitten,
+# ShareAddForm zusaetzlich mit WebSitesConfig.cpp (der Dialog bietet die
+# hinterlegten Kursseiten zur Auswahl an).
+
+qt_add_executable(tst_brokeragesform tst_brokeragesform.cpp
+    ../../app/forms/BrokeragesForm/ModelBrokerageEdit.cpp
+    ../../app/forms/BrokeragesForm/PresenterBrokerageEdit.cpp
+    ../../app/forms/BrokeragesForm/ViewBrokerageEdit.cpp
+    ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
+    # ... Repositories, Models, Config, IconProvider wie tst_buysform
+)
+
+add_test(NAME tst_brokeragesform COMMAND tst_brokeragesform)
+
+qt_add_executable(tst_shareaddform tst_shareaddform.cpp
+    ../../app/forms/ShareAddForm/ModelShareAdd.cpp
+    ../../app/forms/ShareAddForm/PresenterShareAdd.cpp
+    ../../app/forms/ShareAddForm/ViewShareAdd.cpp
+    ../../app/config/WebSitesConfig.cpp
+    # ... Repositories, Models, Config, IconProvider wie tst_buysform
+)
+
+add_test(NAME tst_shareaddform COMMAND tst_shareaddform)
+
+# tests/config/CMakeLists.txt — schlankstes Form-freies Ziel: kein
+# Qt6::Widgets, laeuft mit QCoreApplication.
+
+qt_add_executable(tst_appsettings tst_appsettings.cpp
+    ../../app/config/AppSettings.cpp
+)
+
+target_link_libraries(tst_appsettings
+    PRIVATE Qt6::Test Qt6::Core Qt6::Gui Qt6::Sql Database
+)
+
+add_test(NAME tst_appsettings COMMAND tst_appsettings)
 ```
+
+### Auslagerung der Form-Tests — Helfer werden dupliziert, nicht geteilt
+
+Jede Auslagerung aus `tst_mainwindow.cpp` bringt dieselbe Frage mit: die
+neuen Ziele brauchen `openMemoryDb()`, `loadSandboxedSettings()`,
+`insertTestShare()` und Verwandte, die in `TestMainWindow` schon existieren.
+Sie werden bewusst kopiert statt in einen gemeinsamen Test-Header gezogen.
+
+Ein geteilter Header koppelt jedes Test-Target an jede Aenderung eines
+anderen: wer den Seeding-Helfer fuer einen neuen Fall in `tst_salesform`
+anpasst, baut damit ungewollt `tst_mainwindow`, `tst_buysform` und alle
+uebrigen um. Der Preis der Kopie ist Redundanz an genau einer, gut sichtbaren
+Stelle je Datei — der Preis der Kopplung waere ein schwer zu ueberblickendes
+Fehlerbild ueber siebzehn Executables.
+
+Wo ein Name bereits vergeben ist, bekommt der Zuwanderer einen eigenen: in
+`tst_shareeditform` heissen die aus `tst_mainwindow` uebernommenen Helfer
+`insertFixedTestShare()` und `insertTestBuyForShare()`, weil das dortige
+`insertTestShare(wkn, name)` eine andere Semantik hat (zufaellige GUID, DB
+muss bereits offen sein).
 
 ---
 

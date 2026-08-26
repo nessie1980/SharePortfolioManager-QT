@@ -189,6 +189,13 @@ wieder auf eine einzige Testklasse (`TestMainWindow`) zurückgeschnitten — 43
 Ziele + diese beiden neuen sind 45. Details siehe Abschnitt
 "tst_mainwindow.cpp in eigene Testdateien aufteilen" weiter unten.
 
+@note Zweite Stufe (26.08.2026): aus `TestMainWindow` selbst sind die drei
+MVP-Trios ShareAddForm, ShareEditForm und BrokeragesForm sowie die
+AppSettings-Faelle herausgeloest — drei neue Ziele (`tst_brokeragesform`,
+`tst_shareaddform`, `tst_appsettings`), damit 48. `TestMainWindow` haelt
+noch 114 der urspruenglich 255 Testmethoden. Details im selben Abschnitt
+weiter unten.
+
 ---
 
 ## UI-Größenkonstanten (forms/UiConstants.h)
@@ -5953,7 +5960,7 @@ hätte.
 
 ---
 
-### tst_mainwindow.cpp in eigene Testdateien aufteilen (09.08.2026, abgeschlossen 22.08.2026)
+### tst_mainwindow.cpp in eigene Testdateien aufteilen (09.08.2026, Klassen abgeschlossen 22.08.2026, Formulare 26.08.2026)
 
 `tests/forms/tst_mainwindow.cpp` war auf **11.273 Zeilen** mit fünf
 Testklassen gewachsen, obwohl TESTING.md ein Testziel je Form vorsieht. Nach
@@ -6022,6 +6029,60 @@ fehl — `tst_buysform` kommt ohne sie aus, weil es keine solchen Vergleiche
 enthält. `Version.h`/`SPM_VERSION_STRING` und `${CMAKE_BINARY_DIR}/app` gehören
 dagegen NICHT mit übernommen; die braucht nur der Fenstertitel-Versionstest in
 `TestMainWindow`.
+
+#### Zweite Stufe: die Formulare (26.08.2026)
+
+Nach dem Klassen-Umzug blieb `TestMainWindow` mit 255 Testmethoden die
+groesste Testklasse des Projekts — sie testete neben `MainWindow` selbst noch
+drei komplette MVP-Trios, die nie hierher gehoert hatten. Diese sind jetzt
+ebenfalls heraus:
+
+| Ziel | Tests | Art |
+| --- | --- | --- |
+| `tst_mainwindow` | 114 | verbleibend, 3.634 Zeilen |
+| `tst_brokeragesform` | 72 | neu |
+| `tst_shareeditform` | 39 + 27 = 66 | erweitert, Klasse `TestViewShareEdit` → `TestShareEditForm` |
+| `tst_shareaddform` | 32 | neu |
+| `tst_appsettings` | 10 | neu, in `tests/config/` |
+
+Bilanz: 114 + 72 + 27 + 32 + 10 = 255 — keine Testmethode verloren, keine
+doppelt.
+
+@note Der urspruenglich verabredete Zuschnitt sah 85 verbleibende Tests vor
+und wollte 45 statt 27 nach `tst_shareeditform` schieben. Die Zahl 45 war aus
+einem zusammenhaengenden Zeilenbereich abgeleitet und hatte 18 Faelle
+mitgenommen, die MainWindow-Member pruefen (`updateTypeLabel()`,
+`buildDailyValuesWarningMessage()`, `buildSplitAuditWarningMessage()`,
+`describeFactorAsRatio()`, `deleteShare()`). Sie waeren in
+`tst_shareeditform` nicht uebersetzbar gewesen, ohne `MainWindow.cpp` in
+dessen Quellenliste zu ziehen — genau die Abhaengigkeit, die eine Auslagerung
+vermeiden soll. Lehre: bei einer Auslagerung entscheidet die
+Compile-Abhaengigkeit des Blocks, nicht seine Lage in der Datei.
+
+@note Aus demselben Grund sind die sechs Chart- und fuenf
+ShareDetails-Faelle in `tst_mainwindow` geblieben, obwohl `tst_chartform`
+und `tst_sharedetailsform` thematisch besser passen wuerden: die
+Chart-Faelle konstruieren ein echtes `MainWindow` und brauchen dessen
+Fixture (`seedDepotwertPortfolio()`, `findFinalTable()`), die
+ShareDetails-Faelle echte `ViewShareDetails`-Dialoge samt Datenbank. Beide
+Ziele laufen heute ohne Widgets und ohne Datenbank — `tst_sharedetailsform`
+ist das schlankste Ziel im Projekt — und sollen es bleiben.
+
+@note Anders als bei den vier Klassen-Umzuegen ging es hier nicht um ganze
+Testklassen, sondern um Bloecke INNERHALB einer Klasse. Mitgenommen wurden
+jeweils die zugehoerigen Stub-Klassen (`StubModelShareAdd`/
+`StubViewShareAdd`, `StubViewShareEdit`/`StubModelShareEdit`,
+`StubModelBrokerageEdit`/`StubViewBrokerageEdit`) und Kopien der benoetigten
+Fixture-Helfer. In `tst_mainwindow` sind damit sechs Stub-Klassen und 13
+Includes entfallen. Die Kollision in `tst_shareeditform` — dort gab es
+`insertTestShare(wkn, name)` mit anderer Semantik bereits — ist durch
+Umbenennung der Zuwanderer geloest (`insertFixedTestShare()`,
+`insertTestBuyForShare()`), nicht durch Zusammenlegen: die beiden Helfer tun
+Verschiedenes, ein gemeinsamer Name haette das verdeckt.
+
+@note `test_shareAddDialog_canBeConstructed` ist bewusst in `tst_mainwindow`
+geblieben. Der Test oeffnet `ViewShareAdd` aus dem MainWindow heraus und
+prueft dessen Verdrahtung — er gehoert zum MainWindow, nicht zum Dialog.
 
 @note Bewusst NICHT zusammen mit einem Feature erledigen. Eine reine
 Umstrukturierung ohne sichtbaren Nutzen sollte für sich stehen, damit bei

@@ -10,6 +10,39 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.19.2] - 2026-08-26
+
+### Changed
+
+- **`tst_mainwindow.cpp` weiter aufgeteilt** — die Testklasse `TestMainWindow`
+  war mit 255 Testmethoden die groesste des Projekts und pruefte neben
+  `MainWindow` noch drei vollstaendige MVP-Trios, die dort nie hingehoert
+  hatten. Sie liegen jetzt in eigenen Zielen: `tst_brokeragesform` (72 Tests),
+  `tst_shareaddform` (32) und `tst_shareeditform` (dort 27 dazu, jetzt 66).
+  Die zehn Faelle rund um `AppSettings` sind nach `tests/config/` gewandert
+  (`tst_appsettings`) — sie beruehren weder Dialog noch MainWindow. In
+  `tst_mainwindow` bleiben 114 Tests; die Datei schrumpft von 5.949 auf 3.634
+  Zeilen, sechs Stub-Klassen und 13 Includes entfallen.
+
+  Keine Aenderung am Verhalten der Anwendung: es wurde keine Testmethode
+  hinzugefuegt, entfernt oder inhaltlich veraendert, nur verschoben. Die
+  Testklasse in `tst_shareeditform.cpp` heisst dabei `TestShareEditForm`
+  statt `TestViewShareEdit`, weil sie jetzt nicht mehr nur die View prueft.
+
+  Chart- und ShareDetails-Faelle sind bewusst in `tst_mainwindow` geblieben,
+  obwohl `tst_chartform` und `tst_sharedetailsform` thematisch besser passen
+  wuerden: sie konstruieren ein echtes `MainWindow` bzw. echte
+  `ViewShareDetails`-Dialoge und haetten diesen beiden bewusst schlanken
+  Zielen `MainWindow.cpp`, Qt6::Charts und die Datenbank aufgehalst.
+
+### Fixed
+
+- `tst_shareeditform` setzte in seinem `main()` kein
+  `QLocale::setDefault(QLocale::German)`. Aufgefallen ist das erst durch die
+  Auslagerung — bisher enthielt die Datei keinen Vergleich gegen einen
+  formatierten Betrag, mit den uebernommenen Faellen tut sie es. Auf einem
+  Runner mit englischer System-Locale waeren sie fehlgeschlagen.
+
 ## [1.19.1] - 2026-08-26
 
 ### Changed
