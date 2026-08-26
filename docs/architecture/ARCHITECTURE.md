@@ -4556,20 +4556,24 @@ zur aktuell geöffneten Aktie", weil `populateFromResult()` die geparste WKN
 gegen die geöffnete Aktie prüft. Erschwerend: der Consors-Dividendenblock
 führt keinen `Isin`-Ausdruck, der einen Fehlgriff auffangen könnte.
 
-**3. Bereits erfasste Consors-Dividenden können den falschen Zahltag
-tragen.** Bis zum 21.08.2026 stand `Date` auf "das erste Datum im Text" und
-lieferte damit den Schlusstag statt der Valuta. Alles, was vor der Korrektur
-aus einem Consors-Beleg übernommen wurde, hat also möglicherweise den
-Stichtag als Auszahlungsdatum. Meist sind das wenige Tage Unterschied und
-folgenlos; liegt der Jahreswechsel dazwischen, landet die Ausschüttung im
-falschen Steuerjahr. Eine Gegenprobe wäre: Consors-Dividenden aufrufen und
-das Datum gegen den Beleg halten.
+**3. Bereits erfasste Consors-Dividenden koennen den falschen Zahltag
+tragen** — GEGENGEPRUEFT AM 26.08.2026, kein Befund. Bis zum 21.08.2026 stand
+`Date` auf "das erste Datum im Text" und lieferte damit den Schlusstag statt
+der Valuta; alles, was davor aus einem Consors-Beleg uebernommen wurde, haette
+den Stichtag als Auszahlungsdatum tragen koennen. Meist sind das wenige Tage
+Unterschied und folgenlos; liegt der Jahreswechsel dazwischen, landet die
+Ausschuettung im falschen Steuerjahr. Nessie hat die erfassten
+Consors-Dividenden gegen die Belege gehalten — die Daten stimmen. Der Punkt
+bleibt als Begruendungsdokument stehen, ist aber erledigt.
 
-**4. Consors-Kostenbelege sind ungeprüft.** Sie waren vom selben Fehler
+**4. Consors-Kostenbelege sind ungeprueft** — der einzige Punkt dieser Liste,
+der nach dem 26.08.2026 sachlich offen bleibt. Sie waren vom selben Fehler
 betroffen wie die Dividenden (leere `SaleIdentifier`-Regel, siehe "Leere
 Kennungen schlucken jedes Dokument") und wurden vor dem Bugfix gar nicht
 gelesen. Dass sie es jetzt tun, ist plausibel, aber nicht nachgewiesen — es
-lag kein Consors-Kostenbeleg vor.
+lag und liegt kein Consors-Kostenbeleg vor. Nessies Feldtest vom 26.08.2026
+umfasste nur die Belegarten, die ihm tatsaechlich vorliegen; die Kostenbelege
+waren nicht darunter und konnten es nicht sein.
 
 @note Die Depoterkennung war bei Consors ebenfalls bruechig — ohne
 Doppelpunkt gewann die DKB. Am 25.08.2026 behoben; die Darstellung steht
@@ -4577,10 +4581,12 @@ unter "Erledigt / Archiv", "Bankerkennung: Mehrdeutigkeit ueber die
 Depotnummer". Sie stand nie hier, weil die Ursache allgemein war und nicht an
 Consors hing.
 
-@note Punkt 4 hat sich durch den Bugfix vom 25.08.2026 nicht erledigt: ein
-Consors-Kostenbeleg liegt weiterhin nicht vor. Die Erkennung findet jetzt
-zwar zuverlaessig den Consors-Regelsatz, aber ob dessen `Brokerage`-Regeln
-auf einem echten Kostenbeleg greifen, ist damit nicht gezeigt.
+@note Punkt 4 hat sich durch den Bugfix vom 25.08.2026 nicht erledigt, und
+auch der Feldtest vom 26.08.2026 hat ihn nicht beantwortet: die Erkennung
+findet inzwischen nachweislich den Consors-Regelsatz, aber ob dessen
+`Brokerage`-Regeln auf einem echten Kostenbeleg greifen, ist damit nicht
+gezeigt. Das laesst sich ohne ein Exemplar auch nicht zeigen — die
+Zuordnung ist die Vorbedingung der Feldpruefung, nicht ihr Ersatz.
 
 ### Parsing von Split-Mitteilungen der Banken prüfen (08.08.2026)
 
@@ -4924,6 +4930,21 @@ Zuordnung gegen die AUSGELIEFERTE `Documents.xml` und die nachgebauten
 Belegtexte. Nur das dritte kann belegen, dass die Regel auf Nessies Belegen
 greift — ein synthetisches Fixture beweist, dass die Regel stimmt, nicht dass
 sie passt.
+
+**Im Feld bestaetigt am 26.08.2026.** Alle drei Testziele liefen auf beiden
+CI-Plattformen durch, und Nessie hat anschliessend echte Belege durch die
+Direkte Dokumentenerfassung geschickt: sie werden ihrem jeweiligen Depot
+zugeordnet, soweit die Belegart vorliegt. Zugleich hat er die bereits
+erfassten Consors-Dividenden gegen die Belege gehalten — kein falscher
+Zahltag, also keine Altdaten aus der Zeit der Fehlzuordnung (siehe
+"Consors-Themen", Punkt 3).
+
+@note Dieser Schritt war nicht verzichtbar, obwohl die Testziele gruen waren.
+Sie arbeiten auf NACHGEBAUTEN Belegtexten — abgetippt aus anonymisierten
+Screenshots, formatiert wie `pdftotext -layout` sie liefern sollte. Der Weg
+davor bleibt darin unabgedeckt: echtes PDF, echter `pdftotext`-Aufruf, echte
+Zeichenkodierung. Was ein Testlauf zusichern kann, ist die Richtigkeit der
+Regel, nicht die Richtigkeit der Annahme ueber ihre Eingabe.
 
 @note Eine Pruefung dort verdient Erwaehnung, weil sie leicht als ueberfluessig
 erscheint: `test_bankDetection_dkbRuleStillMatchesConsorsDocument` haelt fest,

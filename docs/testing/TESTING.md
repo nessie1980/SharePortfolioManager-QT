@@ -475,6 +475,15 @@ weiterhin ihren jeweils eigenen Dokumenttyp-Fallback verwenden können, wenn
 das Depot erkannt wurde, aber kein Identifier eindeutig trifft — anders als
 `classify()`, das für die Direkterfassung bewusst nie rät.
 
+@note Grenze dieser Testziele, festgehalten nach dem Feldtest vom 26.08.2026:
+sie arbeiten auf NACHGEBAUTEN Belegtexten — abgetippt aus anonymisierten
+Screenshots, formatiert wie `pdftotext -layout` sie liefern sollte. Der Weg
+davor bleibt unabgedeckt: echtes PDF, echter `pdftotext`-Aufruf, echte
+Zeichenkodierung. Gruene Testlaeufe zeigen, dass die Regel stimmt, nicht dass
+die Annahme ueber ihre Eingabe stimmt. Nessie hat deshalb nach den drei
+Commits echte Belege durch die Direkte Dokumentenerfassung geschickt; sie
+werden ihrem jeweiligen Depot zugeordnet, soweit die Belegart vorliegt.
+
 @note Warum `test_matchDepotIndex_firstDepotRuleStillMatchesForeignDocument`
 kein ueberfluessiger Test ist: ohne ihn waere die Aussage der beiden Tests
 darueber mehrdeutig. Sie waeren auch dann gruen, wenn die DKB-Regel gar nicht

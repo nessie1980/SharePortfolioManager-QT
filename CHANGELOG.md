@@ -8,180 +8,9 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
-### Added
+Zurzeit keine unveroeffentlichten Aenderungen.
 
-- Plausibilitätsprüfung des Split-Verhältnisses, fünfter und letzter
-  Prüfzeitpunkt: das Ex-Tag-Feld im Split-Dialog startet nicht mehr mit dem
-  heutigen Datum, und ein Ex-Tag in der Zukunft wird beim Speichern einmal
-  hinterfragt.
-
-  Der Ertrag liegt bei der Vorbelegung, nicht bei der Warnung. Das Feld war
-  mit dem heutigen Tag belegt; im Feldfall wurde dieser Vorschlag unverändert
-  übernommen und stand als Ex-Tag in der Datenbank. Eine Prüfung auf "Ex-Tag
-  nicht angegeben" gab es zwar längst, sie konnte aber nie auslösen — ein
-  vorbelegtes Feld ist nie leer. Jetzt startet es unbelegt, dieselbe
-  Konvention wie beim Ex-Tag im Dividenden-Dialog, und ein Split ohne aktiv
-  eingetragenes Datum lässt sich nicht mehr speichern.
-
-  Zukünftige Ex-Tage bleiben ausdrücklich erlaubt — ein angekündigter Split
-  darf sofort erfasst werden und bleibt bis zu seinem Ex-Tag ohne Wirkung auf
-  Bestände und Kurse. Die Rückfrage sagt das auch so und bittet nur um einen
-  Abgleich mit der Bankmitteilung. Beim Bearbeiten eines solchen Splits mit
-  unverändertem Datum kommt sie nicht erneut.
-
-  Für den heutigen Tag wird bewusst nicht gefragt: seit das Feld unbelegt
-  startet, ist "heute" eine getippte Eingabe wie jede andere.
-
-  Damit stehen alle fünf Prüfzeitpunkte.
-
-- Plausibilitätsprüfung des Split-Verhältnisses, vierter von fünf
-  Prüfzeitpunkten: die Nachprüfung im Hintergrund meldet beim Programmstart
-  und nach jedem Tageswert-Abruf jetzt auch Splits, deren Verhältnis nicht
-  zum gemessenen Kurssprung oder nicht zur Verkaufshistorie passt.
-
-  Die drei bisherigen Stufen setzen alle eine Nutzeraktion voraus — einen
-  Verkauf, ein Speichern, einen Knopfdruck. Was bereits fehlerhaft in der
-  Datenbank steht und von sich aus nie wieder angefasst wird, fiel damit
-  niemandem auf. Genau das war der Feldfall: der Split lag monatelang
-  falsch da, ohne dass irgendetwas ihn noch einmal angesehen hätte.
-
-  Gemeldet wird nur bei eindeutiger Zuordnung. Hier erscheint ein modaler
-  Dialog bei jedem Programmstart, den niemand abstellen kann, solange der
-  Befund besteht — eine unvollständig erfasste Kaufhistorie etwa nach einem
-  Depotübertrag erzeugt denselben rechnerischen Widerspruch, ohne dass es
-  etwas zu korrigieren gäbe. Solche Fälle bleiben hier still und werden
-  weiterhin beim Speichern eines Splits oder eines Verkaufs sichtbar.
-
-  Die Befunde stehen in einem Dialog, nach Art gruppiert. Titel jetzt
-  "Splits prüfen" statt "Split-Bereinigung prüfen". Geschrieben wird
-  weiterhin nichts, die Korrektur bleibt dem Split-Dialog überlassen.
-
-- Plausibilitätsprüfung des Split-Verhältnisses, dritter von fünf
-  Prüfzeitpunkten: der "Prüfen"-Knopf im Split-Dialog vergleicht den
-  gemessenen Kurssprung um den Ex-Tag jetzt auch mit dem eingetragenen
-  Verhältnis und weist darauf hin, wenn er besser zu einem anderen passt.
-
-  Das schliesst die Lücke der beiden Bestandsprüfungen: die hängen an einer
-  Unterdeckung, und ein zu grosses Verhältnis erzeugt nie eine. Wer 21 statt
-  20 einträgt, hat rechnerisch mehr Bestand als nötig, alles geht auf,
-  niemand fragt nach. Der Kurssprung ist zudem die einzige Gegenprobe, die
-  schon beim Erfassen vorliegt — lange bevor ein Verkauf existiert.
-
-  Die bisherigen Toleranzbänder taugten dafür nicht: mit plus/minus 20
-  Prozent geht bei eingetragenen 19 auch ein gemessener Sprung von 19,98
-  glatt als Treffer durch. Verglichen wird deshalb gegen 3 Prozent, und nur
-  gegen das nächstgelegene saubere Verhältnis. Bei unruhigen Kursen oder
-  Verhältnissen nahe 1 bleibt die Prüfung still, statt zu raten.
-
-  Der "Kurshistorie bereinigt"-Haken wird davon nicht berührt — das ist eine
-  andere Frage als das Verhältnis. Nur die Einfärbung der Ergebniszeile
-  wechselt auf "manuelle Entscheidung nötig".
-- Plausibilitätsprüfung des Split-Verhältnisses, zweiter von fünf
-  Prüfzeitpunkten: der Dialog "Aktiensplits" prüft beim Speichern und beim
-  Löschen, ob die Verkaufshistorie unter der resultierenden Split-Liste
-  noch aufgeht — je Depot, mit einem Bestandsverlauf über alle Käufe und
-  Verkäufe. Greift damit genau dort, wo Punkt 1 nichts sagen kann: bei
-  nachträglich erfassten Splits, wo die Verkäufe längst in der Datenbank
-  stehen.
-
-  Das Ergebnis ist eine Rückfrage, keine Blockade. Eine unvollständig
-  erfasste Kaufhistorie — etwa nach einem Depotübertrag von einer anderen
-  Bank — erzeugt denselben rechnerischen Widerspruch, ohne dass am Split
-  etwas falsch wäre, und dürfte niemanden dauerhaft daran hindern,
-  überhaupt einen Split zu erfassen. Lässt sich der Widerspruch dem Split
-  zuordnen, nennt der Text das Verhältnis, mit dem die Rechnung aufginge;
-  sonst weist er auf die mögliche Datenlücke hin.
-
-  Neue Model-Methoden `loadBuys()`/`loadSales()` im Split-Dialog —
-  `openLots()` liefert nur Restbestände und trägt keine Depotnummer.
-- Plausibilitätsprüfung des Split-Verhältnisses, erster von fünf
-  Prüfzeitpunkten (siehe `docs/architecture/ARCHITECTURE.md`,
-  "Plausibilitätsprüfung des Split-Verhältnisses" sowie die Arbeitsliste
-  unter "Offene Punkte"). Blockiert das Verkaufsformular eine zu hohe
-  Menge und liegt zwischen Käufen und Verkauf ein Split, nennt die Meldung
-  jetzt diesen Split als wahrscheinlichere Ursache — und, wo die
-  Rückrechnung eindeutig ist, das Verhältnis, mit dem die Rechnung exakt
-  aufginge. Ohne diese Deutung lag nahe, die Stückzahl auf dem Beleg zu
-  "korrigieren" statt das Verhältnis zu berichtigen; genau das wäre im
-  Feldfall Alphabet fast passiert (10 Stück mal Faktor 19 ergeben 190, der
-  Verkaufsbeleg lautet auf 200, richtig gewesen wäre 20:1). Neue Klasse
-  `SplitRatioChecker` mit eigenem Testziel `tst_splitratiochecker`; die
-  Mengenprüfung selbst und ihre bisherige Meldung bleiben unverändert.
-
-  Ein Verhältnis wird bewusst nur bei genau einem dazwischenliegenden
-  Split, alter Seite 1, keinem Reverse-Split und einer Rückrechnung auf
-  exakt eins mehr als eingetragen vorgeschlagen. Dieselbe Formel liefert
-  sonst auch bei einem reinen Tippfehler ein formal sauberes, aber völlig
-  irreführendes Ergebnis.
-- Cortal Consors: Depotnummer und Währung werden aus der
-  Dividendengutschrift gelesen (Beleg nachgereicht am 21.08.2026, siehe
-  `docs/architecture/ARCHITECTURE.md`, "Nachtrag Cortal Consors").
-  Stückzahl, Dividendensatz und die beiden Steuern wurden von den
-  vorhandenen Regeln bereits korrekt getroffen und sind jetzt durch
-  Testfälle abgesichert.
-- Ersatzhinweis, wenn ein Beleg den Ex-Tag nicht nennt: Cortal Consors
-  weist stattdessen den "Schlusstag" (Dividenden-Stichtag) aus. Er wird
-  gelesen und als Hinweis an das Ex-Tag-Feld gehängt — angezeigt, nicht
-  eingetragen. Das Feld bleibt eine fehlende Pflichtangabe; der Ex-Tag ist
-  laut Consors "normalerweise" der nächste Handelstag nach dem Schlusstag,
-  und ein um einen Tag falscher Ex-Tag ginge unmittelbar in die
-  Stückzahl-Plausibilitätsprüfung ein. Neue View-Methode `setFieldHint()`.
-- Fehlermeldung bei nicht zuzuordnenden Dokumenten unterscheidet jetzt die
-  beiden Ursachen: unbekannte BANK (es fehlt ein Eintrag in
-  `Documents.xml`) gegen unbekannten BELEGTYP (die Anwendung verarbeitet
-  diese Belegart nicht). Im zweiten Fall nennt die Meldung die erkannte
-  Bank und die vier unterstützten Belegarten. Neues Feld
-  `DocumentClassifier::Result::bankMatched`.
-
-### Changed
-
-- `SplitAdjustmentAudit` heisst jetzt `SplitAudit`. Der alte Name kam von
-  `prices_adjusted`; seit die Klasse auch Verhältnisse prüft, traf er nicht
-  mehr zu. In `MainWindow` sind die zugehörigen Bezeichner
-  (`SplitAuditWarning`, `buildSplitAuditWarningMessage()`,
-  `populateSplitAuditWarnings()`, `refreshSplitAuditWarningsForShare()`,
-  `warnAboutSplitAuditFindings()`) mit umbenannt.
-- Die DividendForm-Tests haben ein eigenes Testziel `tst_dividendform`
-  (Datei `tests/forms/tst_dividendform.cpp`). `tst_mainwindow.cpp` war auf
-  11.273 Zeilen mit fünf Testklassen gewachsen, obwohl die Konvention ein
-  Testziel je Form vorsieht; mit dem Umzug sind es 9.273 Zeilen und vier
-  Klassen. Reine Umstrukturierung ohne Verhaltensänderung: die 127
-  Testmethoden, die beiden Stubs und die Helfer sind unverändert übernommen,
-  es kam keine Prüfung dazu und es fiel keine weg. Die DividendForm-Quellen
-  bleiben Compile-Abhängigkeit von `tst_mainwindow` und `tst_shareeditform`
-  (über `MainWindow` bzw. `ViewShareEdit`), werden dort aber nicht mehr
-  getestet — dasselbe Muster wie bei `tst_buysform`. Offen bleiben
-  `TestOwnMessageBox` und `TestBackupForm`, siehe
-  `docs/architecture/ARCHITECTURE.md`, "tst_mainwindow.cpp in eigene
-  Testdateien aufteilen".
-- Die SalesForm-Tests haben ein eigenes Testziel `tst_salesform` (Datei
-  `tests/forms/tst_salesform.cpp`). Zweiter Schritt derselben Aufteilung wie
-  beim DividendForm-Umzug am selben Tag: mit ihm sind es 6.464 Zeilen und
-  drei Klassen in `tst_mainwindow.cpp`. Reine Umstrukturierung ohne
-  Verhaltensänderung — die 123 Testmethoden, die beiden Stubs
-  (`StubModelSaleEdit`, `StubViewSaleEdit`) und der Dateihelfer `makeSale()`
-  sind unverändert übernommen, es kam keine Prüfung dazu und es fiel keine
-  weg. Die SalesForm-Quellen bleiben Compile-Abhängigkeit von
-  `tst_mainwindow` und `tst_shareeditform` (über `MainWindow` bzw.
-  `ViewShareEdit`), werden dort aber nicht mehr getestet. Offen bleiben
-  `TestOwnMessageBox` und `TestBackupForm`.
-- Die OwnMessageBox- und BackupProgressForm-Tests haben eigene Testziele
-  `tst_ownmessagebox` und `tst_backupform` (Dateien
-  `tests/forms/tst_ownmessagebox.cpp` und `tests/forms/tst_backupform.cpp`).
-  Letzter Schritt derselben Aufteilung: `tst_mainwindow.cpp` schrumpft damit
-  von 6.464 auf 5.823 Zeilen und enthält nur noch eine Testklasse
-  (`TestMainWindow`) statt ursprünglich fünf — die Konvention "ein Testziel
-  je Form" gilt jetzt für die ganze Datei. Reine Umstrukturierung ohne
-  Verhaltensänderung: die 26 (`TestOwnMessageBox`) bzw. 14
-  (`TestBackupForm`) Testmethoden sind unverändert übernommen, es kam keine
-  Prüfung dazu und es fiel keine weg. Anders als bei DividendForm/SalesForm
-  gab es hier keine eigenen Stub-Klassen. `TestBackupForm` bleibt der
-  Sonderfall unter den fünf Umzügen: drei seiner Tests konstruieren ein
-  echtes `MainWindow` (`createBackup()` ist privat), weshalb die
-  CMake-Quellenliste von `tst_backupform` praktisch die von `tst_mainwindow`
-  spiegelt. Die OwnMessageBox-/BackupProgressForm-Quellen bleiben Compile-
-  Abhängigkeit von `tst_mainwindow` (über `MainWindow`), werden dort aber
-  nicht mehr getestet.
+## [1.19.1] - 2026-08-26
 
 ### Changed
 
@@ -235,6 +64,220 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Wertvergleich wäre der Beleg seinem eigenen Depot nicht mehr zugeordnet
   worden, und der Test hätte einen Fehler gemeldet, den es gar nicht gibt.
 
+- Diese Datei war seit dem 1.15.0-Release nicht mehr auf Versionen
+  aufgeteilt: alles ab 1.16.0 sammelte sich unter `[Unreleased]`, zuletzt
+  ueber 300 Zeilen. Damit liess sich nicht mehr erkennen, welche Aenderung zu
+  welcher Version gehoert, und beim naechsten Release waere das Nachziehen
+  immer teurer geworden. Die Eintraege stehen jetzt unter 1.16.0 bis 1.19.1.
+  Die Zuordnung stammt aus der Git-Historie, nicht aus einer Schaetzung —
+  eine falsch zugeordnete Zeile sieht verlaesslich aus und ist es nicht.
+
+  Ausserdem zusammengefuehrt: ein Doppeleintrag `### Changed` innerhalb
+  desselben Versionsabschnitts, beim Anlegen des Bankerkennungs-Eintrags
+  entstanden. Zwei gleichnamige Rubriken widersprechen dem Format, an das
+  sich die Datei haelt.
+
+## [1.19.0] - 2026-08-25
+
+### Added
+
+- Plausibilitätsprüfung des Split-Verhältnisses, fünfter und letzter
+  Prüfzeitpunkt: das Ex-Tag-Feld im Split-Dialog startet nicht mehr mit dem
+  heutigen Datum, und ein Ex-Tag in der Zukunft wird beim Speichern einmal
+  hinterfragt.
+
+  Der Ertrag liegt bei der Vorbelegung, nicht bei der Warnung. Das Feld war
+  mit dem heutigen Tag belegt; im Feldfall wurde dieser Vorschlag unverändert
+  übernommen und stand als Ex-Tag in der Datenbank. Eine Prüfung auf "Ex-Tag
+  nicht angegeben" gab es zwar längst, sie konnte aber nie auslösen — ein
+  vorbelegtes Feld ist nie leer. Jetzt startet es unbelegt, dieselbe
+  Konvention wie beim Ex-Tag im Dividenden-Dialog, und ein Split ohne aktiv
+  eingetragenes Datum lässt sich nicht mehr speichern.
+
+  Zukünftige Ex-Tage bleiben ausdrücklich erlaubt — ein angekündigter Split
+  darf sofort erfasst werden und bleibt bis zu seinem Ex-Tag ohne Wirkung auf
+  Bestände und Kurse. Die Rückfrage sagt das auch so und bittet nur um einen
+  Abgleich mit der Bankmitteilung. Beim Bearbeiten eines solchen Splits mit
+  unverändertem Datum kommt sie nicht erneut.
+
+  Für den heutigen Tag wird bewusst nicht gefragt: seit das Feld unbelegt
+  startet, ist "heute" eine getippte Eingabe wie jede andere.
+
+  Damit stehen alle fünf Prüfzeitpunkte.
+
+- Plausibilitätsprüfung des Split-Verhältnisses, vierter von fünf
+  Prüfzeitpunkten: die Nachprüfung im Hintergrund meldet beim Programmstart
+  und nach jedem Tageswert-Abruf jetzt auch Splits, deren Verhältnis nicht
+  zum gemessenen Kurssprung oder nicht zur Verkaufshistorie passt.
+
+  Die drei bisherigen Stufen setzen alle eine Nutzeraktion voraus — einen
+  Verkauf, ein Speichern, einen Knopfdruck. Was bereits fehlerhaft in der
+  Datenbank steht und von sich aus nie wieder angefasst wird, fiel damit
+  niemandem auf. Genau das war der Feldfall: der Split lag monatelang
+  falsch da, ohne dass irgendetwas ihn noch einmal angesehen hätte.
+
+  Gemeldet wird nur bei eindeutiger Zuordnung. Hier erscheint ein modaler
+  Dialog bei jedem Programmstart, den niemand abstellen kann, solange der
+  Befund besteht — eine unvollständig erfasste Kaufhistorie etwa nach einem
+  Depotübertrag erzeugt denselben rechnerischen Widerspruch, ohne dass es
+  etwas zu korrigieren gäbe. Solche Fälle bleiben hier still und werden
+  weiterhin beim Speichern eines Splits oder eines Verkaufs sichtbar.
+
+  Die Befunde stehen in einem Dialog, nach Art gruppiert. Titel jetzt
+  "Splits prüfen" statt "Split-Bereinigung prüfen". Geschrieben wird
+  weiterhin nichts, die Korrektur bleibt dem Split-Dialog überlassen.
+
+### Changed
+
+- `SplitAdjustmentAudit` heisst jetzt `SplitAudit`. Der alte Name kam von
+  `prices_adjusted`; seit die Klasse auch Verhältnisse prüft, traf er nicht
+  mehr zu. In `MainWindow` sind die zugehörigen Bezeichner
+  (`SplitAuditWarning`, `buildSplitAuditWarningMessage()`,
+  `populateSplitAuditWarnings()`, `refreshSplitAuditWarningsForShare()`,
+  `warnAboutSplitAuditFindings()`) mit umbenannt.
+
+## [1.18.0] - 2026-08-24
+
+### Added
+
+- Plausibilitätsprüfung des Split-Verhältnisses, dritter von fünf
+  Prüfzeitpunkten: der "Prüfen"-Knopf im Split-Dialog vergleicht den
+  gemessenen Kurssprung um den Ex-Tag jetzt auch mit dem eingetragenen
+  Verhältnis und weist darauf hin, wenn er besser zu einem anderen passt.
+
+  Das schliesst die Lücke der beiden Bestandsprüfungen: die hängen an einer
+  Unterdeckung, und ein zu grosses Verhältnis erzeugt nie eine. Wer 21 statt
+  20 einträgt, hat rechnerisch mehr Bestand als nötig, alles geht auf,
+  niemand fragt nach. Der Kurssprung ist zudem die einzige Gegenprobe, die
+  schon beim Erfassen vorliegt — lange bevor ein Verkauf existiert.
+
+  Die bisherigen Toleranzbänder taugten dafür nicht: mit plus/minus 20
+  Prozent geht bei eingetragenen 19 auch ein gemessener Sprung von 19,98
+  glatt als Treffer durch. Verglichen wird deshalb gegen 3 Prozent, und nur
+  gegen das nächstgelegene saubere Verhältnis. Bei unruhigen Kursen oder
+  Verhältnissen nahe 1 bleibt die Prüfung still, statt zu raten.
+
+  Der "Kurshistorie bereinigt"-Haken wird davon nicht berührt — das ist eine
+  andere Frage als das Verhältnis. Nur die Einfärbung der Ergebniszeile
+  wechselt auf "manuelle Entscheidung nötig".
+
+## [1.17.0] - 2026-08-22
+
+### Added
+
+- Plausibilitätsprüfung des Split-Verhältnisses, zweiter von fünf
+  Prüfzeitpunkten: der Dialog "Aktiensplits" prüft beim Speichern und beim
+  Löschen, ob die Verkaufshistorie unter der resultierenden Split-Liste
+  noch aufgeht — je Depot, mit einem Bestandsverlauf über alle Käufe und
+  Verkäufe. Greift damit genau dort, wo Punkt 1 nichts sagen kann: bei
+  nachträglich erfassten Splits, wo die Verkäufe längst in der Datenbank
+  stehen.
+
+  Das Ergebnis ist eine Rückfrage, keine Blockade. Eine unvollständig
+  erfasste Kaufhistorie — etwa nach einem Depotübertrag von einer anderen
+  Bank — erzeugt denselben rechnerischen Widerspruch, ohne dass am Split
+  etwas falsch wäre, und dürfte niemanden dauerhaft daran hindern,
+  überhaupt einen Split zu erfassen. Lässt sich der Widerspruch dem Split
+  zuordnen, nennt der Text das Verhältnis, mit dem die Rechnung aufginge;
+  sonst weist er auf die mögliche Datenlücke hin.
+
+  Neue Model-Methoden `loadBuys()`/`loadSales()` im Split-Dialog —
+  `openLots()` liefert nur Restbestände und trägt keine Depotnummer.
+
+## [1.16.0] - 2026-08-22
+
+### Added
+
+- Plausibilitätsprüfung des Split-Verhältnisses, erster von fünf
+  Prüfzeitpunkten (siehe `docs/architecture/ARCHITECTURE.md`,
+  "Plausibilitätsprüfung des Split-Verhältnisses" sowie die Arbeitsliste
+  unter "Offene Punkte"). Blockiert das Verkaufsformular eine zu hohe
+  Menge und liegt zwischen Käufen und Verkauf ein Split, nennt die Meldung
+  jetzt diesen Split als wahrscheinlichere Ursache — und, wo die
+  Rückrechnung eindeutig ist, das Verhältnis, mit dem die Rechnung exakt
+  aufginge. Ohne diese Deutung lag nahe, die Stückzahl auf dem Beleg zu
+  "korrigieren" statt das Verhältnis zu berichtigen; genau das wäre im
+  Feldfall Alphabet fast passiert (10 Stück mal Faktor 19 ergeben 190, der
+  Verkaufsbeleg lautet auf 200, richtig gewesen wäre 20:1). Neue Klasse
+  `SplitRatioChecker` mit eigenem Testziel `tst_splitratiochecker`; die
+  Mengenprüfung selbst und ihre bisherige Meldung bleiben unverändert.
+
+  Ein Verhältnis wird bewusst nur bei genau einem dazwischenliegenden
+  Split, alter Seite 1, keinem Reverse-Split und einer Rückrechnung auf
+  exakt eins mehr als eingetragen vorgeschlagen. Dieselbe Formel liefert
+  sonst auch bei einem reinen Tippfehler ein formal sauberes, aber völlig
+  irreführendes Ergebnis.
+
+- Cortal Consors: Depotnummer und Währung werden aus der
+  Dividendengutschrift gelesen (Beleg nachgereicht am 21.08.2026, siehe
+  `docs/architecture/ARCHITECTURE.md`, "Nachtrag Cortal Consors").
+  Stückzahl, Dividendensatz und die beiden Steuern wurden von den
+  vorhandenen Regeln bereits korrekt getroffen und sind jetzt durch
+  Testfälle abgesichert.
+
+- Ersatzhinweis, wenn ein Beleg den Ex-Tag nicht nennt: Cortal Consors
+  weist stattdessen den "Schlusstag" (Dividenden-Stichtag) aus. Er wird
+  gelesen und als Hinweis an das Ex-Tag-Feld gehängt — angezeigt, nicht
+  eingetragen. Das Feld bleibt eine fehlende Pflichtangabe; der Ex-Tag ist
+  laut Consors "normalerweise" der nächste Handelstag nach dem Schlusstag,
+  und ein um einen Tag falscher Ex-Tag ginge unmittelbar in die
+  Stückzahl-Plausibilitätsprüfung ein. Neue View-Methode `setFieldHint()`.
+
+- Fehlermeldung bei nicht zuzuordnenden Dokumenten unterscheidet jetzt die
+  beiden Ursachen: unbekannte BANK (es fehlt ein Eintrag in
+  `Documents.xml`) gegen unbekannten BELEGTYP (die Anwendung verarbeitet
+  diese Belegart nicht). Im zweiten Fall nennt die Meldung die erkannte
+  Bank und die vier unterstützten Belegarten. Neues Feld
+  `DocumentClassifier::Result::bankMatched`.
+
+### Changed
+
+- Die DividendForm-Tests haben ein eigenes Testziel `tst_dividendform`
+  (Datei `tests/forms/tst_dividendform.cpp`). `tst_mainwindow.cpp` war auf
+  11.273 Zeilen mit fünf Testklassen gewachsen, obwohl die Konvention ein
+  Testziel je Form vorsieht; mit dem Umzug sind es 9.273 Zeilen und vier
+  Klassen. Reine Umstrukturierung ohne Verhaltensänderung: die 127
+  Testmethoden, die beiden Stubs und die Helfer sind unverändert übernommen,
+  es kam keine Prüfung dazu und es fiel keine weg. Die DividendForm-Quellen
+  bleiben Compile-Abhängigkeit von `tst_mainwindow` und `tst_shareeditform`
+  (über `MainWindow` bzw. `ViewShareEdit`), werden dort aber nicht mehr
+  getestet — dasselbe Muster wie bei `tst_buysform`. Offen bleiben
+  `TestOwnMessageBox` und `TestBackupForm`, siehe
+  `docs/architecture/ARCHITECTURE.md`, "tst_mainwindow.cpp in eigene
+  Testdateien aufteilen".
+
+- Die SalesForm-Tests haben ein eigenes Testziel `tst_salesform` (Datei
+  `tests/forms/tst_salesform.cpp`). Zweiter Schritt derselben Aufteilung wie
+  beim DividendForm-Umzug am selben Tag: mit ihm sind es 6.464 Zeilen und
+  drei Klassen in `tst_mainwindow.cpp`. Reine Umstrukturierung ohne
+  Verhaltensänderung — die 123 Testmethoden, die beiden Stubs
+  (`StubModelSaleEdit`, `StubViewSaleEdit`) und der Dateihelfer `makeSale()`
+  sind unverändert übernommen, es kam keine Prüfung dazu und es fiel keine
+  weg. Die SalesForm-Quellen bleiben Compile-Abhängigkeit von
+  `tst_mainwindow` und `tst_shareeditform` (über `MainWindow` bzw.
+  `ViewShareEdit`), werden dort aber nicht mehr getestet. Offen bleiben
+  `TestOwnMessageBox` und `TestBackupForm`.
+
+- Die OwnMessageBox- und BackupProgressForm-Tests haben eigene Testziele
+  `tst_ownmessagebox` und `tst_backupform` (Dateien
+  `tests/forms/tst_ownmessagebox.cpp` und `tests/forms/tst_backupform.cpp`).
+  Letzter Schritt derselben Aufteilung: `tst_mainwindow.cpp` schrumpft damit
+  von 6.464 auf 5.823 Zeilen und enthält nur noch eine Testklasse
+  (`TestMainWindow`) statt ursprünglich fünf — die Konvention "ein Testziel
+  je Form" gilt jetzt für die ganze Datei. Reine Umstrukturierung ohne
+  Verhaltensänderung: die 26 (`TestOwnMessageBox`) bzw. 14
+  (`TestBackupForm`) Testmethoden sind unverändert übernommen, es kam keine
+  Prüfung dazu und es fiel keine weg. Anders als bei DividendForm/SalesForm
+  gab es hier keine eigenen Stub-Klassen. `TestBackupForm` bleibt der
+  Sonderfall unter den fünf Umzügen: drei seiner Tests konstruieren ein
+  echtes `MainWindow` (`createBackup()` ist privat), weshalb die
+  CMake-Quellenliste von `tst_backupform` praktisch die von `tst_mainwindow`
+  spiegelt. Die OwnMessageBox-/BackupProgressForm-Quellen bleiben Compile-
+  Abhängigkeit von `tst_mainwindow` (über `MainWindow`), werden dort aber
+  nicht mehr getestet.
+
+### Fixed
+
 - **Die Ordernummer wurde verfälscht** (Nessies Bugreport 22.08.2026). Der
   Beleg zeigt "670835/66.00", im Formular stand "670835/66,00". Die
   Eingabemasken schrieben in JEDEM einzeiligen Feld den Punkt in ein Komma um
@@ -242,6 +285,7 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   ISIN, Name und die drei URL-Felder im Dialog "Aktie hinzufügen". Unterschieden
   wird jetzt am `QDoubleValidator`, den nur die Zahlenfelder tragen. Betraf alle
   vier Formulare (Kauf, Verkauf, Dividende, Aktie anlegen).
+
 - **Das Datum eines DKB-Verkaufsbelegs wurde nicht übernommen** (Nessies
   Bugreport 22.08.2026): im Formular stand das heutige statt des Belegdatums.
   Die DKB beschriftet Datum und Uhrzeit gemeinsam ("Schlusstag/-Zeit
@@ -253,12 +297,15 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   gemeinsamen Rohwert herausgelesen; misslingt die Umwandlung, zeigt das Feld
   ein Fehlersymbol, statt einen falschen Wert stehen zu lassen. Neue
   header-only Einheit `app/utils/DocumentFieldValue.h` mit eigenem Testziel.
+
 - Zahlenfelder: ein Wert mit Tausendertrenner ("1.234,56") wurde zu
   "1,234,56" und beim Auslesen zu 0,00 — ein Betrag über tausend Euro fiel
   lautlos auf null. Nicht gemeldet, beim Beheben der Ordernummer aufgefallen.
+
 - `ViewShareAdd`: der Zweig für Zahlenfelder in `setFieldOk()` war toter Code
   (der Zweig davor fing bereits jedes `QLineEdit` ab). In diesem Dialog wurde
   deshalb noch nie ein Dezimalpunkt umgeschrieben.
+
 - Die DKB-Verkaufsregel für Datum und Uhrzeit hängt nicht mehr an der
   Nachbarspalte (`…Auftraggeber`), sondern nur noch an ihrer eigenen
   Beschriftung. Keine Fehlerursache, aber eine Bindung, die beim nächsten
@@ -270,6 +317,7 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   nur Dividendengutschriften). Dass die DKB die WKN auch auf Verkaufsbelegen
   in Klammern neben die ISIN setzt, ist damit festgehalten — die Direkte
   Dokumentenerfassung kann solche Belege einer Aktie zuordnen.
+
 - **DKB-Belege liessen sich nicht per Drag&Drop erfassen** (Nessies Bugreport
   21.08.2026: "Keine passende Aktie im Portfolio gefunden für
   Dividenden-Dokument"). Derselbe Beleg wurde im Dividenden-Dialog
@@ -286,6 +334,7 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   `FoundIndex="0"` stehen. `extractFieldValue()` verwendet jetzt dieselbe
   Auswahlregel wie `ParserLib::Parser` — der geforderte Treffer, daraus die
   erste nicht-leere Fanggruppe.
+
 - **Consors-Belege wurden überhaupt nicht eingelesen** (Nessies Bugreport
   21.08.2026). Ein leeres Regex-Muster ist gültig und trifft jeden Text.
   Cortal Consors hat eine leere `SaleIdentifier`-Regel, weil für diese Bank
@@ -297,6 +346,7 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Feld zu lesen. `DocumentClassifier` wertet ein leeres Muster jetzt als "
   identifiziert nichts". Betraf neben Dividenden auch die Kostenbelege dieser
   Bank; Käufe blieben unauffällig, weil deren Kennung vorher geprüft wird.
+
 - Cortal Consors: Als Auszahlungstag wurde der **Schlusstag** übernommen
   statt der Valuta. Die Regel nahm schlicht das erste Datum im Text; der
   Beleg nennt aber zuerst den Schlusstag (= Dividenden-Stichtag, laut
@@ -313,6 +363,7 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   dieser Bank ein Handeintrag. Der Schlusstag wird immerhin als Hinweis am
   Feld angezeigt (siehe oben), damit er nicht anderswo nachgeschlagen
   werden muss.
+
 - Vorabpauschale-Abrechnungen für thesaurierende Fonds werden bewusst nicht
   verarbeitet (Nessies Entscheidung 21.08.2026): dabei fliesst kein Geld zu,
   es wird nur Steuer abgeführt — als Dividende erfasst wiese die Anwendung
