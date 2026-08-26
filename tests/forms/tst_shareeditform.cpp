@@ -6,6 +6,8 @@
 // Split out of tst_mainwindow.cpp so every Form has its own executable.
 
 #include <QtTest>
+#include <QSignalSpy>
+#include <QDate>
 #include <QApplication>
 #include <QTemporaryDir>
 #include <QFileInfo>
@@ -20,7 +22,11 @@
 #include "../../app/config/AppSettings.h"
 #include "../../app/core/Database.h"
 #include "../../app/repositories/ShareRepository.h"
+#include "../../app/repositories/BuyRepository.h"
+#include "../../app/repositories/BrokerageRepository.h"
 #include "../../app/models/ShareObject.h"
+#include "../../app/models/BuyObject.h"
+#include "../../app/models/BrokerageObject.h"
 #include "../../app/config/DocumentsConfig.h"
 
 #include "../../app/forms/ShareEditForm/IViewShareEdit.h"
@@ -31,10 +37,116 @@
 #include "../../app/models/ShareSplitObject.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TestViewShareEdit
+// Stub IViewShareEdit / IModelShareEdit — used by PresenterShareEdit tests.
+// Mit den Presenter-Tests aus tst_mainwindow.cpp uebernommen (26.08.2026).
+// ─────────────────────────────────────────────────────────────────────────────
+class StubViewShareEdit : public IViewShareEdit
+{
+public:
+    bool    loadShareCalled    = false;
+    bool    closedCalled       = false;
+    bool    setTotalBuysCalled = false;
+    QString lastError;
+
+    // 06.08.2026 — Regel "Tageswerte bei Bestand > 0".
+    //
+    // updateTypeToReturn war vorher als ShareUpdateType::None fest verdrahtet.
+    // Das ging nur so lange gut, wie der Presenter den Update-Typ ungeprüft
+    // durchreichte: seit PresenterShareEdit::validateInput() ihn gegen den
+    // Bestand prüft, und StubModelShareEdit::currentVolume() 10,0 liefert,
+    // wäre "None" ein unzulässiger Wert — jeder onSave()-Test hier würde am
+    // Validierungsfehler scheitern statt am eigentlichen Prüfgegenstand.
+    // Vorgabe deshalb "Both" (zulässig); Tests, die den Sperrfall brauchen,
+    // setzen den Wert selbst.
+    ShareUpdateType updateTypeToReturn = ShareUpdateType::Both;
+
+    /// Zuletzt an setDailyValuesRequired() übergebener Wert.
+    bool dailyValuesRequired       = false;
+    /// Wurde setDailyValuesRequired() überhaupt aufgerufen?
+    bool dailyValuesRequiredCalled = false;
+
+    QString   wkn()              const override { return QStringLiteral("840400"); }
+    QString   isin()             const override { return QStringLiteral("DE0008404005"); }
+    QString   name()             const override { return QStringLiteral("Test AG"); }
+    QDate     listingDate()      const override { return QDate(2000, 1, 1); }
+    ShareType shareType()        const override { return ShareType::Share; }
+    QString   dividendInterval() const override { return QStringLiteral("keine"); }
+    QString   countryInfo()      const override { return QStringLiteral("de-DE"); }
+    QString   detailsWebsite()   const override { return QString(); }
+    QString          marketPriceUrl()         const override { return QString(); }
+    ShareParsingType marketPriceParsingType() const override { return ShareParsingType::Regex; }
+    QString          marketPriceApiKey()      const override { return QString(); }
+    QString          dailyValuesUrl()         const override { return QString(); }
+    ShareParsingType dailyValuesParsingType() const override { return ShareParsingType::Regex; }
+    QString          dailyValuesApiKey()      const override { return QString(); }
+    ShareUpdateType  updateType()             const override { return updateTypeToReturn; }
+
+    void loadShare(const ShareObject&)   override { loadShareCalled = true; }
+    void setFirstBuyDate(const QString&) override {}
+    void setCurrentVolume(double)        override {}
+    void setDailyValuesRequired(bool required) override
+        { dailyValuesRequired = required; dailyValuesRequiredCalled = true; }
+    // 08.08.2026 — Phase 3 der Aktiensplit-Behandlung.
+    /// Zuletzt an setSplitInfo() übergebene Liste.
+    QList<ShareSplitObject> lastSplitInfo;
+    /// Wurde setSplitInfo() überhaupt aufgerufen?
+    bool setSplitInfoCalled = false;
+
+    void setSplitInfo(const QList<ShareSplitObject>& splits) override
+        { lastSplitInfo = splits; setSplitInfoCalled = true; }
+
+    void setTotalBuys(double, int)       override { setTotalBuysCalled = true; }
+    void setTotalSales(double, int)      override {}
+    void setTotalProfitLoss(double, int) override {}
+    void setTotalDividends(double, int)  override {}
+    void setTotalBrokerages(double, int) override {}
+    void showError(const QString& msg)   override { lastError = msg; }
+    void acceptAndClose()                override { closedCalled = true; }
+};
+
+class StubModelShareEdit : public IModelShareEdit
+{
+public:
+    ShareObject shareToReturn;
+    bool        saveResult = true;
+
+    /// Gehaltener Bestand — je Test setzbar (06.08.2026). Vorgabe wie bisher
+    /// fest verdrahtet: 10,0, also "Anteile vorhanden".
+    double volumeToReturn = 10.0;
+
+    /// Wurde saveShare() erreicht? Belegt, dass eine Validierung wirklich
+    /// vorher abbricht statt nur eine Meldung nachzuschieben.
+    bool saveShareCalled = false;
+
+    ShareObject loadShare(const QString&)     const override { return shareToReturn; }
+    bool        saveShare(const ShareObject&)       override
+        { saveShareCalled = true; return saveResult; }
+    double totalBuyValue(const QString&)      const override { return 1000.0; }
+    int    buyCount(const QString&)           const override { return 2; }
+    double totalSaleValue(const QString&)     const override { return 500.0; }
+    double totalProfitLoss(const QString&)    const override { return -100.0; }
+    int    saleCount(const QString&)          const override { return 1; }
+    double totalDividendValue(const QString&) const override { return 50.0; }
+    int    dividendCount(const QString&)      const override { return 3; }
+    double totalBrokerageValue(const QString&)const override { return 30.0; }
+    int    brokerageCount(const QString&)     const override { return 2; }
+    double currentVolume(const QString&)      const override { return volumeToReturn; }
+    QString firstBuyDate(const QString&)      const override { return QStringLiteral("2020-01-01"); }
+
+    /// Splits, die loadSplits() liefert — je Test setzbar (08.08.2026).
+    /// Vorgabe leer: die allermeisten Tests hier interessieren sich nicht dafür.
+    QList<ShareSplitObject> splitsToReturn;
+
+    QList<ShareSplitObject> loadSplits(const QString&) const override { return splitsToReturn; }
+
+    QString lastError()                       const override { return QString(); }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TestShareEditForm
 // ─────────────────────────────────────────────────────────────────────────────
 
-class TestViewShareEdit : public QObject
+class TestShareEditForm : public QObject
 {
     Q_OBJECT
 
@@ -104,6 +216,52 @@ private:
             if (rb->text() == label)
                 return rb;
         return nullptr;
+    }
+
+    /**
+     * Zweiter Share-Helfer, mit den PresenterShareEdit-/ModelShareEdit-Tests
+     * aus tst_mainwindow.cpp uebernommen (26.08.2026). Anders als
+     * insertTestShare() oben vergibt er eine FESTE GUID ("share-test-1") und
+     * oeffnet die In-Memory-DB selbst — beides setzen die uebernommenen Tests
+     * voraus. Bewusst dupliziert statt zusammengelegt: der abweichende Name
+     * haelt die beiden Semantiken auseinander.
+     */
+    QString insertFixedTestShare()
+    {
+        openMemoryDb();
+        ShareRepository repo;
+        const QString guid = QStringLiteral("share-test-1");
+        repo.insert(ShareObject(guid,
+                                QStringLiteral("TST01"),
+                                QStringLiteral("DE000TST0001"),
+                                QStringLiteral("Test AG")));
+        return guid;
+    }
+
+    /**
+     * Legt einen Kauf samt zugehoeriger Kauf-Gebuehr fuer die uebergebene
+     * Aktie an — Gegenstueck zu insertTestBuy() in tst_mainwindow.cpp, hier
+     * wegen der Namensgebung des Hauses umbenannt.
+     */
+    BuyObject insertTestBuyForShare(const QString& shareGuid,
+                                    const QString& depotNumber,
+                                    const QString& dateTime,
+                                    double volume,
+                                    double price)
+    {
+        BuyRepository repo;
+        const QString guid = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        BuyObject b(guid, shareGuid, depotNumber,
+                    QStringLiteral("ord-") + guid,
+                    dateTime, volume, 0.0, price);
+        repo.insert(b);
+
+        BrokerageRepository brRepo;
+        BrokerageObject br(QStringLiteral("br-") + guid, shareGuid,
+                           guid, QString(), dateTime,
+                           9.90, 0.0, 0.0, 0.0, QString());
+        brRepo.insert(br);
+        return b;
     }
 
 private slots:
@@ -655,15 +813,432 @@ private slots:
         // refreshSummary delegates to the internal presenter; must not crash
         dlg.refreshSummary();
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ModelShareEdit / PresenterShareEdit — aus tst_mainwindow.cpp
+    // uebernommen (26.08.2026). Sie brauchen weder MainWindow noch dessen
+    // Testfixture, gehoeren also hierher.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_modelShareEdit_loadShare_returnsValidShare()
+    {
+        const QString shareGuid = insertFixedTestShare();
+        ModelShareEdit model;
+        const ShareObject share = model.loadShare(shareGuid);
+        QVERIFY(share.isValid());
+        QCOMPARE(share.wkn(),  QStringLiteral("TST01"));
+        QCOMPARE(share.name(), QStringLiteral("Test AG"));
+    }
+
+    void test_modelShareEdit_loadShare_notFound_returnsInvalid()
+    {
+        openMemoryDb();
+        ModelShareEdit model;
+        const ShareObject share = model.loadShare(QStringLiteral("does-not-exist"));
+        QVERIFY(!share.isValid());
+        QVERIFY(!model.lastError().isEmpty());
+    }
+
+    void test_modelShareEdit_saveShare_success()
+    {
+        const QString shareGuid = insertFixedTestShare();
+        ModelShareEdit model;
+        ShareObject share = model.loadShare(shareGuid);
+        share.setName(QStringLiteral("Renamed AG"));
+        QVERIFY(model.saveShare(share));
+
+        const ShareObject reloaded = model.loadShare(shareGuid);
+        QCOMPARE(reloaded.name(), QStringLiteral("Renamed AG"));
+    }
+
+    void test_modelShareEdit_currentVolume_sumsBuyMinusSold()
+    {
+        const QString shareGuid = insertFixedTestShare();
+        insertTestBuyForShare(shareGuid, QStringLiteral("depot1"),
+                      QStringLiteral("2024-01-10T10:00:00"), 10.0, 50.0);
+        BuyObject b2 = insertTestBuyForShare(shareGuid, QStringLiteral("depot1"),
+                                     QStringLiteral("2024-02-15T10:00:00"), 20.0, 55.0);
+
+        BuyRepository buyRepo;
+        QVERIFY(buyRepo.updateVolumeSold(b2.guid(), 5.0));
+
+        ModelShareEdit model;
+        // 10 (unsold) + 20 - 5 (partially sold) = 25
+        QCOMPARE(model.currentVolume(shareGuid), 25.0);
+    }
+
+    void test_modelShareEdit_currentVolume_noBuys_returnsZero()
+    {
+        const QString shareGuid = insertFixedTestShare();
+        ModelShareEdit model;
+        QCOMPARE(model.currentVolume(shareGuid), 0.0);
+    }
+
+    void test_modelShareEdit_firstBuyDate_returnsEarliestBuyDate()
+    {
+        const QString shareGuid = insertFixedTestShare();
+        insertTestBuyForShare(shareGuid, QStringLiteral("depot1"),
+                      QStringLiteral("2024-06-01T10:00:00"), 5.0, 60.0);
+        const BuyObject earliest = insertTestBuyForShare(
+            shareGuid, QStringLiteral("depot1"),
+            QStringLiteral("2023-01-15T10:00:00"), 5.0, 40.0);
+
+        // firstBuyDate() returns BuyObject::dateAsStr() of the earliest buy,
+        // which is locale-formatted (QLocale::ShortFormat) — compare against
+        // the same formatting rather than the raw ISO string.
+        ModelShareEdit model;
+        QCOMPARE(model.firstBuyDate(shareGuid), earliest.dateAsStr());
+    }
+
+    void test_modelShareEdit_firstBuyDate_noBuys_returnsEmpty()
+    {
+        const QString shareGuid = insertFixedTestShare();
+        ModelShareEdit model;
+        QVERIFY(model.firstBuyDate(shareGuid).isEmpty());
+    }
+
+    void test_modelShareEdit_totalBuyValue_delegatesToRepository()
+    {
+        const QString shareGuid = insertFixedTestShare();
+        insertTestBuyForShare(shareGuid, QStringLiteral("depot1"),
+                      QStringLiteral("2024-01-10T10:00:00"), 10.0, 50.0);
+
+        ModelShareEdit model;
+        BuyRepository  buyRepo;
+        QCOMPARE(model.totalBuyValue(shareGuid),
+                 buyRepo.totalBuyValueBrokerageReduction(shareGuid));
+        QCOMPARE(model.buyCount(shareGuid), 1);
+    }
+
+    void test_presenterShareEdit_loadsShareOnConstruction()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+        QVERIFY(view.loadShareCalled);
+    }
+
+    void test_presenterShareEdit_populatesSummaryOnConstruction()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+        QVERIFY(view.setTotalBuysCalled);
+    }
+
+    void test_presenterShareEdit_onSave_success_closesView()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+        p.onSave();
+        QVERIFY(view.closedCalled);
+    }
+
+    void test_presenterShareEdit_refreshSummary_callsPopulate()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+        view.setTotalBuysCalled = false; // reset after construction
+        p.refreshSummary();
+        QVERIFY(view.setTotalBuysCalled);
+    }
+
+    void test_presenterShareEdit_onEditBuys_emitsSignal()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+        QSignalSpy spy(&p, &PresenterShareEdit::openBuysRequested);
+        p.onEditBuys();
+        QCOMPARE(spy.count(), 1);
+    }
+
+    void test_presenterShareEdit_onEditSales_emitsSignal()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+        QSignalSpy spy(&p, &PresenterShareEdit::openSalesRequested);
+        p.onEditSales();
+        QCOMPARE(spy.count(), 1);
+    }
+
+    void test_presenterShareEdit_onEditDividends_emitsSignal()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+        QSignalSpy spy(&p, &PresenterShareEdit::openDividendsRequested);
+        p.onEditDividends();
+        QCOMPARE(spy.count(), 1);
+    }
+
+    void test_presenterShareEdit_onEditBrokerages_emitsSignal()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+        QSignalSpy spy(&p, &PresenterShareEdit::openBrokeragesRequested);
+        p.onEditBrokerages();
+        QCOMPARE(spy.count(), 1);
+    }
+
+    void test_presenterShareEdit_populatesSplitInfoOnConstruction()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        model.splitsToReturn << ShareSplitObject(QStringLiteral("split-1"),
+                                                 QStringLiteral("guid-1"),
+                                                 QDate(2022, 7, 18), 20.0, 1.0);
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        QVERIFY(view.setSplitInfoCalled);
+        QCOMPARE(view.lastSplitInfo.size(), 1);
+        QCOMPARE(view.lastSplitInfo.first().guid(), QStringLiteral("split-1"));
+    }
+
+    void test_presenterShareEdit_populatesSplitInfo_emptyWhenNoSplits()
+    {
+        // Der Aufruf muss auch ohne Splits stattfinden — sonst bliebe nach
+        // dem Löschen des letzten Splits der alte Text stehen.
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        QVERIFY(view.setSplitInfoCalled);
+        QVERIFY(view.lastSplitInfo.isEmpty());
+    }
+
+    void test_presenterShareEdit_refreshSummary_refreshesSplitInfo()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        // Simuliert: der Split-Dialog hat einen Split angelegt und
+        // dataChanged() gesendet, ViewShareEdit ruft refreshSummary().
+        view.setSplitInfoCalled = false;
+        model.splitsToReturn << ShareSplitObject(QStringLiteral("split-1"),
+                                                 QStringLiteral("guid-1"),
+                                                 QDate(2022, 7, 18), 20.0, 1.0);
+        p.refreshSummary();
+
+        QVERIFY(view.setSplitInfoCalled);
+        QCOMPARE(view.lastSplitInfo.size(), 1);
+    }
+
+    void test_presenterShareEdit_onEditSplits_emitsSignal()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+        QSignalSpy spy(&p, &PresenterShareEdit::openSplitsRequested);
+        p.onEditSplits();
+        QCOMPARE(spy.count(), 1);
+    }
+
+    void test_presenterShareEdit_withHolding_requiresDailyValues()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.volumeToReturn = 12.5;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        QVERIFY(view.dailyValuesRequiredCalled);
+        QVERIFY(view.dailyValuesRequired);
+    }
+
+    void test_presenterShareEdit_withoutHolding_doesNotRequireDailyValues()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        model.volumeToReturn = 0.0;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        // Der Aufruf muss trotzdem stattfinden — sonst bliebe eine zuvor
+        // gesetzte Sperre stehen, wenn der Dialog wiederverwendet wird.
+        QVERIFY(view.dailyValuesRequiredCalled);
+        QVERIFY(!view.dailyValuesRequired);
+    }
+
+    void test_presenterShareEdit_onSave_changingToForbiddenType_showsErrorAndDoesNotSave()
+    {
+        // Aktive Änderung von "Beide" (Vorgabe des Stub-Share) auf "Keine",
+        // während Anteile im Bestand sind. Die View sperrt den Radiobutton
+        // nur — verhindern muss es der Presenter.
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        view.updateTypeToReturn = ShareUpdateType::None;
+        model.volumeToReturn    = 10.0;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        p.onSave();
+
+        QVERIFY(!view.closedCalled);
+        QVERIFY(!model.saveShareCalled);
+        QVERIFY(!view.lastError.isEmpty());
+    }
+
+    void test_presenterShareEdit_onSave_marketPriceWithoutHolding_saves()
+    {
+        // Gegenprobe: ohne Bestand ist "Markt-Preis" zulässig — die Sperre
+        // darf nicht pauschal greifen.
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        view.updateTypeToReturn = ShareUpdateType::MarketPrice;
+        model.volumeToReturn    = 0.0;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        p.onSave();
+
+        QVERIFY(model.saveShareCalled);
+        QVERIFY(view.closedCalled);
+    }
+
+    void test_presenterShareEdit_onSave_dailyValuesWithHolding_saves()
+    {
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        view.updateTypeToReturn = ShareUpdateType::DailyValues;
+        model.volumeToReturn    = 10.0;
+        model.shareToReturn = ShareObject(QStringLiteral("guid-1"),
+                                           QStringLiteral("TST"), QString(),
+                                           QStringLiteral("Test AG"));
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        p.onSave();
+
+        QVERIFY(model.saveShareCalled);
+        QVERIFY(view.closedCalled);
+    }
+
+    void test_presenterShareEdit_onSave_unchangedLegacyType_stillSaves()
+    {
+        // Altbestand: "Keine" ist bereits gespeichert und wird NICHT geändert.
+        // Blockiert wird nur die aktive Änderung auf einen unzulässigen Wert —
+        // sonst liesse sich an dieser Aktie überhaupt nichts mehr bearbeiten,
+        // auch keine Namenskorrektur. Siehe ARCHITECTURE.md.
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        ShareObject share(QStringLiteral("guid-1"), QStringLiteral("TST"),
+                          QString(), QStringLiteral("Test AG"));
+        share.setUpdateType(ShareUpdateType::None);
+        model.shareToReturn     = share;
+        model.volumeToReturn    = 10.0;
+        view.updateTypeToReturn = ShareUpdateType::None;   // unverändert
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        p.onSave();
+
+        QVERIFY(model.saveShareCalled);
+        QVERIFY(view.closedCalled);
+        QVERIFY(view.lastError.isEmpty());
+    }
+
+    void test_presenterShareEdit_onSave_legacyTypeChangedToOtherForbidden_blocked()
+    {
+        // Gegenprobe zum Test darüber: gespeichert war "Keine", gewählt wird
+        // "Markt-Preis" — ebenfalls unzulässig. Das ist eine aktive Änderung
+        // und muss abgewiesen werden, obwohl der Ausgangswert auch schon
+        // unzulässig war. Die Ausnahme gilt nur für den unveränderten Wert.
+        openMemoryDb();
+        StubViewShareEdit  view;
+        StubModelShareEdit model;
+        ShareObject share(QStringLiteral("guid-1"), QStringLiteral("TST"),
+                          QString(), QStringLiteral("Test AG"));
+        share.setUpdateType(ShareUpdateType::None);
+        model.shareToReturn     = share;
+        model.volumeToReturn    = 10.0;
+        view.updateTypeToReturn = ShareUpdateType::MarketPrice;
+        PresenterShareEdit p(&view, &model, QStringLiteral("guid-1"));
+
+        p.onSave();
+
+        QVERIFY(!model.saveShareCalled);
+        QVERIFY(!view.closedCalled);
+        QVERIFY(!view.lastError.isEmpty());
+    }
 };
 
 
 int main(int argc, char* argv[])
 {
+    // Bugfix 23.07.2026 — siehe ARCHITECTURE.md, "System-Locale-abhaengiges
+    // Zahlenformat": muss vor jeder QLocale()-Verwendung gesetzt werden.
+    QLocale::setDefault(QLocale::German);
+
     QApplication app(argc, argv);
     app.setAttribute(Qt::AA_Use96Dpi, true);
 
-    TestViewShareEdit t;
+    TestShareEditForm t;
     return QTest::qExec(&t, argc, argv);
 }
 

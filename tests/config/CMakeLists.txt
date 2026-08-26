@@ -1,4 +1,4 @@
-find_package(Qt6 REQUIRED COMPONENTS Test)
+find_package(Qt6 REQUIRED COMPONENTS Test Gui Sql)
 
 qt_add_executable(tst_websitesconfig tst_websitesconfig.cpp
     ../../app/config/WebSitesConfig.cpp
@@ -75,3 +75,33 @@ target_link_libraries(tst_documentsxml
 set_target_properties(tst_documentsxml PROPERTIES AUTOMOC ON)
 
 add_test(NAME tst_documentsxml COMMAND tst_documentsxml)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# tst_appsettings — AppSettings-Singleton (26.08.2026)
+#
+# Aus tst_mainwindow.cpp ausgelagert: die zehn Tests setzen Einstellungen und
+# lesen sie zurueck (Logger-Farben/-Level/-Komponenten, Sound-Optionen,
+# Yahoo-API-Schluessel, Portfolio-Pfad) — kein Dialog, kein MainWindow, keine
+# Form. Sie lagen dort nur historisch zwischen den MainWindow-Tests.
+#
+# Qt6::Gui wird ausschliesslich fuer QColor gebraucht (AppSettings speichert
+# die Logger-Farben), Qt6::Sql und Database nur fuer den einen Test, der einen
+# Portfolio-Pfad oeffnet. Kein Qt6::Widgets — die Executable laeuft mit einer
+# QCoreApplication und braucht damit auch in der CI keinen Offscreen-QPA.
+# ─────────────────────────────────────────────────────────────────────────────
+
+qt_add_executable(tst_appsettings tst_appsettings.cpp
+    ../../app/config/AppSettings.cpp
+)
+
+target_include_directories(tst_appsettings
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+target_link_libraries(tst_appsettings
+    PRIVATE Qt6::Test Qt6::Core Qt6::Gui Qt6::Sql Database
+)
+
+set_target_properties(tst_appsettings PROPERTIES AUTOMOC ON)
+
+add_test(NAME tst_appsettings COMMAND tst_appsettings)
