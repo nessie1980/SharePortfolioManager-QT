@@ -155,14 +155,40 @@ public:
         ++splitHintCallCount;
     }
 
-    void setFieldOk(const QString&, const QString&) override {}
-    void setFieldError(const QString&)              override {}
+    // Umschaltbarer Fehlschlag (27.08.2026): setFieldOk() liefert seit dem
+    // Rueckgabewert-Umbau false, wenn die View einen Rohwert nicht uebernehmen
+    // konnte. Ohne diesen Schalter waere der false-Zweig in
+    // populateFromResult() durch keinen Test erreichbar.
+    QStringList failingFields;   ///< diese Feldschluessel schlagen fehl
+
+    bool setFieldOk(const QString& f, const QString& v,
+                    const QString& = QString()) override
+    {
+        Q_UNUSED(v)
+        if (failingFields.contains(f)) return false;
+        return true;
+    }
+    void setFieldError(const QString& f, const QString& = QString()) override
+    { Q_UNUSED(f) }
     void setDocumentPath(const QString& path)        override
         { m_docPath = path; }
     void setDocumentPreview(const QString&)          override {}
 
-    void setParseProgress(int, const QString&)       override {}
-    void setParseStatusIcon(int)                     override {}
+    // Fuer die Zaehl-Tests der Analyse-Statuszeile (27.08.2026): der Text
+    // wird gebraucht, um "Analyse OK - 5/5 Pflicht" von "Analyse
+    // fehlgeschlagen - 4/5 Pflicht" zu unterscheiden. Vorher verwarf der
+    // Stub ihn.
+    int     lastProgressPercent = -1;
+    QString lastProgressText;
+
+    void setParseProgress(int percent, const QString& status) override
+    {
+        lastProgressPercent = percent;
+        lastProgressText    = status;
+    }
+    int lastStatusIcon = -1;   ///< 0 = SearchOk, 1 = SearchFailed (27.08.2026)
+    void setParseStatusIcon(int iconType)            override
+        { lastStatusIcon = iconType; }
     void setUiBusy(bool)                             override {}
     void onParseFinished()                           override {}
 
@@ -1065,7 +1091,7 @@ private slots:
         bool errorSet = false;
         struct SpyView : public StubViewBuyEdit {
             bool* called;
-            void setFieldError(const QString& f) override
+            void setFieldError(const QString& f, const QString& = QString()) override
                 { if (f == QLatin1String("orderNumber")) *called = true; }
         } spy;
         spy.called = &errorSet;
@@ -1085,8 +1111,9 @@ private slots:
         bool okSet = false;
         struct SpyView : public StubViewBuyEdit {
             bool* called;
-            void setFieldOk(const QString& f, const QString&) override
-                { if (f == QLatin1String("orderNumber")) *called = true; }
+            bool setFieldOk(const QString& f, const QString&,
+                            const QString& = QString()) override
+                { if (f == QLatin1String("orderNumber")) *called = true;  return true; }
         } spy;
         spy.called = &okSet;
         spy.m_orderNumber = QStringLiteral("ORD-001");
@@ -1107,7 +1134,7 @@ private slots:
         bool errorSet = false;
         struct SpyView : public StubViewBuyEdit {
             bool* called;
-            void setFieldError(const QString& f) override
+            void setFieldError(const QString& f, const QString& = QString()) override
                 { if (f == QLatin1String("orderNumber")) *called = true; }
         } spy;
         spy.called = &errorSet;
@@ -1129,7 +1156,7 @@ private slots:
         bool errorSet = false;
         struct SpyView : public StubViewBuyEdit {
             bool* called;
-            void setFieldError(const QString& f) override
+            void setFieldError(const QString& f, const QString& = QString()) override
                 { if (f == QLatin1String("document")) *called = true; }
         } spy;
         spy.called = &errorSet;
@@ -1151,8 +1178,9 @@ private slots:
         bool okSet = false;
         struct SpyView : public StubViewBuyEdit {
             bool* called;
-            void setFieldOk(const QString& f, const QString&) override
-                { if (f == QLatin1String("document")) *called = true; }
+            bool setFieldOk(const QString& f, const QString&,
+                            const QString& = QString()) override
+                { if (f == QLatin1String("document")) *called = true;  return true; }
         } spy;
         spy.called = &okSet;
         spy.m_docPath = QStringLiteral("/some/path/buy.pdf");
@@ -2146,17 +2174,51 @@ private slots:
 
         // m_fieldStates ist privat — gezählt wird deshalb über den Tooltip
         // der Status-Symbole, den setFieldError() setzt.
-        auto errorLabels = [&dlg]() {
+        //
+        // Der Tooltip-Text hat sich am 27.08.2026 geändert: setFieldError()
+        // bekommt seither den verworfenen Rohwert und zeigt ihn an. Der
+        // allgemeine Text "Ungültige oder fehlende Eingabe" steht nur noch
+        // bei den Aufrufen aus der Live-Validierung, wo es keinen Rohwert
+        // gibt — hier gäbe es also nichts mehr zu zählen.
+        auto rejectedLabels = [&dlg]() {
             int n = 0;
             for (auto* l : dlg.findChildren<QLabel*>())
-                if (l->toolTip() == QObject::tr("Ungültige oder fehlende Eingabe"))
+                if (l->toolTip().startsWith(QObject::tr("Nicht verwertbar:")))
                     ++n;
             return n;
         };
 
-        const int before = errorLabels();
-        dlg.setFieldOk(QStringLiteral("date"), QStringLiteral("kein Datum"));
-        QCOMPARE(errorLabels(), before + 1);
+        const int before = rejectedLabels();
+        QVERIFY(!dlg.setFieldOk(QStringLiteral("date"),
+                                QStringLiteral("kein Datum")));
+        QCOMPARE(rejectedLabels(), before + 1);
+    }
+
+    /**
+     * @brief Der verworfene Rohwert steht im Tooltip des Fehlersymbols.
+     *
+     * Seit die Statuszeile nur noch übernommene Werte zählt, sagt sie nicht
+     * mehr, ob die Regel in Documents.xml überhaupt gegriffen hat. Diese
+     * Auskunft steht jetzt hier — ohne sie wäre beim Schreiben von Regeln
+     * nicht zu unterscheiden, ob nichts gefunden oder etwas Unbrauchbares
+     * gefangen wurde.
+     */
+    void test_viewBuyEdit_setFieldError_tooltipNamesRejectedRawValue()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        dlg.setFieldOk(QStringLiteral("date"),
+                       QStringLiteral("Schlusstag 04/02"));
+
+        bool found = false;
+        for (auto* l : dlg.findChildren<QLabel*>()) {
+            if (l->toolTip().contains(QStringLiteral("Schlusstag 04/02"))) {
+                found = true;
+                break;
+            }
+        }
+        QVERIFY2(found, "Rohwert steht nicht im Tooltip des Fehlersymbols");
     }
 
     /// Gegenprobe: ein brauchbares Datum darf KEIN Fehlersymbol setzen.
@@ -2593,6 +2655,86 @@ private slots:
         // Column 5 = Dok.; must have a cellWidget (QLabel with pixmap)
         QVERIFY(tbl->cellWidget(0, 5) != nullptr);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Analyse-Statuszeile zaehlt UEBERNOMMENE Werte, nicht gefangene
+    // (27.08.2026)
+    //
+    // Bis dahin zaehlte populateFromResult() jeden Wert, den der Parser
+    // gefangen hatte — auch einen, den die View verworfen hatte. Die
+    // Statuszeile meldete dann "Analyse OK — 5/5 Pflicht",
+    // waehrend am Feld das rote Symbol stand. Siehe ARCHITECTURE.md,
+    // "Analyse-Statuszeile und Feldsymbole".
+    //
+    // failingFields im Stub laesst gezielt ein Feld scheitern — so verhaelt
+    // sich die echte View bei einem unbrauchbaren Datum oder einer
+    // Depotnummer, die nicht in Documents.xml steht. Ohne diesen Schalter
+    // waere der false-Zweig von keinem Test erreichbar.
+    //
+    // Die Statuszeile wird ueber QTimer::singleShot(0, ...) gesetzt, deshalb
+    // QTRY_COMPARE: es verarbeitet Ereignisse und prueft erneut, bis der
+    // Rueckruf gelaufen ist. Ein einzelnes processEvents() reichte nicht —
+    // siehe den Kommentar an der Pruefung.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_presenterBuyEdit_populateFromResult_allFieldsTaken_reportsOk()
+    {
+        StubViewBuyEdit view;
+        StubModelBuyEdit model;
+        PresenterBuyEdit p(&view, &model,
+                           QStringLiteral("share-1"), nullptr);
+
+        const QMap<QString, QList<QString>> result = {
+            { QStringLiteral("Date"), { QStringLiteral("12.03.2024") } },
+            { QStringLiteral("DepotNumber"), { QStringLiteral("1234567890") } },
+            { QStringLiteral("OrderNumber"), { QStringLiteral("ORD-1") } },
+            { QStringLiteral("Volume"), { QStringLiteral("10") } },
+            { QStringLiteral("Price"), { QStringLiteral("245,60") } },
+        };
+
+        p.populateFromResult(result);
+        // QTRY_COMPARE statt eines einzelnen processEvents(): der Rueckruf
+        // haengt an QTimer::singleShot(0, ...), und EIN Durchlauf reicht nicht
+        // zuverlaessig — liegen noch Aufraeum-Ereignisse eines frueheren Tests
+        // in der Schlange, wird der Nullzeit-Timer erst beim naechsten
+        // Durchlauf zugestellt. Den gibt es hier nicht: mit dem Presenter als
+        // Kontextobjekt stirbt der Timer am Ende des Tests. QTRY_COMPARE
+        // prueft erneut und endet, sobald der Rueckruf gelaufen ist.
+        QTRY_COMPARE(view.lastStatusIcon, 0);   // SearchOk
+        QVERIFY2(view.lastProgressText.contains(QStringLiteral("Analyse OK")),
+                 qPrintable(view.lastProgressText));
+        QVERIFY2(view.lastProgressText.contains(
+                     QStringLiteral("5/5 Pflicht")),
+                 qPrintable(view.lastProgressText));
+    }
+
+    void test_presenterBuyEdit_populateFromResult_rejectedRequiredField_reportsFailed()
+    {
+        StubViewBuyEdit view;
+        view.failingFields << QStringLiteral("depotNumber");
+
+        StubModelBuyEdit model;
+        PresenterBuyEdit p(&view, &model,
+                           QStringLiteral("share-1"), nullptr);
+
+        const QMap<QString, QList<QString>> result = {
+            { QStringLiteral("Date"), { QStringLiteral("12.03.2024") } },
+            { QStringLiteral("DepotNumber"), { QStringLiteral("1234567890") } },
+            { QStringLiteral("OrderNumber"), { QStringLiteral("ORD-1") } },
+            { QStringLiteral("Volume"), { QStringLiteral("10") } },
+            { QStringLiteral("Price"), { QStringLiteral("245,60") } },
+        };
+
+        p.populateFromResult(result);
+        QTRY_COMPARE(view.lastStatusIcon, 1);   // SearchFailed
+        QVERIFY2(view.lastProgressText.contains(
+                     QStringLiteral("Analyse fehlgeschlagen")),
+                 qPrintable(view.lastProgressText));
+        QVERIFY2(view.lastProgressText.contains(
+                     QStringLiteral("4/5 Pflicht")),
+                 qPrintable(view.lastProgressText));
+    }
+
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

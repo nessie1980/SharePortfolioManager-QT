@@ -583,71 +583,107 @@ QDateTime ViewShareAdd::buyDateTime() const
 // ─────────────────────────────────────────────────────────────────────────────
 // ── IViewShareAdd write methods ───────────────────────────────────────────────
 
-void ViewShareAdd::setFieldOk(const QString& field, const QString& value)
+bool ViewShareAdd::setFieldOk(const QString& field, const QString& value,
+                              const QString& tooltip)
 {
-    bool converted = true;   ///< false, wenn ein Rohwert nicht umwandelbar war
+    // Einheitliche Bauweise seit 27.08.2026: der Feldzustand wird ERST AM
+    // SCHLUSS gesetzt, ein Merker traegt das Ergebnis dorthin. Vorher setzten
+    // die drei Editier-Dialoge das gruene Symbol ZUERST und riefen bei
+    // misslungener Umwandlung mittendrin setFieldError() — das funktionierte
+    // nur, weil dieses das Symbol wieder ueberschrieb, und liess sich nicht
+    // als Rueckgabewert ausdruecken. Siehe ARCHITECTURE.md,
+    // "Analyse-Statuszeile und Feldsymbole".
+    bool    converted = true;
+    QString rejected;   ///< Rohwert, an dem die Uebernahme gescheitert ist
 
-    // Ein einziger QLineEdit-Zweig, nicht mehr zwei. Der zweite (weiter unten,
-    // "Numeric QLineEdit") war toter Code: der erste fing bereits JEDES
-    // QLineEdit ab, die Zahlenfelder kamen dort nie an. Aufgefallen beim
-    // Beheben der Ordernummer-Umschreibung (22.08.2026) — siehe
-    // ARCHITECTURE.md, "Rohwerte aus Belegen: eine Regel je Zieltyp".
     if (auto* le = qobject_cast<QLineEdit*>(m_inputWidgets.value(field))) {
+        // Ein einziger QLineEdit-Zweig, nicht mehr zwei. Der zweite (weiter
+        // unten, "Numeric QLineEdit") war toter Code: der erste fing bereits
+        // JEDES QLineEdit ab, die Zahlenfelder kamen dort nie an. Aufgefallen
+        // beim Beheben der Ordernummer-Umschreibung (22.08.2026) — siehe
+        // ARCHITECTURE.md, "Rohwerte aus Belegen: eine Regel je Zieltyp".
+        //
         // Zahlenfelder tragen einen QDoubleValidator; nur bei ihnen ist der
         // Punkt ein Dezimal- oder Tausendertrenner. WKN, ISIN, Name, die drei
         // URL-Felder und die Ordernummer bleiben zeichengetreu — bei einer
-        // URL wäre die Umschreibung besonders zerstörerisch.
+        // URL waere die Umschreibung besonders zerstoererisch.
         const bool numeric =
             qobject_cast<const QDoubleValidator*>(le->validator()) != nullptr;
         le->setText(numeric ? DocumentFieldValue::forNumericField(value)
                             : DocumentFieldValue::forTextField(value));
         // recalcDerivedValues() braucht es hier nicht: die Zahlenfelder sind
-        // über textChanged bereits damit verbunden.
+        // ueber textChanged bereits damit verbunden.
     } else if (auto* de = qobject_cast<QDateEdit*>(m_inputWidgets.value(field))) {
         const QDate d = DocumentFieldValue::toDate(value);
         if (d.isValid())
             de->setDate(d);
-        else if (!value.isEmpty())
+        else if (!value.isEmpty()) {
             converted = false;   // sonst bliebe still das heutige Datum stehen
+            rejected  = value;
+        }
     } else if (auto* te = qobject_cast<QTimeEdit*>(m_inputWidgets.value(field))) {
         const QTime t = DocumentFieldValue::toTime(value);
         if (t.isValid())
             te->setTime(t);
-        else if (!value.isEmpty())
+        else if (!value.isEmpty()) {
             converted = false;
+            rejected  = value;
+        }
     } else if (field == QStringLiteral("depotNumber")) {
-        // Select the matching entry by its stored BankIdentifierValue (item data)
-        for (int i = 0; i < m_depotNumber->count(); ++i) {
-            if (m_depotNumber->itemData(i).toString() == value.trimmed()) {
-                m_depotNumber->setCurrentIndex(i);
-                break;
+        // Die Depotnummer wird NICHT dynamisch der Liste hinzugefuegt.
+        // Steht sie nicht in Documents.xml, ist das ein Konfigurationsfehler,
+        // den der Benutzer dort beheben muss: die Bestandspruefung pro Depot
+        // (Dividenden-Stueckzahl am Ex-Tag) braucht eine eindeutige,
+        // gepflegte Zuordnung. Bis 27.08.2026 blieb die Auswahl still auf dem Platzhalter
+        // — der gruene Haken stand trotzdem, und das Speichern scheiterte
+        // spaeter mit "Depotnummer fehlt".
+        if (!value.isEmpty()) {
+            QSignalBlocker block(m_depotNumber);
+            bool matched = false;
+            for (int i = 0; i < m_depotNumber->count(); ++i) {
+                if (m_depotNumber->itemData(i).toString() == value.trimmed()) {
+                    m_depotNumber->setCurrentIndex(i);
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                converted = false;
+                rejected  = value.trimmed();
             }
         }
-        // If not found: leave on placeholder — user must select manually
     }
 
-    // Anders als in den drei Editier-Dialogen wird der Feldzustand hier ERST
-    // AM SCHLUSS gesetzt. Ein Aufruf von setFieldError() oben würde deshalb
-    // gleich wieder überschrieben — daher der Merker.
     if (!converted) {
-        setFieldError(field);
-        return;
+        setFieldError(field, rejected);
+        return false;
     }
 
     m_fieldStates[field] = FieldState::Ok;
     if (auto* lbl = m_statusLabels.value(field)) {
         lbl->setPixmap(IconProvider::icon(IconProvider::SearchOk).pixmap(16, 16));
-        lbl->setToolTip(tr("Aus PDF übernommen"));
+        lbl->setToolTip(tooltip.isEmpty() ? tr("Aus PDF übernommen") : tooltip);
+        lbl->setVisible(true);
     }
+    return true;
 }
 
-void ViewShareAdd::setFieldError(const QString& field)
+void ViewShareAdd::setFieldError(const QString& field,
+                                 const QString& rawValue)
 {
+    auto* lbl = m_statusLabels.value(field);
+    if (!lbl) return;
     m_fieldStates[field] = FieldState::Error;
-    if (auto* lbl = m_statusLabels.value(field)) {
-        lbl->setPixmap(IconProvider::icon(IconProvider::SearchFailed).pixmap(16, 16));
-        lbl->setToolTip(tr("Nicht im PDF gefunden — bitte manuell eingeben"));
-    }
+    lbl->setPixmap(IconProvider::icon(IconProvider::SearchFailed).pixmap(16, 16));
+    // Der Rohwert im Tooltip (seit 27.08.2026) beantwortet beim Schreiben von
+    // Regeln fuer Documents.xml die Frage, die die Statuszeile seit der
+    // Umstellung auf "uebernommen statt gefunden" nicht mehr beantwortet:
+    // hat die Regel gar nicht gegriffen, oder hat sie etwas Unbrauchbares
+    // gefangen? Leer bei den Aufrufen aus der Live-Validierung.
+    lbl->setToolTip(rawValue.isEmpty()
+                        ? tr("Nicht im PDF gefunden — bitte manuell eingeben")
+                        : tr("Nicht verwertbar: „%1“").arg(rawValue));
+    lbl->setVisible(true);
 }
 
 void ViewShareAdd::setParseProgress(int percent, const QString& status)

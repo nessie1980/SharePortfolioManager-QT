@@ -628,80 +628,132 @@ void ViewBuyEdit::setSplitHint(const QString& text, const QString& tooltip, bool
         : QStringLiteral("color: palette(placeholderText);"));
 }
 
-void ViewBuyEdit::setFieldOk(const QString& field, const QString& value)
+bool ViewBuyEdit::setFieldOk(const QString& field, const QString& value,
+                             const QString& tooltip)
 {
-    auto* lbl = m_statusLabels.value(field);
-    if (lbl) {
-        m_fieldStates[field] = FieldState::Ok;
-        lbl->setPixmap(IconProvider::icon(IconProvider::SearchOk).pixmap(16, 16));
-        lbl->setToolTip(tr("Eingabe gültig"));
-        lbl->setVisible(true);
-    }
+    // Einheitliche Bauweise seit 27.08.2026: der Feldzustand wird ERST AM
+    // SCHLUSS gesetzt, ein Merker traegt das Ergebnis dorthin. Vorher setzten
+    // die drei Editier-Dialoge das gruene Symbol ZUERST und riefen bei
+    // misslungener Umwandlung mittendrin setFieldError() — das funktionierte
+    // nur, weil dieses das Symbol wieder ueberschrieb, und liess sich nicht
+    // als Rueckgabewert ausdruecken. Siehe ARCHITECTURE.md,
+    // "Analyse-Statuszeile und Feldsymbole".
+    bool    converted = true;
+    QString rejected;   ///< Rohwert, an dem die Uebernahme gescheitert ist
 
     auto* widget = m_inputWidgets.value(field);
-    if (!widget) return;
 
-    if (auto* le = qobject_cast<QLineEdit*>(widget)) {
-        // Only update the widget text when a real value is provided (from parser).
-        // Live validation calls setFieldOk with an empty value — don't overwrite.
+    // Kein Eingabefeld zum Schluessel? Dann ist es ein reines Status-Feld —
+    // "document" etwa hat ein Symbol, aber kein Eingabefeld, weil der Pfad
+    // ueber setDocumentPath() kommt. Das ist kein Fehler.
+    if (!widget) {
+        // nichts zu uebernehmen, converted bleibt true
+    } else if (auto* le = qobject_cast<QLineEdit*>(widget)) {
+        // Nur bei einem echten Wert schreiben (vom Parser). Die
+        // Live-Validierung ruft setFieldOk() mit leerem Wert auf und darf den
+        // Feldinhalt nicht ueberschreiben.
         if (!value.isEmpty()) {
-            // Zahlenfelder tragen einen QDoubleValidator, Textfelder nicht —
-            // daran hängt, ob der Punkt umgedeutet werden darf. Vorher bekam
-            // JEDES einzeilige Feld die Dezimalpunkt-Umschreibung, und die
-            // Ordernummer "670835/66.00" wurde zu "670835/66,00"
-            // (Nessies Bugreport 22.08.2026).
+            // Zahlenfeld oder Textfeld? Der QDoubleValidator entscheidet —
+            // nur dort darf der Punkt umgedeutet werden. Vorher bekam JEDES
+            // einzeilige Feld die Dezimalpunkt-Umschreibung, und die
+            // Ordernummer "670835/66.00" wurde zu "670835/66,00" (Nessies
+            // Bugreport 22.08.2026). Siehe ARCHITECTURE.md, "Rohwerte aus
+            // Belegen".
             const bool numeric =
                 qobject_cast<const QDoubleValidator*>(le->validator()) != nullptr;
             le->setText(numeric ? DocumentFieldValue::forNumericField(value)
                                 : DocumentFieldValue::forTextField(value));
         }
     } else if (field == QStringLiteral("depotNumber")) {
-        // Only update when a real value is provided (from parser).
-        if (value.isEmpty()) return;
-        QSignalBlocker block(m_depotNumber);
-        for (int i = 0; i < m_depotNumber->count(); ++i) {
-            if (m_depotNumber->itemData(i).toString() == value.trimmed()) {
-                m_depotNumber->setCurrentIndex(i);
-                break;
+        // Die Depotnummer wird NICHT dynamisch der Liste hinzugefuegt.
+        // Steht sie nicht in Documents.xml, ist das ein Konfigurationsfehler,
+        // den der Benutzer dort beheben muss: die Bestandspruefung pro Depot
+        // (Dividenden-Stueckzahl am Ex-Tag) braucht eine eindeutige,
+        // gepflegte Zuordnung. Bis 27.08.2026 blieb die Auswahl still auf dem Platzhalter
+        // — der gruene Haken stand trotzdem, und das Speichern scheiterte
+        // spaeter mit "Depotnummer fehlt".
+        if (!value.isEmpty()) {
+            QSignalBlocker block(m_depotNumber);
+            bool matched = false;
+            for (int i = 0; i < m_depotNumber->count(); ++i) {
+                if (m_depotNumber->itemData(i).toString() == value.trimmed()) {
+                    m_depotNumber->setCurrentIndex(i);
+                    matched = true;
+                    break;
+                }
             }
-        }
-    } else if (auto* cb = qobject_cast<QComboBox*>(widget)) {
-        if (value.isEmpty()) return;
-        bool matched = false;
-        for (int i = 0; i < cb->count(); ++i) {
-            if (cb->itemData(i).toString() == value ||
-                cb->itemText(i) == value) {
-                cb->setCurrentIndex(i);
-                matched = true;
-                break;
+            if (!matched) {
+                converted = false;
+                rejected  = value.trimmed();
             }
-        }
-        if (!matched) {
-            cb->addItem(value, value);
-            cb->setCurrentIndex(cb->count() - 1);
         }
     } else if (auto* de = qobject_cast<QDateEdit*>(widget)) {
         const QDate d = DocumentFieldValue::toDate(value);
         if (d.isValid())
             de->setDate(d);
-        else if (!value.isEmpty())
-            setFieldError(field);   // sonst bliebe still das heutige Datum stehen
+        else if (!value.isEmpty()) {
+            converted = false;
+            rejected  = value;
+        }
     } else if (auto* te = qobject_cast<QTimeEdit*>(widget)) {
         const QTime t = DocumentFieldValue::toTime(value);
         if (t.isValid())
             te->setTime(t);
-        else if (!value.isEmpty())
-            setFieldError(field);
+        else if (!value.isEmpty()) {
+            converted = false;
+            rejected  = value;
+        }
+    } else if (auto* cb = qobject_cast<QComboBox*>(widget)) {
+        // Generischer Zweig fuer kuenftige ComboBox-Felder. Die Depotnummer
+        // laeuft NICHT hier durch — sie hat ihren eigenen Zweig oben, weil
+        // ein unbekannter Wert dort ein Fehler ist und kein Grund, die Liste
+        // zu erweitern.
+        if (!value.isEmpty()) {
+            bool matched = false;
+            for (int i = 0; i < cb->count(); ++i) {
+                if (cb->itemData(i).toString() == value ||
+                    cb->itemText(i) == value) {
+                    cb->setCurrentIndex(i);
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                cb->addItem(value, value);
+                cb->setCurrentIndex(cb->count() - 1);
+            }
+        }
     }
+
+    if (!converted) {
+        setFieldError(field, rejected);
+        return false;
+    }
+
+    m_fieldStates[field] = FieldState::Ok;
+    if (auto* lbl = m_statusLabels.value(field)) {
+        lbl->setPixmap(IconProvider::icon(IconProvider::SearchOk).pixmap(16, 16));
+        lbl->setToolTip(tooltip.isEmpty() ? tr("Eingabe gültig") : tooltip);
+        lbl->setVisible(true);
+    }
+    return true;
 }
 
-void ViewBuyEdit::setFieldError(const QString& field)
+void ViewBuyEdit::setFieldError(const QString& field,
+                                const QString& rawValue)
 {
     auto* lbl = m_statusLabels.value(field);
     if (!lbl) return;
     m_fieldStates[field] = FieldState::Error;
     lbl->setPixmap(IconProvider::icon(IconProvider::SearchFailed).pixmap(16, 16));
-    lbl->setToolTip(tr("Ungültige oder fehlende Eingabe"));
+    // Der Rohwert im Tooltip (seit 27.08.2026) beantwortet beim Schreiben von
+    // Regeln fuer Documents.xml die Frage, die die Statuszeile seit der
+    // Umstellung auf "uebernommen statt gefunden" nicht mehr beantwortet:
+    // hat die Regel gar nicht gegriffen, oder hat sie etwas Unbrauchbares
+    // gefangen? Leer bei den Aufrufen aus der Live-Validierung.
+    lbl->setToolTip(rawValue.isEmpty()
+                        ? tr("Ungültige oder fehlende Eingabe")
+                        : tr("Nicht verwertbar: „%1“").arg(rawValue));
     lbl->setVisible(true);
 }
 

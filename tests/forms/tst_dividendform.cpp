@@ -198,7 +198,10 @@ public:
         m_enableFc    = enabled;   // wie die echte View: der Haken wird gesetzt
     }
 
-    void setFieldOk(const QString& field, const QString& value,
+    // Umschaltbarer Fehlschlag (27.08.2026), siehe tst_buysform.cpp.
+    QStringList failingFields;   ///< diese Feldschluessel schlagen fehl
+
+    bool setFieldOk(const QString& field, const QString& value,
                     const QString& tooltip = QString()) override
     {
         lastFieldOkField   = field;
@@ -209,8 +212,12 @@ public:
         // value in tests, the same way the real QLineEdit would.
         if (field == QStringLiteral("priceAtPayday") && !value.isEmpty())
             m_priceAtPayday = value.toDouble();
+
+        if (failingFields.contains(field)) return false;
+        return true;
     }
-    void setFieldError(const QString& f)            override { fieldErrors << f; }
+    void setFieldError(const QString& f, const QString& = QString()) override
+                                                    { fieldErrors << f; }
 
     // Phase 5-Nachtrag (21.08.2026): Ersatzhinweis für Belege ohne Ex-Tag.
     QString lastHintField;
@@ -224,8 +231,21 @@ public:
     void setDocumentPath(const QString& path)       override { m_docPath = path; }
     void setDocumentPreview(const QString&)         override {}
 
-    void setParseProgress(int, const QString&)      override {}
-    void setParseStatusIcon(int)                    override {}
+    // Fuer die Zaehl-Tests der Analyse-Statuszeile (27.08.2026): der Text
+    // wird gebraucht, um "Analyse OK - 5/5 Pflicht" von "Analyse
+    // fehlgeschlagen - 4/5 Pflicht" zu unterscheiden. Vorher verwarf der
+    // Stub ihn.
+    int     lastProgressPercent = -1;
+    QString lastProgressText;
+
+    void setParseProgress(int percent, const QString& status) override
+    {
+        lastProgressPercent = percent;
+        lastProgressText    = status;
+    }
+    int lastStatusIcon = -1;   ///< 0 = SearchOk, 1 = SearchFailed (27.08.2026)
+    void setParseStatusIcon(int iconType)            override
+        { lastStatusIcon = iconType; }
     void setUiBusy(bool)                            override {}
     void onParseFinished()                          override {}
 
@@ -717,6 +737,28 @@ private slots:
         dlg.setFieldOk(QStringLiteral("volume"),        QStringLiteral("100,0000"));
         dlg.setFieldOk(QStringLiteral("priceAtPayday"), QStringLiteral("45,00"));
         // Seit Phase 2 (21.08.2026) ebenfalls Pflicht:
+        // Die Depotnummer kommt NICHT ueber setFieldOk() herein: der Dialog ist
+        // ohne DocumentsConfig gebaut, seine Auswahlliste also leer, und seit
+        // dem 27.08.2026 weist setFieldOk() eine unbekannte Depotnummer ab
+        // (siehe ARCHITECTURE.md, "Analyse-Statuszeile und Feldsymbole").
+        // Dieser Test will die Depoterkennung gar nicht pruefen, sondern
+        // hasMissingRequiredFields() — deshalb wird der Eintrag direkt
+        // angelegt, so wie ihn eine geladene Documents.xml beisteuern wuerde.
+        //
+        // Welche der Comboboxen die Depot-Auswahl ist, wird nicht geraten:
+        // der Eintrag wandert reihum in jede, und depotNumber() sagt, wann
+        // die richtige getroffen ist.
+        for (auto* combo : dlg.findChildren<QComboBox*>()) {
+            const int before = combo->currentIndex();
+            combo->addItem(QStringLiteral("Testdepot"), QStringLiteral("DE123456789"));
+            combo->setCurrentIndex(combo->count() - 1);
+            if (dlg.depotNumber() == QStringLiteral("DE123456789"))
+                break;
+            combo->removeItem(combo->count() - 1);
+            combo->setCurrentIndex(before);
+        }
+        QCOMPARE(dlg.depotNumber(), QStringLiteral("DE123456789"));
+
         dlg.setFieldOk(QStringLiteral("depotNumber"), QStringLiteral("DE123456789"));
         dlg.setFieldOk(QStringLiteral("exDate"),      QStringLiteral("2024-06-13"));
         QStringList missing;
@@ -1813,15 +1855,36 @@ private slots:
         QCOMPARE(dlg.exDate(), QStringLiteral("2026-05-08"));
     }
 
-    void test_viewDividendEdit_setFieldOk_depotNumber_selectsUnknownValue()
+    void test_viewDividendEdit_setFieldOk_depotNumber_unknownIsRejected()
     {
-        // Ohne DocumentsConfig kennt die Combobox keine Depotnummern; eine
-        // aus dem Beleg gelesene muss trotzdem ankommen (generischer
-        // QComboBox-Zweig in setFieldOk()).
+        // Umgekehrte Erwartung seit dem 27.08.2026 (vorher hiess der Test
+        // ..._selectsUnknownValue und pruefte das Gegenteil): eine Depotnummer,
+        // die nicht in Documents.xml hinterlegt ist, wird NICHT in die
+        // Auswahlliste aufgenommen. Sie waere sonst in der Datenbank gelandet,
+        // ohne je konfiguriert worden zu sein — und die Bestandspruefung pro
+        // Depot (Stueckzahl am Ex-Tag) braucht eine gepflegte Zuordnung.
+        // Siehe ARCHITECTURE.md, "Analyse-Statuszeile und Feldsymbole".
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);   // leere Auswahlliste
+
+        QVERIFY(!dlg.setFieldOk(QStringLiteral("depotNumber"),
+                                QStringLiteral("501403950")));
+        QCOMPARE(dlg.depotNumber(), QString());
+    }
+
+    void test_viewDividendEdit_setFieldOk_depotNumber_unknownMarksFieldAsMissing()
+    {
+        // Die Kehrseite: das Feld bleibt eine fehlende Pflichtangabe, das
+        // Speichern ist also blockiert. Vorher stand hier ein gruener Haken
+        // an einem leeren Pflichtfeld.
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
+
         dlg.setFieldOk(QStringLiteral("depotNumber"), QStringLiteral("501403950"));
-        QCOMPARE(dlg.depotNumber(), QStringLiteral("501403950"));
+
+        QStringList missing;
+        QVERIFY(dlg.hasMissingRequiredFields(missing));
+        QVERIFY(missing.contains(QObject::tr("Depotnummer")));
     }
 
     void test_viewDividendEdit_setFieldHint_doesNotSatisfyRequiredField()
@@ -2041,6 +2104,84 @@ private slots:
         dlg.clearForm();
         QCOMPARE(dlg.exDate(), QStringLiteral("2000-01-01"));
         QVERIFY(dlg.depotNumber().isEmpty());
+    }
+
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Analyse-Statuszeile zaehlt UEBERNOMMENE Werte, nicht gefangene
+    // (27.08.2026)
+    //
+    // Bis dahin zaehlte populateFromResult() jeden Wert, den der Parser
+    // gefangen hatte — auch einen, den die View verworfen hatte. Die
+    // Statuszeile meldete dann "Analyse OK — 5/5 Pflicht",
+    // waehrend am Feld das rote Symbol stand. Siehe ARCHITECTURE.md,
+    // "Analyse-Statuszeile und Feldsymbole".
+    //
+    // failingFields im Stub laesst gezielt ein Feld scheitern — so verhaelt
+    // sich die echte View bei einem unbrauchbaren Datum oder einer
+    // Depotnummer, die nicht in Documents.xml steht. Ohne diesen Schalter
+    // waere der false-Zweig von keinem Test erreichbar.
+    //
+    // Die Statuszeile wird ueber QTimer::singleShot(0, ...) gesetzt, deshalb
+    // QTRY_COMPARE: es verarbeitet Ereignisse und prueft erneut, bis der
+    // Rueckruf gelaufen ist. Ein einzelnes processEvents() reichte nicht —
+    // siehe den Kommentar an der Pruefung.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_presenterDividendEdit_populateFromResult_allFieldsTaken_reportsOk()
+    {
+        StubViewDividendEdit view;
+        StubModelDividendEdit model;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        const QMap<QString, QList<QString>> result = {
+            { QStringLiteral("Date"), { QStringLiteral("15.05.2024") } },
+            { QStringLiteral("ExDate"), { QStringLiteral("13.05.2024") } },
+            { QStringLiteral("DepotNumber"), { QStringLiteral("1234567890") } },
+            { QStringLiteral("Volume"), { QStringLiteral("10") } },
+            { QStringLiteral("DividendRate"), { QStringLiteral("0,85") } },
+        };
+
+        p.populateFromResult(result);
+        // QTRY_COMPARE statt eines einzelnen processEvents(): der Rueckruf
+        // haengt an QTimer::singleShot(0, ...), und EIN Durchlauf reicht nicht
+        // zuverlaessig — liegen noch Aufraeum-Ereignisse eines frueheren Tests
+        // in der Schlange, wird der Nullzeit-Timer erst beim naechsten
+        // Durchlauf zugestellt. Den gibt es hier nicht: mit dem Presenter als
+        // Kontextobjekt stirbt der Timer am Ende des Tests. QTRY_COMPARE
+        // prueft erneut und endet, sobald der Rueckruf gelaufen ist.
+        QTRY_COMPARE(view.lastStatusIcon, 0);   // SearchOk
+        QVERIFY2(view.lastProgressText.contains(QStringLiteral("Analyse OK")),
+                 qPrintable(view.lastProgressText));
+        QVERIFY2(view.lastProgressText.contains(
+                     QStringLiteral("5/5 Pflicht")),
+                 qPrintable(view.lastProgressText));
+    }
+
+    void test_presenterDividendEdit_populateFromResult_rejectedRequiredField_reportsFailed()
+    {
+        StubViewDividendEdit view;
+        view.failingFields << QStringLiteral("exDate");
+
+        StubModelDividendEdit model;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        const QMap<QString, QList<QString>> result = {
+            { QStringLiteral("Date"), { QStringLiteral("15.05.2024") } },
+            { QStringLiteral("ExDate"), { QStringLiteral("13.05.2024") } },
+            { QStringLiteral("DepotNumber"), { QStringLiteral("1234567890") } },
+            { QStringLiteral("Volume"), { QStringLiteral("10") } },
+            { QStringLiteral("DividendRate"), { QStringLiteral("0,85") } },
+        };
+
+        p.populateFromResult(result);
+        QTRY_COMPARE(view.lastStatusIcon, 1);   // SearchFailed
+        QVERIFY2(view.lastProgressText.contains(
+                     QStringLiteral("Analyse fehlgeschlagen")),
+                 qPrintable(view.lastProgressText));
+        QVERIFY2(view.lastProgressText.contains(
+                     QStringLiteral("4/5 Pflicht")),
+                 qPrintable(view.lastProgressText));
     }
 
 };

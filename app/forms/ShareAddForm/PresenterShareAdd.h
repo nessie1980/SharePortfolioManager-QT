@@ -80,6 +80,22 @@ public slots:
      */
     void onCancel();
 
+    /**
+     * @brief Verteilt das Parser-Ergebnis auf die View-Felder.
+     *
+     * @param result  searchResult-Map aus ParserInfoState.
+     *
+     * Seit 27.08.2026 public statt private — sonst waere die geaenderte
+     * Zaehlung (nur UEBERNOMMENE Werte zaehlen, nicht gefangene) von keinem
+     * Test erreichbar: die Methode ist kein Slot, QMetaObject::invokeMethod
+     * kaeme also nicht heran, und der Weg ueber onDocumentSelected() braucht
+     * ein echtes PDF samt pdftotext. Gleiche Ueberlegung wie bei den
+     * statischen Helfern, die aus diesem Grund public sind (siehe
+     * TESTING.md, "Sichtbarkeit zugunsten der Testbarkeit").
+     */
+    void populateFromResult(const QMap<QString, QList<QString>>& result);
+
+
 private slots:
     /// Called when PdfTextExtractor finishes converting the selected PDF —
     /// kicks off the ParserLib parse.
@@ -97,12 +113,6 @@ private:
      * @param pdfText  Plain text extracted from the PDF.
      */
     void startParserForText(const QString& pdfText);
-
-    /**
-     * @brief Distribute ParserLib results to the view after Finished.
-     * @param result  searchResult map from ParserInfoState.
-     */
-    void populateFromResult(const QMap<QString, QList<QString>>& result);
 
     /**
      * @brief Map a Documents.xml field name to the IViewShareAdd field key.

@@ -96,15 +96,30 @@ public:
      * @param tooltip Optional tooltip override (e.g. to indicate the value
      *                was auto-filled from stored daily values rather than
      *                entered/parsed). Empty string keeps the default tooltip.
+     *
+     * @return true, wenn der Wert uebernommen wurde; false, wenn ein
+     *         nicht-leerer Rohwert nicht ins Zielfeld passte — unbrauchbares
+     *         Datum, unbrauchbare Uhrzeit, oder eine Depotnummer, die nicht
+     *         in Documents.xml hinterlegt ist. In diesem Fall hat die View
+     *         bereits setFieldError() mit dem Rohwert aufgerufen.
+     *         Rueckgabewert ergaenzt 27.08.2026, siehe ARCHITECTURE.md,
+     *         "Analyse-Statuszeile und Feldsymbole".
      */
-    virtual void setFieldOk(const QString& field, const QString& value,
+    virtual bool setFieldOk(const QString& field, const QString& value,
                             const QString& tooltip = QString()) = 0;
 
     /**
-     * @brief Mark a field as Error (red cross icon).
-     * @param field  Field key matching m_statusLabels.
+     * @brief Markiert ein Feld als fehlerhaft (rotes Symbol).
+     *
+     * @param field     Feldschluessel wie in m_statusLabels.
+     * @param rawValue  Der Rohwert, an dem die Uebernahme gescheitert ist.
+     *                  Er wandert in den Tooltip des Symbols, damit beim
+     *                  Schreiben von Regeln fuer Documents.xml sichtbar ist,
+     *                  WAS gefangen wurde. Leer erzeugt den bisherigen,
+     *                  allgemeinen Tooltip.
      */
-    virtual void setFieldError(const QString& field) = 0;
+    virtual void setFieldError(const QString& field,
+                               const QString& rawValue = QString()) = 0;
 
     /**
      * @brief Hängt einen Hinweis an ein Feld, OHNE dessen Wert zu setzen und

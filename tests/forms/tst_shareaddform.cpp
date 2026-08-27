@@ -124,13 +124,39 @@ public:
     double   reduction()        const override { return m_reduction; }
     QString  documentPath()     const override { return m_docPath; }
 
-    void setFieldOk(const QString& f, const QString& v) override { fieldOkValues[f] = v; }
-    void setFieldError(const QString& f)                override { fieldErrors << f; }
+    // Umschaltbarer Fehlschlag (27.08.2026): setFieldOk() liefert seit dem
+    // Rueckgabewert-Umbau false, wenn die View einen Rohwert nicht uebernehmen
+    // konnte. Ohne diesen Schalter waere der false-Zweig in
+    // populateFromResult() durch keinen Test erreichbar.
+    QStringList failingFields;   ///< diese Feldschluessel schlagen fehl
+
+    bool setFieldOk(const QString& f, const QString& v,
+                    const QString& = QString()) override
+    {
+        fieldOkValues[f] = v;
+        if (failingFields.contains(f)) return false;
+        return true;
+    }
+    void setFieldError(const QString& f, const QString& = QString()) override
+    { fieldErrors << f; }
     void setDocumentPath(const QString& path)           override { m_docPath = path; }
     void setDocumentPreview(const QString&)             override {}
     void showError(const QString& msg)                  override { lastError = msg; }
-    void setParseProgress(int, const QString&)          override {}
-    void setParseStatusIcon(int)                        override {}
+    // Fuer die Zaehl-Tests der Analyse-Statuszeile (27.08.2026): der Text
+    // wird gebraucht, um "Analyse OK - 5/5 Pflicht" von "Analyse
+    // fehlgeschlagen - 4/5 Pflicht" zu unterscheiden. Vorher verwarf der
+    // Stub ihn.
+    int     lastProgressPercent = -1;
+    QString lastProgressText;
+
+    void setParseProgress(int percent, const QString& status) override
+    {
+        lastProgressPercent = percent;
+        lastProgressText    = status;
+    }
+    int lastStatusIcon = -1;   ///< 0 = SearchOk, 1 = SearchFailed (27.08.2026)
+    void setParseStatusIcon(int iconType)            override
+        { lastStatusIcon = iconType; }
     void setUiBusy(bool)                                override {}
     void markMissingFieldsAsFailed()                    override {}
     bool hasMissingRequiredFields(QStringList& missing) const override
@@ -670,6 +696,95 @@ private slots:
         panel->showDocument(QStringLiteral("/no/such/file.pdf"));
         QVERIFY(true);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Analyse-Statuszeile zaehlt UEBERNOMMENE Werte, nicht gefangene
+    // (27.08.2026)
+    //
+    // Bis dahin zaehlte populateFromResult() jeden Wert, den der Parser
+    // gefangen hatte — auch einen, den die View verworfen hatte. Die
+    // Statuszeile meldete dann "Analyse OK — 8/8 Pflicht",
+    // waehrend am Feld das rote Symbol stand. Siehe ARCHITECTURE.md,
+    // "Analyse-Statuszeile und Feldsymbole".
+    //
+    // failingFields im Stub laesst gezielt ein Feld scheitern — so verhaelt
+    // sich die echte View bei einem unbrauchbaren Datum oder einer
+    // Depotnummer, die nicht in Documents.xml steht. Ohne diesen Schalter
+    // waere der false-Zweig von keinem Test erreichbar.
+    //
+    // Die Statuszeile wird ueber QTimer::singleShot(0, ...) gesetzt, deshalb
+    // QTRY_COMPARE: es verarbeitet Ereignisse und prueft erneut, bis der
+    // Rueckruf gelaufen ist. Ein einzelnes processEvents() reichte nicht —
+    // siehe den Kommentar an der Pruefung.
+    //
+    // PresenterShareAdd hat keinen WKN-/ISIN-Waechter wie die drei
+    // Editier-Presenter — der Dialog legt die Aktie erst an, es gibt noch
+    // keine, gegen die sich pruefen liesse. Wkn/Isin/Name sind hier
+    // Pflichtfelder, deshalb 8 statt 5.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_presenterShareAdd_populateFromResult_allFieldsTaken_reportsOk()
+    {
+        StubViewShareAdd view;
+        StubModelShareAdd model;
+        PresenterShareAdd p(&view, &model, &m_docsConfig);
+
+        const QMap<QString, QList<QString>> result = {
+            { QStringLiteral("Wkn"), { QStringLiteral("840400") } },
+            { QStringLiteral("Isin"), { QStringLiteral("DE0008404005") } },
+            { QStringLiteral("Name"), { QStringLiteral("Allianz SE") } },
+            { QStringLiteral("Date"), { QStringLiteral("12.03.2024") } },
+            { QStringLiteral("DepotNumber"), { QStringLiteral("1234567890") } },
+            { QStringLiteral("OrderNumber"), { QStringLiteral("ORD-1") } },
+            { QStringLiteral("Volume"), { QStringLiteral("10") } },
+            { QStringLiteral("Price"), { QStringLiteral("245,60") } },
+        };
+
+        p.populateFromResult(result);
+        // QTRY_COMPARE statt eines einzelnen processEvents(): der Rueckruf
+        // haengt an QTimer::singleShot(0, ...), und EIN Durchlauf reicht nicht
+        // zuverlaessig — liegen noch Aufraeum-Ereignisse eines frueheren Tests
+        // in der Schlange, wird der Nullzeit-Timer erst beim naechsten
+        // Durchlauf zugestellt. Den gibt es hier nicht: mit dem Presenter als
+        // Kontextobjekt stirbt der Timer am Ende des Tests. QTRY_COMPARE
+        // prueft erneut und endet, sobald der Rueckruf gelaufen ist.
+        QTRY_COMPARE(view.lastStatusIcon, 0);   // SearchOk
+        QVERIFY2(view.lastProgressText.contains(QStringLiteral("Analyse OK")),
+                 qPrintable(view.lastProgressText));
+        QVERIFY2(view.lastProgressText.contains(
+                     QStringLiteral("8/8 Pflicht")),
+                 qPrintable(view.lastProgressText));
+    }
+
+    void test_presenterShareAdd_populateFromResult_rejectedRequiredField_reportsFailed()
+    {
+        StubViewShareAdd view;
+        view.failingFields << QStringLiteral("depotNumber");
+
+        StubModelShareAdd model;
+        PresenterShareAdd p(&view, &model, &m_docsConfig);
+
+        const QMap<QString, QList<QString>> result = {
+            { QStringLiteral("Wkn"), { QStringLiteral("840400") } },
+            { QStringLiteral("Isin"), { QStringLiteral("DE0008404005") } },
+            { QStringLiteral("Name"), { QStringLiteral("Allianz SE") } },
+            { QStringLiteral("Date"), { QStringLiteral("12.03.2024") } },
+            { QStringLiteral("DepotNumber"), { QStringLiteral("1234567890") } },
+            { QStringLiteral("OrderNumber"), { QStringLiteral("ORD-1") } },
+            { QStringLiteral("Volume"), { QStringLiteral("10") } },
+            { QStringLiteral("Price"), { QStringLiteral("245,60") } },
+        };
+
+        p.populateFromResult(result);
+        QTRY_COMPARE(view.lastStatusIcon, 1);   // SearchFailed
+        QVERIFY2(view.lastProgressText.contains(
+                     QStringLiteral("Analyse fehlgeschlagen")),
+                 qPrintable(view.lastProgressText));
+        QVERIFY2(view.lastProgressText.contains(
+                     QStringLiteral("7/8 Pflicht")),
+                 qPrintable(view.lastProgressText));
+    }
+
 }; // end of TestShareAddForm
 
 int main(int argc, char* argv[])

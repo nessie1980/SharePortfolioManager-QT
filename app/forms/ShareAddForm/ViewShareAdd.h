@@ -85,8 +85,10 @@ public:
     QString   documentPath() const override;
 
     // ── IViewShareAdd write methods ───────────────────────────────────────
-    void setFieldOk(const QString& field, const QString& value) override;
-    void setFieldError(const QString& field)                    override;
+    bool setFieldOk(const QString& field, const QString& value,
+                    const QString& tooltip = QString()) override;
+    void setFieldError(const QString& field,
+                       const QString& rawValue = QString()) override;
     void setDocumentPath(const QString& path)                   override;
     void setDocumentPreview(const QString& text)                override;
     void showError(const QString& message)                      override;

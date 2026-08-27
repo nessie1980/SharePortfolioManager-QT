@@ -10,6 +10,63 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.19.3] - 2026-08-27
+
+### Changed
+
+- **Analyse-Statuszeile zaehlt uebernommene Werte statt gefangener** — nach dem
+  Einlesen eines Belegs konnte "Analyse OK - 5/5 Pflicht" dastehen, waehrend
+  daneben ein Pflichtfeld ein rotes Fehlersymbol trug. Die Zeile zaehlte, was
+  der Parser aus dem Beleg geholt hatte, das Symbol zeigte, was die Maske mit
+  dem Rohwert anfangen konnte. `setFieldOk()` meldet das Ergebnis der
+  Uebernahme jetzt zurueck, und die Statuszeile zaehlt nur noch, was
+  tatsaechlich in der Maske gelandet ist - fuer Pflicht- wie Optionalfelder.
+
+- **Rohwert im Tooltip des Fehlersymbols** — die Statuszeile unterscheidet
+  dadurch nicht mehr zwischen "Regel hat nicht gegriffen" und "Regel hat etwas
+  Unbrauchbares gefangen". Diese Auskunft steht jetzt dort, wo hingeschaut
+  wird: `setFieldError()` nimmt den verworfenen Rohwert entgegen und zeigt ihn
+  am Symbol an (`Nicht verwertbar: "Schlusstag 04/02"`).
+
+- **Einheitliche Bauweise in allen vier Views** — `ViewShareAdd` setzte den
+  Feldzustand bereits am Schluss ueber einen Merker; die drei Editier-Dialoge
+  setzten das gruene Symbol zuerst und ueberschrieben es bei Bedarf. Alle vier
+  folgen jetzt demselben Muster.
+
+- `populateFromResult()` ist in allen vier Presentern `public` statt `private`,
+  damit die geaenderte Zaehlung ueberhaupt testbar ist.
+
+- **Angepasste Tests.** Drei bestehende Testfaelle hielten das alte Verhalten
+  fest und wurden umgeschrieben:
+  `test_viewDividendEdit_setFieldOk_depotNumber_selectsUnknownValue` prueft als
+  `..._unknownIsRejected` jetzt das Gegenteil;
+  `test_viewBuyEdit_setFieldOk_unparsableDate_marksFieldAsError` zaehlte den
+  allgemeinen Tooltip-Text, den es bei einem verworfenen Rohwert nicht mehr
+  gibt; die beiden `..._hasMissingRequiredFields_falseAfterAllSet` setzten eine
+  Depotnummer, die in der leeren Auswahlliste ihres Dialogs nicht vorkam.
+  Dazu drei neue Faelle fuer die neue Zusage (abgewiesene Depotnummer,
+  blockiertes Speichern, Rohwert im Tooltip) und je zwei Zaehl-Tests pro
+  Formular.
+
+### Fixed
+
+- **Unbekannte Depotnummer wird nicht mehr stillschweigend hingenommen.** Eine
+  Depotnummer aus dem Beleg, die in `Documents.xml` nicht hinterlegt ist,
+  wurde in keiner der vier Masken gemeldet: "Aktie hinzufuegen" und das
+  Kauf-Formular liessen die Auswahl still auf dem Platzhalter stehen - mit
+  gruenem Haken, und das Speichern scheiterte spaeter mit "Depotnummer fehlt".
+  Verkaufs- und Dividenden-Formular fuegten den unbekannten Wert der Liste
+  hinzu, womit eine nirgends konfigurierte Depotnummer in der Datenbank landen
+  konnte.
+
+  Alle vier melden jetzt einen Fehler und blockieren das Speichern. Die
+  Zuordnung wird fuer die Bestandspruefung pro Depot gebraucht: die
+  Stueckzahl-Pruefung bei der Dividendeneingabe rechnet gegen den Bestand des
+  gewaehlten Depots am Ex-Tag.
+
+  @note Fuer Verkaufs- und Dividenden-Formular ist das eine Verschaerfung.
+  Bereits gespeicherte Datensaetze bleiben unberuehrt.
+
 ## [1.19.2] - 2026-08-26
 
 ### Changed

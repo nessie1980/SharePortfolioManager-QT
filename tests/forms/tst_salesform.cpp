@@ -222,13 +222,39 @@ public:
         ++splitHintCallCount;
     }
 
-    void setFieldOk(const QString&, const QString&) override {}
-    void setFieldError(const QString&)              override {}
+    // Umschaltbarer Fehlschlag (27.08.2026): setFieldOk() liefert seit dem
+    // Rueckgabewert-Umbau false, wenn die View einen Rohwert nicht uebernehmen
+    // konnte. Ohne diesen Schalter waere der false-Zweig in
+    // populateFromResult() durch keinen Test erreichbar.
+    QStringList failingFields;   ///< diese Feldschluessel schlagen fehl
+
+    bool setFieldOk(const QString& f, const QString& v,
+                    const QString& = QString()) override
+    {
+        Q_UNUSED(v)
+        if (failingFields.contains(f)) return false;
+        return true;
+    }
+    void setFieldError(const QString& f, const QString& = QString()) override
+    { Q_UNUSED(f) }
     void setDocumentPath(const QString& path)       override { m_docPath = path; }
     void setDocumentPreview(const QString&)         override {}
 
-    void setParseProgress(int, const QString&)      override {}
-    void setParseStatusIcon(int)                    override {}
+    // Fuer die Zaehl-Tests der Analyse-Statuszeile (27.08.2026): der Text
+    // wird gebraucht, um "Analyse OK - 5/5 Pflicht" von "Analyse
+    // fehlgeschlagen - 4/5 Pflicht" zu unterscheiden. Vorher verwarf der
+    // Stub ihn.
+    int     lastProgressPercent = -1;
+    QString lastProgressText;
+
+    void setParseProgress(int percent, const QString& status) override
+    {
+        lastProgressPercent = percent;
+        lastProgressText    = status;
+    }
+    int lastStatusIcon = -1;   ///< 0 = SearchOk, 1 = SearchFailed (27.08.2026)
+    void setParseStatusIcon(int iconType)            override
+        { lastStatusIcon = iconType; }
     void setUiBusy(bool)                            override {}
     void onParseFinished()                          override {}
 
@@ -1069,7 +1095,7 @@ private slots:
         bool errorSet = false;
         struct SpyView : public StubViewSaleEdit {
             bool* called;
-            void setFieldError(const QString& f) override
+            void setFieldError(const QString& f, const QString& = QString()) override
                 { if (f == QLatin1String("volume")) *called = true; }
         } spyView;
         spyView.called   = &errorSet;
@@ -1093,8 +1119,9 @@ private slots:
         bool okSet = false;
         struct SpyView : public StubViewSaleEdit {
             bool* called;
-            void setFieldOk(const QString& f, const QString&) override
-                { if (f == QLatin1String("volume")) *called = true; }
+            bool setFieldOk(const QString& f, const QString&,
+                            const QString& = QString()) override
+                { if (f == QLatin1String("volume")) *called = true;  return true; }
         } spyView;
         spyView.called   = &okSet;
         spyView.m_volume = 190.0;   // exakt gedeckt
@@ -1799,7 +1826,7 @@ private slots:
         bool errorSet = false;
         struct SpyView : public StubViewSaleEdit {
             bool* called;
-            void setFieldError(const QString& f) override
+            void setFieldError(const QString& f, const QString& = QString()) override
                 { if (f == QLatin1String("orderNumber")) *called = true; }
         } spyView;
         spyView.called        = &errorSet;
@@ -1819,7 +1846,7 @@ private slots:
         bool errorSet = false;
         struct SpyView : public StubViewSaleEdit {
             bool* called;
-            void setFieldError(const QString& f) override
+            void setFieldError(const QString& f, const QString& = QString()) override
                 { if (f == QLatin1String("orderNumber")) *called = true; }
         } spyView;
         spyView.called = &errorSet;
@@ -1838,7 +1865,7 @@ private slots:
         bool errorSet = false;
         struct SpyView : public StubViewSaleEdit {
             bool* called;
-            void setFieldError(const QString& f) override
+            void setFieldError(const QString& f, const QString& = QString()) override
                 { if (f == QLatin1String("document")) *called = true; }
         } spyView;
         spyView.called   = &errorSet;
@@ -1858,8 +1885,9 @@ private slots:
         bool okSet = false;
         struct SpyView : public StubViewSaleEdit {
             bool* called;
-            void setFieldOk(const QString& f, const QString&) override
-                { if (f == QLatin1String("document")) *called = true; }
+            bool setFieldOk(const QString& f, const QString&,
+                            const QString& = QString()) override
+                { if (f == QLatin1String("document")) *called = true;  return true; }
         } spyView;
         spyView.called    = &okSet;
         spyView.m_docPath = QStringLiteral("/doc.pdf");
@@ -1931,6 +1959,28 @@ private slots:
     {
         openMemoryDb();
         ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        // Die Depotnummer kommt NICHT ueber setFieldOk() herein: der Dialog ist
+        // ohne DocumentsConfig gebaut, seine Auswahlliste also leer, und seit
+        // dem 27.08.2026 weist setFieldOk() eine unbekannte Depotnummer ab
+        // (siehe ARCHITECTURE.md, "Analyse-Statuszeile und Feldsymbole").
+        // Dieser Test will die Depoterkennung gar nicht pruefen, sondern
+        // hasMissingRequiredFields() — deshalb wird der Eintrag direkt
+        // angelegt, so wie ihn eine geladene Documents.xml beisteuern wuerde.
+        //
+        // Welche der Comboboxen die Depot-Auswahl ist, wird nicht geraten:
+        // der Eintrag wandert reihum in jede, und depotNumber() sagt, wann
+        // die richtige getroffen ist.
+        for (auto* combo : dlg.findChildren<QComboBox*>()) {
+            const int before = combo->currentIndex();
+            combo->addItem(QStringLiteral("Testdepot"), QStringLiteral("8006189848"));
+            combo->setCurrentIndex(combo->count() - 1);
+            if (dlg.depotNumber() == QStringLiteral("8006189848"))
+                break;
+            combo->removeItem(combo->count() - 1);
+            combo->setCurrentIndex(before);
+        }
+        QCOMPARE(dlg.depotNumber(), QStringLiteral("8006189848"));
 
         dlg.setFieldOk(QStringLiteral("depotNumber"), QStringLiteral("8006189848"));
         dlg.setFieldOk(QStringLiteral("orderNumber"), QStringLiteral("ORD-S-001"));
@@ -2662,8 +2712,9 @@ private slots:
         bool okSet = false;
         struct SpyView : public StubViewSaleEdit {
             bool* called;
-            void setFieldOk(const QString& f, const QString&) override
-                { if (f == QLatin1String("orderNumber")) *called = true; }
+            bool setFieldOk(const QString& f, const QString&,
+                            const QString& = QString()) override
+                { if (f == QLatin1String("orderNumber")) *called = true;  return true; }
         } spy;
         spy.called = &okSet;
         spy.m_orderNumber = QStringLiteral("ORD-S-001");
@@ -2977,6 +3028,84 @@ private slots:
         QCOMPARE(dlg.salePrice(), 0.0);
         QVERIFY(dlg.orderNumber().isEmpty());
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Analyse-Statuszeile zaehlt UEBERNOMMENE Werte, nicht gefangene
+    // (27.08.2026)
+    //
+    // Bis dahin zaehlte populateFromResult() jeden Wert, den der Parser
+    // gefangen hatte — auch einen, den die View verworfen hatte. Die
+    // Statuszeile meldete dann "Analyse OK — 5/5 Pflicht",
+    // waehrend am Feld das rote Symbol stand. Siehe ARCHITECTURE.md,
+    // "Analyse-Statuszeile und Feldsymbole".
+    //
+    // failingFields im Stub laesst gezielt ein Feld scheitern — so verhaelt
+    // sich die echte View bei einem unbrauchbaren Datum oder einer
+    // Depotnummer, die nicht in Documents.xml steht. Ohne diesen Schalter
+    // waere der false-Zweig von keinem Test erreichbar.
+    //
+    // Die Statuszeile wird ueber QTimer::singleShot(0, ...) gesetzt, deshalb
+    // QTRY_COMPARE: es verarbeitet Ereignisse und prueft erneut, bis der
+    // Rueckruf gelaufen ist. Ein einzelnes processEvents() reichte nicht —
+    // siehe den Kommentar an der Pruefung.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_presenterSaleEdit_populateFromResult_allFieldsTaken_reportsOk()
+    {
+        StubViewSaleEdit view;
+        StubModelSaleEdit model;
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        const QMap<QString, QList<QString>> result = {
+            { QStringLiteral("Date"), { QStringLiteral("12.03.2024") } },
+            { QStringLiteral("DepotNumber"), { QStringLiteral("1234567890") } },
+            { QStringLiteral("OrderNumber"), { QStringLiteral("ORD-1") } },
+            { QStringLiteral("Volume"), { QStringLiteral("10") } },
+            { QStringLiteral("Price"), { QStringLiteral("245,60") } },
+        };
+
+        p.populateFromResult(result);
+        // QTRY_COMPARE statt eines einzelnen processEvents(): der Rueckruf
+        // haengt an QTimer::singleShot(0, ...), und EIN Durchlauf reicht nicht
+        // zuverlaessig — liegen noch Aufraeum-Ereignisse eines frueheren Tests
+        // in der Schlange, wird der Nullzeit-Timer erst beim naechsten
+        // Durchlauf zugestellt. Den gibt es hier nicht: mit dem Presenter als
+        // Kontextobjekt stirbt der Timer am Ende des Tests. QTRY_COMPARE
+        // prueft erneut und endet, sobald der Rueckruf gelaufen ist.
+        QTRY_COMPARE(view.lastStatusIcon, 0);   // SearchOk
+        QVERIFY2(view.lastProgressText.contains(QStringLiteral("Analyse OK")),
+                 qPrintable(view.lastProgressText));
+        QVERIFY2(view.lastProgressText.contains(
+                     QStringLiteral("5/5 Pflicht")),
+                 qPrintable(view.lastProgressText));
+    }
+
+    void test_presenterSaleEdit_populateFromResult_rejectedRequiredField_reportsFailed()
+    {
+        StubViewSaleEdit view;
+        view.failingFields << QStringLiteral("depotNumber");
+
+        StubModelSaleEdit model;
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        const QMap<QString, QList<QString>> result = {
+            { QStringLiteral("Date"), { QStringLiteral("12.03.2024") } },
+            { QStringLiteral("DepotNumber"), { QStringLiteral("1234567890") } },
+            { QStringLiteral("OrderNumber"), { QStringLiteral("ORD-1") } },
+            { QStringLiteral("Volume"), { QStringLiteral("10") } },
+            { QStringLiteral("Price"), { QStringLiteral("245,60") } },
+        };
+
+        p.populateFromResult(result);
+        QTRY_COMPARE(view.lastStatusIcon, 1);   // SearchFailed
+        QVERIFY2(view.lastProgressText.contains(
+                     QStringLiteral("Analyse fehlgeschlagen")),
+                 qPrintable(view.lastProgressText));
+        QVERIFY2(view.lastProgressText.contains(
+                     QStringLiteral("4/5 Pflicht")),
+                 qPrintable(view.lastProgressText));
+    }
+
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -59,19 +59,44 @@ public:
     // ── Presenter → View: populate fields from PDF parse result ──────────
 
     /**
-     * @brief Set a field value and mark it with a green check (parse hit).
-     * @param field  One of: "wkn","isin","name","date","time","depotNumber",
-     *               "orderNumber","volume","price","provision","brokerFee",
-     *               "traderFee","reduction"
-     * @param value  The parsed string value.
+     * @brief Setzt den Feldwert und markiert das Feld als Ok (gruener Haken).
+     *
+     * @param field   Feldschluessel wie in m_inputWidgets / m_statusLabels.
+     * @param value   Rohwert aus dem Beleg (locale-behaftet). Leer bei den
+     *                Aufrufen aus der Live-Validierung, die nur das Symbol
+     *                setzen und den Feldinhalt nicht anfassen sollen.
+     * @param tooltip Ersetzt den Standardtext am gruenen Symbol. Leer laesst
+     *                den Standardtext stehen.
+     *
+     * @return true, wenn der Wert uebernommen wurde; false, wenn ein
+     *         nicht-leerer Rohwert nicht ins Zielfeld passte — unbrauchbares
+     *         Datum, unbrauchbare Uhrzeit, oder eine Depotnummer, die nicht
+     *         in Documents.xml hinterlegt ist. In diesem Fall hat die View
+     *         bereits setFieldError() mit dem Rohwert aufgerufen; der
+     *         Presenter muss nur noch seine Zaehlung anpassen.
+     *
+     * Der Rueckgabewert kam am 27.08.2026 dazu. Vorher zaehlte
+     * populateFromResult() jeden gefangenen Wert als Treffer, auch wenn die
+     * View ihn verworfen hatte — die Statuszeile meldete dann "Analyse OK —
+     * 5/5 Pflicht", waehrend am Feld das rote Symbol stand. Siehe
+     * ARCHITECTURE.md, "Analyse-Statuszeile und Feldsymbole".
      */
-    virtual void setFieldOk(const QString& field, const QString& value) = 0;
+    virtual bool setFieldOk(const QString& field, const QString& value,
+                            const QString& tooltip = QString()) = 0;
 
     /**
-     * @brief Mark a field with a red X (parse miss — required field not found).
-     * @param field  Same field names as setFieldOk().
+     * @brief Markiert ein Feld als fehlerhaft (rotes Symbol).
+     *
+     * @param field     Feldschluessel wie in m_statusLabels.
+     * @param rawValue  Der Rohwert, an dem die Uebernahme gescheitert ist.
+     *                  Er wandert in den Tooltip des Symbols, damit beim
+     *                  Schreiben von Regeln fuer Documents.xml sichtbar ist,
+     *                  WAS gefangen wurde. Leer erzeugt den bisherigen,
+     *                  allgemeinen Tooltip — so rufen ihn die Aufrufe aus der
+     *                  Live-Validierung auf, wo es keinen Rohwert gibt.
      */
-    virtual void setFieldError(const QString& field) = 0;
+    virtual void setFieldError(const QString& field,
+                               const QString& rawValue = QString()) = 0;
 
     /**
      * @brief Write @p path into the document path field (and, where present,

@@ -1048,6 +1048,8 @@ ViewBuyEdit:
 | `test_viewBuyEdit_setFieldOk_doesNotOverwriteWithEmptyValue` | `setFieldOk("orderNumber", "")` → Widget-Text unverändert | Bestehender Wert bleibt erhalten |
 | `test_viewBuyEdit_setFieldOk_writesValueWhenNonEmpty` | `setFieldOk("orderNumber", "ORD-456")` → Widget aktualisiert | `text()` = "ORD-456" |
 | `test_viewBuyEdit_setFieldError_doesNotCrash` | Fehler-Icon auf gültigem + unbekanntem Feld | Kein Absturz |
+| `test_viewBuyEdit_setFieldOk_unparsableDate_marksFieldAsError` | Unbrauchbares Datum wird sichtbar statt still verworfen | `setFieldOk()` = false, ein Symbol mehr mit Tooltip „Nicht verwertbar:" |
+| `test_viewBuyEdit_setFieldError_tooltipNamesRejectedRawValue` | Der verworfene Rohwert steht im Tooltip (27.08.2026) | Tooltip enthält „Schlusstag 04/02" |
 | `test_viewBuyEdit_hasMissingRequiredFields_initiallyTrue` | Direkt nach Konstruktion fehlen Pflichtfelder | Liste enthält date, depotNumber, orderNumber, volume, price |
 | `test_viewBuyEdit_hasMissingRequiredFields_depotNumber_checkedByItemData` | Placeholder hat kein itemData → fehlend | `hasMissingRequiredFields()` = true |
 | `test_viewBuyEdit_hasMissingRequiredFields_falseAfterAllSet` | Nach Setzen aller Pflichtfelder | `hasMissingRequiredFields()` = false |
@@ -2527,6 +2529,8 @@ ViewDividendEdit:
 | `test_viewDividendEdit_setButtonStates_canRemoveFalse_removeDisabled` | `canRemove=false` | Entfernen-Button deaktiviert |
 | `test_viewDividendEdit_setButtonStates_canRemoveTrue_removeEnabled` | `canRemove=true` | Entfernen-Button aktiv |
 | `test_viewDividendEdit_allFieldsAlwaysEnabled` | `setButtonStates(true, true)` — kein readOnlyMode | Alle editierbaren Felder aktiviert |
+| `test_viewDividendEdit_setFieldOk_depotNumber_unknownIsRejected` | Depotnummer ohne Eintrag in Documents.xml wird abgewiesen (27.08.2026) | `setFieldOk()` = false, `depotNumber()` leer |
+| `test_viewDividendEdit_setFieldOk_depotNumber_unknownMarksFieldAsMissing` | Kehrseite: Speichern bleibt blockiert | `hasMissingRequiredFields()` enthält „Depotnummer" |
 | `test_viewDividendEdit_markMissingFieldsAsFailed_doesNotCrash` | Auf leerem Formular | Kein Absturz |
 | `test_viewDividendEdit_setFieldOk_doesNotOverwriteWithEmptyValue` | `setFieldOk("rate", "")` → Widget-Text unverändert | Bestehender Wert bleibt erhalten |
 | `test_viewDividendEdit_setFieldOk_writesValueWhenNonEmpty` | `setFieldOk("rate", "2,00")` → Widget aktualisiert | `rate()` = 2.0 |
@@ -4208,6 +4212,127 @@ target_link_libraries(tst_appsettings
 
 add_test(NAME tst_appsettings COMMAND tst_appsettings)
 ```
+
+### Tooltip-Texte als Pruefgegenstand (27.08.2026)
+
+`test_viewBuyEdit_setFieldOk_unparsableDate_marksFieldAsError()` zaehlt die
+Fehlersymbole ueber ihren Tooltip, weil `m_fieldStates` privat ist. Dieser
+Umweg ist am Tooltip-Umbau zerbrochen: `setFieldError()` bekommt seither den
+verworfenen Rohwert und zeigt ihn an (`Nicht verwertbar: "..."`), der
+allgemeine Text `Ungültige oder fehlende Eingabe` steht nur noch bei den
+Aufrufen aus der Live-Validierung. Der Test zaehlte also weiter den alten
+Text und fand null.
+
+Er prueft jetzt auf `Nicht verwertbar:` und zusaetzlich den Rueckgabewert von
+`setFieldOk()`. Ein zweiter Test
+(`test_viewBuyEdit_setFieldError_tooltipNamesRejectedRawValue`) haelt fest,
+dass der Rohwert selbst im Tooltip auftaucht - das ist die Auskunft, die die
+Statuszeile seit der Umstellung auf "uebernommen statt gefunden" nicht mehr
+gibt.
+
+@note Wer einen Anzeigetext aendert, muss die Tests durchsuchen, die ihn als
+Erkennungsmerkmal benutzen. Ein Zaehler ueber Tooltips schlaegt nicht fehl,
+wenn der Text sich aendert - er zaehlt einfach null, und das sieht aus wie
+"die Funktion tut nichts mehr". Hier war es genau umgekehrt: die Funktion tat
+mehr als vorher.
+
+---
+
+### Unbekannte Depotnummer: was sich in den Tests geaendert hat (27.08.2026)
+
+Seit `setFieldOk()` eine Depotnummer abweist, die nicht in der Auswahlliste
+steht, sind zwei Sorten bestehender Tests betroffen.
+
+Erstens Tests, die das alte Verhalten festschrieben.
+`test_viewDividendEdit_setFieldOk_depotNumber_selectsUnknownValue` pruefte
+woertlich, dass eine unbekannte Depotnummer trotzdem ankommt. Er heisst jetzt
+`..._unknownIsRejected` und prueft das Gegenteil; ein zweiter Test
+(`..._unknownMarksFieldAsMissing`) haelt die Kehrseite fest, dass das Feld
+danach eine fehlende Pflichtangabe bleibt und das Speichern blockiert.
+
+Zweitens Tests, die eine Depotnummer nur als Mittel zum Zweck setzten, um ein
+Formular vollstaendig zu fuellen — etwa
+`test_viewDividendEdit_hasMissingRequiredFields_falseAfterAllSet` und sein
+Gegenstueck in `tst_salesform`. Sie bauen den Dialog mit `nullptr` statt einer
+geladenen `DocumentsConfig`, die Auswahlliste ist also leer, und die
+Depotnummer wurde stillschweigend angenommen. Sie legen den Eintrag jetzt
+direkt an:
+
+```cpp
+for (auto* combo : dlg.findChildren<QComboBox*>()) {
+    const int before = combo->currentIndex();
+    combo->addItem(QStringLiteral("Testdepot"), QStringLiteral("DE123456789"));
+    combo->setCurrentIndex(combo->count() - 1);
+    if (dlg.depotNumber() == QStringLiteral("DE123456789"))
+        break;                       // richtige Combobox gefunden
+    combo->removeItem(combo->count() - 1);
+    combo->setCurrentIndex(before);
+}
+QCOMPARE(dlg.depotNumber(), QStringLiteral("DE123456789"));
+```
+
+@note Welche der Comboboxen die Depot-Auswahl ist, wird bewusst nicht ueber
+`objectName()` oder die Zahl der Eintraege geraten — beides waere eine stille
+Annahme, die beim naechsten Umbau der Maske kippt, ohne dass der Test es
+sagt. Stattdessen wandert der Eintrag reihum durch alle Comboboxen, und der
+oeffentliche Lesezugriff `depotNumber()` entscheidet, wann die richtige
+getroffen ist. Der abschliessende `QCOMPARE` faengt den Fall ab, dass keine
+passt.
+
+@note Tests, die mit einer echten `DocumentsConfig` arbeiten und ihre
+Depotnummer aus `itemData()` der Combobox holen — etwa
+`test_viewBuyEdit_setFieldOk_depotNumber_matchesByItemData` — waren nicht
+betroffen: sie verwenden von vornherein einen konfigurierten Wert.
+
+---
+
+### Sichtbarkeit zugunsten der Testbarkeit
+
+`populateFromResult()` ist in allen vier Parse-Presentern (`PresenterShareAdd`,
+`PresenterBuyEdit`, `PresenterSaleEdit`, `PresenterDividendEdit`) seit dem
+27.08.2026 `public` statt `private`.
+
+Der Grund ist derselbe, aus dem auch statische Helfer im Projekt `public` sind:
+ohne direkten Zugriff bliebe die Methode ungetestet. Sie ist kein Slot,
+`QMetaObject::invokeMethod` kommt also nicht heran, und der einzige andere Weg
+- `onDocumentSelected()` mit einem echten PDF - braucht `pdftotext` auf dem
+Runner und macht aus einem Zaehl-Test einen Integrationstest mit Datei-Fixture.
+
+@note Der Stub-View bekommt fuer diese Tests drei Aufzeichnungsfelder, die er
+vorher verwarf: `failingFields` (laesst gezielt ein Feld scheitern),
+`lastProgressText` und `lastStatusIcon`. Ohne den Schalter waere der
+false-Zweig in `populateFromResult()` von keinem Test erreichbar; ohne die
+beiden anderen liesse sich "Analyse OK - 5/5 Pflicht" nicht von "Analyse
+fehlgeschlagen - 4/5 Pflicht" unterscheiden.
+
+@note Die Statuszeile wird in allen vier Presentern ueber
+`QTimer::singleShot(0, ...)` gesetzt. Die Tests pruefen sie mit
+`QTRY_COMPARE`, nicht mit `QCOMPARE` nach einem einzelnen
+`QCoreApplication::processEvents()`. Ein Durchlauf reicht nicht zuverlaessig:
+liegen noch Aufraeum-Ereignisse eines frueheren Tests in der Schlange - etwa
+der `pdftotext`-Prozess aus einem Dokument-Test -, wird der Nullzeit-Timer
+erst beim naechsten Durchlauf zugestellt, und den gibt es nicht, weil mit dem
+Presenter als Kontextobjekt der Timer am Ende des Tests stirbt. Genau so ist
+`test_presenterShareAdd_populateFromResult_allFieldsTaken_reportsOk` beim
+ersten Lauf fehlgeschlagen (27.08.2026).
+
+@note `QTRY_COMPARE` ist hier kein Rueckfall auf zeitabhaengiges Warten: es
+endet, sobald die Bedingung zutrifft, und die Zeitschranke greift nur im
+Fehlerfall. Das unterscheidet es von einem `qWait()` mit geratener Wartezeit,
+das im Projekt weiterhin gemieden wird.
+
+| Test (je Formular zweimal) | Prueft |
+| --- | --- |
+| `test_presenter*_populateFromResult_allFieldsTaken_reportsOk` | Alle Pflichtwerte uebernommen: Symbol 0 (SearchOk), Text "Analyse OK", volle Pflichtzahl |
+| `test_presenter*_populateFromResult_rejectedRequiredField_reportsFailed` | Ein Pflichtfeld von der View verworfen: Symbol 1 (SearchFailed), Text "Analyse fehlgeschlagen", Pflichtzahl um eins niedriger |
+
+Die Pflichtzahl ist je Formular verschieden: fuenf bei Kauf, Verkauf und
+Dividende, acht bei "Aktie hinzufuegen" - dort sind WKN, ISIN und Name
+zusaetzlich Pflicht. `PresenterShareAdd` hat als einziger keinen WKN-/ISIN-
+Waechter am Anfang von `populateFromResult()`: der Dialog legt die Aktie erst
+an, es gibt noch keine, gegen die sich pruefen liesse.
+
+---
 
 ### Auslagerung der Form-Tests — Helfer werden dupliziert, nicht geteilt
 

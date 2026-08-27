@@ -68,6 +68,22 @@ public slots:
     /** Called when the user selects a new document path. */
     void onDocumentPathEdited();
 
+    /**
+     * @brief Verteilt das Parser-Ergebnis auf die View-Felder.
+     *
+     * @param result  searchResult-Map aus ParserInfoState.
+     *
+     * Seit 27.08.2026 public statt private — sonst waere die geaenderte
+     * Zaehlung (nur UEBERNOMMENE Werte zaehlen, nicht gefangene) von keinem
+     * Test erreichbar: die Methode ist kein Slot, QMetaObject::invokeMethod
+     * kaeme also nicht heran, und der Weg ueber onDocumentSelected() braucht
+     * ein echtes PDF samt pdftotext. Gleiche Ueberlegung wie bei den
+     * statischen Helfern, die aus diesem Grund public sind (siehe
+     * TESTING.md, "Sichtbarkeit zugunsten der Testbarkeit").
+     */
+    void populateFromResult(const QMap<QString, QList<QString>>& result);
+
+
 signals:
     void dataChanged();
 
@@ -97,9 +113,6 @@ private:
 
     /** Start ParserLib after pdftext was extracted — identical to PresenterShareAdd. */
     void startParserForText(const QString& pdfText);
-
-    /** Distribute ParserLib results to the view — identical to PresenterShareAdd. */
-    void populateFromResult(const QMap<QString, QList<QString>>& result);
 
     /** Map XML field name → view input widget key. */
     static QString xmlNameToViewField(const QString& xmlName);

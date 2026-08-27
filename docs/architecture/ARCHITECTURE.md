@@ -4485,58 +4485,155 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### Analyse-Statuszeile und Feldsymbole können sich widersprechen (offen, 22.08.2026)
+### Analyse-Statuszeile und Feldsymbole (behoben, 27.08.2026)
 
-Nach dem Einlesen eines Belegs kann die Statuszeile "Analyse OK — 5/5
-Pflicht" melden, während daneben ein Pflichtfeld ein rotes Fehlersymbol
-trägt. Beides stimmt für sich, misst aber Verschiedenes:
+Nach dem Einlesen eines Belegs konnte die Statuszeile "Analyse OK — 5/5
+Pflicht" melden, während daneben ein Pflichtfeld ein rotes Fehlersymbol trug.
+Beides stimmte für sich, maß aber Verschiedenes:
 
-| | zählt | Ort |
+| | zählte | Ort |
 | --- | --- | --- |
-| Statuszeile | was der PARSER aus dem Beleg herausgeholt hat | `Presenter*Edit::populateFromResult()` |
-| Feldsymbol | was die MASKE mit dem Rohwert anfangen konnte | `View*Edit::setFieldOk()` |
+| Statuszeile | was der PARSER aus dem Beleg herausgeholt hat | `Presenter*::populateFromResult()` |
+| Feldsymbol | was die MASKE mit dem Rohwert anfangen konnte | `View*::setFieldOk()` |
 
-Entstanden ist die Doppelung am 22.08.2026 (siehe "Rohwerte aus Belegen: eine
-Regel je Zieltyp"). Vorher gab es sie nicht, weil eine misslungene Umwandlung
-gar nichts anzeigte: das Feld behielt still seinen Vorgabewert. Bei einem
-`QDateEdit` ist dieser Vorgabewert das heutige Datum — genau daran scheiterte
-das Verkaufsdatum aus einem Beleg von 2020, ohne dass irgendetwas darauf
-hingewiesen hätte. Das Fehlersymbol ist also die Verbesserung; der
-Widerspruch ist ihr Nebeneffekt, bewusst in Kauf genommen (Nessie,
-22.08.2026: "Ist auch so okay" — mit dem Auftrag, den Punkt festzuhalten).
+Aufgelöst ist der Widerspruch, indem `setFieldOk()` das Ergebnis der Übernahme
+zurückmeldet und die Statuszeile nur noch zählt, was tatsächlich in der Maske
+gelandet ist:
 
-**Warum es überhaupt zwei Zähler gibt.** Der Presenter kennt nur die
-Rohwerte, die der `ParserLib::Parser` geliefert hat, und zählt sie gegen
-`requiredXmlNames`. Ob ein solcher Rohwert im Zielwidget ankommt, entscheidet
-sich erst eine Ebene tiefer, in `setFieldOk()` — und deren Ergebnis fliesst
-nirgends zurück. Der Presenter hat schon gezählt, wenn die View noch gar
-nicht weiss, ob sie den Wert brauchen kann.
+```cpp
+if (m_view->setFieldOk(viewField, values.first().trimmed())) {
+    ++found;
+    if (requiredXmlNames.contains(xmlName)) ++requiredFound;
+}
+```
 
-**Drei Wege, das aufzulösen** (Reihenfolge ist meine Empfehlung):
+`setFieldOk()` liefert `false`, wenn ein nicht-leerer Rohwert nicht ins
+Zielfeld passte — unbrauchbares Datum, unbrauchbare Uhrzeit, oder eine
+Depotnummer, die nicht in `Documents.xml` steht. Die View ruft in diesem Fall
+selbst `setFieldError()` auf; der Presenter passt nur noch seine Zählung an.
+Pflicht- und Optionalfelder werden gleich behandelt: zwei Zähler in einer
+Zeile, die Verschiedenes messen, wären derselbe Widerspruch eine Ebene tiefer.
 
-1. **Rückmeldung statt Ansage.** `setFieldOk()` gibt zurück, ob die
-   Übernahme gelungen ist; der Presenter zählt nur die gelungenen. Damit
-   sagt "5/5 Pflicht" wieder, was der Leser erwartet: fünf Felder stehen
-   gefüllt in der Maske. Berührt vier Views und vier Presenter plus die
-   vier `IView*`-Schnittstellen und die Stubs in den Tests — mechanisch, aber
-   breit.
-2. **Zweiter Zähler in der Statuszeile.** Etwa "5/5 Pflicht gelesen, 1
-   nicht übernehmbar". Ehrlicher als heute, aber die Zeile wird länger und
-   erklärt einen Unterschied, den der Benutzer gar nicht kennen will.
-3. **So lassen.** Der Fall tritt nur auf, wenn eine Regel etwas fängt, das
-   das Zielfeld nicht verarbeiten kann — nach dem 22.08.2026 also selten,
-   weil `DocumentFieldValue` genau dafür da ist. Das Fehlersymbol steht am
-   richtigen Feld, und wer es sieht, schaut dort hin und nicht auf die
-   Zusammenfassung.
+#### Was die Statuszeile dadurch nicht mehr sagt
 
-@note Nicht zu verwechseln mit dem Fall "Wert fehlt ganz". Liefert der Parser
-für ein Pflichtfeld nichts, zählt die Statuszeile es korrekt NICHT mit und
-meldet "Analyse fehlgeschlagen — 4/5 Pflicht"; `markMissingFieldsAsFailed()`
-setzt zusätzlich das Symbol. Dort stimmen beide überein. Der Widerspruch
-entsteht ausschliesslich bei einem gefangenen, aber unbrauchbaren Wert.
+Sie unterscheidet nicht mehr zwischen "die Regel hat nicht gegriffen" und "die
+Regel hat etwas Unbrauchbares gefangen". Für den Benutzer ist das richtig — er
+will wissen, ob die Maske gefüllt ist. Beim Schreiben von Regeln für
+`Documents.xml` ist es eine Einbuße, und die wird an der Stelle ausgeglichen,
+wo hingeschaut wird: `setFieldError()` nimmt seit demselben Umbau den Rohwert
+entgegen und zeigt ihn im Tooltip des Fehlersymbols an
+(`Nicht verwertbar: „Schlusstag 04/02"`). Ohne Rohwert — so rufen es die
+Aufrufe aus der Live-Validierung — bleibt es beim bisherigen, allgemeinen
+Text.
 
-@note Nessies Vorgabe 22.08.2026: als eigenes Vorhaben in einem separaten
-Chat.
+#### Einheitliche Bauweise in allen vier Views
+
+`ViewShareAdd::setFieldOk()` führte bereits einen lokalen Merker `converted`
+und setzte den Feldzustand erst am Schluss. Die drei Editier-Dialoge setzten
+das grüne Symbol dagegen ZUERST und riefen bei misslungener Umwandlung
+mittendrin `setFieldError()` — das funktionierte nur, weil dieses das Symbol
+wieder überschrieb, und ließ sich nicht als Rückgabewert ausdrücken. Alle vier
+folgen jetzt demselben Muster: Merker, Rohwert in `rejected`, Feldzustand am
+Schluss, ein Rückgabepunkt.
+
+#### Unbekannte Depotnummer ist ein Fehler
+
+Der Umbau hat einen zweiten, bis dahin unbemerkten Fall aufgedeckt: eine
+Depotnummer aus dem Beleg, die in `Documents.xml` nicht hinterlegt ist, wurde
+in **keiner** der vier Views gemeldet. `ViewShareAdd` und `ViewBuyEdit` ließen
+die Auswahl still auf dem Platzhalter stehen — mit grünem Haken, und das
+Speichern scheiterte später mit "Depotnummer fehlt". `ViewSaleEdit` und
+`ViewDividendEdit` fügten den unbekannten Wert der Liste hinzu, womit eine
+Depotnummer in der Datenbank landen konnte, die nirgends konfiguriert war.
+
+Alle vier melden jetzt einen Fehler. Nessies Begründung (27.08.2026): die
+Zuordnung wird für die Bestandsprüfung pro Depot gebraucht — die
+Stückzahl-Plausibilitätsprüfung bei der Dividendeneingabe rechnet gegen den
+Bestand des gewählten Depots am Ex-Tag und braucht dafür eine eindeutige,
+gepflegte Zuordnung. Eine unbekannte Depotnummer ist damit kein Sonderfall,
+den die Maske glattbügeln darf, sondern ein Konfigurationsfehler, den der
+Benutzer in `Documents.xml` beheben muss.
+
+@note Für `ViewSaleEdit` und `ViewDividendEdit` ist das eine Verschärfung:
+Belege mit unbekannter Depotnummer ließen sich bisher speichern. Bereits
+gespeicherte Datensätze bleiben unberührt — `loadSale()`/`loadDividend()`
+nehmen einen anderen Weg als `setFieldOk()`.
+
+@note Der Feldschlüssel `document` hat absichtlich kein Eingabefeld: der Pfad
+kommt über `setDocumentPath()`, `setFieldOk("document", QString())` setzt nur
+das Symbol. Deshalb liefert `setFieldOk()` bei einem Schlüssel ohne
+Eingabefeld `true` und nicht `false` — ein `false` hätte hier ein erfolgreich
+geladenes Dokument rot markiert.
+
+@note `populateFromResult()` ist in allen vier Presentern von `private` auf
+`public` gewechselt. Anders war die geänderte Zählung von keinem Test
+erreichbar: die Methode ist kein Slot, `QMetaObject::invokeMethod` kommt also
+nicht heran, und der Weg über `onDocumentSelected()` bräuchte ein echtes PDF
+samt `pdftotext` auf dem Runner.
+
+### Feldschlüssel-Tabellen sind an keiner Stelle geprüft (offen, 27.08.2026)
+
+Zwischen `Documents.xml` und den Eingabemasken liegen zwei Übersetzungen, die
+beide nur aus handgepflegten Tabellen bestehen und die niemand prüft. Fällt
+eine davon aus, geht ein Wert lautlos verloren: der Parser findet ihn, die
+Statuszeile zählt ihn seit dem 27.08.2026 korrekt NICHT mehr mit — aber warum
+er fehlt, sagt niemand.
+
+Aufgefallen beim Umbau der Statuszeile; ausdrücklich NICHT dort miterledigt,
+weil es zwei eigene Prüfungen an anderer Stelle sind.
+
+#### Erste Tabelle: XML-Name → Feldschlüssel der Maske
+
+`Presenter*::xmlNameToViewField()` ist eine statische `QMap` im C++-Code, je
+Formular eine eigene. Links steht der Tag-Name aus `Documents.xml`, rechts der
+Feldschlüssel, unter dem die View ihr Widget in `m_inputWidgets` und ihr
+Symbol in `m_statusLabels` ablegt:
+
+```cpp
+static const QMap<QString, QString> map = {
+    { QStringLiteral("Date"),        QStringLiteral("date")        },
+    { QStringLiteral("DepotNumber"), QStringLiteral("depotNumber") },
+    ...
+```
+
+Ein Tippfehler auf der RECHTEN Seite — `"depotnumber"` statt `"depotNumber"` —
+lässt `m_inputWidgets.value(field)` ins Leere greifen. Der Wert landet
+nirgends, es gibt kein Symbol, das sich einfärben ließe, und der Fehler fällt
+erst auf, wenn jemand einen Beleg einliest und sich wundert.
+
+Der Loader von `Documents.xml` kann das nicht abfangen: `DocumentsConfig`
+kennt nach dem Laden die Tag-Namen, aber nicht die Feldschlüssel der Masken.
+Die entstehen erst, wenn der jeweilige Dialog seine Widgets aufbaut, und sind
+je Formular verschieden — beim Programmstart existiert keiner dieser Dialoge,
+es gibt also nichts zu vergleichen. Eine Startmeldung scheidet damit aus.
+
+Prüfbar ist es als Test: je Formular einen Dialog bauen, die Tabelle
+durchgehen und für jeden Wert der rechten Seite prüfen, dass er in
+`m_inputWidgets` oder `m_statusLabels` vorkommt. Vier Tests, einer je
+Formular. Voraussetzung: `xmlNameToViewField()` ist bereits `static` und
+müsste `public` werden — dieselbe Überlegung wie bei den übrigen statischen
+Helfern.
+
+@note Der Feldschlüssel `document` muss dabei als Ausnahme gelten: er steht
+absichtlich nur in `m_statusLabels` und hat kein Eingabefeld.
+
+#### Zweite Tabelle: verwendete Tag-Namen in Documents.xml
+
+Die Gegenrichtung: ein Tag in `Documents.xml`, den kein Formular verarbeitet,
+weil er in keiner `knownXmlNames`-Liste steht. Die Regel läuft, der Wert wird
+gefangen und dann verworfen. Auch das meldet heute niemand.
+
+Hierfür gibt es bereits das passende Testziel: `tst_documentsxml` liest die
+ausgelieferte `app/config/Documents.xml` und lässt ihre Regeln über
+anonymisierte Auszüge echter Belege laufen. Dort ließe sich ergänzen, dass
+jeder verwendete Tag-Name von mindestens einem der vier Formulare in
+`knownXmlNames` geführt wird. Voraussetzung: die vier Listen müssten von außen
+erreichbar sein, heute sind sie `static const` innerhalb von
+`populateFromResult()`.
+
+@note Beide Prüfungen sind Tests, keine Startlauf-Prüfungen, und beide sind
+unabhängig voneinander umsetzbar. Die erste ist die wichtigere: sie deckt den
+Fall ab, bei dem ein Wert trotz greifender Regel nicht in der Maske ankommt.
 
 ### Consors-Themen (offen, aktuell ohne Priorität)
 

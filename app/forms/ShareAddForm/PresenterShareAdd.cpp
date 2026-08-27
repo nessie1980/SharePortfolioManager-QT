@@ -166,10 +166,18 @@ void PresenterShareAdd::populateFromResult(
         if (result.contains(xmlName)) {
             const QList<QString>& values = result[xmlName];
             if (!values.isEmpty() && !values.first().trimmed().isEmpty()) {
-                m_view->setFieldOk(viewField, values.first().trimmed());
-                ++found;
-                if (requiredXmlNames.contains(xmlName))
-                    ++requiredFound;
+                // Seit 27.08.2026 zaehlt nur, was die View auch UEBERNOMMEN
+                // hat — nicht mehr, was der Parser gefangen hat. Vorher
+                // meldete die Statuszeile "Analyse OK — 5/5 Pflicht", waehrend
+                // am Feld das rote Symbol stand, weil die View den Rohwert
+                // verworfen hatte (unbrauchbares Datum, unbekannte
+                // Depotnummer). Siehe ARCHITECTURE.md, "Analyse-Statuszeile
+                // und Feldsymbole".
+                if (m_view->setFieldOk(viewField, values.first().trimmed())) {
+                    ++found;
+                    if (requiredXmlNames.contains(xmlName))
+                        ++requiredFound;
+                }
                 continue;
             }
         }

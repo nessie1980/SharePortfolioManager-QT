@@ -94,9 +94,10 @@ public:
     void setForeignCurrencyEnabled(bool enabled) override;
     void setForeignCurrency(bool enabled, const QString& isoCode) override;
 
-    void setFieldOk(const QString& field, const QString& value,
+    bool setFieldOk(const QString& field, const QString& value,
                     const QString& tooltip = QString()) override;
-    void setFieldError(const QString& field)                    override;
+    void setFieldError(const QString& field,
+                       const QString& rawValue = QString()) override;
     void setFieldHint(const QString& field, const QString& tooltip) override;
     void setDocumentPath(const QString& path)                   override;
     void setDocumentPreview(const QString& text)                override;

@@ -74,6 +74,22 @@ public slots:
     void onTaxEdited(const QString& fieldKey, double value);
     void onDocumentPathEdited();
 
+    /**
+     * @brief Verteilt das Parser-Ergebnis auf die View-Felder.
+     *
+     * @param result  searchResult-Map aus ParserInfoState.
+     *
+     * Seit 27.08.2026 public statt private — sonst waere die geaenderte
+     * Zaehlung (nur UEBERNOMMENE Werte zaehlen, nicht gefangene) von keinem
+     * Test erreichbar: die Methode ist kein Slot, QMetaObject::invokeMethod
+     * kaeme also nicht heran, und der Weg ueber onDocumentSelected() braucht
+     * ein echtes PDF samt pdftotext. Gleiche Ueberlegung wie bei den
+     * statischen Helfern, die aus diesem Grund public sind (siehe
+     * TESTING.md, "Sichtbarkeit zugunsten der Testbarkeit").
+     */
+    void populateFromResult(const QMap<QString, QList<QString>>& result);
+
+
 signals:
     void dataChanged();
 
@@ -186,7 +202,6 @@ private:
     SaleBuyDetailSummary buildBuyDetailSummary() const;
 
     void startParserForText(const QString& pdfText);
-    void populateFromResult(const QMap<QString, QList<QString>>& result);
     static QString xmlNameToViewField(const QString& xmlName);
 
     IViewSaleEdit*   m_view;
