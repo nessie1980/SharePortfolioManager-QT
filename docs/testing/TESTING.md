@@ -515,6 +515,19 @@ entweder einen echten `pdftotext`-Aufruf gegen eine mitgelieferte Test-PDF
 voraussetzen (Umgebungsabhängigkeit in CI) oder `QProcess` selbst mocken,
 was für einen so simplen Wrapper unverhältnismäßigen Aufwand bedeuten würde.
 
+@note Nachtrag 27.08.2026: die Klasse ist seit dem Prozesslebenszyklus-Fix
+(siehe ARCHITECTURE.md, "Zurückbleibender pdftotext-Prozess") kein reiner
+Wrapper mehr — Abbruch bei erneutem `extract()`, `cancel()`, Destruktor und
+die Behandlung von `FailedToStart` sind eigenes Verhalten. Getestet ist es
+trotzdem nicht, und zwar mangels Naht: alle vier Zusagen brauchen einen
+Prozess, der lange genug lebt, um ihn abzubrechen, oder einen Programmnamen,
+der sich nicht starten lässt. Beides setzt voraus, dass der Programmname von
+außen setzbar wäre — heute steht `pdftotext` fest im Code. Diese Naht
+einzuziehen wäre mehr Maschinerie als die Behebung selbst und würde ein Feld
+allein für Tests öffentlich machen. Stattdessen gilt ein Abnahmekriterium für
+den Testlauf: die Zeile "QProcess: Destroyed while process is still running"
+darf im Protokoll nicht mehr vorkommen.
+
 #### tst_shareupdaterules — ShareUpdateRules (neu 06.08.2026)
 
 Executable: `tst_shareupdaterules`
@@ -4320,6 +4333,12 @@ ersten Lauf fehlgeschlagen (27.08.2026).
 endet, sobald die Bedingung zutrifft, und die Zeitschranke greift nur im
 Fehlerfall. Das unterscheidet es von einem `qWait()` mit geratener Wartezeit,
 das im Projekt weiterhin gemieden wird.
+
+@note Die Ursache ist seit dem 27.08.2026 behoben — der `pdftotext`-Prozess
+bleibt nicht mehr zurueck (siehe ARCHITECTURE.md, "Zurueckbleibender
+pdftotext-Prozess"). `QTRY_COMPARE` bleibt hier trotzdem stehen: die Pruefung
+ist unabhaengig von der Ursache die robustere, und zurueckzubauen waere ein
+Risiko ohne Gewinn.
 
 | Test (je Formular zweimal) | Prueft |
 | --- | --- |

@@ -11,10 +11,25 @@ PdfTextExtractor::PdfTextExtractor(QObject* parent)
 {
 }
 
+// ── Destructor ────────────────────────────────────────────────────────────────
+
+PdfTextExtractor::~PdfTextExtractor()
+{
+    stopProcess();
+}
+
 // ── extract ───────────────────────────────────────────────────────────────────
 
 void PdfTextExtractor::extract(const QString& pdfPath)
 {
+    // A conversion that is still running belongs to a document the caller has
+    // already moved on from — pick another file in the dialog and the old
+    // result is of no use to anyone. Cancel it instead of letting a second
+    // process run alongside: the previous implementation overwrote m_process
+    // and the orphan reported back through sender(), delivering the text of
+    // the PREVIOUS document under the new one's name.
+    stopProcess();
+
     // Same invocation as previously duplicated in PresenterBuyEdit::
     // onDocumentSelected() / PresenterSaleEdit::onDocumentSelected() /
     // PresenterDividendEdit::onDocumentSelected() / PresenterShareAdd::
@@ -26,24 +41,97 @@ void PdfTextExtractor::extract(const QString& pdfPath)
             this,
             &PdfTextExtractor::onProcessFinished);
 
+    // QProcess reports a program that cannot be started at all through
+    // errorOccurred() ONLY — finished() never arrives in that case. A lambda
+    // rather than a named slot so the header can keep its forward declaration
+    // of QProcess instead of pulling in the full header for the enum.
+    connect(m_process, &QProcess::errorOccurred, this,
+            [this](QProcess::ProcessError error) {
+                if (error == QProcess::FailedToStart)
+                    handleStartFailure();
+            });
+
     const QStringList args = {
         QStringLiteral("-enc"),    QStringLiteral("UTF-8"),
         QStringLiteral("-layout"),
         pdfPath,
         QStringLiteral("-")        // write to stdout
     };
+
+    // start() stays the LAST statement on purpose: on Windows a failing
+    // CreateProcess makes QProcess emit errorOccurred() synchronously, so
+    // handleStartFailure() — and with it finished(false, …) — can run before
+    // this call returns. Nothing may touch m_process afterwards.
     m_process->start(QStringLiteral("pdftotext"), args);
+}
+
+// ── cancel ────────────────────────────────────────────────────────────────────
+
+void PdfTextExtractor::cancel()
+{
+    stopProcess();
+}
+
+// ── stopProcess ───────────────────────────────────────────────────────────────
+
+void PdfTextExtractor::stopProcess()
+{
+    if (!m_process)
+        return;
+
+    QProcess* proc = m_process;
+    m_process = nullptr;
+
+    // Disconnect BEFORE killing: otherwise kill() triggers finished() with a
+    // crash exit status and the caller would be told the conversion failed,
+    // when in truth it was withdrawn.
+    proc->disconnect(this);
+
+    if (proc->state() != QProcess::NotRunning) {
+        // kill() rather than terminate(): pdftotext writes its output to
+        // stdout and holds no state worth shutting down cleanly, and
+        // terminate() does not reach a console application on Windows.
+        proc->kill();
+        proc->waitForFinished(500);
+    }
+
+    // Deleted right here, not via deleteLater(): the destructor is one of the
+    // callers, and there may be no event loop left to run deferred deletions.
+    delete proc;
+}
+
+// ── handleStartFailure ────────────────────────────────────────────────────────
+
+void PdfTextExtractor::handleStartFailure()
+{
+    QProcess* proc = m_process;
+    m_process = nullptr;
+    if (!proc)
+        return;
+
+    proc->disconnect(this);
+    proc->deleteLater();   // we are inside one of its own signals
+
+    emit finished(false, QString());
 }
 
 // ── onProcessFinished ─────────────────────────────────────────────────────────
 
 void PdfTextExtractor::onProcessFinished(int exitCode, int /*exitStatus*/)
 {
-    auto* proc = qobject_cast<QProcess*>(sender());
-    const QByteArray stdoutData = proc ? proc->readAllStandardOutput() : QByteArray();
-    if (proc) proc->deleteLater();
+    QProcess* proc = m_process;
     m_process = nullptr;
+    if (!proc)
+        return;
 
+    const QByteArray stdoutData = proc->readAllStandardOutput();
+
+    proc->disconnect(this);
+    proc->deleteLater();   // we are inside one of its own signals
+
+    // m_process is already cleared at this point: a receiver that starts the
+    // next conversion straight from this slot must not find a half-torn-down
+    // predecessor.
     if (exitCode != 0 || stdoutData.isEmpty()) {
         emit finished(false, QString());
         return;

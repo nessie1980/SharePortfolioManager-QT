@@ -4485,6 +4485,131 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
+### Zurückbleibender pdftotext-Prozess (behoben, 27.08.2026)
+
+Aufgefallen im Testlauf zum Statuszeilen-Umbau: nach den Dokument-Tests stand
+im Protokoll
+
+@code{.unparsed}
+QProcess: Destroyed while process is still running.
+@endcode
+
+Es war nicht nur Lärm. Die Aufräum-Ereignisse dieser Prozesse lagen quer in
+der Ereignisschlange und haben
+`test_presenterShareAdd_populateFromResult_allFieldsTaken_reportsOk` beim
+ersten Lauf gekippt (siehe TESTING.md, "Sichtbarkeit zugunsten der
+Testbarkeit"). Im Test ist das über `QTRY_COMPARE` aufgefangen — am Symptom.
+Die Ursache lag in `PdfTextExtractor` und betraf die laufende Anwendung
+genauso.
+
+#### Drei Befunde in einer Klasse
+
+Alle drei hängen am selben Prozesslebenszyklus und sind in einem Zug behoben:
+
+| Befund | Wirkung in der Anwendung |
+| --- | --- |
+| Destruktor war `= default` | Dialog während der Umwandlung schließen blockierte den GUI-Thread |
+| Zweiter `extract()`-Aufruf überschrieb `m_process` | Text des VORIGEN Dokuments konnte unter dem neuen Namen ankommen |
+| `FailedToStart` wurde nicht behandelt | Fehlendes `pdftotext` meldete gar nichts, die Statuszeile blieb stehen |
+
+Zum ersten Punkt: der vom Compiler erzeugte Destruktor überließ den noch
+laufenden `QProcess` dem `QObject`-Destruktor. Der ruft `kill()` und wartet
+anschließend mit `waitForFinished()` OHNE Zeitschranke — im GUI-Thread.
+
+Zum zweiten: der Header schrieb "eine Umwandlung zur Zeit" als Pflicht des
+Aufrufers fest. Die vier Presenter halten sich nicht daran, zweimal zügig
+hintereinander ein Dokument auswählen genügt. Der überschriebene Prozess lief
+weiter, meldete sich über `sender()` zurück und löste ein zweites
+`finished()` aus.
+
+Zum dritten: `QProcess` meldet ein Programm, das sich gar nicht starten lässt,
+ausschließlich über `errorOccurred(FailedToStart)`. `finished()` kommt in
+diesem Fall nie — und damit kam auch `PdfTextExtractor::finished()` nie. Kein
+Fehlerdialog, keine Statusmeldung; die Zeile blieb bei "Analysiere Dokument …"
+stehen. Für eine frische Windows-Installation ohne Poppler ist das der
+Regelfall, nicht der Ausnahmefall.
+
+#### Die Klasse besitzt den Prozess jetzt vollständig
+
+Die Sequenzierung ist keine Pflicht des Aufrufers mehr — die vier Presenter
+und `MainWindow` bleiben unverändert:
+
+- `extract()` bricht eine laufende Umwandlung ab und startet die neue. Die
+  abgebrochene meldet nichts.
+- `cancel()` (neu, öffentlich) bricht ab, ohne etwas zu melden. Ein Abbruch
+  ist keine fehlgeschlagene Umwandlung, und wer abbricht, will das Ergebnis
+  nicht mehr.
+- Der Destruktor bricht ab. Es bleibt nichts zurück.
+- `finished()` kommt höchstens einmal je `extract()`-Aufruf und nie für eine
+  Umwandlung, die der Aufrufer längst ersetzt hat.
+
+Das gemeinsame `stopProcess()` trennt zuerst die Verbindungen und tötet erst
+danach. Andersherum löste `kill()` ein `finished()` mit Absturz-Status aus,
+und der Aufrufer bekäme "fehlgeschlagen" gemeldet, wo in Wahrheit
+zurückgezogen wurde. Getötet wird mit `kill()`, nicht `terminate()`:
+`pdftotext` schreibt nach stdout und hat keinen Zustand, den ein sauberes
+Herunterfahren retten würde — und `terminate()` erreicht unter Windows eine
+Konsolenanwendung ohnehin nicht.
+
+@note `cancel()` hat heute keinen Aufrufer. Aufgenommen, weil
+`MainWindow::m_documentCaptureExtractor` so lange lebt wie das Fenster: dort
+gäbe es sonst gar keinen Weg abzubrechen, während die Presenter ihren
+Extractor beim Schließen des Dialogs mitnehmen.
+
+@note `start()` steht in `extract()` bewusst als letzte Anweisung. Unter
+Windows lässt ein fehlgeschlagenes `CreateProcess` `errorOccurred()` synchron
+feuern, `finished(false, …)` kann also noch aus `extract()` heraus kommen.
+Nach dem Aufruf darf nichts mehr `m_process` anfassen. Alle fünf
+Aufrufstellen rufen `extract()` bereits als letzte Anweisung ihrer Methode
+auf, für sie ändert sich dadurch nichts.
+
+@note Kein automatisierter Test — die Projektkonvention, `QProcess`-getriebene
+`pdftotext`-Codepfade nicht zu automatisieren, gilt weiter (siehe TESTING.md).
+Prüfbar ist die Behebung am Protokoll: die Zeile "QProcess: Destroyed while
+process is still running" verschwindet aus dem Testlauf.
+
+### Fehlendes pdftotext wird nicht als solches benannt (offen, 27.08.2026)
+
+Seit der Behebung oben meldet sich die Anwendung überhaupt, wenn `pdftotext`
+fehlt. Was sie meldet, stimmt aber nicht: alle fünf Aufrufstellen zeigen
+"PDF-Konvertierung fehlgeschlagen oder kein Text extrahierbar." — dieselbe
+Meldung wie bei einem Beleg, aus dem sich kein Text ziehen lässt. Der Benutzer
+sucht den Fehler dann beim Dokument statt bei der fehlenden Installation.
+
+Bewusst nicht miterledigt: `PdfTextExtractor::finished(bool, QString)` trägt
+keinen Grund mit sich, und ihn nachzurüsten heißt, alle fünf Aufrufstellen
+anzufassen. Das ist ein eigener Commit.
+
+Denkbare Wege, absteigend nach Aufwand: ein drittes Argument oder ein kleines
+Ergebnis-Enum am Signal; ein `errorText()`-Abfrager, den die Aufrufstellen bei
+`!success` heranziehen können; oder — am günstigsten — die Prüfung nach vorn
+ziehen und beim Programmstart einmal melden, dass kein PDF-Wandler gefunden
+wurde. Der Über-Dialog ermittelt das mit `pdftotext -v` bereits, nur sucht es
+dort niemand.
+
+### QSqlDatabase-Warnung am Ende jedes Testlaufs (offen, 27.08.2026)
+
+Am Ende jedes Testlaufs steht:
+
+@code{.unparsed}
+qt.sql.qsqldatabase: QSqlDatabase requires a QCoreApplication
+@endcode
+
+Sie erscheint, nachdem `main()` zurückgekehrt ist: die `QApplication` ist
+schon abgebaut, und `Database` räumt als prozessweiter Singleton erst danach
+seine Verbindung ab. Auf das Testergebnis wirkt sich das nicht aus, der Lauf
+ist zu diesem Zeitpunkt vorbei.
+
+Zu beheben wäre es, indem `cleanupTestCase()` die Verbindung schließt — das
+tun die Ziele bereits — und `Database` seine `QSqlDatabase` nicht bis zur
+statischen Zerstörung festhält. Der zweite Teil ist der eigentliche Punkt und
+betrifft die Datenbank-Bibliothek, nicht die Tests. Eigene Versionsspur,
+eigener Commit.
+
+@note Rein kosmetisch, aber die Warnung steht in jedem CI-Protokoll und
+gewöhnt einen daran, die letzten Zeilen zu überlesen. Genau dort stünde eine
+echte Meldung.
+
 ### Analyse-Statuszeile und Feldsymbole (behoben, 27.08.2026)
 
 Nach dem Einlesen eines Belegs konnte die Statuszeile "Analyse OK — 5/5
@@ -6907,6 +7032,14 @@ vier `onDocumentSelected()`-Implementierungen. Emittiert
 Test dafür (siehe TESTING.md) — konsistent mit der bestehenden Konvention
 im Projekt, `QProcess`-getriebene `pdftotext`-Codepfade nicht direkt zu
 testen (s. `onBrowseDocument()`-Methoden).
+
+@note Nachtrag 27.08.2026: der Prozesslebenszyklus dieser Klasse war an
+drei Stellen unvollständig — kein eigener Destruktor, ein zweiter
+`extract()`-Aufruf überschrieb den laufenden Prozess, und ein gar nicht
+startbares `pdftotext` meldete sich nie zurück. Siehe "Offene Punkte",
+"Zurückbleibender pdftotext-Prozess". Die Klasse besitzt ihren Prozess
+seitdem vollständig; die hier beschriebene Aufruferpflicht "eine Umwandlung
+zur Zeit" gilt nicht mehr.
 
 **Offene Frage aus Schritt 1 — geklärt in Schritt 3 (siehe dort):** Ob die
 `Sale`- und `Dividend`-`Document`-Einträge in `Documents.xml` `Wkn`/`Isin`-

@@ -10,6 +10,50 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.19.4] - 2026-08-27
+
+### Fixed
+
+- **Fehlendes pdftotext blieb ohne jede Meldung.** Ist der PDF-Wandler nicht
+  installiert, meldet `QProcess` das ausschliesslich ueber
+  `errorOccurred(FailedToStart)` — `finished()` kommt in diesem Fall nie.
+  `PdfTextExtractor` hat nur auf `finished()` gehoert und deshalb selbst nie
+  etwas gemeldet: kein Fehlerdialog, keine Statusmeldung, die Zeile blieb bei
+  "Analysiere Dokument …" stehen. Fuer eine frische Installation ohne Poppler
+  war das der Regelfall.
+
+  @note Die angezeigte Meldung lautet weiterhin "PDF-Konvertierung
+  fehlgeschlagen oder kein Text extrahierbar." und benennt die fehlende
+  Installation nicht als Ursache. Siehe ARCHITECTURE.md, "Offene Punkte",
+  "Fehlendes pdftotext wird nicht als solches benannt".
+
+- **Dialog schliessen waehrend der PDF-Umwandlung blockierte die
+  Oberflaeche.** `PdfTextExtractor` hatte keinen eigenen Destruktor; der noch
+  laufende `QProcess` fiel damit an den `QObject`-Destruktor, der ihn toetet
+  und anschliessend OHNE Zeitschranke auf sein Ende wartet — im GUI-Thread.
+  Die Klasse bricht eine laufende Umwandlung jetzt selbst ab.
+
+- **Zweites Dokument konnte den Text des ersten bekommen.** Ein
+  `extract()`-Aufruf waehrend einer laufenden Umwandlung ueberschrieb den
+  Prozesszeiger. Der alte Prozess lief weiter, meldete sich ueber `sender()`
+  zurueck und loeste ein zweites `finished()` aus — mit dem Text des VORIGEN
+  Belegs. Zweimal zuegig hintereinander ein Dokument auswaehlen genuegte
+  dafuer. Der laufende Vorgang wird jetzt abgebrochen, bevor der neue
+  startet; der Aufrufer hoert nur noch zum zuletzt uebergebenen Pfad etwas.
+
+### Added
+
+- `PdfTextExtractor::cancel()` bricht eine laufende Umwandlung ab, ohne ein
+  Ergebnis zu melden. Bisher ohne Aufrufer: die vier Editier-Dialoge nehmen
+  ihren Extractor beim Schliessen mit, `MainWindow` haelt seinen dagegen so
+  lange wie das Fenster und haette sonst keinen Weg abzubrechen.
+
+@note Reiner Fehlerbehebungs-Commit in `app/utils/PdfTextExtractor.h/.cpp`.
+Die vier Presenter und `MainWindow` sind unveraendert — die Sequenzierung war
+bis hierher eine im Header festgeschriebene Pflicht des Aufrufers, an die sich
+keine der fuenf Aufrufstellen gehalten hat; sie ist jetzt Sache der Klasse.
+Keine neuen Tests, siehe TESTING.md.
+
 ## [1.19.3] - 2026-08-27
 
 ### Changed
