@@ -4587,6 +4587,42 @@ ziehen und beim Programmstart einmal melden, dass kein PDF-Wandler gefunden
 wurde. Der Über-Dialog ermittelt das mit `pdftotext -v` bereits, nur sucht es
 dort niemand.
 
+#### Bevorzugter Weg: Prüfung beim Programmstart (Nessies Entscheidung, 27.08.2026)
+
+Der dritte Weg ist gewählt. Er fasst `PdfTextExtractor` und die fünf
+Aufrufstellen gar nicht erst an und beantwortet die Frage dort, wo sie
+entsteht: bevor der Benutzer den ersten Beleg fallen lässt.
+
+`MainWindow::checkAndLoadConfigurations()` hat das Muster bereits — der
+Abschnitt "Sound files (non-critical — warn but don't disable controls)"
+prüft die beiden Sounddateien, setzt bei fehlender Datei eine
+`MessageType::Warning` in die Statusliste und schaltet die betroffene
+Funktion ab, ohne `allOk` anzufassen. Ein fehlender PDF-Wandler ist derselbe
+Fall: die Anwendung bleibt voll bedienbar, nur das Einlesen von Belegen
+funktioniert nicht.
+
+Die Ermittlung ist schon da. `AboutForm::pdftotextInfo()` ruft `pdftotext -v`
+auf und unterscheidet dabei sogar zwischen Poppler und XpdfReader. Zwei
+Voraussetzungen, bevor sie sich von `MainWindow` aus nutzen lässt: die Methode
+ist heute `private static` und die von ihr gelieferte Struktur
+`PdfConverterInfo` ist ein privat verschachtelter Typ. Beides müsste
+öffentlich werden — oder, sauberer, die Ermittlung wandert nach
+`app/utils/PdfTextExtractor` als zweite statische Funktion neben `extract()`,
+und der Über-Dialog wird ihr erster Aufrufer statt ihr Eigentümer. Die zweite
+Variante ist vorzuziehen: der Über-Dialog ist ein Anzeigefenster und kein
+Ort, an dem Systemprüfungen wohnen.
+
+@note Der Aufruf kostet Startzeit — `AboutForm::pdftotextInfo()` wartet bis zu
+drei Sekunden auf den Prozess. Beim Öffnen eines Dialogs fällt das nicht auf,
+im Startlauf schon. Die Wartezeit gehört beim Umbau deutlich kürzer gesetzt,
+oder die Prüfung läuft asynchron und trägt ihre Meldung nach.
+
+@note Die bestehende Fehlermeldung an den fünf Aufrufstellen bleibt dabei
+unverändert stehen. Sie ist dann nicht mehr die einzige Auskunft, sondern die
+zweite — wer die Startmeldung übersehen hat, bekommt beim Einlesen immer noch
+einen Hinweis, nur eben weiterhin einen unspezifischen. Wen das stört, greift
+zusätzlich zu einem der beiden anderen Wege.
+
 ### QSqlDatabase-Warnung am Ende jedes Testlaufs (offen, 27.08.2026)
 
 Am Ende jedes Testlaufs steht:
