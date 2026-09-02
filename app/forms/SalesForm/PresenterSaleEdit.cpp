@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterSaleEdit.h"
+#include "../../config/DocumentFieldNames.h"
 #include "../../utils/ShareSplitHint.h"
 #include "../../utils/SplitRatioChecker.h"
 #include "../../utils/DocumentClassifier.h"
@@ -402,10 +403,19 @@ void PresenterSaleEdit::startParserForText(const QString& pdfText)
 
     int depotIndex = -1;
     if (!DocumentClassifier::matchDepotIndex(pdfText, *m_config, depotIndex)) {
-        const QStringList required = {
-            "date","depotNumber","orderNumber","volume","salePrice"
-        };
-        for (const auto& f : required) m_view->setFieldError(f);
+        // Bis zum 02.09.2026 stand hier eine dritte, von Hand gepflegte Liste
+        // derselben fuenf Feldschluessel — die einzige, die niemand gegen die
+        // uebrigen Tabellen abgeglichen hat. Sie entsteht jetzt aus
+        // requiredXmlNames() ueber dieselbe Uebersetzung wie in
+        // populateFromResult() und kann damit nicht mehr auseinanderlaufen.
+        // Hier faellt das besonders ins Gewicht: "Price" heisst in dieser
+        // Maske "salePrice", die Liste musste also von Hand anders lauten als
+        // bei Kauf und ShareAdd.
+        for (const QString& xmlName : requiredXmlNames()) {
+            const QString viewField = xmlNameToViewField(xmlName);
+            if (!viewField.isEmpty())
+                m_view->setFieldError(viewField);
+        }
         m_view->onParseFinished();
         return;
     }
@@ -509,18 +519,14 @@ void PresenterSaleEdit::populateFromResult(
         }
     }
 
-    static const QStringList knownXmlNames = {
-        "Date","Time","DepotNumber","OrderNumber",
-        "Volume","Price",
-        "TaxAtSource","CapitalGainsTax","SolidarityTax",
-        "Provision","BrokerFee","TraderPlaceFee","Reduction"
-    };
-    static const QStringList requiredXmlNames = {
-        "Date","DepotNumber","OrderNumber","Volume","Price"
-    };
+    // Die beiden Listen liegen seit dem 02.09.2026 in knownXmlNames() /
+    // requiredXmlNames() statt hier lokal — nur so kommen die Tests an sie
+    // heran. Inhalt unveraendert.
+    const QStringList& known    = knownXmlNames();
+    const QStringList& required = requiredXmlNames();
 
     int found = 0, requiredFound = 0;
-    for (const QString& xmlName : knownXmlNames) {
+    for (const QString& xmlName : known) {
         const QString viewField = xmlNameToViewField(xmlName);
         if (viewField.isEmpty()) continue;
 
@@ -536,7 +542,7 @@ void PresenterSaleEdit::populateFromResult(
                 // und Feldsymbole".
                 if (m_view->setFieldOk(viewField, values.first().trimmed())) {
                     ++found;
-                    if (requiredXmlNames.contains(xmlName)) ++requiredFound;
+                    if (required.contains(xmlName)) ++requiredFound;
                 }
             }
         }
@@ -544,9 +550,9 @@ void PresenterSaleEdit::populateFromResult(
 
     m_view->onParseFinished();
 
-    const int reqTotal      = requiredXmlNames.size();
+    const int reqTotal      = required.size();
     const int optionalFound = found - requiredFound;
-    const int optionalTotal = knownXmlNames.size() - reqTotal;
+    const int optionalTotal = known.size() - reqTotal;
 
     QTimer::singleShot(0, this, [this, requiredFound, reqTotal,
                                   optionalFound, optionalTotal]() {
@@ -570,6 +576,30 @@ void PresenterSaleEdit::populateFromResult(
     });
 }
 
+// ── knownXmlNames / requiredXmlNames ──────────────────────────────────────────
+
+// static
+const QStringList& PresenterSaleEdit::knownXmlNames()
+{
+    // Weiterleitung — die Liste selbst liegt seit dem 02.09.2026 in
+    // app/config/DocumentFieldNames.cpp. Sie beschreibt Documents.xml,
+    // nicht diese Maske, und tst_documentsxml kommt dort ohne den
+    // halben MVP-Stack an sie heran. Formularcode fragt weiterhin sein
+    // eigenes Formular.
+    return DocumentFieldNames::saleKnown();
+}
+
+// static
+const QStringList& PresenterSaleEdit::requiredXmlNames()
+{
+    // Weiterleitung — die Liste selbst liegt seit dem 02.09.2026 in
+    // app/config/DocumentFieldNames.cpp. Sie beschreibt Documents.xml,
+    // nicht diese Maske, und tst_documentsxml kommt dort ohne den
+    // halben MVP-Stack an sie heran. Formularcode fragt weiterhin sein
+    // eigenes Formular.
+    return DocumentFieldNames::saleRequired();
+}
+
 // ── xmlNameToViewField ────────────────────────────────────────────────────────
 
 QString PresenterSaleEdit::xmlNameToViewField(const QString& xmlName)
@@ -582,7 +612,13 @@ QString PresenterSaleEdit::xmlNameToViewField(const QString& xmlName)
         { QStringLiteral("Volume"),         QStringLiteral("volume")         },
         { QStringLiteral("Price"),          QStringLiteral("salePrice")      },
         { QStringLiteral("TaxAtSource"),    QStringLiteral("taxAtSource")    },
-        { QStringLiteral("CapitalGainsTax"),QStringLiteral("capitalGainsTax")},
+        // Linke Seite OHNE s — so heisst der Tag in Documents.xml (15 von 15
+        // Vorkommen). Bis zum 02.09.2026 stand hier "CapitalGainsTax" MIT s;
+        // der Name existierte in der Datei nirgends, die Kapitalertragssteuer
+        // kam deshalb bei keinem Verkaufsbeleg im Formular an. Rechts bleibt
+        // "capitalGainsTax" — das ist der Feldschluessel der Maske, und der
+        // heisst korrekt mit s.
+        { QStringLiteral("CapitalGainTax"), QStringLiteral("capitalGainsTax")},
         { QStringLiteral("SolidarityTax"),  QStringLiteral("solidarityTax")  },
         { QStringLiteral("Provision"),      QStringLiteral("provision")      },
         { QStringLiteral("BrokerFee"),      QStringLiteral("brokerFee")      },

@@ -12,6 +12,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QMap>
 
 /**
@@ -95,6 +96,37 @@ public slots:
      */
     void populateFromResult(const QMap<QString, QList<QString>>& result);
 
+    // ── Feldnamen-Tabellen (public seit 02.09.2026) ───────────────────────
+    //
+    // Die drei Tabellen unten sind handgepflegt und uebersetzen zwischen
+    // Documents.xml und dieser Maske. Faellt eine davon aus, geht ein Wert
+    // lautlos verloren. Sie sind public, damit tst_shareaddform sie
+    // gegeneinander und gegen die tatsaechlich registrierten Felder der View
+    // pruefen kann — dieselbe Ueberlegung wie bei populateFromResult() und
+    // den uebrigen statischen Helfern (siehe TESTING.md, "Sichtbarkeit
+    // zugunsten der Testbarkeit").
+
+    /**
+     * @brief Alle Feldnamen aus Documents.xml, die dieses Formular verarbeitet.
+     *
+     * Wird vollstaendig durchlaufen, auch wenn ParserLib wegen eines
+     * fehlenden Pflichtfelds vorzeitig aufgehoert hat (ParsingFailed).
+     */
+    static const QStringList& knownXmlNames();
+
+    /**
+     * @brief Die Teilmenge von knownXmlNames(), ohne die nicht gespeichert
+     *        werden kann.
+     */
+    static const QStringList& requiredXmlNames();
+
+    /**
+     * @brief Map a Documents.xml field name to the IViewShareAdd field key.
+     *
+     * Leerer Rueckgabewert heisst "dieses Formular kennt den Namen nicht".
+     */
+    static QString xmlNameToViewField(const QString& xmlName);
+
 
 private slots:
     /// Called when PdfTextExtractor finishes converting the selected PDF —
@@ -113,11 +145,6 @@ private:
      * @param pdfText  Plain text extracted from the PDF.
      */
     void startParserForText(const QString& pdfText);
-
-    /**
-     * @brief Map a Documents.xml field name to the IViewShareAdd field key.
-     */
-    static QString xmlNameToViewField(const QString& xmlName);
 
     /**
      * @brief Validate that the minimum required fields are filled.

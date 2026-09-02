@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterBuyEdit.h"
+#include "../../config/DocumentFieldNames.h"
 #include "../../utils/DocumentClassifier.h"
 #include "../../utils/ShareSplitHint.h"
 
@@ -339,10 +340,16 @@ void PresenterBuyEdit::startParserForText(const QString& pdfText)
 
     int depotIndex = -1;
     if (!DocumentClassifier::matchDepotIndex(pdfText, *m_config, depotIndex)) {
-        const QStringList required = {
-            "date","depotNumber","orderNumber","volume","price"
-        };
-        for (const auto& f : required) m_view->setFieldError(f);
+        // Bis zum 02.09.2026 stand hier eine dritte, von Hand gepflegte Liste
+        // derselben fuenf Feldschluessel — die einzige, die niemand gegen die
+        // uebrigen Tabellen abgeglichen hat. Sie entsteht jetzt aus
+        // requiredXmlNames() ueber dieselbe Uebersetzung wie in
+        // populateFromResult() und kann damit nicht mehr auseinanderlaufen.
+        for (const QString& xmlName : requiredXmlNames()) {
+            const QString viewField = xmlNameToViewField(xmlName);
+            if (!viewField.isEmpty())
+                m_view->setFieldError(viewField);
+        }
         m_view->onParseFinished();
         return;
     }
@@ -452,16 +459,14 @@ void PresenterBuyEdit::populateFromResult(
         }
     }
 
-    static const QStringList knownXmlNames = {
-        "Date","Time","DepotNumber","OrderNumber",
-        "Volume","Price","Provision","BrokerFee","TraderPlaceFee","Reduction"
-    };
-    static const QStringList requiredXmlNames = {
-        "Date","DepotNumber","OrderNumber","Volume","Price"
-    };
+    // Die beiden Listen liegen seit dem 02.09.2026 in knownXmlNames() /
+    // requiredXmlNames() statt hier lokal — nur so kommen die Tests an sie
+    // heran. Inhalt unveraendert.
+    const QStringList& known    = knownXmlNames();
+    const QStringList& required = requiredXmlNames();
 
     int found = 0, requiredFound = 0;
-    for (const QString& xmlName : knownXmlNames) {
+    for (const QString& xmlName : known) {
         const QString viewField = xmlNameToViewField(xmlName);
         if (viewField.isEmpty()) continue;
 
@@ -477,7 +482,7 @@ void PresenterBuyEdit::populateFromResult(
                 // und Feldsymbole".
                 if (m_view->setFieldOk(viewField, values.first().trimmed())) {
                     ++found;
-                    if (requiredXmlNames.contains(xmlName)) ++requiredFound;
+                    if (required.contains(xmlName)) ++requiredFound;
                 }
                 continue;
             }
@@ -486,9 +491,9 @@ void PresenterBuyEdit::populateFromResult(
 
     m_view->onParseFinished();
 
-    const int reqTotal      = requiredXmlNames.size();
+    const int reqTotal      = required.size();
     const int optionalFound = found - requiredFound;
-    const int optionalTotal = knownXmlNames.size() - reqTotal;
+    const int optionalTotal = known.size() - reqTotal;
 
     QTimer::singleShot(0, this, [this, requiredFound, reqTotal,
                                   optionalFound, optionalTotal]() {
@@ -516,6 +521,30 @@ void PresenterBuyEdit::populateFromResult(
                     .arg(requiredFound).arg(reqTotal));
         }
     });
+}
+
+// ── knownXmlNames / requiredXmlNames ──────────────────────────────────────────
+
+// static
+const QStringList& PresenterBuyEdit::knownXmlNames()
+{
+    // Weiterleitung — die Liste selbst liegt seit dem 02.09.2026 in
+    // app/config/DocumentFieldNames.cpp. Sie beschreibt Documents.xml,
+    // nicht diese Maske, und tst_documentsxml kommt dort ohne den
+    // halben MVP-Stack an sie heran. Formularcode fragt weiterhin sein
+    // eigenes Formular.
+    return DocumentFieldNames::buyKnown();
+}
+
+// static
+const QStringList& PresenterBuyEdit::requiredXmlNames()
+{
+    // Weiterleitung — die Liste selbst liegt seit dem 02.09.2026 in
+    // app/config/DocumentFieldNames.cpp. Sie beschreibt Documents.xml,
+    // nicht diese Maske, und tst_documentsxml kommt dort ohne den
+    // halben MVP-Stack an sie heran. Formularcode fragt weiterhin sein
+    // eigenes Formular.
+    return DocumentFieldNames::buyRequired();
 }
 
 // ── xmlNameToViewField ────────────────────────────────────────────────────────

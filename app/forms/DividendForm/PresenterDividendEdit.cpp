@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterDividendEdit.h"
+#include "../../config/DocumentFieldNames.h"
 #include "../../utils/DocumentClassifier.h"
 #include "../../utils/DividendVolumeChecker.h"
 
@@ -355,10 +356,16 @@ void PresenterDividendEdit::startParserForText(const QString& pdfText)
         // Depot nicht erkannt: alle Pflichtfelder rot markieren, damit klar
         // ist, dass nichts übernommen wurde. Seit Phase 2 gehören Ex-Tag und
         // Depotnummer dazu (ergänzt in Phase 5, 21.08.2026).
-        const QStringList required = {
-            "date", "exDate", "depotNumber", "rate", "volume"
-        };
-        for (const auto& f : required) m_view->setFieldError(f);
+        // Bis zum 02.09.2026 stand hier eine dritte, von Hand gepflegte Liste
+        // derselben fünf Feldschlüssel — die einzige, die niemand gegen die
+        // übrigen Tabellen abgeglichen hat. Sie entsteht jetzt aus
+        // requiredXmlNames() über dieselbe Übersetzung wie in
+        // populateFromResult() und kann damit nicht mehr auseinanderlaufen.
+        for (const QString& xmlName : requiredXmlNames()) {
+            const QString viewField = xmlNameToViewField(xmlName);
+            if (!viewField.isEmpty())
+                m_view->setFieldError(viewField);
+        }
         m_view->onParseFinished();
         return;
     }
@@ -462,24 +469,16 @@ void PresenterDividendEdit::populateFromResult(
         }
     }
 
-    static const QStringList knownXmlNames = {
-        "Date", "Time", "ExDate", "DepotNumber", "Volume", "DividendRate",
-        "TaxAtSource", "CapitalGainTax", "SolidarityTax",
-        "ExchangeRate", "Currency"
-    };
-    // ExDate und DepotNumber zählen als Pflicht, weil sie seit Phase 2 auch
-    // im Formular Pflicht sind: findet der Parser sie nicht, IST die Analyse
-    // unvollständig und der Benutzer muss nachtragen. Die Statuszeile sagt
-    // das dann ehrlich ("4/5 Pflicht"), statt eine vollständige Übernahme
-    // vorzuspiegeln (Phase 5, 21.08.2026).
-    static const QStringList requiredXmlNames = {
-        "Date", "ExDate", "DepotNumber", "Volume", "DividendRate"
-    };
+    // Die beiden Listen liegen seit dem 02.09.2026 in knownXmlNames() /
+    // requiredXmlNames() statt hier lokal — nur so kommen die Tests an sie
+    // heran. Inhalt unverändert.
+    const QStringList& known    = knownXmlNames();
+    const QStringList& required = requiredXmlNames();
 
     int found = 0, requiredFound = 0;
     QDate parsedDate;  // für den Preis-Abgleich unten benötigt
 
-    for (const QString& xmlName : knownXmlNames) {
+    for (const QString& xmlName : known) {
         const QString viewField = xmlNameToViewField(xmlName);
         if (viewField.isEmpty()) continue;
 
@@ -496,7 +495,7 @@ void PresenterDividendEdit::populateFromResult(
                 // und Feldsymbole".
                 if (m_view->setFieldOk(viewField, value)) {
                     ++found;
-                    if (requiredXmlNames.contains(xmlName)) ++requiredFound;
+                    if (required.contains(xmlName)) ++requiredFound;
                 }
 
                 if (xmlName == QStringLiteral("Date")) {
@@ -573,9 +572,9 @@ void PresenterDividendEdit::populateFromResult(
 
     m_view->onParseFinished();
 
-    const int reqTotal      = requiredXmlNames.size();
+    const int reqTotal      = required.size();
     const int optionalFound = found - requiredFound;
-    const int optionalTotal = knownXmlNames.size() - reqTotal;
+    const int optionalTotal = known.size() - reqTotal;
 
     QTimer::singleShot(0, this, [this, requiredFound, reqTotal,
                                   optionalFound, optionalTotal]() {
@@ -606,6 +605,28 @@ void PresenterDividendEdit::populateFromResult(
 }
 
 // ── xmlNameToViewField ────────────────────────────────────────────────────────
+
+// static
+const QStringList& PresenterDividendEdit::knownXmlNames()
+{
+    // Weiterleitung — die Liste selbst liegt seit dem 02.09.2026 in
+    // app/config/DocumentFieldNames.cpp. Sie beschreibt Documents.xml,
+    // nicht diese Maske, und tst_documentsxml kommt dort ohne den
+    // halben MVP-Stack an sie heran. Formularcode fragt weiterhin sein
+    // eigenes Formular.
+    return DocumentFieldNames::dividendKnown();
+}
+
+// static
+const QStringList& PresenterDividendEdit::requiredXmlNames()
+{
+    // Weiterleitung — die Liste selbst liegt seit dem 02.09.2026 in
+    // app/config/DocumentFieldNames.cpp. Sie beschreibt Documents.xml,
+    // nicht diese Maske, und tst_documentsxml kommt dort ohne den
+    // halben MVP-Stack an sie heran. Formularcode fragt weiterhin sein
+    // eigenes Formular.
+    return DocumentFieldNames::dividendRequired();
+}
 
 QString PresenterDividendEdit::xmlNameToViewField(const QString& xmlName)
 {

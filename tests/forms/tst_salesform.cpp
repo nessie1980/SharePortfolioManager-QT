@@ -3106,6 +3106,114 @@ private slots:
                  qPrintable(view.lastProgressText));
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Feldschluessel-Tabellen (02.09.2026) — Runde 3, gleiches Muster wie
+    // tst_shareaddform/tst_buysform. Siehe ARCHITECTURE.md,
+    // "Feldschluessel-Tabellen sind an keiner Stelle geprueft".
+    //
+    // Gegen einen ECHTEN ViewSaleEdit, nicht gegen den Stub: nur der echte
+    // Dialog fuellt m_inputWidgets und m_statusLabels, und genau deren Inhalt
+    // ist die Frage.
+    //
+    // Fuer dieses Formular sind die Pruefungen wertvoller als fuer die
+    // beiden anderen: hier weichen zwei Feldschluessel von den Namen im
+    // Beleg ab ("Price" wird zu "salePrice"), und drei Steuerfelder kommen
+    // hinzu, die es sonst nirgends gibt.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_saleEdit_everyKnownXmlNameHasAViewField()
+    {
+        for (const QString& xmlName : PresenterSaleEdit::knownXmlNames()) {
+            const QString viewField = PresenterSaleEdit::xmlNameToViewField(xmlName);
+            QVERIFY2(!viewField.isEmpty(),
+                     qPrintable(QStringLiteral(
+                         "knownXmlNames() fuehrt \"%1\", "
+                         "xmlNameToViewField() kennt den Namen aber nicht")
+                         .arg(xmlName)));
+        }
+    }
+
+    void test_saleEdit_everyViewFieldIsRegisteredInTheDialog()
+    {
+        // Der leere Rohwert ist die in IViewSaleEdit.h dokumentierte
+        // Aufrufart der Live-Validierung: nur das Symbol setzen, den
+        // Feldinhalt nicht anfassen.
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), &m_docsConfig);
+
+        for (const QString& xmlName : PresenterSaleEdit::knownXmlNames()) {
+            const QString viewField = PresenterSaleEdit::xmlNameToViewField(xmlName);
+            if (viewField.isEmpty())
+                continue;   // eigener Test oben
+
+            QVERIFY2(dlg.setFieldOk(viewField, QString()),
+                     qPrintable(QStringLiteral(
+                         "Feldschluessel \"%1\" (aus XML-Name \"%2\") ist im "
+                         "Dialog weder als Eingabefeld noch als Symbol "
+                         "registriert").arg(viewField, xmlName)));
+        }
+    }
+
+    void test_saleEdit_priceMapsToSalePriceNotPrice()
+    {
+        // Die eine Abweichung, die dieses Formular von Kauf und ShareAdd
+        // unterscheidet. Sie ist leicht zu uebersehen, wenn jemand die
+        // Tabellen zwischen den Formularen kopiert — und "price" waere in
+        // dieser Maske ein unbekannter Schluessel, der Verkaufspreis ginge
+        // still verloren.
+        QCOMPARE(PresenterSaleEdit::xmlNameToViewField(QStringLiteral("Price")),
+                 QStringLiteral("salePrice"));
+
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), &m_docsConfig);
+        QTest::ignoreMessage(QtWarningMsg,
+            "[ViewSaleEdit] setFieldOk: unbekannter Feldschluessel \"price\"");
+        QVERIFY2(!dlg.setFieldOk(QStringLiteral("price"), QString()),
+                 "\"price\" darf in dieser Maske gerade NICHT registriert sein");
+    }
+
+    void test_saleEdit_documentFieldKeyIsRegistered()
+    {
+        // "document" steht in keiner der XML-Tabellen — der Pfad kommt ueber
+        // setDocumentPath(), nicht aus einer Regel. Die Live-Validierung
+        // (PresenterSaleEdit::onDocumentPathEdited()) benutzt den Schluessel
+        // trotzdem, und er hat ein Symbol ohne Eingabefeld. Genau die
+        // Kombination, die der Waechter durchlassen MUSS.
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), &m_docsConfig);
+
+        QVERIFY2(dlg.setFieldOk(QStringLiteral("document"), QString()),
+                 "\"document\" ist ein reines Statusfeld und muss trotzdem "
+                 "angenommen werden");
+    }
+
+    void test_saleEdit_requiredXmlNamesAreSubsetOfKnown()
+    {
+        for (const QString& xmlName : PresenterSaleEdit::requiredXmlNames()) {
+            QVERIFY2(PresenterSaleEdit::knownXmlNames().contains(xmlName),
+                     qPrintable(QStringLiteral(
+                         "Pflichtname \"%1\" fehlt in knownXmlNames() und "
+                         "wird deshalb nie gesucht").arg(xmlName)));
+        }
+    }
+
+    void test_saleEdit_setFieldOk_unknownFieldKey_isRejected()
+    {
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), &m_docsConfig);
+
+        QTest::ignoreMessage(QtWarningMsg,
+            "[ViewSaleEdit] setFieldOk: unbekannter Feldschluessel \"depotnumber\"");
+        QVERIFY(!dlg.setFieldOk(QStringLiteral("depotnumber"),
+                                QStringLiteral("1234567890")));
+    }
+
+    void test_saleEdit_setFieldError_unknownFieldKey_warns()
+    {
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), &m_docsConfig);
+
+        QTest::ignoreMessage(QtWarningMsg,
+            "[ViewSaleEdit] setFieldError: unbekannter Feldschluessel \"depotnumber\"");
+        dlg.setFieldError(QStringLiteral("depotnumber"),
+                          QStringLiteral("1234567890"));
+    }
+
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

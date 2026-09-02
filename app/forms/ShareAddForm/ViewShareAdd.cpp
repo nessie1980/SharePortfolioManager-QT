@@ -18,6 +18,7 @@
 #include <QApplication>
 #include <QFileInfo>
 #include <QDoubleValidator>
+#include <QDebug>          // qWarning() in setFieldOk()/setFieldError()
 
 // ─────────────────────────────────────────────────────────────────────────────
 ViewShareAdd::ViewShareAdd(DocumentsConfig* config, QWidget* parent)
@@ -586,6 +587,21 @@ QDateTime ViewShareAdd::buyDateTime() const
 bool ViewShareAdd::setFieldOk(const QString& field, const QString& value,
                               const QString& tooltip)
 {
+    // Waechter (02.09.2026): ein Feldschluessel, den dieser Dialog gar nicht
+    // kennt, kam bis hierher als Erfolg zurueck. Keiner der drei
+    // qobject_cast-Zweige greift, der depotNumber-Zweig auch nicht, also
+    // blieb converted auf true — return true, obwohl der Wert nirgends
+    // gelandet ist. Der Presenter zaehlte ihn als Treffer und die Statuszeile
+    // meldete "Analyse OK — 8/8 Pflicht", waehrend an der Maske nicht einmal
+    // ein Symbol stand. Ein Tippfehler auf der rechten Seite von
+    // xmlNameToViewField() war damit vollstaendig unsichtbar. Siehe
+    // ARCHITECTURE.md, "Feldschluessel-Tabellen sind an keiner Stelle
+    // geprueft".
+    if (!m_inputWidgets.contains(field) && !m_statusLabels.contains(field)) {
+        qWarning() << "[ViewShareAdd] setFieldOk: unbekannter Feldschluessel" << field;
+        return false;
+    }
+
     // Einheitliche Bauweise seit 27.08.2026: der Feldzustand wird ERST AM
     // SCHLUSS gesetzt, ein Merker traegt das Ergebnis dorthin. Vorher setzten
     // die drei Editier-Dialoge das gruene Symbol ZUERST und riefen bei
@@ -671,6 +687,15 @@ bool ViewShareAdd::setFieldOk(const QString& field, const QString& value,
 void ViewShareAdd::setFieldError(const QString& field,
                                  const QString& rawValue)
 {
+    // Derselbe Waechter wie in setFieldOk(). Die Methode ist void und kann
+    // nichts zurueckmelden, deshalb ist die Warnung hier die einzige Spur.
+    if (!m_inputWidgets.contains(field) && !m_statusLabels.contains(field)) {
+        qWarning() << "[ViewShareAdd] setFieldError: unbekannter Feldschluessel" << field;
+        return;
+    }
+
+    // Bekannt, aber ohne Symbol — "time" teilt sich das Symbol mit "date".
+    // Kein Fehler, hier ist nur nichts zu faerben.
     auto* lbl = m_statusLabels.value(field);
     if (!lbl) return;
     m_fieldStates[field] = FieldState::Error;

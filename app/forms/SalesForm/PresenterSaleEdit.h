@@ -12,6 +12,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QList>
 #include <QMap>
 
@@ -88,6 +89,32 @@ public slots:
      * TESTING.md, "Sichtbarkeit zugunsten der Testbarkeit").
      */
     void populateFromResult(const QMap<QString, QList<QString>>& result);
+
+    // ── Feldnamen-Tabellen (public seit 02.09.2026) ───────────────────────
+    //
+    // Handgepflegte Uebersetzung zwischen Documents.xml und dieser Maske.
+    // Public, damit tst_salesform sie gegeneinander und gegen die
+    // tatsaechlich registrierten Felder der View pruefen kann — siehe
+    // TESTING.md, "Sichtbarkeit zugunsten der Testbarkeit", und
+    // ARCHITECTURE.md, "Feldschluessel-Tabellen sind an keiner Stelle
+    // geprueft".
+
+    /** Alle Feldnamen aus Documents.xml, die dieses Formular verarbeitet. */
+    static const QStringList& knownXmlNames();
+
+    /** Teilmenge von knownXmlNames(), ohne die nicht gespeichert werden kann. */
+    static const QStringList& requiredXmlNames();
+
+    /**
+     * @brief Map XML field name → view input widget key.
+     *
+     * Leerer Rueckgabewert heisst "dieses Formular kennt den Namen nicht".
+     *
+     * @note "Price" wird hier auf "salePrice" abgebildet, nicht auf "price"
+     * wie bei Kauf und ShareAdd. Der Feldname im Beleg ist derselbe, das
+     * Zielfeld heisst in dieser Maske anders.
+     */
+    static QString xmlNameToViewField(const QString& xmlName);
 
 
 signals:
@@ -202,7 +229,6 @@ private:
     SaleBuyDetailSummary buildBuyDetailSummary() const;
 
     void startParserForText(const QString& pdfText);
-    static QString xmlNameToViewField(const QString& xmlName);
 
     IViewSaleEdit*   m_view;
     IModelSaleEdit*  m_model;

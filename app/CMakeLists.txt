@@ -49,6 +49,11 @@ set(APP_SOURCES
     config/WebSitesConfig.cpp
     config/DocumentsConfig.h
     config/DocumentsConfig.cpp
+    # Welche Feldnamen aus Documents.xml welches Formular verarbeitet
+    # (02.09.2026). Abhaengigkeitsfrei bis auf QStringList, damit
+    # tst_documentsxml die Listen ohne den halben MVP-Stack pruefen kann.
+    config/DocumentFieldNames.h
+    config/DocumentFieldNames.cpp
 
     # ── Forms – Main ──────────────────────────────────────────────────────
     forms/MainForm/MainWindow.h

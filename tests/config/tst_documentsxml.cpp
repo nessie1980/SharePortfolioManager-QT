@@ -27,8 +27,10 @@
 #include <QFileInfo>
 #include <QDate>
 #include <QRegularExpression>
+#include <QSet>
 
 #include "../../app/config/DocumentsConfig.h"
+#include "../../app/config/DocumentFieldNames.h"
 #include "../../app/utils/DocumentClassifier.h"
 #include "../../libs/parser/src/Parser.h"
 
@@ -1001,6 +1003,205 @@ private slots:
             QCOMPARE(doc->regexList.value(QStringLiteral("Wkn")).regexFoundPosition, 1);
         }
     }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Feldnamen: Documents.xml gegen die Formularlisten (02.09.2026)
+    //
+    // Die Gegenrichtung zu den Pruefungen in den vier Form-Zielen. Dort wird
+    // gefragt: kennt die Maske jeden Feldschluessel, den ihre Tabelle nennt?
+    // Hier: kennt ein Formular jeden Tag, den die ausgelieferte Datei fuehrt —
+    // und umgekehrt, kommt jeder Name aus einer Formularliste in der Datei
+    // ueberhaupt vor?
+    //
+    // Die zweite Frage ist die wertvollere. Sie hat den CapitalGainTax-Fehler
+    // gefunden: PresenterSaleEdit suchte "CapitalGainsTax" MIT s, die Datei
+    // schreibt ihn an allen 15 Stellen OHNE. Die Kapitalertragssteuer eines
+    // Verkaufsbelegs kam dadurch nie im Formular an. Die Pruefungen der vier
+    // Form-Ziele koennen so etwas strukturell nicht sehen — sie vergleichen
+    // die Tabellen mit der Maske, nie mit der Konfigurationsdatei.
+    //
+    // Siehe ARCHITECTURE.md, "Feldschluessel-Tabellen sind an keiner Stelle
+    // geprueft" und "Die Kapitalertragssteuer kam bei Verkaeufen nie an".
+    // ═════════════════════════════════════════════════════════════════════
+
+    /**
+     * @brief Tags, die absichtlich in keiner Formularliste stehen.
+     *
+     * Sie werden gelesen, nur nicht ueber den knownXmlNames()-Weg. Die Liste
+     * ist der eigentliche Ertrag dieser Pruefung: sie macht die
+     * "wird-anders-gelesen"-Pfade sichtbar. Ein neuer Tag, den niemand liest,
+     * faellt dadurch auf, statt still in der Datei zu liegen.
+     */
+    static QStringList readByOtherMeans()
+    {
+        return {
+            // DocumentClassifier::extractWkn()/extractIsin() ziehen diese
+            // beiden fuer die Direkte Dokumentenerfassung (Drag&Drop auf das
+            // Hauptfenster) direkt aus der regexList — ohne ParserLib und
+            // ohne Formular. Sie stehen deshalb in JEDER Belegart, auch dort,
+            // wo das zugehoerige Formular keine Stammdaten kennt.
+            QStringLiteral("Wkn"),
+            QStringLiteral("Isin"),
+
+            // Nur im Consors-Dividendenblock. Die Bank nennt keinen Ex-Tag,
+            // wohl aber den Schlusstag; PresenterDividendEdit liest ihn direkt
+            // aus dem Ergebnis und haengt ihn ueber setFieldHint() als
+            // Erklaerung an das Ex-Tag-Feld, ohne einen Wert zu setzen. Er
+            // gehoert bewusst NICHT in dividendKnown(): dort wuerde er als
+            // uebernommenes Optionalfeld mitzaehlen, obwohl der Benutzer den
+            // Ex-Tag weiterhin selbst eintragen muss.
+            QStringLiteral("RecordDate"),
+        };
+    }
+
+    /// Alle Tag-Namen aller `<Document Type="@p type">`-Bloecke der Datei.
+    QSet<QString> tagsForType(DocumentType type) const
+    {
+        QSet<QString> tags;
+        for (const DepotEntry& depot : m_config.entries()) {
+            const DocumentEntry* doc = DocumentsConfig::findDocument(depot, type);
+            if (!doc) continue;
+            const QStringList keys = doc->regexList.keys();
+            for (const QString& key : keys)
+                tags.insert(key);
+        }
+        return tags;
+    }
+
+    /// Gemeinsame Zusage: jeder Tag von @p type wird von @p readers gelesen.
+    void assertEveryTagIsRead(DocumentType       type,
+                              const QString&     typeName,
+                              const QStringList& readers)
+    {
+        QSet<QString> covered(readers.cbegin(), readers.cend());
+        const QStringList exceptions = readByOtherMeans();
+        covered.unite(QSet<QString>(exceptions.cbegin(), exceptions.cend()));
+
+        const QSet<QString> tags = tagsForType(type);
+        QVERIFY2(!tags.isEmpty(),
+                 qPrintable(QStringLiteral("Kein einziger %1-Block in "
+                                           "Documents.xml").arg(typeName)));
+
+        for (const QString& tag : tags) {
+            QVERIFY2(covered.contains(tag),
+                     qPrintable(QStringLiteral(
+                         "Documents.xml fuehrt \"%1\" im %2-Block, aber kein "
+                         "Formular liest den Namen — der Wert wird gefangen "
+                         "und dann fallengelassen")
+                         .arg(tag, typeName)));
+        }
+    }
+
+    void test_fieldNames_everyBuyTagIsReadByAForm()
+    {
+        // Kaufbelege lesen ZWEI Formulare: der Kaufdialog und "Aktie
+        // hinzufuegen". Letzteres nimmt zusaetzlich die Stammdaten mit, hier
+        // zaehlt deshalb die Vereinigung.
+        assertEveryTagIsRead(DocumentType::Buy, QStringLiteral("Buy"),
+                             DocumentFieldNames::buyKnown()
+                                 + DocumentFieldNames::shareAddKnown());
+    }
+
+    void test_fieldNames_everySaleTagIsReadByAForm()
+    {
+        assertEveryTagIsRead(DocumentType::Sale, QStringLiteral("Sale"),
+                             DocumentFieldNames::saleKnown());
+    }
+
+    void test_fieldNames_everyDividendTagIsReadByAForm()
+    {
+        assertEveryTagIsRead(DocumentType::Dividend, QStringLiteral("Dividend"),
+                             DocumentFieldNames::dividendKnown());
+    }
+
+    void test_fieldNames_everyBrokerageTagIsReadBySomeForm()
+    {
+        // Absichtlich schwaecher als die drei oben. Es gibt kein Formular, das
+        // Kostenbelege einliest: PresenterBrokerageEdit hat gar keine
+        // Parse-Strecke, die Kostenmaske wird von Hand gefuellt (siehe
+        // ARCHITECTURE.md, "Kostenbelege werden von keinem Formular
+        // eingelesen"). Ein Kostenbeleg landet nur ueber die Ausweichregel
+        // eines der drei anderen Dialoge im Parser
+        // (DocumentClassifier::detectDocumentType() erkennt ihn am
+        // BrokerageIdentifier, auch wenn der Benutzer den Kauf-Dialog geoeffnet
+        // hat) — und wird dann mit der Liste jenes Dialogs verteilt.
+        //
+        // Geprueft wird deshalb nur, dass ueberhaupt jemand jeden Tag lesen
+        // kann. Das ist wenig, faengt aber den Fall ab, dass jemand einen
+        // Namen in den Kostenblock schreibt, den kein Formular je verarbeitet.
+        assertEveryTagIsRead(DocumentType::Brokerage, QStringLiteral("Brokerage"),
+                             DocumentFieldNames::buyKnown()
+                                 + DocumentFieldNames::saleKnown());
+    }
+
+    void test_fieldNames_everyKnownNameExistsInDocumentsXml_data()
+    {
+        QTest::addColumn<QStringList>("names");
+        QTest::addColumn<int>("type");
+        QTest::addColumn<QString>("form");
+
+        QTest::newRow("shareAdd")
+            << DocumentFieldNames::shareAddKnown()
+            << static_cast<int>(DocumentType::Buy)      << QStringLiteral("shareAddKnown()");
+        QTest::newRow("buy")
+            << DocumentFieldNames::buyKnown()
+            << static_cast<int>(DocumentType::Buy)      << QStringLiteral("buyKnown()");
+        QTest::newRow("sale")
+            << DocumentFieldNames::saleKnown()
+            << static_cast<int>(DocumentType::Sale)     << QStringLiteral("saleKnown()");
+        QTest::newRow("dividend")
+            << DocumentFieldNames::dividendKnown()
+            << static_cast<int>(DocumentType::Dividend) << QStringLiteral("dividendKnown()");
+    }
+
+    /**
+     * @brief Die Pruefung, die den CapitalGainTax-Fehler gefunden haette.
+     *
+     * Ein Name, den die Datei nirgends fuehrt, wird nie gefunden. Das Feld
+     * bleibt leer, bekommt das Info-Symbol "Wert fehlt noch", und die
+     * Optional-Zaehlung nennt einen Nenner, den sie nie erreicht — es sieht
+     * aus wie ein Beleg, der die Angabe schlicht nicht enthaelt.
+     */
+    void test_fieldNames_everyKnownNameExistsInDocumentsXml()
+    {
+        QFETCH(QStringList, names);
+        QFETCH(int, type);
+        QFETCH(QString, form);
+
+        const QSet<QString> tags = tagsForType(static_cast<DocumentType>(type));
+        QVERIFY(!tags.isEmpty());
+
+        for (const QString& name : names) {
+            QVERIFY2(tags.contains(name),
+                     qPrintable(QStringLiteral(
+                         "%1 fuehrt \"%2\", aber kein Block in Documents.xml "
+                         "liefert diesen Namen — der Wert wird nie gefunden")
+                         .arg(form, name)));
+        }
+    }
+
+    void test_fieldNames_requiredIsSubsetOfKnown()
+    {
+        // Dieselbe Zusage wie in den vier Form-Zielen, hier noch einmal ueber
+        // alle vier Listen auf einmal — so faellt sie auch auf, wenn jemand
+        // eine Liste aendert, ohne das zugehoerige Form-Ziel zu bauen.
+        const QList<QPair<QStringList, QStringList>> pairs {
+            { DocumentFieldNames::shareAddRequired(), DocumentFieldNames::shareAddKnown() },
+            { DocumentFieldNames::buyRequired(),      DocumentFieldNames::buyKnown()      },
+            { DocumentFieldNames::saleRequired(),     DocumentFieldNames::saleKnown()     },
+            { DocumentFieldNames::dividendRequired(), DocumentFieldNames::dividendKnown() },
+        };
+
+        for (const auto& [required, known] : pairs)
+            for (const QString& name : required)
+                QVERIFY2(known.contains(name),
+                         qPrintable(QStringLiteral(
+                             "Pflichtname \"%1\" fehlt in der zugehoerigen "
+                             "known-Liste und wird deshalb nie gesucht")
+                             .arg(name)));
+    }
+
+
 };
 
 QTEST_MAIN(TestDocumentsXml)

@@ -2735,6 +2735,99 @@ private slots:
                  qPrintable(view.lastProgressText));
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Feldschluessel-Tabellen (02.09.2026) — Runde 2, gleiches Muster wie
+    // tst_shareaddform. Siehe ARCHITECTURE.md, "Feldschluessel-Tabellen sind
+    // an keiner Stelle geprueft".
+    //
+    // Gegen einen ECHTEN ViewBuyEdit, nicht gegen den Stub: nur der echte
+    // Dialog fuellt m_inputWidgets und m_statusLabels, und genau deren Inhalt
+    // ist die Frage.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_buyEdit_everyKnownXmlNameHasAViewField()
+    {
+        // Ein Name in knownXmlNames(), der in xmlNameToViewField() fehlt,
+        // wird in populateFromResult() ueber "if (viewField.isEmpty())
+        // continue;" wortlos uebersprungen — in der Optional-Zaehlung steckt
+        // er trotzdem drin.
+        for (const QString& xmlName : PresenterBuyEdit::knownXmlNames()) {
+            const QString viewField = PresenterBuyEdit::xmlNameToViewField(xmlName);
+            QVERIFY2(!viewField.isEmpty(),
+                     qPrintable(QStringLiteral(
+                         "knownXmlNames() fuehrt \"%1\", "
+                         "xmlNameToViewField() kennt den Namen aber nicht")
+                         .arg(xmlName)));
+        }
+    }
+
+    void test_buyEdit_everyViewFieldIsRegisteredInTheDialog()
+    {
+        // Der leere Rohwert ist die in IViewBuyEdit.h dokumentierte Aufrufart
+        // der Live-Validierung: nur das Symbol setzen, den Feldinhalt nicht
+        // anfassen. Fuer jeden bekannten Schluessel muss das gelingen.
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), &m_docsConfig);
+
+        for (const QString& xmlName : PresenterBuyEdit::knownXmlNames()) {
+            const QString viewField = PresenterBuyEdit::xmlNameToViewField(xmlName);
+            if (viewField.isEmpty())
+                continue;   // eigener Test oben
+
+            QVERIFY2(dlg.setFieldOk(viewField, QString()),
+                     qPrintable(QStringLiteral(
+                         "Feldschluessel \"%1\" (aus XML-Name \"%2\") ist im "
+                         "Dialog weder als Eingabefeld noch als Symbol "
+                         "registriert").arg(viewField, xmlName)));
+        }
+    }
+
+    void test_buyEdit_documentFieldKeyIsRegistered()
+    {
+        // "document" steht in keiner der XML-Tabellen — der Pfad kommt nicht
+        // aus einer Regel, sondern ueber setDocumentPath(). Die
+        // Live-Validierung (PresenterBuyEdit::onDocumentPathEdited()) benutzt
+        // den Schluessel trotzdem, und er hat ein Symbol ohne Eingabefeld.
+        // Genau die Kombination, die der Waechter durchlassen MUSS.
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), &m_docsConfig);
+
+        QVERIFY2(dlg.setFieldOk(QStringLiteral("document"), QString()),
+                 "\"document\" ist ein reines Statusfeld und muss trotzdem "
+                 "angenommen werden");
+    }
+
+    void test_buyEdit_requiredXmlNamesAreSubsetOfKnown()
+    {
+        // Ein Pflichtname ausserhalb von knownXmlNames() wird nie gesucht;
+        // requiredFound erreicht reqTotal dann nie und die Statuszeile meldet
+        // dauerhaft "Analyse fehlgeschlagen".
+        for (const QString& xmlName : PresenterBuyEdit::requiredXmlNames()) {
+            QVERIFY2(PresenterBuyEdit::knownXmlNames().contains(xmlName),
+                     qPrintable(QStringLiteral(
+                         "Pflichtname \"%1\" fehlt in knownXmlNames() und "
+                         "wird deshalb nie gesucht").arg(xmlName)));
+        }
+    }
+
+    void test_buyEdit_setFieldOk_unknownFieldKey_isRejected()
+    {
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), &m_docsConfig);
+
+        QTest::ignoreMessage(QtWarningMsg,
+            "[ViewBuyEdit] setFieldOk: unbekannter Feldschluessel \"depotnumber\"");
+        QVERIFY(!dlg.setFieldOk(QStringLiteral("depotnumber"),
+                                QStringLiteral("1234567890")));
+    }
+
+    void test_buyEdit_setFieldError_unknownFieldKey_warns()
+    {
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), &m_docsConfig);
+
+        QTest::ignoreMessage(QtWarningMsg,
+            "[ViewBuyEdit] setFieldError: unbekannter Feldschluessel \"depotnumber\"");
+        dlg.setFieldError(QStringLiteral("depotnumber"),
+                          QStringLiteral("1234567890"));
+    }
+
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

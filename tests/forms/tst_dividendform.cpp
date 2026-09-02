@@ -2184,6 +2184,124 @@ private slots:
                  qPrintable(view.lastProgressText));
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Feldschluessel-Tabellen (02.09.2026) — Runde 4, gleiches Muster wie
+    // tst_shareaddform/tst_buysform/tst_salesform. Siehe ARCHITECTURE.md,
+    // "Feldschluessel-Tabellen sind an keiner Stelle geprueft".
+    //
+    // Diese Runde hat den ersten echten Treffer gebracht: "currency" war in
+    // ViewDividendEdit nirgends registriert, setFieldOk() meldete dafuer
+    // trotzdem Erfolg, und die Optional-Zaehlung nahm den Wert mit.
+    //
+    // Der Dialog wird ohne DocumentsConfig gebaut — die Depotnummern-Liste
+    // bleibt dadurch leer, die Registrierung der Feldschluessel haengt aber
+    // nicht daran. Gleiches Vorgehen wie in den uebrigen View-Tests dieser
+    // Datei.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_dividendEdit_everyKnownXmlNameHasAViewField()
+    {
+        for (const QString& xmlName : PresenterDividendEdit::knownXmlNames()) {
+            const QString viewField =
+                PresenterDividendEdit::xmlNameToViewField(xmlName);
+            QVERIFY2(!viewField.isEmpty(),
+                     qPrintable(QStringLiteral(
+                         "knownXmlNames() fuehrt \"%1\", "
+                         "xmlNameToViewField() kennt den Namen aber nicht")
+                         .arg(xmlName)));
+        }
+    }
+
+    void test_dividendEdit_everyViewFieldIsRegisteredInTheDialog()
+    {
+        // Der Test, der "currency" gefunden hat. Vor dem 02.09.2026 waere er
+        // an genau diesem Schluessel gescheitert.
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+
+        for (const QString& xmlName : PresenterDividendEdit::knownXmlNames()) {
+            const QString viewField =
+                PresenterDividendEdit::xmlNameToViewField(xmlName);
+            if (viewField.isEmpty())
+                continue;   // eigener Test oben
+
+            QVERIFY2(dlg.setFieldOk(viewField, QString()),
+                     qPrintable(QStringLiteral(
+                         "Feldschluessel \"%1\" (aus XML-Name \"%2\") ist im "
+                         "Dialog weder als Eingabefeld noch als Symbol "
+                         "registriert").arg(viewField, xmlName)));
+        }
+    }
+
+    void test_dividendEdit_currencyIsRegisteredButSharesItsSymbol()
+    {
+        // Der Fund vom 02.09.2026, festgenagelt. "currency" muss im Dialog
+        // bekannt sein — sonst zaehlt die Statuszeile einen Wert mit, der
+        // nirgends ankommt.
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        QVERIFY2(dlg.setFieldOk(QStringLiteral("currency"), QString()),
+                 "\"currency\" muss dem Dialog bekannt sein");
+
+        // Und zwar OHNE eigenes Statussymbol: Devisenkurs und Waehrung teilen
+        // sich eine Zeile und damit fcStatus. Zwei Schluessel, die dasselbe
+        // Label beschreiben, wuerden einander ueberschreiben. Geprueft wird
+        // das ueber setFieldError(): der Aufruf muss still zurueckkehren,
+        // ohne Warnung — bekannt, aber nichts zu faerben.
+        dlg.setFieldError(QStringLiteral("currency"), QStringLiteral("USD"));
+    }
+
+    void test_dividendEdit_documentFieldKeyIsRegistered()
+    {
+        // Reines Statusfeld ohne Eingabefeld — der Pfad kommt ueber
+        // setDocumentPath(). Die Kombination, die der Waechter durchlassen
+        // MUSS.
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        QVERIFY2(dlg.setFieldOk(QStringLiteral("document"), QString()),
+                 "\"document\" ist ein reines Statusfeld und muss trotzdem "
+                 "angenommen werden");
+    }
+
+    void test_dividendEdit_requiredXmlNamesAreSubsetOfKnown()
+    {
+        for (const QString& xmlName : PresenterDividendEdit::requiredXmlNames()) {
+            QVERIFY2(PresenterDividendEdit::knownXmlNames().contains(xmlName),
+                     qPrintable(QStringLiteral(
+                         "Pflichtname \"%1\" fehlt in knownXmlNames() und "
+                         "wird deshalb nie gesucht").arg(xmlName)));
+        }
+    }
+
+    void test_dividendEdit_setFieldOk_unknownFieldKey_isRejected()
+    {
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+
+        QTest::ignoreMessage(QtWarningMsg,
+            "[ViewDividendEdit] setFieldOk: unbekannter Feldschluessel \"depotnumber\"");
+        QVERIFY(!dlg.setFieldOk(QStringLiteral("depotnumber"),
+                                QStringLiteral("1234567890")));
+    }
+
+    void test_dividendEdit_setFieldError_unknownFieldKey_warns()
+    {
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+
+        QTest::ignoreMessage(QtWarningMsg,
+            "[ViewDividendEdit] setFieldError: unbekannter Feldschluessel \"depotnumber\"");
+        dlg.setFieldError(QStringLiteral("depotnumber"),
+                          QStringLiteral("1234567890"));
+    }
+
+    void test_dividendEdit_setFieldHint_unknownFieldKey_warns()
+    {
+        // setFieldHint() gibt es nur in diesem Dialog (Ersatzhinweis fuer den
+        // fehlenden Ex-Tag bei Cortal Consors). Dritter Eingang mit einem
+        // Feldschluessel, deshalb derselbe Waechter.
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+
+        QTest::ignoreMessage(QtWarningMsg,
+            "[ViewDividendEdit] setFieldHint: unbekannter Feldschluessel \"exdate\"");
+        dlg.setFieldHint(QStringLiteral("exdate"), QStringLiteral("Hinweis"));
+    }
+
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

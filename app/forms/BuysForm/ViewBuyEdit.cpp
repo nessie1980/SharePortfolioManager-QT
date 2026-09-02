@@ -25,6 +25,7 @@
 #include <QTimer>
 #include <QDoubleValidator>
 #include <QApplication>
+#include <QDebug>          // qWarning() in setFieldOk()/setFieldError()
 #include <functional>
 
 #ifndef SPM_HAVE_QTPDF
@@ -631,6 +632,19 @@ void ViewBuyEdit::setSplitHint(const QString& text, const QString& tooltip, bool
 bool ViewBuyEdit::setFieldOk(const QString& field, const QString& value,
                              const QString& tooltip)
 {
+    // Waechter (02.09.2026): ein Feldschluessel, den dieser Dialog gar nicht
+    // kennt, kam bis hierher als Erfolg zurueck — der "kein Eingabefeld"-Zweig
+    // weiter unten faengt ihn ab und laesst converted auf true stehen. Der
+    // Presenter zaehlte den Wert damit als Treffer, obwohl er nirgends
+    // gelandet ist. Der Zweig selbst bleibt richtig: "document" hat ein
+    // Symbol, aber kein Eingabefeld. Nur unterscheidet er allein nicht
+    // zwischen "reines Statusfeld" und "Tippfehler". Siehe ARCHITECTURE.md,
+    // "Feldschluessel-Tabellen sind an keiner Stelle geprueft".
+    if (!m_inputWidgets.contains(field) && !m_statusLabels.contains(field)) {
+        qWarning() << "[ViewBuyEdit] setFieldOk: unbekannter Feldschluessel" << field;
+        return false;
+    }
+
     // Einheitliche Bauweise seit 27.08.2026: der Feldzustand wird ERST AM
     // SCHLUSS gesetzt, ein Merker traegt das Ergebnis dorthin. Vorher setzten
     // die drei Editier-Dialoge das gruene Symbol ZUERST und riefen bei
@@ -742,6 +756,15 @@ bool ViewBuyEdit::setFieldOk(const QString& field, const QString& value,
 void ViewBuyEdit::setFieldError(const QString& field,
                                 const QString& rawValue)
 {
+    // Derselbe Waechter wie in setFieldOk(). Die Methode ist void und kann
+    // nichts zurueckmelden, deshalb ist die Warnung hier die einzige Spur.
+    if (!m_inputWidgets.contains(field) && !m_statusLabels.contains(field)) {
+        qWarning() << "[ViewBuyEdit] setFieldError: unbekannter Feldschluessel" << field;
+        return;
+    }
+
+    // Bekannt, aber ohne Symbol — "time" teilt sich das Symbol mit "date".
+    // Kein Fehler, hier ist nur nichts zu faerben.
     auto* lbl = m_statusLabels.value(field);
     if (!lbl) return;
     m_fieldStates[field] = FieldState::Error;

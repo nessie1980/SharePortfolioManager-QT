@@ -54,8 +54,17 @@ add_test(NAME tst_documentsconfig COMMAND tst_documentsconfig)
 # Dokumentenerfassung (Drag&Drop) liest WKN und ISIN über ihn und NICHT über
 # den ParserLib::Parser. Dass beide Wege aus derselben Regel denselben Wert
 # holen, prüft test_capture_extractWknMatchesParserResult_allBanks().
+#
+# DocumentFieldNames ist seit dem 02.09.2026 mit dabei: das Testziel prueft
+# damit die Gegenrichtung — jeder Tag in Documents.xml muss von einem Formular
+# gelesen werden, und jeder Name in einer Formularliste muss in der Datei
+# vorkommen. Genau dafuer liegen die Listen in app/config/ und nicht mehr an
+# den Presentern: die Datei haengt an nichts ausser QStringList, waehrend vier
+# Presenter-.cpp hier IView, IModel, Models, ShareSplitAdjuster,
+# SaleFifoAllocator, PdfTextExtractor und Parser nach sich zoegen.
 qt_add_executable(tst_documentsxml tst_documentsxml.cpp
     ../../app/config/DocumentsConfig.cpp
+    ../../app/config/DocumentFieldNames.cpp
     ../../app/utils/DocumentClassifier.cpp
 )
 

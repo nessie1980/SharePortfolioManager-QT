@@ -4736,9 +4736,14 @@ samt `pdftotext` auf dem Runner.
 
 Zwischen `Documents.xml` und den Eingabemasken liegen zwei Übersetzungen, die
 beide nur aus handgepflegten Tabellen bestehen und die niemand prüft. Fällt
-eine davon aus, geht ein Wert lautlos verloren: der Parser findet ihn, die
-Statuszeile zählt ihn seit dem 27.08.2026 korrekt NICHT mehr mit — aber warum
-er fehlt, sagt niemand.
+eine davon aus, geht ein Wert lautlos verloren: der Parser findet ihn, aber
+er landet nirgends.
+
+@note Korrektur vom 02.09.2026: hier stand, die Statuszeile zähle einen
+solchen Wert seit dem 27.08.2026 korrekt NICHT mehr mit. Das stimmt nur für
+einen VERWORFENEN Wert — unbrauchbares Datum, unbekannte Depotnummer. Bei
+einem unbekannten FELDSCHLÜSSEL meldete `setFieldOk()` Erfolg, und die
+Statuszeile zählte weiter mit. Siehe den Abschnitt "Erste Tabelle" unten.
 
 Aufgefallen beim Umbau der Statuszeile; ausdrücklich NICHT dort miterledigt,
 weil es zwei eigene Prüfungen an anderer Stelle sind.
@@ -4768,15 +4773,92 @@ Die entstehen erst, wenn der jeweilige Dialog seine Widgets aufbaut, und sind
 je Formular verschieden — beim Programmstart existiert keiner dieser Dialoge,
 es gibt also nichts zu vergleichen. Eine Startmeldung scheidet damit aus.
 
-Prüfbar ist es als Test: je Formular einen Dialog bauen, die Tabelle
-durchgehen und für jeden Wert der rechten Seite prüfen, dass er in
-`m_inputWidgets` oder `m_statusLabels` vorkommt. Vier Tests, einer je
-Formular. Voraussetzung: `xmlNameToViewField()` ist bereits `static` und
-müsste `public` werden — dieselbe Überlegung wie bei den übrigen statischen
-Helfern.
+#### Der Befund war schlimmer als angenommen (02.09.2026)
 
-@note Der Feldschlüssel `document` muss dabei als Ausnahme gelten: er steht
-absichtlich nur in `m_statusLabels` und hat kein Eingabefeld.
+Beim Entwurf der Prüfung stellte sich heraus, dass ein unbekannter
+Feldschlüssel nicht nur unbemerkt bleibt, sondern aktiv als Erfolg gemeldet
+wird. `ViewShareAdd::setFieldOk()` durchläuft für `"depotnumber"` folgenden
+Weg:
+
+- keiner der drei `qobject_cast`-Zweige greift, `m_inputWidgets.value(field)`
+  liefert `nullptr`
+- der `depotNumber`-Zweig greift nicht, der Schlüssel stimmt ja nicht
+- `converted` bleibt unangetastet auf `true`
+- `m_fieldStates[field] = FieldState::Ok` legt einen Phantom-Eintrag an
+- `m_statusLabels.value(field)` ist `nullptr`, es erscheint also kein Symbol
+- `return true`
+
+Der Presenter zählt das als Treffer. Bei einem Tippfehler in einem Pflichtfeld
+meldet die Statuszeile weiterhin "Analyse OK — 8/8 Pflicht", während der Wert
+nirgends steht und an der Maske überhaupt kein Symbol auftaucht. Der am
+27.08.2026 eingeführte Rückgabewert deckt den verworfenen Wert ab, den
+unbekannten Schlüssel nicht.
+
+Damit ist der Punkt kein reiner Test mehr. Ein Wächter am Anfang von
+`setFieldOk()` und `setFieldError()` — Schlüssel weder in `m_inputWidgets`
+noch in `m_statusLabels` — behebt das zur Laufzeit:
+
+| Methode | Verhalten bei unbekanntem Schlüssel |
+| --- | --- |
+| `setFieldOk()` | `qWarning`, dann `false` statt `true` |
+| `setFieldError()` | `qWarning`, dann Rückkehr; die Methode ist `void` |
+
+@note Bewusst nur `qWarning`, kein `Q_ASSERT` im Debug-Build (Nessie,
+02.09.2026). Ein Assert nähme die Anwendung wegen eines Konfigurationsfehlers
+herunter, den sie sonst überlebt.
+
+@note Der Wächter unterscheidet "unbekannt" von "bekannt, aber ohne Symbol".
+`time` steht nur in `m_inputWidgets` und teilt sich das Symbol mit `date` —
+`setFieldError("time", …)` kehrt weiterhin still zurück, das ist kein Fehler,
+sondern schlicht nichts zu färben.
+
+#### Der Test braucht dadurch keinen Zugriff auf die privaten Maps
+
+Mit dem Wächter beantwortet `setFieldOk()` die Frage selbst. Der Test ruft für
+jeden Wert der rechten Seite `setFieldOk(key, "")` auf und prüft auf `true`.
+Der leere Rohwert ist dabei kein Kunstgriff, sondern die in `IViewShareAdd.h`
+dokumentierte Aufrufart der Live-Validierung, die nur das Symbol setzt und den
+Feldinhalt nicht anfasst. Ein `fieldKeys()`-Abfrager an der View, wie zuerst
+erwogen, entfällt damit.
+
+Vorausgesetzt ist nur, dass die Testdatei die linke Seite aufzählen kann:
+`knownXmlNames()` und `requiredXmlNames()` sind dafür aus
+`populateFromResult()` heraus in öffentliche statische Funktionen gewandert,
+`xmlNameToViewField()` von `private` nach `public`. Inhalt unverändert.
+
+#### Eine dritte Tabelle, beim Umbau beseitigt
+
+`PresenterShareAdd::startParserForText()` führte für den Fall "kein Depot
+erkannt" eine eigene, von Hand gepflegte Liste derselben acht Feldschlüssel,
+um sie alle rot zu markieren. Sie war die einzige der drei Tabellen, gegen die
+niemand etwas abgeglichen hat. Sie entsteht jetzt aus `requiredXmlNames()`
+über dieselbe Übersetzung, die auch `populateFromResult()` benutzt, und kann
+damit nicht mehr auseinanderlaufen.
+
+@note Der Feldschlüssel `document` ist die vorgesehene Ausnahme: er steht
+absichtlich nur in `m_statusLabels` und hat kein Eingabefeld, weil der Pfad
+nicht aus einer Regel kommt, sondern über `setDocumentPath()`. In
+`ViewShareAdd` kommt er nicht vor, in `ViewBuyEdit` schon. Der Wächter lässt
+ihn durch — er prüft auf "in KEINER der beiden Maps", nicht auf "hat ein
+Eingabefeld". `test_buyEdit_documentFieldKeyIsRegistered` pinnt genau diese
+Kombination fest, damit der Wächter beim nächsten Umbau nicht versehentlich
+strenger wird.
+
+#### Vierter Satz Feldschlüssel: die Live-Validierung (02.09.2026)
+
+Bei BuyEdit kam ein Satz hinzu, den ShareAdd nicht hat: die
+Live-Validierungs-Slots in `PresenterBuyEdit` (`onDateEdited()`,
+`onDepotNumberEdited()`, `onOrderNumberEdited()`, `onVolumeOrPriceEdited()`,
+`onDocumentPathEdited()`) rufen `setFieldOk()`/`setFieldError()` mit fest
+verdrahteten Schlüsseln auf, und `onFeeEdited()` bekommt seinen Schlüssel
+sogar von aussen — aus vier `connectFee()`-Aufrufen im Konstruktor der View.
+
+Diese Schlüssel stehen in keiner Tabelle und lassen sich nicht aufzählen, sind
+also nicht wie die übrigen prüfbar. Der Wächter deckt sie trotzdem ab: er
+sitzt in der View und wirkt unabhängig davon, woher der Schlüssel kam. Ein
+Tippfehler in einem `connectFee()`-Aufruf erzeugt jetzt eine Warnung im
+Protokoll, statt still eine Rückmeldung zu unterschlagen. Genau dafür ist der
+Wächter der bessere Ort als ein Test.
 
 #### Zweite Tabelle: verwendete Tag-Namen in Documents.xml
 
@@ -4795,6 +4877,202 @@ erreichbar sein, heute sind sie `static const` innerhalb von
 @note Beide Prüfungen sind Tests, keine Startlauf-Prüfungen, und beide sind
 unabhängig voneinander umsetzbar. Die erste ist die wichtigere: sie deckt den
 Fall ab, bei dem ein Wert trotz greifender Regel nicht in der Maske ankommt.
+
+#### Der Fund: currency war nirgends registriert (02.09.2026)
+
+Bei DividendEdit hat die Prüfung geliefert, wofür sie gebaut wurde.
+`PresenterDividendEdit::xmlNameToViewField()` bildet `Currency` auf
+`currency` ab — `ViewDividendEdit` kannte diesen Schlüssel nicht, weder in
+`m_inputWidgets` noch in `m_statusLabels`. `setFieldOk("currency", "USD")`
+lief damit durch alle Zweige hindurch, meldete `true`, und die
+Optional-Zählung nahm den Wert mit. Ein Statussymbol gab es nicht.
+
+Funktional ging nichts verloren: die Währung kommt weiter unten über
+`setForeignCurrency(isForeign, parsedCurrency)` doch noch an. Der Aufruf in
+der Schleife war reine Zählung ohne Wirkung — eine Zählung, die etwas
+bestätigte, das an dieser Stelle nicht stattfand.
+
+@note Es ist derselbe Befund, der am 21.08.2026 schon einmal behoben wurde.
+Der Devisenkurs war damals "als einziges beschreibbares Feld weder in
+`m_statusLabels` noch in `m_inputWidgets` eingetragen"; `exchangeRatio` wurde
+nachgetragen, `currency` — im selben Zeilen-Widget, direkt daneben — blieb
+übrig. Zwei Felder, ein Fehler, eines davon behoben. Genau die Sorte Rest, die
+ohne eine aufzählende Prüfung liegen bleibt.
+
+Behoben durch Registrierung in `m_inputWidgets`, ohne eigenes Statussymbol
+(Nessies Entscheidung, 02.09.2026): Devisenkurs und Währung teilen sich eine
+Zeile und damit `fcStatus`. Zwei Schlüssel, die dasselbe Label beschreiben,
+würden einander überschreiben — dieselbe Aufteilung wie bei `time`, das sich
+sein Symbol mit `date` teilt. Gesetzt wird die Währung weiterhin von
+`setForeignCurrency()`, weil dort auch der Haken
+"Fremdwährungseingabe aktivieren" hängt, ohne den `onSave()` den Devisenkurs
+verwerfen würde.
+
+Verworfen wurden zwei Alternativen: einen generischen ComboBox-Zweig in
+`setFieldOk()` einzubauen (er fügt bei unbekanntem Wert einen Eintrag hinzu
+und widerspräche damit `setForeignCurrency()`, das eine unbekannte Währung
+ausdrücklich ignoriert), und `Currency` aus `knownXmlNames()` zu streichen
+(die Optional-Zählung wäre um eins gesunken, ohne dass ein Feld weniger
+gelesen würde).
+
+@note `ViewDividendEdit` hat als einziger Dialog einen dritten Eingang mit
+einem Feldschlüssel: `setFieldHint()`, der Ersatzhinweis für den fehlenden
+Ex-Tag bei Cortal Consors. Er hat denselben Wächter bekommen.
+
+#### Die Kapitalertragssteuer kam bei Verkäufen nie an (02.09.2026)
+
+Der zweite echte Fund, und der teurere. `PresenterSaleEdit` suchte den Tag
+`CapitalGainsTax` — MIT s. `Documents.xml` kennt diese Schreibweise an keiner
+Stelle:
+
+| Schreibweise | Vorkommen in Documents.xml |
+| --- | --- |
+| `CapitalGainTax` | 15 |
+| `CapitalGainsTax` | 0 |
+
+Alle drei Depots, alle Belegarten: durchgängig ohne s. `PresenterDividendEdit`
+hatte es richtig, `PresenterSaleEdit` nicht.
+
+Die Folge: `populateFromResult()` schlägt den Wert unter einem Namen nach, den
+die Ergebnis-Map nicht enthält, bekommt eine leere Liste und überspringt ihn.
+Die Kapitalertragssteuer eines Verkaufsbelegs wurde damit **nie** ins Formular
+übernommen. Der Parser findet sie durchaus — `tst_documentsxml` prüft das seit
+Längerem und vergleicht den gefangenen Wert mit dem Beleg. Sie kam nur nie
+dort an, wo sie hingehört.
+
+Sichtbar war das für den Benutzer nur indirekt: das Feld blieb auf 0,00 mit
+dem Info-Symbol "Wert fehlt noch — bitte manuell eingeben", und die
+Optional-Zählung war dauerhaft eins zu kurz. Beides sah aus wie ein Beleg, der
+die Angabe nicht enthält.
+
+Behoben durch die richtige Schreibweise an beiden Stellen — in
+`DocumentFieldNames::saleKnown()` und in
+`PresenterSaleEdit::xmlNameToViewField()`. Die RECHTE Seite der Übersetzung
+bleibt `capitalGainsTax`: das ist der Feldschlüssel der Maske, und der heisst
+korrekt mit s. Genau diese Asymmetrie hat den Fehler so lange getragen — beide
+Schreibweisen sind an ihrem Platz richtig, nur nicht an beiden Plätzen
+dieselbe.
+
+@note Gefunden hat ihn die Gegenrichtung der Prüfung, noch bevor sie als Test
+geschrieben war: die Namensliste enthielt einen Namen, den keine
+`Documents.xml` je liefert. Das ist der Fall, den die erste Prüfung
+strukturell NICHT sehen kann — sie vergleicht die Tabellen mit der Maske, nicht
+mit der Konfigurationsdatei. Ein Beleg dafür, dass die zweite Prüfung ihren
+eigenen Wert hat und nicht nur die Umkehrung der ersten ist.
+
+#### Kostenbelege werden von keinem Formular eingelesen (offen, 02.09.2026)
+
+Beim Zuschnitt der Gegenprüfung stellte sich heraus, dass `Brokerage` unter
+den vier Belegarten keinen Abnehmer hat. `PresenterBrokerageEdit` besitzt
+überhaupt keine Parse-Strecke — kein `PdfTextExtractor`, kein
+`setFieldOk()`/`setFieldError()`, keine Feldschlüssel-Tabelle, und
+`ViewBrokerageEdit` führt weder `m_inputWidgets` noch `m_statusLabels`. Der
+Klassenkopf sagt es ausdrücklich: die Kostenmaske wird von Hand gefüllt.
+
+Alle drei Depots definieren trotzdem einen `<Document Type="Brokerage">`-Block
+mit sieben bis acht Regeln. Gelesen werden die nur auf einem Umweg: erkennt
+`DocumentClassifier::detectDocumentType()` am `BrokerageIdentifier` einen
+Kostenbeleg, während der Benutzer den Kauf-, Verkaufs- oder Dividendendialog
+geöffnet hat, parst jener Dialog den Beleg mit dem Brokerage-Regelsatz und
+verteilt das Ergebnis über SEINE Liste.
+
+Für Gebühren geht das gut — `buyKnown()` und `saleKnown()` führen alle vier
+Kostenfelder. Der Dividendendialog kennt sie nicht; dort fällt ein Kostenbeleg
+still durch. Ob das so gemeint ist, ist eine offene Frage: entweder bekommt
+die Kostenmaske eine eigene Parse-Strecke wie die anderen vier Formulare, oder
+der Umweg wird als beabsichtigt festgeschrieben.
+
+@note Deshalb ist `test_fieldNames_everyBrokerageTagIsReadBySomeForm` bewusst
+schwächer als seine drei Geschwister: es prüft nur, dass ÜBERHAUPT jemand
+jeden Tag lesen kann (`buyKnown()` ∪ `saleKnown()`), nicht dass ein
+zuständiges Formular es tut. Ein zuständiges gibt es nicht.
+
+#### Stand der Umsetzung — abgeschlossen mit 1.20.0 (02.09.2026)
+
+| Formular | Wächter | Tests |
+| --- | --- | --- |
+| ShareAdd | erledigt | erledigt |
+| BuyEdit | erledigt | erledigt |
+| SaleEdit | erledigt | erledigt |
+| DividendEdit | erledigt | erledigt |
+| BrokerageEdit | entfällt | entfällt |
+| Auslagerung nach `DocumentFieldNames` | erledigt | entfällt |
+| Zweite Tabelle (`tst_documentsxml`) | entfällt | erledigt |
+
+Drei Funde in fünf Runden, und zwei davon hätte keine der beiden
+Prüfrichtungen allein gefunden:
+
+| Fund | Gefunden von |
+| --- | --- |
+| `setFieldOk()` meldet Erfolg für unbekannte Schlüssel | Der Wächter selbst, beim Entwurf |
+| `currency` in `ViewDividendEdit` nicht registriert | Vorwärtsprüfung: Tabelle gegen Maske |
+| `CapitalGainTax` im Verkaufsformular falsch geschrieben | Gegenprüfung: Liste gegen Documents.xml |
+
+@note Der letzte ist das Argument dafür, dass die zweite Prüfung ihren eigenen
+Wert hat und nicht die Umkehrung der ersten ist. Die Vorwärtsprüfung
+vergleicht die Tabellen mit der Maske und hätte `CapitalGainsTax` durchgelassen
+— der Feldschlüssel `capitalGainsTax` ist ja korrekt registriert. Falsch war
+die Seite, die auf die Datei zeigt.
+
+@note `BrokerageEdit` entfällt in beiden Spalten: das Formular hat keine
+Parse-Strecke. Siehe "Kostenbelege werden von keinem Formular eingelesen".
+
+Der Wächter wandert je Formular mit, nicht in einem Zug in alle vier Views
+(Nessie, 02.09.2026) — so bleibt jede Runde für sich baubar und prüfbar. Alle
+vier Runden gehen in einen gemeinsamen Commit.
+
+#### Der Fall, der den Aufwand rechtfertigt: SaleEdit (02.09.2026)
+
+Bei ShareAdd und BuyEdit heißen die Feldschlüssel fast durchgängig wie die
+Namen im Beleg, nur klein geschrieben. Bei SaleEdit nicht: `Price` wird zu
+`salePrice`, weil das Zielfeld in dieser Maske anders heißt. Damit ist
+`"price"` in `ViewSaleEdit` ein UNBEKANNTER Schlüssel — und genau der Wert,
+der bei einem Verkauf am meisten zählt.
+
+Kopiert jemand die Tabelle von `PresenterBuyEdit` herüber, weil sie zu neun
+Zehnteln gleich aussieht, ginge der Verkaufspreis still verloren: keine
+Meldung, kein Symbol, und vor dem Wächter hätte die Statuszeile "Analyse OK"
+gemeldet. `test_saleEdit_priceMapsToSalePriceNotPrice` prüft beide Seiten —
+dass `Price` auf `salePrice` zeigt, und dass `"price"` vom Dialog
+zurückgewiesen wird.
+
+@note Der zweite Teil des Tests ist die interessantere Hälfte: er hält fest,
+dass ein Feldschlüssel hier ABWESEND sein muss. Solche Zusagen gehen sonst
+beim nächsten Vereinheitlichungsversuch als Erstes verloren.
+
+#### Die Listen wohnen jetzt in DocumentFieldNames (02.09.2026)
+
+Entschieden zugunsten eines abhängigkeitsfreien
+`app/config/DocumentFieldNames.h/.cpp` (Nessie, 02.09.2026). Zwei Gründe:
+
+Erstens beschreiben diese Listen `Documents.xml` und nicht die Masken — sie
+gehören neben `DocumentsConfig`. Zweitens braucht `tst_documentsxml` sie für
+die Gegenrichtung; lägen sie an den Presentern, müsste das Testziel vier
+Presenter-`.cpp` samt `IView`, `IModel`, Models, `ShareSplitAdjuster`,
+`SaleFifoAllocator`, `PdfTextExtractor` und `Parser` mitkompilieren. Heute
+linkt es `DocumentsConfig`, `DocumentClassifier` und ParserLib, sonst nichts.
+
+@note `xmlNameToViewField()` bleibt bei den Presentern. Die linke Seite dieser
+Übersetzung beschreibt die Datei, die rechte die jeweilige Maske — und die
+fällt je Formular anders aus (`Price` → `salePrice`, `DividendRate` → `rate`).
+Das ist Wissen der Maske, nicht der Konfiguration.
+
+@note Die vier Presenter behalten ihre `knownXmlNames()` / `requiredXmlNames()`
+als schlanke Weiterleitungen. Formularcode fragt damit weiterhin sein eigenes
+Formular, und die 27 Tests der vier Form-Ziele bleiben unverändert — das war
+der Punkt: eine reine Verschiebung soll keine Testdatei anfassen.
+
+@note Vier Listen, keine Ableitung. `shareAddKnown()` ist exakt `buyKnown()`
+plus `Wkn`, `Isin` und `Name`; die Liste wird trotzdem ausgeschrieben. Eine
+Ableitung würde stillschweigend mitziehen, sobald jemand die Kaufliste
+erweitert, und niemand käme dabei auf den Gedanken, an "Aktie hinzufügen" zu
+denken.
+
+@note Beim Zusammentragen fiel eine Ungleichheit auf, die vorher auf vier
+Dateien verteilt nicht sichtbar war: die Verkaufsliste führte
+`CapitalGainsTax` MIT s, die Dividendenliste `CapitalGainTax` OHNE. Ich habe
+das zunächst für den Stand von `Documents.xml` gehalten und als "kein Fehler"
+vermerkt. Es war einer — siehe den nächsten Abschnitt.
 
 ### Consors-Themen (offen, aktuell ohne Priorität)
 

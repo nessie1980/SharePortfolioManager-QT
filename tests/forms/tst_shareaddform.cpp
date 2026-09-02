@@ -785,6 +785,106 @@ private slots:
                  qPrintable(view.lastProgressText));
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Feldschluessel-Tabellen (02.09.2026)
+    //
+    // Zwischen Documents.xml und dieser Maske liegen zwei handgepflegte
+    // Tabellen: knownXmlNames() sagt, welche Namen dieses Formular
+    // verarbeitet, xmlNameToViewField() uebersetzt sie in die
+    // Feldschluessel der View. Faellt eine davon aus, geht ein Wert lautlos
+    // verloren — der Parser findet ihn, aber er landet nirgends.
+    //
+    // Die Pruefungen laufen bewusst gegen einen ECHTEN ViewShareAdd, nicht
+    // gegen den Stub: nur der echte Dialog fuellt m_inputWidgets und
+    // m_statusLabels. Genau deren Inhalt ist die Frage.
+    // Siehe ARCHITECTURE.md, "Feldschluessel-Tabellen sind an keiner
+    // Stelle geprueft".
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_shareAdd_everyKnownXmlNameHasAViewField()
+    {
+        // Ein Name in knownXmlNames(), der in xmlNameToViewField() fehlt,
+        // wird in populateFromResult() ueber "if (viewField.isEmpty())
+        // continue;" wortlos uebersprungen. In der Optional-Zaehlung steckt
+        // er trotzdem drin (knownXmlNames().size() - reqTotal) — die
+        // Statuszeile bekaeme damit einen Nenner, den sie nie erreicht.
+        for (const QString& xmlName : PresenterShareAdd::knownXmlNames()) {
+            const QString viewField = PresenterShareAdd::xmlNameToViewField(xmlName);
+            QVERIFY2(!viewField.isEmpty(),
+                     qPrintable(QStringLiteral(
+                         "knownXmlNames() fuehrt \"%1\", "
+                         "xmlNameToViewField() kennt den Namen aber nicht")
+                         .arg(xmlName)));
+        }
+    }
+
+    void test_shareAdd_everyViewFieldIsRegisteredInTheDialog()
+    {
+        // Die eigentliche Pruefung: jeder Feldschluessel auf der RECHTEN
+        // Seite von xmlNameToViewField() muss im Dialog registriert sein.
+        // Ein Tippfehler dort ("depotnumber" statt "depotNumber") laesst den
+        // Wert ins Leere laufen.
+        //
+        // Der leere Rohwert ist die in IViewShareAdd.h dokumentierte
+        // Aufrufart der Live-Validierung: sie setzt nur das Symbol und fasst
+        // den Feldinhalt nicht an. Fuer jeden bekannten Schluessel muss das
+        // gelingen, unabhaengig vom Zieltyp des Feldes.
+        ViewShareAdd dlg(&m_docsConfig);
+
+        for (const QString& xmlName : PresenterShareAdd::knownXmlNames()) {
+            const QString viewField = PresenterShareAdd::xmlNameToViewField(xmlName);
+            if (viewField.isEmpty())
+                continue;   // eigener Test oben
+
+            QVERIFY2(dlg.setFieldOk(viewField, QString()),
+                     qPrintable(QStringLiteral(
+                         "Feldschluessel \"%1\" (aus XML-Name \"%2\") ist im "
+                         "Dialog weder als Eingabefeld noch als Symbol "
+                         "registriert")
+                         .arg(viewField, xmlName)));
+        }
+    }
+
+    void test_shareAdd_requiredXmlNamesAreSubsetOfKnown()
+    {
+        // Ein Pflichtname, der nicht in knownXmlNames() steht, wird nie
+        // gesucht. requiredFound erreicht reqTotal dann nie, und die
+        // Statuszeile meldet dauerhaft "Analyse fehlgeschlagen" — ohne dass
+        // irgendwo etwas kaputt aussieht.
+        for (const QString& xmlName : PresenterShareAdd::requiredXmlNames()) {
+            QVERIFY2(PresenterShareAdd::knownXmlNames().contains(xmlName),
+                     qPrintable(QStringLiteral(
+                         "Pflichtname \"%1\" fehlt in knownXmlNames() und "
+                         "wird deshalb nie gesucht").arg(xmlName)));
+        }
+    }
+
+    void test_shareAdd_setFieldOk_unknownFieldKey_isRejected()
+    {
+        // Der Waechter selbst. Ohne ihn liefe der Tippfehler-Schluessel
+        // durch alle Zweige hindurch und kaeme als "true" zurueck — der
+        // Presenter zaehlte ihn als Treffer, die Statuszeile meldete
+        // "Analyse OK", und an der Maske stand nicht einmal ein Symbol.
+        ViewShareAdd dlg(&m_docsConfig);
+
+        QTest::ignoreMessage(QtWarningMsg,
+            "[ViewShareAdd] setFieldOk: unbekannter Feldschluessel \"depotnumber\"");
+        QVERIFY(!dlg.setFieldOk(QStringLiteral("depotnumber"),
+                                QStringLiteral("1234567890")));
+    }
+
+    void test_shareAdd_setFieldError_unknownFieldKey_warns()
+    {
+        // setFieldError() ist void und kann nichts zurueckmelden; die
+        // Warnung ist dort die einzige Spur. Geprueft wird, dass sie kommt.
+        ViewShareAdd dlg(&m_docsConfig);
+
+        QTest::ignoreMessage(QtWarningMsg,
+            "[ViewShareAdd] setFieldError: unbekannter Feldschluessel \"depotnumber\"");
+        dlg.setFieldError(QStringLiteral("depotnumber"),
+                          QStringLiteral("1234567890"));
+    }
+
 }; // end of TestShareAddForm
 
 int main(int argc, char* argv[])

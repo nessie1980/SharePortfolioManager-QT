@@ -959,6 +959,32 @@ deckt daher nur ab, dass das Widget existiert (`findChild<QLabel*>
 konsistent mit der bewusst unveränderten Testlücke bei
 `DocumentPreviewPanel` selbst.
 
+Feldschlüssel-Tabellen (ergänzt 02.09.2026):
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_shareAdd_everyKnownXmlNameHasAViewField` | Jeder Name aus `knownXmlNames()` hat einen Feldschlüssel | `xmlNameToViewField()` liefert nie leer |
+| `test_shareAdd_everyViewFieldIsRegisteredInTheDialog` | Jeder Feldschlüssel ist im echten Dialog registriert | `setFieldOk(key, "")` = true |
+| `test_shareAdd_requiredXmlNamesAreSubsetOfKnown` | Jeder Pflichtname wird auch gesucht | `knownXmlNames().contains(name)` |
+| `test_shareAdd_setFieldOk_unknownFieldKey_isRejected` | Tippfehler-Schlüssel wird abgewiesen | `setFieldOk()` = false + `qWarning` |
+| `test_shareAdd_setFieldError_unknownFieldKey_warns` | Dasselbe für die `void`-Schwester | `qWarning` kommt |
+
+@note Diese fünf laufen gegen einen ECHTEN `ViewShareAdd`, nicht gegen
+`StubViewShareAdd`. Nur der echte Dialog füllt `m_inputWidgets` und
+`m_statusLabels`, und genau deren Inhalt ist die Frage. Der Stub würde jeden
+Schlüssel entgegennehmen und damit nichts beweisen.
+
+@note Der leere Rohwert in `setFieldOk(key, "")` ist kein Kunstgriff: er ist
+die in `IViewShareAdd.h` dokumentierte Aufrufart der Live-Validierung, die nur
+das Symbol setzt und den Feldinhalt nicht anfasst. Dadurch gelingt der Aufruf
+für jeden registrierten Schlüssel unabhängig vom Zieltyp — ein Datumsfeld
+verwirft einen leeren Wert nicht, eine leere Depotnummer wird gar nicht erst
+gesucht. Ein `fieldKeys()`-Abfrager an der View wird damit nicht gebraucht.
+
+@note Die beiden `qWarning`-Tests nutzen `QTest::ignoreMessage()`. Das prüft
+zugleich, DASS die Warnung kommt, und hält sie aus dem Protokoll heraus —
+sonst stünde in jedem Lauf eine Warnung, die keine ist. Ändert sich der
+Wortlaut der Meldung, schlagen diese beiden Tests fehl; das ist gewollt.
+
 ---
 
 #### tst_buysform — BuysForm
@@ -1163,6 +1189,32 @@ beiden Tests Widerspruch.
 vom 08.08.2026 fest: die Zeile darf NICHT ausgeblendet werden, wenn kein Split
 vorliegt — sonst springt beim Tippen im Datumsfeld das halbe Formular. Ein
 naheliegendes `setVisible(hasSplit)` würde hier auffliegen.
+
+Feldschlüssel-Tabellen (ergänzt 02.09.2026):
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_buyEdit_everyKnownXmlNameHasAViewField` | Jeder Name aus `knownXmlNames()` hat einen Feldschlüssel | `xmlNameToViewField()` liefert nie leer |
+| `test_buyEdit_everyViewFieldIsRegisteredInTheDialog` | Jeder Feldschlüssel ist im echten Dialog registriert | `setFieldOk(key, "")` = true |
+| `test_buyEdit_documentFieldKeyIsRegistered` | Reines Statusfeld ohne Eingabefeld | `setFieldOk("document", "")` = true |
+| `test_buyEdit_requiredXmlNamesAreSubsetOfKnown` | Jeder Pflichtname wird auch gesucht | `knownXmlNames().contains(name)` |
+| `test_buyEdit_setFieldOk_unknownFieldKey_isRejected` | Tippfehler-Schlüssel wird abgewiesen | `setFieldOk()` = false + `qWarning` |
+| `test_buyEdit_setFieldError_unknownFieldKey_warns` | Dasselbe für die `void`-Schwester | `qWarning` kommt |
+
+Gleiches Muster wie in `tst_shareaddform`, mit einem Test mehr:
+`test_buyEdit_documentFieldKeyIsRegistered`. Der Schlüssel `document` steht in
+keiner der XML-Tabellen — der Pfad kommt über `setDocumentPath()`, nicht aus
+einer Regel — hat aber ein Symbol ohne Eingabefeld und wird von
+`PresenterBuyEdit::onDocumentPathEdited()` benutzt. Genau die Kombination, die
+der Wächter durchlassen MUSS. Der Test pinnt sie fest, damit der Wächter beim
+nächsten Umbau nicht versehentlich strenger wird.
+
+@note Nicht prüfbar und bewusst nicht geprüft: die fest verdrahteten
+Feldschlüssel der Live-Validierung in `PresenterBuyEdit` — besonders die vier,
+die `onFeeEdited()` über `connectFee()` aus dem View-Konstruktor bekommt. Sie
+stehen in keiner Tabelle und lassen sich nicht aufzählen. Der Wächter deckt
+sie trotzdem ab, weil er in der View sitzt und unabhängig davon wirkt, woher
+der Schlüssel kam: ein Tippfehler dort erzeugt jetzt eine Warnung im
+Protokoll. Siehe ARCHITECTURE.md, "Vierter Satz Feldschlüssel".
 
 ---
 
@@ -2396,6 +2448,29 @@ beim Übertragen aus der Buy-Variante ab. Der Test prüft die konkrete Zahl
 statt nur die Anwesenheit eines Textes — sonst liefe er auch dann grün, wenn
 versehentlich die Stückzahl statt des Preises umgerechnet würde.
 
+Feldschlüssel-Tabellen (ergänzt 02.09.2026):
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_saleEdit_everyKnownXmlNameHasAViewField` | Jeder Name aus `knownXmlNames()` hat einen Feldschlüssel | `xmlNameToViewField()` liefert nie leer |
+| `test_saleEdit_everyViewFieldIsRegisteredInTheDialog` | Jeder Feldschlüssel ist im echten Dialog registriert | `setFieldOk(key, "")` = true |
+| `test_saleEdit_priceMapsToSalePriceNotPrice` | Die Abweichung dieses Formulars | `Price` → `salePrice`, und `"price"` wird abgewiesen |
+| `test_saleEdit_documentFieldKeyIsRegistered` | Reines Statusfeld ohne Eingabefeld | `setFieldOk("document", "")` = true |
+| `test_saleEdit_requiredXmlNamesAreSubsetOfKnown` | Jeder Pflichtname wird auch gesucht | `knownXmlNames().contains(name)` |
+| `test_saleEdit_setFieldOk_unknownFieldKey_isRejected` | Tippfehler-Schlüssel wird abgewiesen | `setFieldOk()` = false + `qWarning` |
+| `test_saleEdit_setFieldError_unknownFieldKey_warns` | Dasselbe für die `void`-Schwester | `qWarning` kommt |
+
+Gleiches Muster wie in `tst_shareaddform`/`tst_buysform`, hier aber mit dem
+höchsten Ertrag der drei Runden. Dieses Formular ist das einzige, dessen
+Feldschlüssel von den Namen im Beleg abweichen: `Price` wird zu `salePrice`,
+und drei Steuerfelder kommen hinzu, die es sonst nirgends gibt.
+
+@note `test_saleEdit_priceMapsToSalePriceNotPrice` prüft beide Richtungen, und
+die zweite ist die interessantere: `"price"` muss vom Dialog ABGEWIESEN
+werden. Der Test hält damit eine Abwesenheit fest — die Sorte Zusage, die beim
+nächsten Vereinheitlichungsversuch als Erstes verlorengeht. Kopierte jemand
+die Tabelle aus `PresenterBuyEdit` herüber, weil sie zu neun Zehnteln gleich
+aussieht, ginge ausgerechnet der Verkaufspreis still verloren.
+
 ---
 
 ### tests/forms/ — DividendForm
@@ -2574,6 +2649,37 @@ Keine Letzter-Eintrag-Einschränkung:
 `setButtonStates(true, true)` alle editierbaren Felder aktiviert bleiben.
 In BuysForm/SalesForm würde dieselbe Konstellation (`isLastBuy=false, isEdit=true`)
 den `readOnlyMode` auslösen — im DividendForm gibt es diesen Modus nicht.
+
+Feldschlüssel-Tabellen (ergänzt 02.09.2026):
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_dividendEdit_everyKnownXmlNameHasAViewField` | Jeder Name aus `knownXmlNames()` hat einen Feldschlüssel | `xmlNameToViewField()` liefert nie leer |
+| `test_dividendEdit_everyViewFieldIsRegisteredInTheDialog` | Jeder Feldschlüssel ist im echten Dialog registriert | `setFieldOk(key, "")` = true |
+| `test_dividendEdit_currencyIsRegisteredButSharesItsSymbol` | Der Fund vom 02.09.2026 | `currency` bekannt, aber ohne eigenes Symbol |
+| `test_dividendEdit_documentFieldKeyIsRegistered` | Reines Statusfeld ohne Eingabefeld | `setFieldOk("document", "")` = true |
+| `test_dividendEdit_requiredXmlNamesAreSubsetOfKnown` | Jeder Pflichtname wird auch gesucht | `knownXmlNames().contains(name)` |
+| `test_dividendEdit_setFieldOk_unknownFieldKey_isRejected` | Tippfehler-Schlüssel wird abgewiesen | `setFieldOk()` = false + `qWarning` |
+| `test_dividendEdit_setFieldError_unknownFieldKey_warns` | Dasselbe für die `void`-Schwester | `qWarning` kommt |
+| `test_dividendEdit_setFieldHint_unknownFieldKey_warns` | Dritter Eingang, nur in diesem Dialog | `qWarning` kommt |
+
+Diese Runde ist die einzige der vier, die einen bestehenden Fehler
+aufgedeckt hat: `test_dividendEdit_everyViewFieldIsRegisteredInTheDialog`
+wäre vor dem 02.09.2026 an `currency` gescheitert. Der Schlüssel war in
+`ViewDividendEdit` nirgends registriert, `setFieldOk()` meldete für ihn
+trotzdem Erfolg, und die Optional-Zählung nahm ihn mit. Siehe
+ARCHITECTURE.md, "Der Fund: currency war nirgends registriert".
+
+@note `test_dividendEdit_currencyIsRegisteredButSharesItsSymbol` prüft zwei
+Dinge in einem: dass der Schlüssel bekannt ist, UND dass er kein eigenes
+Statussymbol hat. Der zweite Teil läuft über `setFieldError()` ohne
+`QTest::ignoreMessage()` — bliebe die Warnung aus dem Wächter aus, wäre der
+Schlüssel unbekannt und der Test fiele über den ersten Teil; käme eine
+Warnung, stünde sie im Protokoll. Beides ist die gewünschte Aussage: bekannt,
+aber nichts zu färben.
+
+@note Der Dialog wird hier ohne `DocumentsConfig` gebaut (`nullptr`), wie in
+den übrigen View-Tests dieser Datei. Die Depotnummern-Liste bleibt dadurch
+leer; die Registrierung der Feldschlüssel hängt nicht daran.
 
 ### tests/forms/ — BrokeragesForm
 
@@ -3398,6 +3504,45 @@ ab — der ist auf den Screenshots geschwärzt. Ein Fixture ohne diesen Bereich
 verschiebt die Indizes und würde ein Scheitern melden, das nichts über echte
 Belege aussagt. Genau deshalb suchen alle in Phase 5 ergänzten Regeln über
 die BESCHRIFTUNG statt über die Position.
+
+Feldnamen gegen die Formularlisten (ergänzt 02.09.2026):
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_fieldNames_everyBuyTagIsReadByAForm` | Jeder Tag im Kaufblock wird gelesen | `buyKnown()` ∪ `shareAddKnown()` ∪ Ausnahmen |
+| `test_fieldNames_everySaleTagIsReadByAForm` | Jeder Tag im Verkaufsblock wird gelesen | `saleKnown()` ∪ Ausnahmen |
+| `test_fieldNames_everyDividendTagIsReadByAForm` | Jeder Tag im Dividendenblock wird gelesen | `dividendKnown()` ∪ Ausnahmen |
+| `test_fieldNames_everyBrokerageTagIsReadBySomeForm` | Kostenbelege — bewusst schwächer | `buyKnown()` ∪ `saleKnown()` ∪ Ausnahmen |
+| `test_fieldNames_everyKnownNameExistsInDocumentsXml` | Gegenrichtung, je Formular | Jeder Name kommt in mindestens einem passenden Block vor |
+| `test_fieldNames_requiredIsSubsetOfKnown` | Alle vier Listenpaare auf einmal | Pflichtnamen stehen in der known-Liste |
+
+Die Gegenrichtung zu den Prüfungen in den vier Form-Zielen. Dort lautet die
+Frage: kennt die Maske jeden Feldschlüssel, den ihre Tabelle nennt? Hier:
+kennt ein Formular jeden Tag, den die ausgelieferte Datei führt — und
+umgekehrt.
+
+@note `test_fieldNames_everyKnownNameExistsInDocumentsXml` ist der wertvollere
+der beiden. Er hat den `CapitalGainTax`-Fehler gefunden, bevor er als Test
+geschrieben war: `PresenterSaleEdit` suchte `CapitalGainsTax` MIT s, die Datei
+schreibt ihn an allen 15 Stellen OHNE. Die Prüfungen der vier Form-Ziele
+können so etwas strukturell nicht sehen — sie vergleichen die Tabellen mit der
+Maske, nie mit der Konfigurationsdatei. Beide Richtungen dieses Tests
+schlagen fehl, wenn man den Fehler zurückbaut.
+
+@note Die Ausnahmeliste `readByOtherMeans()` ist der eigentliche Ertrag, nicht
+ein Zugeständnis. `Wkn` und `Isin` zieht `DocumentClassifier` für die Direkte
+Dokumentenerfassung direkt aus der `regexList`, ohne ParserLib und ohne
+Formular — deshalb stehen sie in jeder Belegart, auch wo das zugehörige
+Formular keine Stammdaten kennt. `RecordDate` liest `PresenterDividendEdit`
+direkt aus dem Ergebnis und hängt es über `setFieldHint()` als Erklärung an
+das Ex-Tag-Feld. Dass diese drei benannt und begründet dastehen, macht die
+"wird-anders-gelesen"-Pfade sichtbar; ein neuer Tag, den niemand liest, fällt
+dadurch auf, statt still in der Datei zu liegen.
+
+@note Das Testziel linkt dafür `../../app/config/DocumentFieldNames.cpp` — eine
+Übersetzungseinheit, die an nichts ausser `QStringList` hängt. Lägen die
+Listen weiterhin an den Presentern, zöge dieselbe Prüfung `IView`, `IModel`,
+die Models, `ShareSplitAdjuster`, `SaleFifoAllocator`, `PdfTextExtractor` und
+`Parser` nach sich. Das war der Grund für die Auslagerung.
 
 ---
 

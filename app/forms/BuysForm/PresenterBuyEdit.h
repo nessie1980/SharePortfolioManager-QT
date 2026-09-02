@@ -11,6 +11,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QList>
 #include <QMap>
 
@@ -83,6 +84,27 @@ public slots:
      */
     void populateFromResult(const QMap<QString, QList<QString>>& result);
 
+    // ── Feldnamen-Tabellen (public seit 02.09.2026) ───────────────────────
+    //
+    // Handgepflegte Uebersetzung zwischen Documents.xml und dieser Maske.
+    // Public, damit tst_buysform sie gegeneinander und gegen die tatsaechlich
+    // registrierten Felder der View pruefen kann — siehe TESTING.md,
+    // "Sichtbarkeit zugunsten der Testbarkeit", und ARCHITECTURE.md,
+    // "Feldschluessel-Tabellen sind an keiner Stelle geprueft".
+
+    /** Alle Feldnamen aus Documents.xml, die dieses Formular verarbeitet. */
+    static const QStringList& knownXmlNames();
+
+    /** Teilmenge von knownXmlNames(), ohne die nicht gespeichert werden kann. */
+    static const QStringList& requiredXmlNames();
+
+    /**
+     * @brief Map XML field name → view input widget key.
+     *
+     * Leerer Rueckgabewert heisst "dieses Formular kennt den Namen nicht".
+     */
+    static QString xmlNameToViewField(const QString& xmlName);
+
 
 signals:
     void dataChanged();
@@ -113,9 +135,6 @@ private:
 
     /** Start ParserLib after pdftext was extracted — identical to PresenterShareAdd. */
     void startParserForText(const QString& pdfText);
-
-    /** Map XML field name → view input widget key. */
-    static QString xmlNameToViewField(const QString& xmlName);
 
     IViewBuyEdit*    m_view;
     IModelBuyEdit*   m_model;

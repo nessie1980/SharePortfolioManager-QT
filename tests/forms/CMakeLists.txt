@@ -110,6 +110,7 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/config/AppSettings.cpp
     ../../app/config/WebSitesConfig.cpp
     ../../app/config/DocumentsConfig.cpp
+    ../../app/config/DocumentFieldNames.cpp
     ../../app/AppStartup.cpp
     ../../app/IconProvider.cpp
     ../../app/models/ShareObject.cpp
@@ -228,6 +229,7 @@ qt_add_executable(tst_buysform tst_buysform.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
     ../../app/config/AppSettings.cpp
     ../../app/config/DocumentsConfig.cpp
+    ../../app/config/DocumentFieldNames.cpp
     ../../app/core/DocumentRootMigrator.h
     ../../app/core/DocumentRootMigrator.cpp
     ../../app/IconProvider.cpp
@@ -400,6 +402,7 @@ qt_add_executable(tst_shareaddform tst_shareaddform.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
     ../../app/config/AppSettings.cpp
     ../../app/config/DocumentsConfig.cpp
+    ../../app/config/DocumentFieldNames.cpp
     ../../app/core/DocumentRootMigrator.h
     ../../app/core/DocumentRootMigrator.cpp
     ../../app/IconProvider.cpp
@@ -527,6 +530,7 @@ qt_add_executable(tst_shareeditform tst_shareeditform.cpp
     ../../app/config/AppSettings.cpp
     ../../app/config/WebSitesConfig.cpp
     ../../app/config/DocumentsConfig.cpp
+    ../../app/config/DocumentFieldNames.cpp
     ../../app/core/DocumentRootMigrator.h
     ../../app/core/DocumentRootMigrator.cpp
     ../../app/IconProvider.cpp
@@ -1037,6 +1041,7 @@ qt_add_executable(tst_dividendform tst_dividendform.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
     ../../app/config/AppSettings.cpp
     ../../app/config/DocumentsConfig.cpp
+    ../../app/config/DocumentFieldNames.cpp
     ../../app/core/DocumentRootMigrator.h
     ../../app/core/DocumentRootMigrator.cpp
     ../../app/IconProvider.cpp
@@ -1140,6 +1145,7 @@ qt_add_executable(tst_salesform tst_salesform.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.cpp
     ../../app/config/AppSettings.cpp
     ../../app/config/DocumentsConfig.cpp
+    ../../app/config/DocumentFieldNames.cpp
     ../../app/core/DocumentRootMigrator.h
     ../../app/core/DocumentRootMigrator.cpp
     ../../app/IconProvider.cpp
@@ -1356,6 +1362,7 @@ qt_add_executable(tst_backupform tst_backupform.cpp
     ../../app/config/AppSettings.cpp
     ../../app/config/WebSitesConfig.cpp
     ../../app/config/DocumentsConfig.cpp
+    ../../app/config/DocumentFieldNames.cpp
     ../../app/AppStartup.cpp
     ../../app/IconProvider.cpp
     ../../app/models/ShareObject.cpp

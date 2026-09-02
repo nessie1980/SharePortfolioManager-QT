@@ -10,6 +10,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QList>
 #include <QMap>
 #include <QDate>
@@ -83,6 +84,33 @@ public slots:
      */
     void populateFromResult(const QMap<QString, QList<QString>>& result);
 
+    // ── Feldnamen-Tabellen (public seit 02.09.2026) ───────────────────────
+    //
+    // Handgepflegte Uebersetzung zwischen Documents.xml und dieser Maske.
+    // Public, damit tst_dividendform sie gegeneinander und gegen die
+    // tatsaechlich registrierten Felder der View pruefen kann — siehe
+    // TESTING.md, "Sichtbarkeit zugunsten der Testbarkeit", und
+    // ARCHITECTURE.md, "Feldschluessel-Tabellen sind an keiner Stelle
+    // geprueft". Genau diese Pruefung hat den unregistrierten Schluessel
+    // "currency" zutage gefoerdert.
+
+    /** Alle Feldnamen aus Documents.xml, die dieses Formular verarbeitet. */
+    static const QStringList& knownXmlNames();
+
+    /** Teilmenge von knownXmlNames(), ohne die nicht gespeichert werden kann. */
+    static const QStringList& requiredXmlNames();
+
+    /**
+     * @brief Map XML field name → view input widget key.
+     *
+     * Leerer Rueckgabewert heisst "dieses Formular kennt den Namen nicht".
+     *
+     * @note Drei Namen weichen hier von der Schreibweise der anderen
+     * Formulare ab: "DividendRate" wird zu "rate", "CapitalGainTax" (ohne s)
+     * zu "capitalGainsTax" (mit s), "ExchangeRate" zu "exchangeRatio".
+     */
+    static QString xmlNameToViewField(const QString& xmlName);
+
 
 signals:
     void dataChanged();
@@ -108,7 +136,6 @@ private:
     void applyDailyValuePriceAtPayday(const QDate& date);
 
     void startParserForText(const QString& pdfText);
-    static QString xmlNameToViewField(const QString& xmlName);
 
     IViewDividendEdit*  m_view;
     IModelDividendEdit* m_model;

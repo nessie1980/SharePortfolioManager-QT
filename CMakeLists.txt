@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(SharePortfolioManager
-    VERSION 1.19.4
+    VERSION 1.20.0
     DESCRIPTION "Share Portfolio Manager"
     LANGUAGES CXX
 )

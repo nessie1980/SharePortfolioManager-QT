@@ -21,6 +21,7 @@
 #include <QFileInfo>
 #include <QDoubleValidator>
 #include <QApplication>
+#include <QDebug>          // qWarning() in setFieldOk()/setFieldError()/setFieldHint()
 #include <functional>
 
 // ── Constructor ───────────────────────────────────────────────────────────────
@@ -264,6 +265,29 @@ QGroupBox* ViewDividendEdit::createDividenddatenGroup()
         // Platzhalter; sie ist jetzt das Statussymbol dieser Zeile.
         m_statusLabels[QStringLiteral("exchangeRatio")] = fcStatus;
         m_inputWidgets[QStringLiteral("exchangeRatio")] = m_exchangeRatio;
+
+        // Nachtrag 02.09.2026: die Waehrung stand daneben und ist beim Bugfix
+        // vom 21.08.2026 uebriggeblieben. xmlNameToViewField() bildet
+        // "Currency" auf "currency" ab, den Schluessel kannte dieser Dialog
+        // aber nicht — setFieldOk("currency", …) lief ins Leere und meldete
+        // trotzdem Erfolg, die Optional-Zaehlung nahm ihn mit. Aufgefallen
+        // ist das erst durch die Feldschluessel-Pruefung; siehe
+        // ARCHITECTURE.md, "Feldschluessel-Tabellen sind an keiner Stelle
+        // geprueft".
+        //
+        // Nur m_inputWidgets, KEIN eigenes Statussymbol: Devisenkurs und
+        // Waehrung teilen sich eine Zeile und damit fcStatus. Zwei Schluessel,
+        // die dasselbe Label beschreiben, wuerden einander ueberschreiben —
+        // dieselbe Aufteilung wie bei "time", das sich sein Symbol mit "date"
+        // teilt.
+        //
+        // Gesetzt wird die Waehrung weiterhin nicht von hier aus, sondern von
+        // setForeignCurrency(): dort haengt an ihr auch der Haken
+        // "Fremdwaehrungseingabe aktivieren", ohne den onSave() den
+        // Devisenkurs verwerfen wuerde. setFieldOk() traegt fuer diesen
+        // Schluessel also nur die Zaehlung — wie "document" bei Kauf und
+        // Verkauf.
+        m_inputWidgets[QStringLiteral("currency")] = m_currency;
 
         // setEnabled NACH dem Einbetten — damit Qt die Parent-Child-Hierarchie kennt
         m_exchangeRatio->setEnabled(false);
@@ -846,6 +870,16 @@ void ViewDividendEdit::setForeignCurrency(bool enabled, const QString& isoCode)
 bool ViewDividendEdit::setFieldOk(const QString& field, const QString& value,
                                   const QString& tooltip)
 {
+    // Waechter (02.09.2026): ein Feldschluessel, den dieser Dialog gar nicht
+    // kennt, kam bis hierher als Erfolg zurueck — der "kein Eingabefeld"-Zweig
+    // weiter unten faengt ihn ab und laesst converted auf true stehen. Genau
+    // so blieb "currency" jahrelang unbemerkt. Siehe ARCHITECTURE.md,
+    // "Feldschluessel-Tabellen sind an keiner Stelle geprueft".
+    if (!m_inputWidgets.contains(field) && !m_statusLabels.contains(field)) {
+        qWarning() << "[ViewDividendEdit] setFieldOk: unbekannter Feldschluessel" << field;
+        return false;
+    }
+
     // Einheitliche Bauweise seit 27.08.2026: der Feldzustand wird ERST AM
     // SCHLUSS gesetzt, ein Merker traegt das Ergebnis dorthin. Vorher setzten
     // die drei Editier-Dialoge das gruene Symbol ZUERST und riefen bei
@@ -958,6 +992,16 @@ bool ViewDividendEdit::setFieldOk(const QString& field, const QString& value,
 void ViewDividendEdit::setFieldError(const QString& field,
                                      const QString& rawValue)
 {
+    // Derselbe Waechter wie in setFieldOk(). Die Methode ist void und kann
+    // nichts zurueckmelden, deshalb ist die Warnung hier die einzige Spur.
+    if (!m_inputWidgets.contains(field) && !m_statusLabels.contains(field)) {
+        qWarning() << "[ViewDividendEdit] setFieldError: unbekannter Feldschluessel" << field;
+        return;
+    }
+
+    // Bekannt, aber ohne Symbol — "time" teilt sich das Symbol mit "date",
+    // "currency" mit "exchangeRatio". Kein Fehler, hier ist nur nichts zu
+    // faerben.
     auto* lbl = m_statusLabels.value(field);
     if (!lbl) return;
     m_fieldStates[field] = FieldState::Error;
@@ -975,6 +1019,14 @@ void ViewDividendEdit::setFieldError(const QString& field,
 
 void ViewDividendEdit::setFieldHint(const QString& field, const QString& tooltip)
 {
+    // Dritter Eingang mit einem Feldschluessel, denselben Waechter wert.
+    // Diese Methode gibt es nur in diesem Dialog (Ersatzhinweis fuer den
+    // fehlenden Ex-Tag bei Cortal Consors).
+    if (!m_inputWidgets.contains(field) && !m_statusLabels.contains(field)) {
+        qWarning() << "[ViewDividendEdit] setFieldHint: unbekannter Feldschluessel" << field;
+        return;
+    }
+
     auto* lbl = m_statusLabels.value(field);
     if (!lbl) return;
 

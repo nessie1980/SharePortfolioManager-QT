@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterShareAdd.h"
+#include "../../config/DocumentFieldNames.h"
 #include "../../utils/DocumentClassifier.h"
 
 #include <QTimer>
@@ -70,12 +71,17 @@ void PresenterShareAdd::startParserForText(const QString& pdfText)
 
     int depotIndex = -1;
     if (!DocumentClassifier::matchDepotIndex(pdfText, *m_config, depotIndex)) {
-        const QStringList required = {
-            "wkn","isin","name","date","depotNumber",
-            "orderNumber","volume","price"
-        };
-        for (const auto& f : required)
-            m_view->setFieldError(f);
+        // Bis zum 02.09.2026 stand hier eine dritte, von Hand gepflegte
+        // Liste derselben acht Feldschluessel. Sie war die einzige Stelle,
+        // die niemand gegen die uebrigen Tabellen abgeglichen hat — jetzt
+        // entsteht sie aus requiredXmlNames() ueber dieselbe Uebersetzung,
+        // die auch populateFromResult() benutzt. Damit kann sie nicht mehr
+        // auseinanderlaufen, und die Tests decken sie mit ab.
+        for (const QString& xmlName : requiredXmlNames()) {
+            const QString viewField = xmlNameToViewField(xmlName);
+            if (!viewField.isEmpty())
+                m_view->setFieldError(viewField);
+        }
         m_view->onParseFinished();
         return;
     }
@@ -144,21 +150,15 @@ void PresenterShareAdd::onParserUpdated(const ParserLib::ParserInfoState& state)
 void PresenterShareAdd::populateFromResult(
     const QMap<QString, QList<QString>>& result)
 {
-    // All known XML field names — ensures every field is processed even if
-    // ParserLib stopped early due to a required-field miss (ParsingFailed).
-    static const QStringList knownXmlNames = {
-        "Wkn","Isin","Name","Date","Time","DepotNumber","OrderNumber",
-        "Volume","Price","Provision","BrokerFee","TraderPlaceFee","Reduction"
-    };
-
-    // Required fields — must all be found to allow saving
-    static const QStringList requiredXmlNames = {
-        "Wkn","Isin","Name","Date","DepotNumber","OrderNumber","Volume","Price"
-    };
+    // Die beiden Listen liegen seit dem 02.09.2026 in knownXmlNames() /
+    // requiredXmlNames() statt hier lokal — nur so kommen die Tests an sie
+    // heran. Inhalt unveraendert.
+    const QStringList& known    = knownXmlNames();
+    const QStringList& required = requiredXmlNames();
 
     int found         = 0;
     int requiredFound = 0;
-    for (const QString& xmlName : knownXmlNames) {
+    for (const QString& xmlName : known) {
         const QString viewField = xmlNameToViewField(xmlName);
         if (viewField.isEmpty())
             continue;
@@ -175,7 +175,7 @@ void PresenterShareAdd::populateFromResult(
                 // und Feldsymbole".
                 if (m_view->setFieldOk(viewField, values.first().trimmed())) {
                     ++found;
-                    if (requiredXmlNames.contains(xmlName))
+                    if (required.contains(xmlName))
                         ++requiredFound;
                 }
                 continue;
@@ -187,9 +187,9 @@ void PresenterShareAdd::populateFromResult(
     m_view->onParseFinished();
 
     // Defer UI unblock so Qt can repaint widgets (sync parser holds event loop)
-    const int reqTotal     = requiredXmlNames.size();
+    const int reqTotal     = required.size();
     const int optionalFound = found - requiredFound;  // optional fields that were found
-    const int optionalTotal = knownXmlNames.size() - reqTotal;
+    const int optionalTotal = known.size() - reqTotal;
 
     QTimer::singleShot(0, this, [this, requiredFound, reqTotal,
                                   optionalFound, optionalTotal]() {
@@ -289,6 +289,30 @@ void PresenterShareAdd::onCancel()
 {
     if (m_parser.isBusy())
         m_parser.cancelParsing();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// static
+const QStringList& PresenterShareAdd::knownXmlNames()
+{
+    // Weiterleitung — die Liste selbst liegt seit dem 02.09.2026 in
+    // app/config/DocumentFieldNames.cpp. Sie beschreibt Documents.xml,
+    // nicht diese Maske, und tst_documentsxml kommt dort ohne den
+    // halben MVP-Stack an sie heran. Formularcode fragt weiterhin sein
+    // eigenes Formular.
+    return DocumentFieldNames::shareAddKnown();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// static
+const QStringList& PresenterShareAdd::requiredXmlNames()
+{
+    // Weiterleitung — die Liste selbst liegt seit dem 02.09.2026 in
+    // app/config/DocumentFieldNames.cpp. Sie beschreibt Documents.xml,
+    // nicht diese Maske, und tst_documentsxml kommt dort ohne den
+    // halben MVP-Stack an sie heran. Formularcode fragt weiterhin sein
+    // eigenes Formular.
+    return DocumentFieldNames::shareAddRequired();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
