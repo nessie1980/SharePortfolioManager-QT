@@ -4960,32 +4960,81 @@ strukturell NICHT sehen kann — sie vergleicht die Tabellen mit der Maske, nich
 mit der Konfigurationsdatei. Ein Beleg dafür, dass die zweite Prüfung ihren
 eigenen Wert hat und nicht nur die Umkehrung der ersten ist.
 
-#### Kostenbelege werden von keinem Formular eingelesen (offen, 02.09.2026)
+#### Kostenbelege werden von keinem Formular eingelesen (geklärt, 02.09.2026)
 
-Beim Zuschnitt der Gegenprüfung stellte sich heraus, dass `Brokerage` unter
-den vier Belegarten keinen Abnehmer hat. `PresenterBrokerageEdit` besitzt
-überhaupt keine Parse-Strecke — kein `PdfTextExtractor`, kein
+Beim Zuschnitt der Gegenprüfung fiel auf, dass `Brokerage` unter den vier
+Belegarten keinen Abnehmer hat. `PresenterBrokerageEdit` besitzt überhaupt
+keine Parse-Strecke — kein `PdfTextExtractor`, kein
 `setFieldOk()`/`setFieldError()`, keine Feldschlüssel-Tabelle, und
-`ViewBrokerageEdit` führt weder `m_inputWidgets` noch `m_statusLabels`. Der
-Klassenkopf sagt es ausdrücklich: die Kostenmaske wird von Hand gefüllt.
+`ViewBrokerageEdit` führt weder `m_inputWidgets` noch `m_statusLabels`.
 
-Alle drei Depots definieren trotzdem einen `<Document Type="Brokerage">`-Block
-mit sieben bis acht Regeln. Gelesen werden die nur auf einem Umweg: erkennt
-`DocumentClassifier::detectDocumentType()` am `BrokerageIdentifier` einen
-Kostenbeleg, während der Benutzer den Kauf-, Verkaufs- oder Dividendendialog
-geöffnet hat, parst jener Dialog den Beleg mit dem Brokerage-Regelsatz und
-verteilt das Ergebnis über SEINE Liste.
+Das ist so gewollt (Nessie, 02.09.2026). Die fachliche Begründung:
 
-Für Gebühren geht das gut — `buyKnown()` und `saleKnown()` führen alle vier
-Kostenfelder. Der Dividendendialog kennt sie nicht; dort fällt ein Kostenbeleg
-still durch. Ob das so gemeint ist, ist eine offene Frage: entweder bekommt
-die Kostenmaske eine eigene Parse-Strecke wie die anderen vier Formulare, oder
-der Umweg wird als beabsichtigt festgeschrieben.
+- Kosten fallen im Normalfall nur bei Käufen und Verkäufen an, und dort stehen
+  sie auf dem Kauf- bzw. Verkaufsbeleg. Ausgelesen werden sie deshalb aus
+  jenem Beleg, über `buyKnown()` bzw. `saleKnown()` — beide führen alle vier
+  Kostenfelder.
+- Bei Dividenden fallen keine Kosten an. Dass der Dividendendialog die
+  Gebührenfelder nicht kennt, ist folgerichtig und kein Versäumnis.
+- Die Kostenmaske ist für den Fall gedacht, dass es zu den Kosten gar keinen
+  eigenen Beleg gibt. Ohne Beleg gibt es nichts zu parsen; der Benutzer trägt
+  die Werte von Hand ein.
+
+Die Direkte Dokumentenerfassung behandelt den Typ folgerichtig als nicht
+unterstützt: `MainWindow::openCaptureDialog()` gibt für `DocumentType::Brokerage`
+eine Statusmeldung aus und öffnet keinen Dialog (Vorgabe vom 27.07.2026).
 
 @note Deshalb ist `test_fieldNames_everyBrokerageTagIsReadBySomeForm` bewusst
 schwächer als seine drei Geschwister: es prüft nur, dass ÜBERHAUPT jemand
 jeden Tag lesen kann (`buyKnown()` ∪ `saleKnown()`), nicht dass ein
-zuständiges Formular es tut. Ein zuständiges gibt es nicht.
+zuständiges Formular es tut. Ein zuständiges gibt es nicht und soll es nicht
+geben.
+
+#### Breite Belegkennungen gewinnen gegen den Dialog-Fallback (offen, 02.09.2026)
+
+Aufgefallen beim Nachgehen der Frage oben. `DocumentClassifier` prüft die vier
+Kennungen in fester Reihenfolge — Kauf, Verkauf, Dividende, Kosten — und die
+erste, die trifft, gewinnt. Die Ausweichregel "der Benutzer hat den
+Verkaufsdialog geöffnet, also nimm `Sale` an" greift nur, wenn ÜBERHAUPT KEINE
+Kennung trifft. Eine breite Kennung schlägt den Fallback also, statt von ihm
+korrigiert zu werden.
+
+Bei DKB und ING ist das unkritisch: ihr `BrokerageIdentifier` lautet
+`(Ges. Kosten)` und wird zuletzt geprüft, ein Kauf- oder Verkaufsbeleg trifft
+schon vorher. Bei Cortal Consors nicht:
+
+| Kennung | Muster |
+| --- | --- |
+| `BuyIdentifier` | `(ORDERABRECHNUNG\s+KAUF)` |
+| `SaleIdentifier` | leer — identifiziert seit dem 21.08.2026 nichts |
+| `DividendIdentifier` | `(Dividendengutschrift)` |
+| `BrokerageIdentifier` | `(Kosten)` |
+
+Ein Consors-Verkaufsbeleg läuft an Kauf und Dividende vorbei und bleibt bei
+`(Kosten)` hängen — einem einzelnen Wort, das auf praktisch jeder
+Wertpapierabrechnung steht. Im Verkaufsdialog ausgewählt, würde er mit dem
+Kostenregelsatz ausgewertet, der weder Depotnummer noch Ordernummer,
+Stückzahl oder Preis kennt: "Analyse fehlgeschlagen — 0/5 Pflicht".
+
+Heute schadet das nichts, weil Consors ohnehin keinen
+`<Document Type="Sale">`-Block hat und der Beleg so oder so nicht lesbar wäre.
+Sichtbar ist nur die irreführende Meldung der Direkten Dokumentenerfassung:
+sie nennt "Kosten wird nicht unterstützt", obwohl es um einen Verkauf geht.
+
+@note Bewusst nicht nachgeschärft (Nessie, 02.09.2026), sondern als TODO
+notiert. Zu tun wäre, Consors' `BrokerageIdentifier` auf `(Ges. Kosten)` zu
+ziehen wie bei den anderen beiden Banken, oder auf eine Formulierung, die nur
+auf einer echten Kostenabrechnung steht. Das gehört an einem echten Beleg
+geprüft, nicht am Muster geraten. Fällig spätestens, wenn Consors-Verkäufe
+konfiguriert werden: dann kämen Verkaufsregelsatz und `SaleIdentifier` hinzu,
+und die Falle wäre entschärft — aber nur, solange die Verkaufskennung
+tatsächlich vor der Kostenkennung trifft. Die heute leere Verkaufskennung
+verdeckt genau diesen Zusammenhang.
+
+@note Dasselbe Muster steckt in ING: `BuyIdentifier` ist schlicht `(Kauf)`.
+Steht auf einem ING-Verkaufsbeleg irgendwo "Kauf" mit grossem K, gewinnt die
+Kaufkennung gegen die Verkaufskennung. Ob das vorkommt, lässt sich nur an
+echten Belegen feststellen.
 
 #### Stand der Umsetzung — abgeschlossen mit 1.20.0 (02.09.2026)
 
@@ -5015,7 +5064,8 @@ vergleicht die Tabellen mit der Maske und hätte `CapitalGainsTax` durchgelassen
 die Seite, die auf die Datei zeigt.
 
 @note `BrokerageEdit` entfällt in beiden Spalten: das Formular hat keine
-Parse-Strecke. Siehe "Kostenbelege werden von keinem Formular eingelesen".
+Parse-Strecke, und das ist so gewollt. Siehe "Kostenbelege werden von keinem
+Formular eingelesen".
 
 Der Wächter wandert je Formular mit, nicht in einem Zug in alle vier Views
 (Nessie, 02.09.2026) — so bleibt jede Runde für sich baubar und prüfbar. Alle
