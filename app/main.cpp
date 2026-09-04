@@ -96,6 +96,13 @@ int main(int argc, char* argv[])
         return 1;
 
     // ── Launch main window ─────────────────────────────────────────────────
+    // Modale Start-Meldungen freischalten (04.09.2026). Vorgabe ist AUS,
+    // damit Testziele still bleiben, ohne selbst etwas tun zu muessen — die
+    // Fehlermodi sind unsymmetrisch: eine vergessene Zeile hier kostet einen
+    // Dialog, eine vergessene Zeile in einem Testziel haengt die CI an einem
+    // Klick, den niemand macht. Siehe MainWindow::setStartupDialogsEnabled().
+    MainWindow::setStartupDialogsEnabled(true);
+
     MainWindow mainWindow;
     QObject::connect(&singleInstanceGuard, &SingleInstanceGuard::activationRequested,
                       &mainWindow, &MainWindow::restoreFromTray);

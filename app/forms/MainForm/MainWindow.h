@@ -57,6 +57,31 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
+    /**
+     * @brief Schaltet modale Start-Meldungen fuer den ganzen Prozess frei.
+     *
+     * Standard ist AUS. `main.cpp` schaltet sie fuer die Anwendung ein; jedes
+     * Testziel bleibt damit still, ohne selbst etwas tun zu muessen — auch
+     * ein kuenftig neu angelegtes.
+     *
+     * Die Richtung ist bewusst so herum (04.09.2026). Die beiden Fehlermodi
+     * sind unsymmetrisch: vergisst jemand die Zeile in `main.cpp`, fehlt ein
+     * Dialog — aergerlich, aber sofort sichtbar. Vergaesse ein Testziel den
+     * umgekehrten Aufruf, haengt es an einem Klick, den niemand macht, und
+     * die CI liefe in den Zeitablauf statt in einen Fehlschlag.
+     *
+     * @note Bis hierhin setzte allein der Test-Konstruktor mit dem
+     * QNetworkAccessManager das Kennzeichen auf false. `tst_mainwindow`
+     * benutzt aber 36-mal den Produktivkonstruktor; dort war der Schutz
+     * wirkungslos. Dass die beiden bestehenden Start-Hinweise trotzdem nie
+     * gestoert haben, lag nur daran, dass ihr Text in diesen Tests leer
+     * bleibt und die Methoden vorher aussteigen — kein Schutz, sondern
+     * Zufall. Aufgefallen ist das erst, als der PDF-Wandler-Dialog dazukam
+     * (siehe ARCHITECTURE.md, "Fehlendes pdftotext wird nicht als solches
+     * benannt").
+     */
+    static void setStartupDialogsEnabled(bool enabled);
+
     explicit MainWindow(QWidget* parent = nullptr);
 
     /**
@@ -980,7 +1005,17 @@ private:
      * über tst_shareupdaterules abgedeckt, ihre Anwendung im Presenter über
      * die PresenterShareEdit-Tests weiter unten in dieser Datei.
      */
-    bool m_showStartupWarnings = true;
+    bool m_showStartupWarnings = false;   ///< aus s_startupDialogsEnabled, siehe setStartupDialogsEnabled()
+
+    /**
+     * @brief Prozessweiter Freischalter, siehe setStartupDialogsEnabled().
+     *
+     * Standard false. Der Konstruktor uebernimmt den Wert nach
+     * m_showStartupWarnings; der Test-Konstruktor setzt das Kennzeichen
+     * zusaetzlich hart auf false, damit sein Verhalten unabhaengig davon
+     * bleibt, was ein Testziel sonst noch schaltet.
+     */
+    static bool s_startupDialogsEnabled;
 
     QWidget*            m_portfolioChartContainer = nullptr; ///< Platzhalter, siehe ensurePortfolioChartUpToDate()
     ViewPortfolioChart* m_portfolioChart          = nullptr; ///< erst beim ersten Betreten erzeugt

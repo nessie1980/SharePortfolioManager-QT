@@ -10,6 +10,82 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.21.0] - 2026-09-04
+
+### Fixed
+
+- **Fehlendes pdftotext wurde als Dokumentfehler ausgegeben.** Alle fuenf
+  Aufrufstellen zeigten "PDF-Konvertierung fehlgeschlagen oder kein Text
+  extrahierbar" — dieselbe Meldung wie bei einem Beleg ohne Textebene. Der
+  Benutzer suchte den Fehler beim Dokument, probierte den naechsten Beleg, und
+  der scheiterte genauso. Auf eine fehlende Installation kam er so nicht. Fuer
+  eine frische Windows-Installation ohne Poppler war das der Regelfall.
+
+### Added
+
+- `PdfTextExtractor::converterInfo()` ermittelt einmalig je Programmlauf, ob
+  und welcher PDF-Wandler installiert ist. Die Ermittlung lag bis hierhin als
+  private statische Methode samt privat verschachtelter Struktur in
+  `AboutForm` — ein Anzeigefenster ist kein Ort fuer Systempruefungen, und sie
+  hat jetzt einen zweiten Aufrufer.
+- `PdfTextExtractor::converterMissingMessage()` liefert den Text, den alle
+  sechs Stellen zeigen. An einer Stelle definiert, damit sie nicht
+  auseinanderlaufen und nur ein `tr()`-Eintrag entsteht.
+- Startpruefung in `MainWindow::checkAndLoadConfigurations()`, nach dem Muster
+  des Sounddatei-Abschnitts: `MessageType::Error`, aber ohne `allOk`
+  anzufassen — die Anwendung bleibt voll bedienbar, nur Belege lassen sich
+  nicht einlesen. Zusaetzlich ein modales `OwnMessageBox::critical`: eine
+  Zeile im Meldungsbereich ist fuer diesen Fall zu leise, wer sie ueberliest,
+  sucht spaeter an der falschen Stelle. Der Eintrag im Meldungsbereich bleibt
+  trotzdem stehen.
+
+  @note Verzoegert per `QTimer::singleShot(0, …)`, damit das Hauptfenster
+  fertig gezeichnet ist, und gegated ueber `m_showStartupWarnings`.
+
+- `MainWindow::setStartupDialogsEnabled()` — prozessweiter Freischalter fuer
+  modale Start-Meldungen, Vorgabe AUS, von `main.cpp` eingeschaltet. Bis
+  hierhin setzte nur der Test-Konstruktor mit dem `QNetworkAccessManager` das
+  Kennzeichen auf false; `tst_mainwindow` benutzt aber 36-mal den
+  Produktivkonstruktor, der Schutz war dort wirkungslos.
+
+  @note Dass die beiden bestehenden Start-Hinweise trotzdem nie gestoert
+  haben, lag daran, dass ihr Text in diesen Tests leer bleibt und die
+  Methoden vorher aussteigen — kein Schutz, sondern Zufall. Der neue Dialog
+  hat das sichtbar gemacht, weil er diese Ausstiegsbedingung nicht hat.
+
+  @note Vorgabe AUS statt AN, weil die Fehlermodi unsymmetrisch sind: eine
+  vergessene Zeile in `main.cpp` kostet einen Dialog, eine vergessene Zeile in
+  einem Testziel haengt die CI an einem Klick, den niemand macht. Keine
+  Testdatei musste angefasst werden.
+- Vorpruefung an allen fuenf Aufrufstellen (vier Presenter plus
+  `MainWindow::handleDroppedDocument()`). In den vier Presentern sitzt sie
+  unmittelbar vor dem Auswerten, NICHT vor dem Anhaengen: `onDocumentSelected()`
+  haengt das Dokument an (Pfad, Vorschau, Dublettenpruefung) und wertet es
+  aus — nur das zweite braucht `pdftotext`. Der Pfad landet unabhaengig davon
+  in der Datenbank, und die Felder lassen sich von Hand fuellen. In
+  `handleDroppedDocument()` steht sie ganz oben, dort gibt es nichts
+  anzuhaengen: die Auswertung entscheidet erst, welcher Dialog geoeffnet wird.
+
+### Changed
+
+- `AboutForm::PdfConverterInfo` heisst jetzt `PdfTextExtractor::ConverterInfo`
+  und hat ein Feld `available` bekommen. Vorher liess sich der Fall "kein
+  Wandler" nur daran ablesen, dass `name` auf dem uebersetzten Text "nicht
+  gefunden" stand — ein Anzeigetext als Zustandsmerkmal, der bei jeder
+  Sprachumstellung gebrochen waere.
+- Wartezeit der Ermittlung von drei Sekunden auf eine gesenkt. Ein fehlendes
+  Programm meldet `FailedToStart` und wartet gar nicht; die Schranke greift
+  allein bei einem vorhandenen, aber haengenden `pdftotext`.
+
+@note Das Ergebnis wird in beiden Richtungen gemerkt. Wird `pdftotext` waehrend
+des Betriebs nachinstalliert, bemerkt die Anwendung das bis zum Neustart
+nicht — auch der Ueber-Dialog zeigt dann weiterhin "nicht gefunden". Deshalb
+nennt die Meldung den Neustart ausdruecklich.
+
+@note Keine CMake-Aenderung noetig: jedes Testziel, das `AboutForm.cpp`
+kompiliert, kompiliert `PdfTextExtractor.cpp` bereits mit. Deshalb liegt die
+Ermittlung in der bestehenden Klasse und nicht in einer neuen Datei.
+
 ## [1.20.0] - 2026-09-02
 
 Feldschluessel-Pruefung fuer die vier belegverarbeitenden Formulare, in fuenf

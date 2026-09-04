@@ -959,7 +959,7 @@ deckt daher nur ab, dass das Widget existiert (`findChild<QLabel*>
 konsistent mit der bewusst unveränderten Testlücke bei
 `DocumentPreviewPanel` selbst.
 
-Feldschlüssel-Tabellen (ergänzt 02.09.2026):
+Feldschlüssel-Tabellen (ergänzt 28.08.2026):
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_shareAdd_everyKnownXmlNameHasAViewField` | Jeder Name aus `knownXmlNames()` hat einen Feldschlüssel | `xmlNameToViewField()` liefert nie leer |
@@ -1190,7 +1190,7 @@ vom 08.08.2026 fest: die Zeile darf NICHT ausgeblendet werden, wenn kein Split
 vorliegt — sonst springt beim Tippen im Datumsfeld das halbe Formular. Ein
 naheliegendes `setVisible(hasSplit)` würde hier auffliegen.
 
-Feldschlüssel-Tabellen (ergänzt 02.09.2026):
+Feldschlüssel-Tabellen (ergänzt 28.08.2026):
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_buyEdit_everyKnownXmlNameHasAViewField` | Jeder Name aus `knownXmlNames()` hat einen Feldschlüssel | `xmlNameToViewField()` liefert nie leer |
@@ -2448,7 +2448,7 @@ beim Übertragen aus der Buy-Variante ab. Der Test prüft die konkrete Zahl
 statt nur die Anwesenheit eines Textes — sonst liefe er auch dann grün, wenn
 versehentlich die Stückzahl statt des Preises umgerechnet würde.
 
-Feldschlüssel-Tabellen (ergänzt 02.09.2026):
+Feldschlüssel-Tabellen (ergänzt 28.08.2026):
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_saleEdit_everyKnownXmlNameHasAViewField` | Jeder Name aus `knownXmlNames()` hat einen Feldschlüssel | `xmlNameToViewField()` liefert nie leer |
@@ -2650,12 +2650,12 @@ Keine Letzter-Eintrag-Einschränkung:
 In BuysForm/SalesForm würde dieselbe Konstellation (`isLastBuy=false, isEdit=true`)
 den `readOnlyMode` auslösen — im DividendForm gibt es diesen Modus nicht.
 
-Feldschlüssel-Tabellen (ergänzt 02.09.2026):
+Feldschlüssel-Tabellen (ergänzt 28.08.2026):
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_dividendEdit_everyKnownXmlNameHasAViewField` | Jeder Name aus `knownXmlNames()` hat einen Feldschlüssel | `xmlNameToViewField()` liefert nie leer |
 | `test_dividendEdit_everyViewFieldIsRegisteredInTheDialog` | Jeder Feldschlüssel ist im echten Dialog registriert | `setFieldOk(key, "")` = true |
-| `test_dividendEdit_currencyIsRegisteredButSharesItsSymbol` | Der Fund vom 02.09.2026 | `currency` bekannt, aber ohne eigenes Symbol |
+| `test_dividendEdit_currencyIsRegisteredButSharesItsSymbol` | Der Fund vom 28.08.2026 | `currency` bekannt, aber ohne eigenes Symbol |
 | `test_dividendEdit_documentFieldKeyIsRegistered` | Reines Statusfeld ohne Eingabefeld | `setFieldOk("document", "")` = true |
 | `test_dividendEdit_requiredXmlNamesAreSubsetOfKnown` | Jeder Pflichtname wird auch gesucht | `knownXmlNames().contains(name)` |
 | `test_dividendEdit_setFieldOk_unknownFieldKey_isRejected` | Tippfehler-Schlüssel wird abgewiesen | `setFieldOk()` = false + `qWarning` |
@@ -2664,7 +2664,7 @@ Feldschlüssel-Tabellen (ergänzt 02.09.2026):
 
 Diese Runde ist die einzige der vier, die einen bestehenden Fehler
 aufgedeckt hat: `test_dividendEdit_everyViewFieldIsRegisteredInTheDialog`
-wäre vor dem 02.09.2026 an `currency` gescheitert. Der Schlüssel war in
+wäre vor dem 28.08.2026 an `currency` gescheitert. Der Schlüssel war in
 `ViewDividendEdit` nirgends registriert, `setFieldOk()` meldete für ihn
 trotzdem Erfolg, und die Optional-Zählung nahm ihn mit. Siehe
 ARCHITECTURE.md, "Der Fund: currency war nirgends registriert".
@@ -3505,7 +3505,7 @@ verschiebt die Indizes und würde ein Scheitern melden, das nichts über echte
 Belege aussagt. Genau deshalb suchen alle in Phase 5 ergänzten Regeln über
 die BESCHRIFTUNG statt über die Position.
 
-Feldnamen gegen die Formularlisten (ergänzt 02.09.2026):
+Feldnamen gegen die Formularlisten (ergänzt 28.08.2026):
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_fieldNames_everyBuyTagIsReadByAForm` | Jeder Tag im Kaufblock wird gelesen | `buyKnown()` ∪ `shareAddKnown()` ∪ Ausnahmen |
@@ -4101,6 +4101,39 @@ Grid-Selektion beim Refresh.
 ---
 
 ## Konventionen
+
+### Modale Start-Dialoge sind in Tests abgeschaltet (04.09.2026)
+
+`MainWindow` zeigt beim Start bis zu drei modale Hinweise: fehlende
+Tageswert-Historie, Befunde der Split-Prüfung, und seit 1.21.0 ein fehlender
+PDF-Wandler. Jeder davon würde ein Testziel an einem `exec()` festhalten, auf
+das niemand klickt — der Lauf endet dann im Zeitablauf statt in einem
+Fehlschlag.
+
+Abgeschaltet werden sie über einen prozessweiten Schalter, dessen Vorgabe AUS
+ist:
+
+@code{.cpp}
+MainWindow::setStartupDialogsEnabled(true);   // nur in main.cpp
+@endcode
+
+@note Testziele müssen dafür nichts tun, auch neu angelegte nicht. Genau
+deshalb ist die Vorgabe AUS und nicht AN: vergisst jemand die Zeile in
+`main.cpp`, fehlt ein Dialog — ärgerlich, aber sofort sichtbar. Wäre es
+andersherum und ein Testziel vergäße das Abschalten, hinge die CI an einem
+Klick.
+
+@note Vorher setzte allein der Test-Konstruktor mit dem
+`QNetworkAccessManager` das Kennzeichen `m_showStartupWarnings` auf `false`.
+`tst_mainwindow` benutzt aber 36-mal den Produktivkonstruktor. Dass die
+beiden älteren Hinweise trotzdem nie gestört haben, lag daran, dass ihr Text
+in diesen Tests leer bleibt und die Methoden vorher aussteigen — kein Schutz,
+sondern Zufall. Der PDF-Wandler-Dialog hat das sichtbar gemacht, weil er
+diese Ausstiegsbedingung nicht hat.
+
+@note Wer einen neuen modalen Start-Hinweis ergänzt, hängt ihn hinter
+`m_showStartupWarnings` und verzögert ihn per `QTimer::singleShot(0, …)`,
+damit er nicht vor einem noch leeren Hauptfenster erscheint.
 
 ### Testmethoden-Benennung
 ```

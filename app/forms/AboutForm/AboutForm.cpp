@@ -14,8 +14,6 @@
 #include <QCoreApplication>
 #include <QClipboard>
 #include <QGuiApplication>
-#include <QProcess>
-#include <QRegularExpression>
 #include <QDebug>
 
 // ── Constructor ───────────────────────────────────────────────────────────────
@@ -27,43 +25,6 @@ AboutForm::AboutForm(QWidget* parent)
     setMinimumWidth(400);
     setModal(true);
     setupUi();
-}
-
-// ── pdftotextInfo ─────────────────────────────────────────────────────────────
-
-AboutForm::PdfConverterInfo AboutForm::pdftotextInfo()
-{
-    QProcess process;
-    process.start(QStringLiteral("pdftotext"), QStringList() << QStringLiteral("-v"));
-    process.waitForFinished(3000);
-
-    // pdftotext writes version info to stderr
-    const QString output = QString::fromLocal8Bit(process.readAllStandardError())
-                         + QString::fromLocal8Bit(process.readAllStandardOutput());
-
-    if (output.isEmpty() || process.error() == QProcess::FailedToStart) {
-        qWarning() << "[AboutForm] pdftotext not found.";
-        return { tr("nicht gefunden"), tr("unbekannt") };
-    }
-
-    // Detect which implementation is installed:
-    // XpdfReader:  "pdftotext version 4.xx"  (no "Poppler" mention)
-    // Poppler:     "pdftotext version 24.xx\nCopyright ... Poppler ..."
-    const bool isPoppler = output.contains(
-        QStringLiteral("Poppler"), Qt::CaseInsensitive);
-
-    const QRegularExpression versionRegex(
-        QStringLiteral("version\\s+([0-9]+\\.[0-9]+(?:\\.[0-9]+)?)"),
-        QRegularExpression::CaseInsensitiveOption);
-    const auto match = versionRegex.match(output);
-    const QString version = match.hasMatch()
-        ? match.captured(1)
-        : tr("unbekannt");
-
-    if (isPoppler)
-        return { QStringLiteral("Poppler"), version };
-    else
-        return { QStringLiteral("XpdfReader"), version };
 }
 
 // ── setupUi ───────────────────────────────────────────────────────────────────
@@ -88,8 +49,9 @@ void AboutForm::setupUi()
         versionsLayout->addWidget(lblValue, row, 1);
     };
 
-    // Query PDF converter info once
-    const auto pdfInfo = pdftotextInfo();
+    // Ermittlung liegt seit dem 03.09.2026 in PdfTextExtractor; der Wert ist
+    // dort gemerkt, dieser Aufruf startet also keinen weiteren Prozess.
+    const auto pdfInfo = PdfTextExtractor::converterInfo();
     const QString pdfLabel = tr("PDF- Konverter (%1):").arg(pdfInfo.name);
 
     addVersionRow(0, tr("Programm- Version:"),      QCoreApplication::applicationVersion());

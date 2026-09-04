@@ -3,6 +3,88 @@
 #include "PdfTextExtractor.h"
 
 #include <QProcess>
+#include <QRegularExpression>
+#include <QDebug>
+
+namespace {
+
+/**
+ * @brief Fragt `pdftotext -v` ab und wertet die Ausgabe aus.
+ *
+ * Wortgleich uebernommen aus AboutForm::pdftotextInfo() (dort entfernt),
+ * mit zwei Aenderungen: die Wartezeit liegt bei einer statt drei Sekunden,
+ * und das Ergebnis traegt ein `available`-Kennzeichen statt den Zustand
+ * "nicht gefunden" nur im uebersetzten Anzeigenamen zu fuehren.
+ */
+PdfTextExtractor::ConverterInfo detectConverter()
+{
+    QProcess process;
+    process.start(QStringLiteral("pdftotext"),
+                  QStringList() << QStringLiteral("-v"));
+
+    // Eine Sekunde statt drei: ein fehlendes Programm meldet FailedToStart
+    // und wartet gar nicht, die Schranke greift also nur bei einem
+    // vorhandenen, aber haengenden pdftotext. "pdftotext -v" antwortet in
+    // Millisekunden oder nie.
+    process.waitForFinished(1000);
+
+    // pdftotext schreibt die Versionsangabe nach stderr.
+    const QString output = QString::fromLocal8Bit(process.readAllStandardError())
+                         + QString::fromLocal8Bit(process.readAllStandardOutput());
+
+    if (output.isEmpty() || process.error() == QProcess::FailedToStart) {
+        qWarning() << "[PdfTextExtractor] pdftotext nicht gefunden.";
+        return { false,
+                 PdfTextExtractor::tr("nicht gefunden"),
+                 PdfTextExtractor::tr("unbekannt") };
+    }
+
+    // Welche Implementierung liegt vor?
+    //   XpdfReader:  "pdftotext version 4.xx"            (ohne "Poppler")
+    //   Poppler:     "pdftotext version 24.xx" plus eine Zeile mit "Poppler"
+    const bool isPoppler =
+        output.contains(QStringLiteral("Poppler"), Qt::CaseInsensitive);
+
+    const QRegularExpression versionRegex(
+        QStringLiteral("version\\s+([0-9]+\\.[0-9]+(?:\\.[0-9]+)?)"),
+        QRegularExpression::CaseInsensitiveOption);
+    const auto match = versionRegex.match(output);
+    const QString version = match.hasMatch()
+        ? match.captured(1)
+        : PdfTextExtractor::tr("unbekannt");
+
+    return { true,
+             isPoppler ? QStringLiteral("Poppler") : QStringLiteral("XpdfReader"),
+             version };
+}
+
+} // namespace
+
+// ── converterInfo ─────────────────────────────────────────────────────────────
+
+const PdfTextExtractor::ConverterInfo& PdfTextExtractor::converterInfo()
+{
+    // Funktionslokales static: der Prozess laeuft genau einmal je
+    // Programmlauf, beim ersten Aufruf. Das Ergebnis wird in BEIDEN
+    // Richtungen gemerkt (Nessies Entscheidung, 03.09.2026) — auch ein
+    // "nicht gefunden" bleibt bis zum Neustart stehen. Siehe die Notiz im
+    // Header und converterMissingMessage(), die den Neustart deshalb nennt.
+    static const ConverterInfo info = detectConverter();
+    return info;
+}
+
+// ── converterMissingMessage ───────────────────────────────────────────────────
+
+QString PdfTextExtractor::converterMissingMessage()
+{
+    // Bewusst nicht "Poppler ist nicht installiert": converterInfo() meldet
+    // auch dann kein Ergebnis, wenn ein vorhandenes pdftotext in einer Form
+    // antwortet, die sich nicht lesen laesst. Der Satz muss in beiden Faellen
+    // stimmen und trotzdem sagen, was zu tun ist.
+    return tr("Kein PDF-Wandler gefunden — Belege können nicht eingelesen "
+              "werden. Bitte Poppler (pdftotext) installieren und die "
+              "Anwendung neu starten.");
+}
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 

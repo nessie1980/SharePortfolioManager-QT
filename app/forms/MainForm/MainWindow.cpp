@@ -13,6 +13,7 @@
 #include "../ShareDetailsForm/ViewShareDetails.h"
 #include "../ChartForm/ChartPopup.h"
 #include "../AboutForm/AboutForm.h"
+#include "../../utils/PdfTextExtractor.h"
 #include "../ApiSettingsForm/ApiSettingsForm.h"
 #include "../../repositories/ShareRepository.h"
 #include "../../repositories/DailyValuesRepository.h"
@@ -68,11 +69,25 @@
 #include "../../../libs/parser/src/Parser.h"
 #include "../../../libs/parser/src/DataTypes.h"
 
+// ── setStartupDialogsEnabled ──────────────────────────────────────────────────
+
+bool MainWindow::s_startupDialogsEnabled = false;
+
+void MainWindow::setStartupDialogsEnabled(bool enabled)
+{
+    s_startupDialogsEnabled = enabled;
+}
+
 // ── Constructor ───────────────────────────────────────────────────────────────
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
+    // Modale Start-Meldungen sind seit dem 04.09.2026 per Vorgabe AUS; die
+    // Anwendung schaltet sie in main.cpp frei. Der Test-Konstruktor unten
+    // laesst sie unangetastet auf false. Siehe setStartupDialogsEnabled().
+    m_showStartupWarnings = s_startupDialogsEnabled;
+
     initialize();
 }
 
@@ -94,6 +109,10 @@ MainWindow::MainWindow(QNetworkAccessManager* networkManagerForTesting, QWidget*
 
     // 06.08.2026: Zweiter Unterschied zum Produktivkonstruktor. Modale
     // Start-Meldungen bleiben hier aus, siehe m_showStartupWarnings.
+    //
+    // Seit dem 04.09.2026 ist das ohnehin die Vorgabe — die Zuweisung bleibt
+    // trotzdem stehen: dieser Konstruktor soll still sein, egal was ein
+    // Testziel sonst noch ueber setStartupDialogsEnabled() schaltet.
     m_showStartupWarnings = false;
 
     initialize();
@@ -872,6 +891,51 @@ bool MainWindow::checkAndLoadConfigurations()
                              .arg(AppSettings::instance().soundErrorFile()),
                          MessageType::Warning);
         AppSettings::instance().setSoundErrorEnabled(false);
+    }
+
+    // ── PDF-Wandler (nicht-kritisch, aber Error statt Warning) ────────────
+    //
+    // Gleiche Bauweise wie der Sound-Abschnitt darueber: allOk bleibt
+    // unangetastet, disableAllControls() laeuft nicht, die Anwendung bleibt
+    // voll bedienbar. Nur MessageType::Error statt Warning (Nessies
+    // Entscheidung, 03.09.2026) — Sounddateien sind Beiwerk, das Einlesen
+    // von Belegen ist eine Kernfunktion.
+    //
+    // Der eigentliche Zweck: bis hierhin bekam der Benutzer erst beim
+    // Einlesen eine Meldung, und die lautete "PDF-Konvertierung
+    // fehlgeschlagen oder kein Text extrahierbar" — dieselbe wie bei einem
+    // Beleg ohne Textebene. Er suchte den Fehler beim Dokument statt bei der
+    // fehlenden Installation. Siehe ARCHITECTURE.md, "Fehlendes pdftotext
+    // wird nicht als solches benannt".
+    if (!PdfTextExtractor::converterInfo().available) {
+        addStatusMessage(PdfTextExtractor::converterMissingMessage(),
+                         MessageType::Error);
+
+        // Zusaetzlich modal (Nessies Entscheidung, 04.09.2026). Eine Zeile im
+        // Meldungsbereich ist fuer diesen Fall zu leise: ohne Wandler laesst
+        // sich keine einzige Belegfunktion benutzen, und wer die Zeile beim
+        // Start ueberliest, sucht spaeter an der falschen Stelle. Der
+        // Meldungsbereich behaelt seinen Eintrag trotzdem — nach dem
+        // Schliessen des Dialogs soll der Hinweis nicht spurlos verschwinden
+        // (gleiche Ueberlegung wie in warnAboutSharesWithoutDailyValues()).
+        //
+        // Verzoegert per singleShot(0), damit das Hauptfenster erst fertig
+        // gezeichnet ist: checkAndLoadConfigurations() laeuft mitten im
+        // Konstruktor, ein modaler Dialog erschiene sonst vor einem leeren
+        // Fenster und der Benutzer saehe seinen Kontext nicht. Dieselbe
+        // Begruendung wie bei den Start-Hinweisen weiter oben.
+        //
+        // m_showStartupWarnings haelt den Dialog aus den Tests heraus. Ohne
+        // diese Schranke bliebe tst_mainwindow auf einem Rechner ohne
+        // pdftotext an einem Dialog haengen, auf den niemand klickt — die CI
+        // liefe in den Zeitablauf statt in einen Fehlschlag.
+        if (m_showStartupWarnings) {
+            QTimer::singleShot(0, this, [this]() {
+                OwnMessageBox::critical(this,
+                    tr("PDF-Wandler fehlt"),
+                    PdfTextExtractor::converterMissingMessage());
+            });
+        }
     }
 
     return allOk;
@@ -2004,6 +2068,17 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
 
 void MainWindow::handleDroppedDocument(const QString& pdfPath)
 {
+    // Ohne Wandler gar nicht erst anfangen (03.09.2026). Sonst stuende hier
+    // "Analysiere Dokument …", gefolgt von "PDF-Konvertierung fehlgeschlagen
+    // oder kein Text extrahierbar" — eine Meldung ueber das Dokument, wo es
+    // um die fehlende Installation geht.
+    if (!PdfTextExtractor::converterInfo().available) {
+        addStatusMessage(PdfTextExtractor::converterMissingMessage(),
+                         MessageType::Error);
+        m_documentCaptureEdit->clear();
+        return;
+    }
+
     m_pendingCaptureDocumentPath = pdfPath;
     m_documentCaptureEdit->setText(QFileInfo(pdfPath).fileName());
 

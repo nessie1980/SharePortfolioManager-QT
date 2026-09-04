@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterSaleEdit.h"
+#include "../../utils/PdfTextExtractor.h"   // converterInfo()/converterMissingMessage()
 #include "../../config/DocumentFieldNames.h"
 #include "../../utils/ShareSplitHint.h"
 #include "../../utils/SplitRatioChecker.h"
@@ -372,6 +373,24 @@ void PresenterSaleEdit::onDocumentSelected(const QString& path)
     // Non-latest sale: only document path changes, no re-parse
     const bool isNonLatestEdit = !m_currentSaleGuid.isEmpty() && !m_isLastSale;
     if (isNonLatestEdit) return;
+
+    // Ohne PDF-Wandler wird NICHT ausgewertet — angehaengt aber schon
+    // (korrigiert 04.09.2026). Diese Methode macht zwei Dinge: das Dokument
+    // anhaengen (Pfad, Vorschau, Dublettenpruefung) und es auswerten. Nur das
+    // zweite braucht pdftotext. Der Riegel stand zuerst ganz oben und nahm
+    // damit auch das Anhaengen weg — ohne Wandler liess sich kein Beleg mehr
+    // zuordnen, obwohl der Pfad ohnehin unabhaengig davon in der Datenbank
+    // landet und die Felder von Hand gefuellt werden koennen.
+    //
+    // Die Meldung ersetzt die frueher hier erscheinende "PDF-Konvertierung
+    // fehlgeschlagen oder kein Text extrahierbar" — dieselbe wie bei einem
+    // Beleg ohne Textebene, weshalb der Benutzer den Fehler beim Dokument
+    // suchte statt bei der fehlenden Installation. Siehe ARCHITECTURE.md,
+    // "Fehlendes pdftotext wird nicht als solches benannt".
+    if (!PdfTextExtractor::converterInfo().available) {
+        m_view->showError(PdfTextExtractor::converterMissingMessage());
+        return;
+    }
 
     m_pdfExtractor.extract(path);
 }

@@ -34,12 +34,79 @@ class QProcess;
  *
  * finished() is therefore emitted at most once per extract() call, and
  * never for a conversion the caller has already replaced or cancelled.
+ *
+ * ## Fehlender Wandler
+ *
+ * extract() prueft NICHT, ob `pdftotext` ueberhaupt vorhanden ist — es
+ * startet den Prozess und meldet den Fehlstart als `finished(false, …)`.
+ * Die Vorpruefung liegt bei den Aufrufstellen, die converterInfo() vor dem
+ * Aufruf befragen und converterMissingMessage() anzeigen (Nessies
+ * Entscheidung gegen einen zweiten Riegel hier, 03.09.2026). Ein Riegel an
+ * beiden Enden waere doppelt gemoppelt; der Preis ist, dass ein kuenftiger
+ * sechster Aufrufer die Pruefung selbst mitbringen muss.
  */
 class PdfTextExtractor : public QObject
 {
     Q_OBJECT
 
 public:
+    /**
+     * @brief Name und Version des installierten PDF-Wandlers.
+     *
+     * Ermittelt aus der Ausgabe von `pdftotext -v` (siehe converterInfo()).
+     * Die Struktur lag bis zum 03.09.2026 als privat verschachtelter Typ in
+     * `AboutForm`; sie ist hierher gewandert, weil die Ermittlung jetzt zwei
+     * Aufrufer hat und ein Anzeigefenster kein Ort fuer Systempruefungen ist.
+     */
+    struct ConverterInfo {
+        /**
+         * @brief true, wenn ein benutzbarer Wandler geantwortet hat.
+         *
+         * Ergaenzt 03.09.2026. Bis dahin liess sich der Fall nur daran
+         * ablesen, dass @ref name auf dem Text "nicht gefunden" stand — ein
+         * uebersetzter Anzeigetext als Zustandsmerkmal, der bei jeder
+         * Sprachumstellung gebrochen waere.
+         *
+         * false deckt zwei Faelle ab, die sich fuer den Aufrufer gleich
+         * auswirken: `pdftotext` ist nicht installiert, oder es antwortet in
+         * einer Form, aus der sich nichts lesen laesst. In beiden Faellen
+         * koennen keine Belege eingelesen werden.
+         */
+        bool    available = false;
+
+        QString name;    ///< "Poppler", "XpdfReader" oder "nicht gefunden"
+        QString version; ///< Versionsangabe oder "unbekannt"
+    };
+
+    /**
+     * @brief Ermittelt einmalig, welcher PDF-Wandler installiert ist.
+     *
+     * Ruft `pdftotext -v` auf und wertet die Ausgabe aus. Das Ergebnis wird
+     * beim ersten Aufruf gemerkt und danach unveraendert zurueckgegeben —
+     * auch ein negatives (Nessies Entscheidung, 03.09.2026). Es gibt also
+     * genau einen Prozessstart je Programmlauf.
+     *
+     * @note Die Folge des Merkens: wird `pdftotext` waehrend des laufenden
+     * Programms nachinstalliert, bemerkt die Anwendung das bis zum Neustart
+     * nicht. Deshalb nennt converterMissingMessage() den Neustart
+     * ausdruecklich — sonst stuende der Benutzer vor einer Sperre, die er
+     * gerade beseitigt hat.
+     *
+     * @note Die Wartezeit liegt bei einer Sekunde (vorher drei in
+     * `AboutForm`). Ein fehlendes Programm meldet `FailedToStart` und wartet
+     * gar nicht; die Schranke greift nur, wenn ein vorhandenes `pdftotext`
+     * haengt — und `pdftotext -v` antwortet in Millisekunden oder nie.
+     */
+    static const ConverterInfo& converterInfo();
+
+    /**
+     * @brief Der Text, den alle Aufrufstellen bei fehlendem Wandler zeigen.
+     *
+     * An einer Stelle, damit die fuenf Aufrufstellen und die Startmeldung
+     * nicht auseinanderlaufen und nur ein `tr()`-Eintrag entsteht.
+     */
+    static QString converterMissingMessage();
+
     explicit PdfTextExtractor(QObject* parent = nullptr);
 
     /**

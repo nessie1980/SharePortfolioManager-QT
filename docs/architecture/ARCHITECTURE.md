@@ -4568,7 +4568,7 @@ auf, für sie ändert sich dadurch nichts.
 Prüfbar ist die Behebung am Protokoll: die Zeile "QProcess: Destroyed while
 process is still running" verschwindet aus dem Testlauf.
 
-### Fehlendes pdftotext wird nicht als solches benannt (offen, 27.08.2026)
+### Fehlendes pdftotext wird nicht als solches benannt (behoben, 03.09.2026)
 
 Seit der Behebung oben meldet sich die Anwendung überhaupt, wenn `pdftotext`
 fehlt. Was sie meldet, stimmt aber nicht: alle fünf Aufrufstellen zeigen
@@ -4622,6 +4622,153 @@ unverändert stehen. Sie ist dann nicht mehr die einzige Auskunft, sondern die
 zweite — wer die Startmeldung übersehen hat, bekommt beim Einlesen immer noch
 einen Hinweis, nur eben weiterhin einen unspezifischen. Wen das stört, greift
 zusätzlich zu einem der beiden anderen Wege.
+
+#### Umgesetzt (03.09.2026)
+
+Anders als beim Entwurf gedacht bleibt es nicht bei der Startmeldung. Die
+Prüfung sitzt jetzt an sechs Stellen, und die fünf Aufrufstellen fragen sie
+vor dem Umwandeln ab, statt einen aussichtslosen Prozess zu starten
+(Nessies Entscheidung). Der Benutzer weiß damit an jedem Punkt, woran er ist.
+
+#### Anhängen und Auswerten sind zwei Dinge (korrigiert 04.09.2026)
+
+Der Riegel stand in den vier Presentern zuerst ganz oben in
+`onDocumentSelected()` — mit der Begründung, ein halb gefülltes Formular mit
+einem Pfad, zu dem nie etwas kommt, sei schlechter als eines, das unangetastet
+bleibt. Das war falsch.
+
+`onDocumentSelected()` macht zwei Dinge: das Dokument **anhängen** (Pfad,
+Vorschau, Dublettenprüfung) und es **auswerten**. Nur das zweite braucht
+`pdftotext`. Der Pfad landet unabhängig davon in der Datenbank, und die Felder
+lassen sich von Hand füllen — ohne Wandler einen Beleg anzuhängen ist ein
+vollkommen sinnvoller Vorgang.
+
+Der Riegel oben nahm genau den weg: ohne `pdftotext` liess sich kein Beleg
+mehr zuordnen. Keine Absicherung, sondern eine weggenommene Funktion.
+
+Die Prüfung sitzt jetzt unmittelbar vor `m_pdfExtractor.extract()`, direkt
+neben dem bereits vorhandenen Ausstieg für den Fall "nicht der jüngste
+Kauf/Verkauf" — der genau dieselbe Form hat: anhängen ja, auswerten nein.
+
+@note Aufgefallen an sechs fehlgeschlagenen Testfällen in `tst_salesform` und
+den Geschwisterzielen. Sie prüfen, dass `onDocumentSelected()` den Pfad in die
+View schreibt, und liefen gegen einen Rechner, auf dem `pdftotext` für die
+Handprobe umbenannt war. Die Tests hatten recht: das Verhalten, das sie
+festhalten, ist das richtige.
+
+@note `MainWindow::handleDroppedDocument()` behält die Prüfung ganz oben. Dort
+gibt es nichts anzuhängen — der Zweck dieses Wegs IST die Auswertung, sie
+entscheidet erst, welcher Dialog überhaupt geöffnet wird.
+
+Die Ermittlung ist von `AboutForm` nach `PdfTextExtractor` gewandert — zwei
+neue statische Funktionen neben `extract()`:
+
+| Funktion | Zweck |
+| --- | --- |
+| `converterInfo()` | Ermittelt einmalig Name, Version und Verfügbarkeit |
+| `converterMissingMessage()` | Der Text, den alle sechs Stellen zeigen |
+
+Die Struktur `PdfConverterInfo` heisst jetzt `PdfTextExtractor::ConverterInfo`
+und hat ein drittes Feld bekommen: `available`. Vorher liess sich der Fall
+"kein Wandler" nur daran ablesen, dass `name` auf dem Text "nicht gefunden"
+stand — ein übersetzter Anzeigetext als Zustandsmerkmal, der bei jeder
+Sprachumstellung gebrochen wäre.
+
+#### Die Startmeldung ist zusätzlich modal (04.09.2026)
+
+Eine Zeile im Meldungsbereich war für diesen Fall zu leise (Nessie): ohne
+Wandler lässt sich keine einzige Belegfunktion benutzen, und wer die Zeile
+beim Start überliest, sucht später an der falschen Stelle. Der Startlauf
+zeigt deshalb zusätzlich ein `OwnMessageBox::critical`.
+
+Der Eintrag im Meldungsbereich bleibt trotzdem stehen — nach dem Schließen
+des Dialogs soll der Hinweis nicht spurlos verschwinden. Dieselbe Bauweise
+wie `warnAboutSharesWithoutDailyValues()`.
+
+@note Verzögert per `QTimer::singleShot(0, …)`. `checkAndLoadConfigurations()`
+läuft mitten im Konstruktor; ein modaler Dialog erschiene sonst vor einem
+noch leeren Hauptfenster, und der Benutzer sähe seinen Kontext nicht.
+
+@note Gegated über `m_showStartupWarnings`. Beim ersten Anlauf war das
+wirkungslos: das Kennzeichen setzte nur der Test-Konstruktor mit dem
+`QNetworkAccessManager` auf `false`, und `tst_mainwindow` benutzt 36-mal den
+Produktivkonstruktor. Der Dialog erschien in jedem dieser Tests und musste
+weggeklickt werden — aufgefallen bei einer Handprobe mit umbenanntem
+`pdftotext`. Siehe den nächsten Abschnitt.
+
+#### Der Schutz vor modalen Start-Dialogen war Zufall (04.09.2026)
+
+Dass die beiden bestehenden Start-Hinweise — Tageswert-Historie und
+Split-Prüfung — die Tests nie gestört haben, lag nicht am Kennzeichen. Es lag
+daran, dass ihr Text in diesen Tests leer bleibt und beide Methoden vorher
+aussteigen. Kein Schutz, sondern Glück. Der PDF-Wandler-Dialog hat das
+sichtbar gemacht, weil er diese Ausstiegsbedingung nicht hat.
+
+Seit dem 04.09.2026 gibt es einen prozessweiten Freischalter:
+
+@code{.unparsed}
+static void MainWindow::setStartupDialogsEnabled(bool enabled);
+@endcode
+
+Vorgabe ist AUS. `main.cpp` schaltet ihn für die Anwendung ein; jedes
+Testziel bleibt still, ohne selbst etwas tun zu müssen — auch ein künftig neu
+angelegtes.
+
+@note Die Richtung ist bewusst so herum. Die beiden Fehlermodi sind
+unsymmetrisch: vergisst jemand die Zeile in `main.cpp`, fehlt ein Dialog —
+ärgerlich, aber sofort sichtbar. Vergäße ein Testziel den umgekehrten Aufruf,
+hinge es an einem Klick, den niemand macht, und die CI liefe in den
+Zeitablauf statt in einen Fehlschlag. Ein Aussetzer ohne erkennbare Ursache
+ist die teurere Sorte Fehler.
+
+@note Der Test-Konstruktor setzt `m_showStartupWarnings` weiterhin hart auf
+`false`. Das ist seit der Umstellung ohnehin die Vorgabe, bleibt aber stehen:
+sein Verhalten soll nicht davon abhängen, was ein Testziel sonst noch
+schaltet.
+
+@note `tst_mainwindow.cpp` musste dafür nicht angefasst werden — das war der
+Punkt der gewählten Richtung.
+
+@note Die vier Aufrufstellen in den Dialogen zeigen über
+`IView::showError()` ohnehin einen modalen Kasten. Ohne Kasten bleibt allein
+`MainWindow::handleDroppedDocument()`, wo eine Statusmeldung genügt: der
+Meldungsbereich liegt dort direkt unter dem Ablegefeld und ist im Blick.
+
+@note `available == false` deckt zwei Fälle ab: `pdftotext` ist nicht
+installiert, oder es antwortet in einer Form, aus der sich nichts lesen lässt.
+Für die Reaktion ist das gleich, für den Wortlaut nicht — deshalb heisst die
+Meldung "Kein PDF-Wandler gefunden" und nicht "Poppler ist nicht installiert".
+Der zweite Satz wäre im zweiten Fall schlicht falsch.
+
+@note Das Ergebnis wird in BEIDEN Richtungen gemerkt (Nessies Entscheidung).
+Ein funktionslokales `static` sorgt für genau einen Prozessstart je
+Programmlauf. Der Preis: wird `pdftotext` während des Betriebs
+nachinstalliert, bemerkt die Anwendung das bis zum Neustart nicht — auch der
+Über-Dialog zeigt dann weiterhin "nicht gefunden". Deshalb nennt die Meldung
+den Neustart ausdrücklich; ohne diesen Zusatz stünde der Benutzer vor einer
+Sperre, die er gerade beseitigt hat.
+
+@note Kein zweiter Riegel in `extract()` (Nessies Entscheidung gegen
+Redundanz). Die Vorprüfung liegt allein bei den Aufrufstellen. Der Preis: ein
+künftiger sechster Aufrufer muss sie selbst mitbringen. Die Klassennotiz in
+`PdfTextExtractor.h` sagt das ausdrücklich.
+
+@note Die Wartezeit steht auf einer Sekunde statt drei. Dass der Über-Dialog
+bisher schnell aufging, zeigt nur den Erfolgsfall — ein fehlendes Programm
+meldet `FailedToStart` und wartet gar nicht. Die Schranke greift allein bei
+einem vorhandenen, aber hängenden `pdftotext`, und `pdftotext -v` antwortet in
+Millisekunden oder nie.
+
+@note Keine CMake-Änderung nötig. Jedes Testziel, das `AboutForm.cpp`
+kompiliert (`tst_mainwindow`, `tst_backupform`), kompiliert
+`PdfTextExtractor.cpp` bereits mit. Das war der Grund, die Ermittlung in die
+bestehende Klasse zu legen statt in eine neue Datei — nach der
+`DocumentFieldNames`-Erfahrung diesmal vorher geprüft.
+
+@note Weiterhin ungetestet, konsistent mit der Projektkonvention für
+`QProcess`-getriebene `pdftotext`-Codepfade. `converterInfo()` liesse sich nur
+mit einem von aussen setzbaren Programmnamen prüfen — dieselbe Naht-Frage wie
+beim Prozesslebenszyklus, und dieselbe Antwort.
 
 ### QSqlDatabase-Warnung am Ende jedes Testlaufs (offen, 27.08.2026)
 

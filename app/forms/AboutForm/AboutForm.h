@@ -2,6 +2,8 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #pragma once
 
+#include "../../utils/PdfTextExtractor.h"
+
 #include <QDialog>
 #include <QPushButton>
 #include <QString>
@@ -27,26 +29,25 @@ private slots:
     void onCopyToClipboard();
 
 private:
-    /**
-     * @brief Holds the name and version of the installed PDF converter.
-     */
-    struct PdfConverterInfo {
-        QString name;    ///< "XpdfReader", "Poppler" or "nicht gefunden"
-        QString version; ///< Version string or "unbekannt"
-    };
-
     void setupUi();
 
     /**
-     * @brief Detect the installed pdftotext implementation and version.
+     * @brief Ermitteltes Ergebnis, gesetzt in setupUi().
      *
-     * Runs `pdftotext -v` via QProcess and inspects the output to determine
-     * whether XpdfReader or Poppler is installed.
-     * @return PdfConverterInfo with name and version string.
+     * Die Ermittlung selbst liegt seit dem 03.09.2026 in
+     * `PdfTextExtractor::converterInfo()`. Bis dahin gehoerte sie diesem
+     * Dialog — als privat verschachtelte Struktur samt privater statischer
+     * Methode. Sie hat jetzt einen zweiten Aufrufer
+     * (`MainWindow::checkAndLoadConfigurations()`), und ein Anzeigefenster
+     * ist kein Ort, an dem Systempruefungen wohnen. Siehe ARCHITECTURE.md,
+     * "Fehlendes pdftotext wird nicht als solches benannt".
+     *
+     * @note Der Wert kommt aus einem gemerkten Ergebnis: der Prozess laeuft
+     * genau einmal je Programmlauf. Wird `pdftotext` waehrend des Betriebs
+     * nachinstalliert, zeigt dieser Dialog bis zum Neustart weiterhin
+     * "nicht gefunden".
      */
-    static PdfConverterInfo pdftotextInfo();
-
-    PdfConverterInfo m_pdfInfo; ///< Cached PDF converter info (set in setupUi)
+    PdfTextExtractor::ConverterInfo m_pdfInfo;
 
     QPushButton* m_btnClipboard = nullptr;
     QPushButton* m_btnOk        = nullptr;
