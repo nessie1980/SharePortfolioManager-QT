@@ -76,6 +76,8 @@ set(APP_SOURCES
     utils/ShareSplitHint.cpp
     # Header-only, bewusst ohne .cpp — Begruendung im Dateikopf (05.09.2026).
     utils/ValueFormatter.h
+    # Header-only, bewusst ohne .cpp — Begruendung im Dateikopf (06.09.2026).
+    utils/NumberParser.h
     utils/SplitPriceJumpDetector.h
     utils/SplitPriceJumpDetector.cpp
     utils/SplitAudit.h

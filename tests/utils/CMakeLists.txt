@@ -218,6 +218,24 @@ target_link_libraries(tst_valueformatter
 
 add_test(NAME tst_valueformatter COMMAND tst_valueformatter)
 
+# ── NumberParser tests ───────────────────────────────────────────────────────
+# Zentrale Zahlen-Umwandlung fuer Eingabefelder (06.09.2026, siehe
+# ARCHITECTURE.md, "Zahlenfelder verlieren Werte ab 1.000 beim Zuruecklesen").
+# Header-only und zustandslos, deshalb keine .cpp aus app/ im Ziel.
+qt_add_executable(tst_numberparser tst_numberparser.cpp)
+
+target_include_directories(tst_numberparser
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_numberparser PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_numberparser
+    PRIVATE Qt6::Test
+)
+
+add_test(NAME tst_numberparser COMMAND tst_numberparser)
+
 # ── SplitPriceJumpDetector tests ─────────────────────────────────────────────────
 # Heuristik fuer den "Pruefen"-Knopf im Split-Dialog (13.08.2026, siehe
 # ARCHITECTURE.md, "Split-Verhaeltnis: Notation der Bankmitteilungen"):

@@ -139,7 +139,14 @@ private:
     static QString formatMoney(double value);
     static QString formatVolume(double value);
     static QString formatPercent(double value);
-    static double  parseDouble(const QString& text);
+    /**
+     * @brief Liest ein Zahlenfeld dieses Dialogs (delegiert an NumberParser).
+     * @param ok  Optional; false bei nicht leerem, unlesbarem Text.
+     *            Vorgabe nullptr, damit die bestehenden Aufrufstellen
+     *            unveraendert bleiben — ausgewertet wird das Flag erst mit
+     *            der Rueckmeldung unlesbarer Eingaben.
+     */
+    static double  parseDouble(const QString& text, bool* ok = nullptr);
 
     // ── Dividendendaten GroupBox ──────────────────────────────────────────
     QGroupBox*   m_dividenddatenGroup = nullptr;  ///< Titel wechselt je Edit-Modus

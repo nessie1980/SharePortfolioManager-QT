@@ -10,6 +10,40 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.21.3] - 2026-09-06
+
+### Fixed
+
+- **Betraege ab 1.000 fielen beim Speichern lautlos auf null.** Die Formulare
+  schreiben ihre Eingabefelder mit deutschem Tausendertrennzeichen ("1.003,00").
+  Gelesen wurden sie von einer Umwandlung, die lediglich das Komma durch einen
+  Punkt ersetzte und das Trennzeichen stehen liess -- aus "1.003,00" wurde
+  "1.003.00", also keine Zahl mehr, und das Feld lieferte 0,00 zurueck. Ohne
+  Meldung.
+
+  Praktische Folge: ein Kauf zu 1.003,50 EUR je Stueck, eine Dividende mit
+  einem Kurs am Zahltag ueber tausend Euro oder eine Provision von 1.234,56 EUR
+  wurden korrekt angezeigt, beim naechsten Speichern aber als 0,00
+  zurueckgeschrieben. Bei den Gebuehrenfeldern faellt das besonders unangenehm
+  aus, weil 0,00 EUR dort ein gueltiger Wert ist und nichts auf den Verlust
+  hindeutete.
+
+  Betroffen waren die Formulare Kauf, Verkauf, Dividende, Kosten und Aktie
+  anlegen. Aktiensplits nicht -- dessen Umwandlung war als einzige der sechs
+  richtig gebaut.
+
+### Changed
+
+- **Zahlen in Eingabefeldern werden streng deutsch gelesen.** Der Punkt ist
+  ausnahmslos Tausendertrennzeichen, das Komma Dezimaltrenner; "1.003" sind
+  eintausenddrei. Eine Eingabe, die als deutsche Zahl nicht aufgeht ("204.71",
+  "1.5"), wird nicht mehr geraten, sondern als unlesbar behandelt. Werte aus
+  Bankbelegen sind davon nicht betroffen, sie werden beim Einlesen weiterhin
+  in die deutsche Schreibweise uebersetzt.
+
+  Die Meldung an den Benutzer folgt in einer eigenen Aenderung; bis dahin
+  verhaelt sich eine unlesbare Eingabe wie bisher, sie ergibt 0,00.
+
 ## [1.21.2] - 2026-09-06
 
 ### Fixed

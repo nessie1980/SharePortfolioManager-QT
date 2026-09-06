@@ -4,6 +4,7 @@
 #include "PresenterBrokerageEdit.h"
 #include "ModelBrokerageEdit.h"
 #include "../../IconProvider.h"
+#include "../../utils/NumberParser.h"
 #include "../../config/AppSettings.h"
 #include "../../core/DocumentRootMigrator.h"
 #include "../UiConstants.h"
@@ -685,13 +686,15 @@ QString ViewBrokerageEdit::formatMoney(double value)
     return QLocale().toString(value, 'f', 2);
 }
 
-double ViewBrokerageEdit::parseDouble(const QString& text)
+double ViewBrokerageEdit::parseDouble(const QString& text, bool* ok)
 {
-    QString s = text.trimmed();
-    s.replace(QLatin1Char(','), QLatin1Char('.'));
-    bool ok = false;
-    const double v = s.toDouble(&ok);
-    return ok ? v : 0.0;
+    // Delegiert seit 06.09.2026 an NumberParser. Vorher stand hier eine
+    // eigene Umwandlung, die das Komma durch einen Punkt ersetzte und ein
+    // Tausendertrennzeichen stehen liess — aus "1.003,00" wurde "1.003.00",
+    // also keine Zahl mehr, und das Feld fiel lautlos auf 0,0. Siehe
+    // ARCHITECTURE.md, "Zahlenfelder verlieren Werte ab 1.000 beim
+    // Zuruecklesen".
+    return NumberParser::parse(text, ok);
 }
 
 QWidget* ViewBrokerageEdit::makeDocIconWidget(const QString& path)

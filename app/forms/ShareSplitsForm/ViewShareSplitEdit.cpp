@@ -4,6 +4,7 @@
 #include "PresenterShareSplitEdit.h"
 #include "ModelShareSplitEdit.h"
 #include "../../IconProvider.h"
+#include "../../utils/NumberParser.h"
 #include "../../config/AppSettings.h"
 #include "../../core/DocumentRootMigrator.h"
 #include "../../widgets/DocumentPreviewPanel.h"
@@ -665,19 +666,19 @@ void ViewShareSplitEdit::onShowReverseSplitHint()
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-double ViewShareSplitEdit::parseDouble(const QString& text)
+double ViewShareSplitEdit::parseDouble(const QString& text, bool* ok)
 {
-    const QString trimmed = text.trimmed();
-    if (trimmed.isEmpty())
-        return 0.0;
-
-    // Erst mit deutschem Locale (Komma), dann als Rückfall mit Punkt —
-    // dieselbe Konvention wie in ViewBrokerageEdit::parseDouble().
-    bool ok = false;
-    double value = QLocale().toDouble(trimmed, &ok);
-    if (!ok)
-        value = QString(trimmed).replace(QLatin1Char(','), QLatin1Char('.')).toDouble(&ok);
-    return ok ? value : 0.0;
+    // Delegiert seit 06.09.2026 an NumberParser. Diese Kopie war als einzige
+    // der sechs richtig — sie ging bereits ueber QLocale::toDouble() und
+    // verkraftete damit das Tausendertrennzeichen. Ihr Kommentar behauptete
+    // allerdings, sie folge derselben Konvention wie
+    // ViewBrokerageEdit::parseDouble(); das stimmte nicht, und genau diese
+    // falsche Zusicherung hat verdeckt, dass die anderen fuenf kaputt waren.
+    //
+    // Weggefallen ist der Rueckfall auf die C-Schreibweise: ein Punkt gilt
+    // jetzt ausnahmslos als Tausendertrennzeichen, "1.5" ist damit keine
+    // gueltige Eingabe mehr, sondern eine gemeldete. Siehe NumberParser.h.
+    return NumberParser::parse(text, ok);
 }
 
 QString ViewShareSplitEdit::formatRatioPart(double value)

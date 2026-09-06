@@ -123,7 +123,14 @@ private:
      */
     QString reverseSplitHintMessage() const;
 
-    static double  parseDouble(const QString& text);
+    /**
+     * @brief Liest ein Zahlenfeld dieses Dialogs (delegiert an NumberParser).
+     * @param ok  Optional; false bei nicht leerem, unlesbarem Text.
+     *            Vorgabe nullptr, damit die bestehenden Aufrufstellen
+     *            unveraendert bleiben — ausgewertet wird das Flag erst mit
+     *            der Rueckmeldung unlesbarer Eingaben.
+     */
+    static double  parseDouble(const QString& text, bool* ok = nullptr);
     static QString formatRatioPart(double value);
 
     // ── Split-Daten ───────────────────────────────────────────────────────

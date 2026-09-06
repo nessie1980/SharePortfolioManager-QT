@@ -2150,6 +2150,35 @@ private slots:
      * `parseDouble()` machte daraus 0,00. Aufgefallen beim Beheben der
      * Ordernummer; ein Beleg mit einem solchen Betrag lag nicht vor.
      */
+    /**
+     * @brief Was die View ins Feld schreibt, muss sie auch zurücklesen können.
+     *
+     * Regression 06.09.2026: loadBuy() befüllt die Felder über
+     * formatVolume()/formatPrice(), also MIT Tausendertrennzeichen. Die alte
+     * parseDouble() ließ das Zeichen stehen und lieferte 0,0 — ein Kauf zu
+     * 1.003,50 € je Stück wurde korrekt angezeigt und beim nächsten Speichern
+     * auf null zurückgeschrieben, ohne jede Meldung. Siehe ARCHITECTURE.md,
+     * "Zahlenfelder verlieren Werte ab 1.000 beim Zurücklesen".
+     */
+    void test_viewBuyEdit_loadBuy_fourDigitValuesSurviveReadBack()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        const BuyObject buy = makeBuy(QStringLiteral("buy-roundtrip"),
+                                      QStringLiteral("share-guid"),
+                                      2024, 2500.0, 1003.50);
+        const BrokerageObject brokerage =
+            makeBrokerage(QStringLiteral("buy-roundtrip"),
+                          QStringLiteral("share-guid"), 1200.25);
+
+        dlg.loadBuy(buy, brokerage);
+
+        QCOMPARE(dlg.volume(), 2500.0);
+        QCOMPARE(dlg.price(), 1003.50);
+        QCOMPARE(dlg.provision(), 1200.25);
+    }
+
     void test_viewBuyEdit_setFieldOk_numericField_handlesThousandsSeparator()
     {
         openMemoryDb();

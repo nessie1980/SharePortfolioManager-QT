@@ -64,17 +64,17 @@ public:
      * ist das Trennzeichen eine Lesehilfe; in einem Eingabefeld ist es ein
      * Zeichen, das die Gegenrichtung wieder entfernen muesste.
      *
-     * Anlass (06.09.2026): die parseDouble()-Implementierungen der Views
-     * ersetzen das Komma durch einen Punkt und rufen toDouble(). Ein
-     * stehengebliebenes Trennzeichen macht daraus "1.003.0000", also keine
-     * Zahl mehr -- toDouble() scheitert und liefert 0,0. Ein per
-     * formatPrice() geschriebener vierstelliger Kurs waere beim naechsten
-     * Lesen verschwunden.
+     * Ursprünglicher Anlass (06.09.2026) war ein Zwang: die damaligen
+     * parseDouble()-Implementierungen scheiterten an einem
+     * Tausendertrennzeichen, ein per formatPrice() geschriebener
+     * vierstelliger Kurs waere beim naechsten Lesen verschwunden.
      *
-     * @note Das ist eine Umgehung, keine Loesung. Das eigentliche Problem
-     * sitzt in parseDouble() und betrifft jedes Zahlenfeld, das ueber
-     * formatMoney()/formatVolume() befuellt wird -- siehe ARCHITECTURE.md,
-     * "Zahlenfelder verlieren Werte ab 1.000 beim Zuruecklesen".
+     * @note Dieser Zwang ist mit NumberParser entfallen -- die Views lesen
+     * ein Trennzeichen seit 1.21.3 korrekt. Die Funktion bleibt trotzdem,
+     * jetzt aus einem Darstellungsgrund: in einem Feld, in das der Benutzer
+     * hineintippt, ist ein Gruppierungszeichen ein Fremdkoerper. Es steht
+     * dort nicht, wenn er selbst tippt, und laedt dazu ein, den Wert anders
+     * zu schreiben als die Anwendung ihn hinterlassen hat.
      */
     static QString formatPriceForInput(double value)
     {

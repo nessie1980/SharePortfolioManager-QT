@@ -5384,39 +5384,42 @@ beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
 
-### Zahlenfelder verlieren Werte ab 1.000 beim Zuruecklesen (06.09.2026)
+### Unlesbare Zahleneingaben werden nicht gemeldet (06.09.2026)
 
-Die Views schreiben ihre Zahlenfelder ueber `formatMoney()`/`formatVolume()`,
-also mit deutschem Gruppierungszeichen: aus 1003,0 wird "1.003,00". Gelesen
-wird ueber `parseDouble()`, und das ersetzt lediglich das Komma durch einen
-Punkt und ruft `toDouble()`. Das Gruppierungszeichen bleibt stehen, aus
-"1.003,00" wird "1.003.00", `toDouble()` scheitert, die Funktion liefert
-0,0 -- stillschweigend, ohne Feldfehler.
+Seit 1.21.3 liest `NumberParser` streng deutsch und meldet ueber ein
+Erfolgs-Flag, wenn ein nicht leerer Text keine gueltige Zahl ist. Ausgewertet
+wird das Flag noch nirgends -- alle Aufrufstellen uebergeben `nullptr`, eine
+unlesbare Eingabe ergibt weiterhin 0,0.
 
-Praktische Folge: eine gespeicherte Dividende mit einem Kurs am Zahltag von
-1.003,00 EUR wird beim Laden korrekt angezeigt und beim naechsten Speichern
-als 0,0 zurueckgeschrieben. Der Nutzer sieht den richtigen Wert im Feld,
-aendert an anderer Stelle etwas, speichert -- und der Kurs ist weg.
+Nessies Vorgabe (06.09.2026) dazu:
 
-Nachgewiesen ist es fuer `ViewDividendEdit`. `ViewSaleEdit`, `ViewBuyEdit`,
-`ViewBrokerageEdit`, `ViewShareEdit`, `ViewShareAdd` und
-`ViewShareSplitEdit` haben dieselbe Bauart aus separator-erzeugendem
-Schreiben und separator-blindem Lesen; dass sie betroffen sind, ist eine
-begruendete Vermutung, keine Messung. Vierstellige Kurse sind nicht exotisch
--- Alphabet lag vor dem Split ueber 1.000 EUR.
+- Meldung sofort beim Verlassen des Feldes, nicht erst beim Speichern.
+- Es muss erkennbar sein, WAS falsch ist, nicht nur DASS etwas falsch ist.
+- Gespeichert werden darf nicht.
+- Zustaendig ist der Presenter, nicht die View.
 
-Aufgefallen als Nebenwirkung des Kurs-Rollouts (1.21.2): der dortige Fix
-haette den Fehler in genau diesen einen Pfad erst eingebaut, weil er
-vorher C-formatiert und damit separatorfrei schrieb. Umgangen ist er dort
-mit `ValueFormatter::formatPriceForInput()`, das ohne Gruppierungszeichen
-formatiert -- eine Umgehung an einer Stelle, keine Loesung.
+Geplanter Zuschnitt: jedes Interface bekommt neben
+`hasMissingRequiredFields(QStringList&)` ein `hasUnreadableFields(QStringList&)`.
+Die View meldet, welche Felder sie nicht lesen konnte -- sie besitzt den Text,
+das ist ihre Zustaendigkeit. Der Presenter entscheidet ueber die Folge:
+Meldung mit Feldnamen, Speichern abbrechen. Fuer die sofortige Rueckmeldung
+wird `onFeeEdited(key, double)` auf den Rohtext umgestellt, sodass der
+Presenter selbst umwandelt; bei Menge, Kurs und Dividendensatz fehlt die
+`editingFinished`-Verbindung heute ganz und kaeme dazu.
 
-Die Loesung gehoert nach `parseDouble()`: das Gruppierungszeichen der
-aktuellen Locale entfernen, bevor umgewandelt wird. Die Funktion liegt
-allerdings als private statische Methode in jeder View einzeln vor; ein
-Fix bedeutet dieselbe Aenderung an sechs bis sieben Stellen oder das
-Zusammenziehen in eine gemeinsame Funktion. Bestandsaufnahme ueber alle
-Formulare noetig, mit Tests je Dialog.
+`ViewBrokerageEdit` und `ViewShareSplitEdit` bekommen bewusst KEINE
+Statussymbole je Zeile (Nessies Entscheidung 06.09.2026): dort reicht eine
+Meldung mit Feldnamen beim Speicherversuch. `ViewBrokerageEdit` hat zwar ein
+`FieldState`-Enum samt `m_fieldStates`, beides wird aber nirgends gelesen --
+die Anzeige dafuer existiert nicht und muesste erst gebaut werden.
+
+@note Wie realistisch ist der Fall noch? Jedes Zahlenfeld traegt einen
+`QDoubleValidator`, der Buchstaben schon bei der Eingabe abweist. Die
+haeufigste echte Quelle unlesbarer Feldinhalte war das
+Tausendertrennzeichen -- und die ist mit 1.21.3 weg. Was bleibt, ist ein
+Netz fuer den Fall, dass die Anwendung selbst etwas schreibt, das sie nicht
+zurueckliest. Genau dieser Fall ist zweimal eingetreten (22.08.2026 und
+06.09.2026), das Netz ist also nicht theoretisch.
 
 ### formatMoney/formatVolume liegen weiterhin je View doppelt vor (05.09.2026)
 
@@ -5612,6 +5615,77 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Zahlenfelder verlieren Werte ab 1.000 beim Zuruecklesen (06.09.2026, behoben 06.09.2026)
+
+Die Formulare schreiben ihre Eingabefelder ueber
+`formatMoney()`/`formatVolume()`/`formatPrice()`, also mit deutschem
+Gruppierungszeichen: aus 1003,0 wird "1.003,00". Gelesen wurde ueber
+`parseDouble()`, und das ersetzte lediglich das Komma durch einen Punkt und
+rief `toDouble()`. Das Gruppierungszeichen blieb stehen, aus "1.003,00" wurde
+"1.003.00", `toDouble()` scheiterte, die Funktion lieferte 0,0 -- ohne
+Feldfehler, ohne Meldung.
+
+Ein Kauf zu 1.003,50 EUR je Stueck wurde damit korrekt angezeigt und beim
+naechsten Speichern auf null zurueckgeschrieben. Bei den Gebuehrenfeldern ist
+das besonders unangenehm, weil 0,00 EUR dort ein voellig gueltiger Wert ist:
+nichts deutete auf den Verlust hin.
+
+#### Ein Wiedergaenger
+
+Derselbe Fehler war am 22.08.2026 schon einmal behoben worden -- damals auf
+dem Beleg-Pfad, wo aus "1.234,56" die Zeichenkette "1,234,56" wurde.
+`DocumentFieldValue::forNumericField()` entstand genau dafuer. Dass dieselbe
+Schwaeche auf dem Lade-Pfad steckte, wo die Anwendung ihre eigenen Werte
+schreibt und zurueckliest, fiel damals nicht auf. Der Fix an der einen Stelle
+hat den Blick auf die andere eher verstellt: das Problem galt als erledigt.
+
+#### Sieben Kopien, sechs davon falsch
+
+`parseDouble()` lag als private statische Methode in fuenf Views vor, dazu in
+`ViewShareAdd` eine dateilokale `saParseDouble()` und -- in derselben Datei --
+noch einmal dieselbe Logik als Lambda in `recalcDerivedValues()`. Sieben
+Fundstellen, sechs davon zeichengleich falsch.
+
+Die siebte, `ViewShareSplitEdit::parseDouble()`, war als einzige richtig: sie
+ging ueber `QLocale::toDouble()`, das die Gruppierung selbst versteht. Ihr
+Kommentar behauptete allerdings, sie folge derselben Konvention wie
+`ViewBrokerageEdit::parseDouble()`. Das stimmte nicht, und diese falsche
+Zusicherung hat mit verdeckt, dass die anderen kaputt waren -- wer sie las,
+hatte keinen Anlass nachzusehen. Ein Kommentar, der eine Gleichheit behauptet,
+die es nicht gibt, ist schlimmer als gar keiner.
+
+#### Die Regel
+
+`app/utils/NumberParser.h` (header-only, wie `ValueFormatter` und
+`ShareUpdateRules`) verallgemeinert den funktionierenden Weg. Streng deutsch,
+Nessies Entscheidung: der Punkt ist ausnahmslos Tausendertrennzeichen, das
+Komma Dezimaltrenner, "1.003" sind eintausenddrei. `QLocale::toDouble()`
+prueft die Gruppierung mit, "204.71" und "1.5" sind damit keine gueltigen
+Eingaben mehr, sondern gemeldete Fehlschlaege.
+
+Die C-Schreibweise muss der Parser nicht koennen: was aus einem Beleg kommt,
+uebersetzt `forNumericField()` vorher. Die Arbeitsteilung ist der Kern der
+Loesung -- eine Zeichenkette hat genau eine Bedeutung, abhaengig davon, wo sie
+herkommt, nicht davon, wie sie aussieht. Beide Regeln gleichzeitig auf
+dieselbe Zeichenkette anzuwenden gaebe zwei Antworten auf "1.003".
+
+Ein leeres Feld gilt als Erfolg mit dem Wert 0,0. Bei den optionalen Feldern
+bedeutet "nichts eingetragen" null und darf keine Meldung ausloesen; fehlende
+Pflichtfelder faengt weiterhin `hasMissingRequiredFields()` ab.
+
+@note `parseDouble()` hat einen optionalen `bool* ok`-Parameter bekommen, der
+noch von keiner Aufrufstelle ausgewertet wird. Er ist die Vorbereitung fuer
+die Rueckmeldung unlesbarer Eingaben, siehe "Offene Punkte". Bewusst getrennt:
+der Datenverlust ist ein Bugfix von wenigen Zeilen, die Meldearchitektur ein
+Umbau ueber sechs Views, sechs Presenter und sechs Interfaces -- das eine
+sollte nicht auf das andere warten.
+
+@note `ValueFormatter::formatPriceForInput()` aus 1.21.2 war eine Umgehung
+genau dieses Fehlers und ist seitdem technisch entbehrlich. Sie bleibt aus
+einem Darstellungsgrund: in einem Feld, in das der Benutzer hineintippt, ist
+ein Gruppierungszeichen ein Fremdkoerper. Die Begruendung im Dateikopf wurde
+entsprechend umgeschrieben.
 
 ### Kurs beim automatischen Uebernehmen aus den Tageswerten (05.09.2026, behoben 06.09.2026)
 

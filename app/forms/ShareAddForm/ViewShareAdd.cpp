@@ -4,6 +4,7 @@
 #include "PresenterShareAdd.h"
 #include "ModelShareAdd.h"
 #include "../../IconProvider.h"
+#include "../../utils/NumberParser.h"
 #include "../../config/AppSettings.h"
 #include "../../core/DocumentRootMigrator.h"
 #include "../../utils/DocumentFieldValue.h"
@@ -500,10 +501,11 @@ void ViewShareAdd::onDailyParsingTypeChanged(int index)
 
 void ViewShareAdd::recalcDerivedValues()
 {
-    auto parse = [](const QString& t) -> double {
-        QString s = t.trimmed(); s.replace(QLatin1Char(','), QLatin1Char('.'));
-        bool ok = false; double v = s.toDouble(&ok); return ok ? v : 0.0;
-    };
+    // 06.09.2026: hier stand eine eigene Umwandlung, wortgleich zu
+    // saParseDouble() weiter unten. Zwei Kopien in einer Datei bedeuteten
+    // zwangslaeufig, dass die abgeleiteten Felder und die Lese-Zugriffe
+    // denselben Fehler unabhaengig voneinander hatten.
+    const auto parse = [](const QString& t) { return NumberParser::parse(t); };
     const double kw  = parse(m_volume->text()) * parse(m_price->text());
     const double ges = parse(m_provision->text()) + parse(m_brokerFee->text())
                        + parse(m_traderFee->text());
@@ -531,13 +533,18 @@ QString  ViewShareAdd::documentPath()     const { return m_documentPath->text();
 QString  ViewShareAdd::dividendInterval() const { return m_divInterval->currentText(); }
 QString  ViewShareAdd::countryInfo()      const { return m_countryInfo->currentText(); }
 
-static double saParseDouble(const QString& text)
+/**
+ * @brief Liest ein Zahlenfeld dieses Dialogs.
+ *
+ * Delegiert seit 06.09.2026 an NumberParser. Vorher stand hier die sechste
+ * zeichengleiche Kopie derselben Umwandlung -- und im Dialog sogar noch eine
+ * siebte als Lambda in recalcDerivedValues(), die denselben Fehler ein
+ * zweites Mal enthielt. Siehe ARCHITECTURE.md, "Zahlenfelder verlieren Werte
+ * ab 1.000 beim Zuruecklesen".
+ */
+static double saParseDouble(const QString& text, bool* ok = nullptr)
 {
-    QString s = text.trimmed();
-    s.replace(QLatin1Char(','), QLatin1Char('.'));
-    bool ok = false;
-    const double v = s.toDouble(&ok);
-    return ok ? v : 0.0;
+    return NumberParser::parse(text, ok);
 }
 
 double   ViewShareAdd::volume()           const { return saParseDouble(m_volume->text());    }

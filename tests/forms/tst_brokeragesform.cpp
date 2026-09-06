@@ -756,6 +756,33 @@ private slots:
         QVERIFY(missing.contains(QStringLiteral("date")));
     }
 
+    /**
+     * @brief Was loadBrokerage() ins Feld schreibt, muss zurückgelesen werden.
+     *
+     * Regression 06.09.2026: die Gebührenfelder werden über formatMoney()
+     * befüllt, also MIT Tausendertrennzeichen, und die alte parseDouble()
+     * lieferte dafür 0,0. Bei den Kosten fällt das besonders unangenehm auf,
+     * weil 0,00 € dort ein völlig gültiger Wert ist — es gab keinerlei
+     * Anzeichen, dass etwas verloren ging. Siehe ARCHITECTURE.md,
+     * "Zahlenfelder verlieren Werte ab 1.000 beim Zurücklesen".
+     */
+    void test_viewBrokerageEdit_loadBrokerage_fourDigitValuesSurviveReadBack()
+    {
+        openMemoryDb();
+        ViewBrokerageEdit dlg(QStringLiteral("share-guid"));
+
+        // Gleiche Konstruktorform wie beim Sentinel-Test weiter oben, nur mit
+        // einer Provision jenseits der Tausendermarke.
+        BrokerageObject br(QStringLiteral("brok-roundtrip"),
+                           QStringLiteral("share-guid"),
+                           QString(), QString(),
+                           QStringLiteral("2024-06-15T10:00:00"),
+                           1234.56);
+        dlg.loadBrokerage(br);
+
+        QCOMPARE(dlg.provision(), 1234.56);
+    }
+
     void test_viewBrokerageEdit_hasMissingRequiredFields_falseAfterDateSet()
     {
         openMemoryDb();

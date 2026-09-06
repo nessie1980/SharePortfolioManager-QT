@@ -1961,6 +1961,30 @@ private slots:
     // ViewSaleEdit — widget construction & field behaviour
     // ─────────────────────────────────────────────────────────────────────
 
+    /**
+     * @brief Was loadSale() ins Feld schreibt, muss salePrice() zurücklesen.
+     *
+     * Regression 06.09.2026: die Felder werden über formatVolume()/
+     * formatPrice() befüllt, also MIT Tausendertrennzeichen. Die alte
+     * parseDouble() ließ es stehen und lieferte 0,0 — ein Verkauf zu
+     * 1.250,75 € je Stück wurde korrekt angezeigt und beim nächsten Speichern
+     * auf null zurückgeschrieben. Siehe ARCHITECTURE.md, "Zahlenfelder
+     * verlieren Werte ab 1.000 beim Zurücklesen".
+     */
+    void test_viewSaleEdit_loadSale_fourDigitValuesSurviveReadBack()
+    {
+        openMemoryDb();
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        const SaleObject sale = makeSale(QStringLiteral("sale-roundtrip"),
+                                         QStringLiteral("share-guid"),
+                                         2024, 3200.0, 1250.75);
+        dlg.loadSale(sale);
+
+        QCOMPARE(dlg.volume(), 3200.0);
+        QCOMPARE(dlg.salePrice(), 1250.75);
+    }
+
     void test_viewSaleEdit_canBeConstructed()
     {
         openMemoryDb();

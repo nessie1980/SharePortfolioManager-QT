@@ -3,6 +3,7 @@
 #include "ViewDividendEdit.h"
 #include "../../utils/ShareSplitHint.h"
 #include "../../utils/ValueFormatter.h"
+#include "../../utils/NumberParser.h"
 #include "../../utils/DocumentFieldValue.h"
 #include "PresenterDividendEdit.h"
 #include "ModelDividendEdit.h"
@@ -1497,13 +1498,15 @@ QString ViewDividendEdit::formatPercent(double value)
     return QLocale().toString(value, 'f', 2);
 }
 
-double ViewDividendEdit::parseDouble(const QString& text)
+double ViewDividendEdit::parseDouble(const QString& text, bool* ok)
 {
-    QString s = text.trimmed();
-    s.replace(QLatin1Char(','), QLatin1Char('.'));
-    bool ok = false;
-    const double v = s.toDouble(&ok);
-    return ok ? v : 0.0;
+    // Delegiert seit 06.09.2026 an NumberParser. Vorher stand hier eine
+    // eigene Umwandlung, die das Komma durch einen Punkt ersetzte und ein
+    // Tausendertrennzeichen stehen liess — aus "1.003,00" wurde "1.003.00",
+    // also keine Zahl mehr, und das Feld fiel lautlos auf 0,0. Siehe
+    // ARCHITECTURE.md, "Zahlenfelder verlieren Werte ab 1.000 beim
+    // Zuruecklesen".
+    return NumberParser::parse(text, ok);
 }
 
 // ── markMissingFieldsAsFailed ─────────────────────────────────────────────────

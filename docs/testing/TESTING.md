@@ -47,6 +47,7 @@ ctest --output-on-failure
 ./bin/tst_documentfieldvalue
 ./bin/tst_sharesplithint
 ./bin/tst_valueformatter
+./bin/tst_numberparser
 ./bin/tst_splitpricejumpdetector
 ./bin/tst_splitaudit
 ./bin/tst_splitratiochecker
@@ -3156,6 +3157,52 @@ Fall aus der Architektur-Doku: ein Kauf von 5 Stück zu 1.003,00 € am
 | `test_adjustedHistoryPrice_unadjustedHistory_isScaledDown` | Alphabet-Fall, Tageswert | 1.003,00 € → 50,15 € |
 | `test_adjustedHistoryPrice_alreadyAdjustedHistory_isUnchanged` | Bereits bereinigte Historie | Kurs unverändert |
 | `test_dateAfterSplit_pricesAndVolumesUnchanged` | Stichtag nach dem Split | Stückzahl und beide Preis-Umrechnungen unverändert |
+
+---
+
+### NumberParser (tests/utils/tst_numberparser.cpp)
+
+Executable: `tst_numberparser`
+Klasse unter Test: `NumberParser`
+
+Zentrale Umwandlung von Feldtext in Zahlen (06.09.2026, siehe
+ARCHITECTURE.md, "Zahlenfelder verlieren Werte ab 1.000 beim Zuruecklesen").
+Ersetzt sieben Kopien in sechs Formularen, von denen sechs ein
+Tausendertrennzeichen nicht verkrafteten.
+
+@note Kein `QCoreApplication`, keine `.cpp` aus `app/` im Testziel --
+header-only und zustandslos, gleiche Bauweise wie `tst_valueformatter`.
+`QLocale::setDefault(QLocale::German)`, weil ueber `QLocale()` gelesen wird.
+
+| Test | Prueft |
+| ---- | ----- |
+| `test_parse_thousandsSeparatorIsRead` | "1.003,00" ergibt 1003,0 -- der eigentliche Bugfix |
+| `test_parse_millionsWithTwoSeparators` | "1.234.567,89" mit zwei Trennzeichen |
+| `test_parse_germanDecimal` | "48,5950" |
+| `test_parse_plainInteger` | "50" ohne Nachkommastellen |
+| `test_parse_withoutGroupingIsAlsoValid` | Gruppierung ist erlaubt, aber nicht verlangt |
+| `test_parse_trimsSurroundingWhitespace` | Leerraum um den Wert |
+| `test_parse_negativeValue` | negatives Vorzeichen |
+| `test_parse_emptyIsZeroAndOk` | leeres Feld ist 0,0 MIT Erfolg -- sonst waere jede nicht ausgefuellte Gebuehr ein Fehler |
+| `test_parse_whitespaceOnlyIsZeroAndOk` | dasselbe fuer reinen Leerraum |
+| `test_parse_cStyleDecimalIsRejected` | "204.71" ist keine gueltige deutsche Zahl |
+| `test_parse_malformedGroupingIsRejected` | "1.5" wird gemeldet statt zu 15 zu werden |
+| `test_parse_lettersAreRejected` | "abc" |
+| `test_parse_trailingUnitIsRejected` | "48,59 €" -- aus einer Tabelle kopiert |
+| `test_parse_okPointerIsOptional` | Aufruf ohne Flag stuerzt nicht ab |
+| `test_parse_roundTripWithFormatPriceForInput` | was geschrieben wird, muss gelesen werden koennen |
+
+Dazu drei Regressionstests auf Formularebene, die den vollstaendigen Kreis
+pruefen -- laden, anzeigen, zuruecklesen. Sie liegen bewusst bei den
+Formularen und nicht hier, weil nur dort das Zusammenspiel aus
+`formatMoney()`/`formatVolume()` beim Schreiben und `parseDouble()` beim
+Lesen entsteht; der Parser allein haette den Fehler nie gezeigt.
+
+| Test | Datei |
+| ---- | ----- |
+| `test_viewBuyEdit_loadBuy_fourDigitValuesSurviveReadBack` | `tst_buysform.cpp` |
+| `test_viewSaleEdit_loadSale_fourDigitValuesSurviveReadBack` | `tst_salesform.cpp` |
+| `test_viewBrokerageEdit_loadBrokerage_fourDigitValuesSurviveReadBack` | `tst_brokeragesform.cpp` |
 
 ---
 
