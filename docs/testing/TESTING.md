@@ -46,6 +46,7 @@ ctest --output-on-failure
 ./bin/tst_dividendvolumechecker
 ./bin/tst_documentfieldvalue
 ./bin/tst_sharesplithint
+./bin/tst_valueformatter
 ./bin/tst_splitpricejumpdetector
 ./bin/tst_splitaudit
 ./bin/tst_splitratiochecker
@@ -2397,6 +2398,22 @@ ViewSaleEdit — Details-Button:
 | `test_viewSaleEdit_detailsButton_enabledForNonLatestSale` | Älterer Verkauf (Read-only) → Details-Button aktiv | `btn->isEnabled()` = true |
 | `test_viewSaleEdit_loadSale_clearedByReset` | `loadSale()` befüllt Felder; `clearForm()` setzt zurück | volume/salePrice = 0, orderNumber leer |
 
+PresenterSaleEdit — Herkunft der FIFO-Zuteilung (neu 05.09.2026):
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_presenterSaleEdit_buyDetails_newSale_originIsPreview` | Neuer Verkauf, nichts geladen | `origin` = `PreviewNewSale` |
+| `test_presenterSaleEdit_buyDetails_latestSale_originIsRecalculated` | Jüngster Verkauf geladen, Zuteilung wird live neu gerechnet | `origin` = `RecalculatedLatestSale` |
+| `test_presenterSaleEdit_buyDetails_olderSale_originIsStored` | Älterer, read-only Verkauf | `origin` = `StoredAllocation` |
+
+@note Diese drei Tests prüfen den Zustand, der über
+`IViewSaleEdit::showBuyDetails()` an die View geht — `StubViewSaleEdit`
+schneidet die `SaleBuyDetailSummary` ohnehin schon mit
+(`lastBuyDetails`). Die Zuordnung von Zustand zu Beschriftungstext liegt in
+`ViewSaleEdit::showBuyDetails()` hinter `QDialog::exec()` und bleibt
+manuell zu prüfen (siehe unten). Vor dem Bugfix vom 05.09.2026 stand hier
+ein einzelnes `bool editMode`, das die beiden unteren Fälle nicht
+unterscheiden konnte.
+
 Nicht unit-testbar (bewusste Entscheidung):
 `onShowDetails()` öffnet `QDialog::exec()` und blockiert die Ereignisschleife —
 der Dialog selbst ist daher nicht direkt unit-testbar. Dies betrifft:
@@ -2406,6 +2423,10 @@ der Dialog selbst ist daher nicht direkt unit-testbar. Dies betrifft:
 - Den Doppelklick-Dokument-Vorschau-Dialog
 - Die 5-gliedrige G/V-Zusammenfassung
   (Ges. Anteile . Ges. Verkauf - Ges. Kauf inkl. Kosten - Verkaufsgebuehren/Steuern = G/V)
+- Die Beschriftung der Kopfzeile und des kursiven Fuss-Hinweises je
+  `FifoAllocationOrigin` (05.09.2026). Der zugrunde liegende Zustand ist
+  ueber die drei Presenter-Tests oben abgedeckt, die daran haengenden Texte
+  und Farben nicht.
 
 Die Dok-Icon-Logik (`setCellWidget` + Icon-Auswahl nach Dateiendung) ist identisch
 zum bereits abgedeckten `populateOverview`-Muster
@@ -3133,6 +3154,36 @@ Fall aus der Architektur-Doku: ein Kauf von 5 Stück zu 1.003,00 € am
 | `test_adjustedHistoryPrice_unadjustedHistory_isScaledDown` | Alphabet-Fall, Tageswert | 1.003,00 € → 50,15 € |
 | `test_adjustedHistoryPrice_alreadyAdjustedHistory_isUnchanged` | Bereits bereinigte Historie | Kurs unverändert |
 | `test_dateAfterSplit_pricesAndVolumesUnchanged` | Stichtag nach dem Split | Stückzahl und beide Preis-Umrechnungen unverändert |
+
+---
+
+### ValueFormatter (tests/utils/tst_valueformatter.cpp)
+
+Executable: `tst_valueformatter`
+Klasse unter Test: `ValueFormatter`
+
+Zentrale Kurs-Formatierung (05.09.2026, siehe ARCHITECTURE.md, "Kurs-Anzeige
+durchgaengig mit vier Nachkommastellen"). Die Tests halten die eine
+Eigenschaft fest, um die es geht: ein Kurs bekommt vier Nachkommastellen,
+nicht zwei.
+
+@note Kein `QCoreApplication` in `main()` und keine einzige `.cpp` aus `app/`
+im Testziel — der Helfer ist header-only und zustandslos, gleiche Bauweise
+wie `tst_sharesplitadjuster`/`tst_sharesplithint`.
+`QLocale::setDefault(QLocale::German)` wird gesetzt, weil ueber `QLocale()`
+formatiert wird und die CI-Runner nicht deutsch laufen.
+
+| Test | Prueft |
+| ---- | ----- |
+| `test_formatPrice_hasFourDecimals` | 48,595 wird zu "48,5950" |
+| `test_formatPrice_padsShortValues` | 50,0 wird zu "50,0000" — die Spalte springt nicht je Zeile |
+| `test_formatPrice_doesNotRoundAwayTheFourthDecimal` | Regression fuer den Feldfall: die vierte Stelle bleibt stehen |
+| `test_formatPrice_usesGroupSeparatorForLargeValues` | 1003,0 wird zu "1.003,0000" (vierstellige Kurse gibt es) |
+| `test_formatPrice_negativeKeepsSign` | Kursdifferenzen koennen negativ sein |
+| `test_formatPrice_zeroIsNotEmpty` | 0,0 wird zu "0,0000" |
+| `test_formatPrice_hasNoUnitSuffix` | kein Euro-Zeichen — die Einheit haengt die Aufrufstelle an |
+| `test_formatExchangeRate_hasFourDecimals` | Devisenkurs 1,0834 |
+| `test_formatExchangeRate_neutralRatioIsPadded` | Vorgabe 1,0 wird zu "1,0000" |
 
 ---
 

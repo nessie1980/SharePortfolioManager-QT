@@ -793,17 +793,25 @@ SaleBuyDetailSummary PresenterSaleEdit::buildBuyDetailSummary() const
 {
     SaleBuyDetailSummary summary;
 
-    // Ein bereits gespeicherter Verkauf ist geladen? Steuert nur die
-    // Kopfzeile des Dialogs (vormals m_loadedSale.isValid() in der View).
-    const bool isEditMode = !m_currentSaleGuid.isEmpty();
-    summary.editMode = isEditMode;
-
     // Der jüngste Verkauf bleibt bis zum Speichern voll editierbar — die
     // Details-Vorschau muss deshalb live neu rechnen, sonst weicht sie vom
     // tatsächlichen Ergebnis von onSave() ab (Aktiensplit-Behandlung,
     // Phase 2c, 07.08.2026). Nur ältere, nicht editierbare Verkäufe zeigen
     // die gespeicherte Zuteilung.
-    const bool useLiveFifo = !isEditMode || m_isLastSale;
+    //
+    // Die Herkunft geht seit 05.09.2026 als FifoAllocationOrigin an die View,
+    // damit die Kopfzeile den mittleren Fall benennen kann. Vorher stand hier
+    // ein bool editMode, das PreviewNewSale von RecalculatedLatestSale trennte
+    // statt StoredAllocation von den beiden Live-Fällen — die Beschriftung
+    // behauptete beim jüngsten Verkauf, gespeicherte Werte zu zeigen.
+    const bool isEditMode = !m_currentSaleGuid.isEmpty();
+
+    summary.origin = !isEditMode
+        ? FifoAllocationOrigin::PreviewNewSale
+        : (m_isLastSale ? FifoAllocationOrigin::RecalculatedLatestSale
+                        : FifoAllocationOrigin::StoredAllocation);
+
+    const bool useLiveFifo = (summary.origin != FifoAllocationOrigin::StoredAllocation);
 
     // Anzeige durchgängig auf heutiger (split-bereinigter) Skala — diese
     // Ansicht ist eine berechnete Übersicht über ggf. mehrere Lots, keine

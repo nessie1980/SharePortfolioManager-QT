@@ -826,7 +826,11 @@ private slots:
 
         const QLocale locale;
         const QString volumeStr = locale.toString(40.0, 'f', 4);           // "40,0000"
-        const QString diffStr   = locale.toString(12.30, 'f', 2) + QStringLiteral(" €");  // "12,30 €"
+        // Die Vortagsdifferenz je Stueck liegt auf der Kurs-Skala und wird
+        // seit 05.09.2026 vierstellig angezeigt (ValueFormatter::formatPrice),
+        // damit die im Tooltip gezeigte Multiplikation aufgeht. Das Ergebnis
+        // daneben ist ein Geldbetrag und bleibt zweistellig.
+        const QString diffStr   = locale.toString(12.30, 'f', 4) + QStringLiteral(" €");  // "12,3000 €"
         const QString totalStr  = locale.toString(492.0, 'f', 2) + QStringLiteral(" €");  // "492,00 €"
         const QString greenHex  = AppSettings::instance().logColorAt(5).name();
 
@@ -879,7 +883,7 @@ private slots:
         const QString tip = finalTbl->item(finalRow, static_cast<int>(FC::PrevDay))->toolTip();
 
         const QLocale locale;
-        const QString diffStr  = locale.toString(10.0, 'f', 2) + QStringLiteral(" €"); // "10,00 €"
+        const QString diffStr  = locale.toString(10.0, 'f', 4) + QStringLiteral(" €"); // "10,0000 €"
         const QString zeroStr  = locale.toString(0.0, 'f', 2) + QStringLiteral(" €");  // "0,00 €"
         const QString volumeStr = locale.toString(0.0, 'f', 4);                        // "0,0000"
         const QString greenHex = AppSettings::instance().logColorAt(5).name();
@@ -927,11 +931,15 @@ private slots:
 
         const QLocale locale;
         const QString volumeStr = locale.toString(20.0, 'f', 4);                      // "20,0000"
+        // Faktor (Kurs-Skala) und Ergebnis (Geldbetrag) haben seit 05.09.2026
+        // unterschiedliche Genauigkeit — vorher stand hier zweimal derselbe
+        // Platzhalter.
+        const QString zeroPriceStr = locale.toString(0.0, 'f', 4) + QStringLiteral(" €"); // "0,0000 €"
         const QString zeroStr   = locale.toString(0.0, 'f', 2) + QStringLiteral(" €"); // "0,00 €"
         const QString expectedTooltip =
             QStringLiteral("<div style=\"white-space:nowrap;\">Gesamtänderung Aktie:<br>"
-                           "%1 Stk. × %2 = %2</div>")
-                .arg(volumeStr, zeroStr);
+                           "%1 Stk. × %2 = %3</div>")
+                .arg(volumeStr, zeroPriceStr, zeroStr);
 
         QCOMPARE(tip, expectedTooltip);
         QVERIFY2(!tip.contains(QStringLiteral("color:")), qPrintable(tip));
@@ -983,12 +991,13 @@ private slots:
         using FC = MainWindow::FinalValueColumn;
         const QLocale locale;
         const QString volumeStr = locale.toString(10.0, 'f', 4); // "10,0000"
+        const QString zeroPriceStr = locale.toString(0.0, 'f', 4) + QStringLiteral(" €");
         const QString zeroStr   = locale.toString(0.0, 'f', 2) + QStringLiteral(" €");
 
         const QString expectedBefore =
             QStringLiteral("<div style=\"white-space:nowrap;\">Gesamtänderung Aktie:<br>"
-                           "%1 Stk. × %2 = %2</div>")
-                .arg(volumeStr, zeroStr);
+                           "%1 Stk. × %2 = %3</div>")
+                .arg(volumeStr, zeroPriceStr, zeroStr);
 
         const QString before = finalTbl->item(finalRow, static_cast<int>(FC::PrevDay))->toolTip();
         QCOMPARE(before, expectedBefore);
@@ -1003,7 +1012,7 @@ private slots:
         QVERIFY2(QTest::qWaitFor([&]{ return actionRefresh->isEnabled(); }, 2000),
                  "Einzel-Refresh hat nicht beendet (finaliseRefresh() nicht erreicht).");
 
-        const QString diffStr  = locale.toString(30.0, 'f', 2) + QStringLiteral(" €");  // "30,00 €"
+        const QString diffStr  = locale.toString(30.0, 'f', 4) + QStringLiteral(" €");  // "30,0000 €"
         const QString totalStr = locale.toString(300.0, 'f', 2) + QStringLiteral(" €"); // "300,00 €"
         const QString greenHex = AppSettings::instance().logColorAt(5).name();
         const QString coloredDiff  =

@@ -8,6 +8,7 @@
 #include "../../core/DocumentRootMigrator.h"
 #include "../../utils/ShareSplitAdjuster.h"
 #include "../../utils/ShareSplitHint.h"
+#include "../../utils/ValueFormatter.h"
 #include "../../utils/DocumentFieldValue.h"
 #include "../../config/DocumentsConfig.h"
 #include "../UiConstants.h"
@@ -529,7 +530,8 @@ void ViewBuyEdit::loadBuy(const BuyObject& buy, const BrokerageObject& brokerage
 
     m_orderNumber->setText(buy.orderNumber());
     m_volume->setText(formatVolume(buy.volume()));
-    m_price->setText(formatVolume(buy.price()));
+    // Kurs ueber ValueFormatter (05.09.2026) — unveraenderte Ausgabe.
+    m_price->setText(ValueFormatter::formatPrice(buy.price()));
     m_documentPath->setText(buy.document());
 
     m_provision->setText(formatMoney(brokerage.isValid() ? brokerage.provision()  : 0.0));
@@ -1033,7 +1035,10 @@ void ViewBuyEdit::populateOverview(const QList<BuyObject>&        buys,
             if (!rowTip.isEmpty())
                 iVol->setToolTip(rowTip);
 
-            auto* iKurswert = new QTableWidgetItem(formatMoney(kurswert) + QStringLiteral(" €"));
+            // Bugfix 05.09.2026: die Spalte heisst "Kurswert", enthaelt aber
+            // den Kurs je Aktie (b.price()) — formatMoney() zeigte davon nur
+            // zwei Stellen, waehrend die Anteile-Spalte daneben vier zeigt.
+            auto* iKurswert = new QTableWidgetItem(ValueFormatter::formatPrice(kurswert) + QStringLiteral(" €"));
             iKurswert->setTextAlignment(Qt::AlignCenter);
 
             auto* iGebuehr = new QTableWidgetItem(formatMoney(gebuehren) + QStringLiteral(" €"));

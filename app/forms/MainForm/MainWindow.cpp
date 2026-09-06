@@ -14,6 +14,8 @@
 #include "../ChartForm/ChartPopup.h"
 #include "../AboutForm/AboutForm.h"
 #include "../../utils/PdfTextExtractor.h"
+#include "../../utils/ValueFormatter.h"
+
 #include "../ApiSettingsForm/ApiSettingsForm.h"
 #include "../../repositories/ShareRepository.h"
 #include "../../repositories/DailyValuesRepository.h"
@@ -68,6 +70,26 @@
 #include <QDebug>
 #include "../../../libs/parser/src/Parser.h"
 #include "../../../libs/parser/src/DataTypes.h"
+
+namespace {
+
+/**
+ * @brief Vorzeichenbehaftete Kursdifferenz je Aktie, vier Nachkommastellen.
+ *
+ * Gegenstueck zu MainWindow::formatSignedMoney(), aber auf der Kurs-Skala
+ * (05.09.2026). Die Vortagsdifferenz ist die Differenz zweier Kurse und steht
+ * im Tooltip als Faktor in der Gleichung "Anteile mal Kurswert-Entw. ergibt
+ * Gesamtaenderung" — mit zwei Stellen ging die Rechnung von Auge nicht auf.
+ *
+ * Kein "+" bei exakt 0, gleiche Regel wie bei formatSignedMoney().
+ */
+QString formatSignedPrice(double value)
+{
+    return (value > 0.0 ? QStringLiteral("+") : QString())
+         + ValueFormatter::formatPrice(value) + QStringLiteral(" €");
+}
+
+} // namespace
 
 // ── setStartupDialogsEnabled ──────────────────────────────────────────────────
 
@@ -1264,12 +1286,12 @@ void MainWindow::populatePortfolioTables()
         muted.setAlpha(140); // dimmed toward background, works in light + dark
 
         // ── Formatted strings ─────────────────────────────────────────────
-        const QString curPriceStr   = locale.toString(v.curPrice,     'f', 4)
+        const QString curPriceStr   = ValueFormatter::formatPrice(v.curPrice)
                                     + QStringLiteral(" €");
-        const QString prevPriceStr  = locale.toString(v.prevDayPrice, 'f', 4)
+        const QString prevPriceStr  = ValueFormatter::formatPrice(v.prevDayPrice)
                                     + QStringLiteral(" €");
         const QString prevDiffStr   = (v.prevDayDiff >= 0 ? QStringLiteral("+") : QString())
-                                    + locale.toString(v.prevDayDiff, 'f', 2)
+                                    + ValueFormatter::formatPrice(v.prevDayDiff)
                                     + QStringLiteral(" €");
         const QString prevPctStr    = (v.prevDayPct >= 0 ? QStringLiteral("+") : QString())
                                     + locale.toString(v.prevDayPct, 'f', 2)
@@ -1360,8 +1382,14 @@ void MainWindow::populatePortfolioTables()
         // Gesamtergebnisses (die weiterhin nach prevDayTotal geht). Beide
         // Werte nutzen denselben Zero-Aware-Helfer, zeigen also bei 0 jeweils
         // schwarzen Text ohne "+".
+        // Kurs-Skala statt Geld-Skala (05.09.2026) — der Wert je Stueck muss
+        // dieselbe Genauigkeit haben wie die Kursspalte darueber, sonst
+        // stimmt die im Tooltip gezeigte Multiplikation nicht.
         const QString coloredDiffStr =
-            formatSignedMoneyMaybeColored(v.prevDayDiff, perfColor(v.prevDayDiff));
+            qFuzzyIsNull(v.prevDayDiff)
+                ? formatSignedPrice(v.prevDayDiff)
+                : colorizeToolTip(formatSignedPrice(v.prevDayDiff),
+                                  perfColor(v.prevDayDiff));
         // Layout (Nessies Vorgabe 02.08.2026): Zeile 1 nur die Beschriftung
         // (kein Wert — der stand vorher bereits in Zeile 2 und wurde damit
         // doppelt angezeigt), Zeile 2 der Rechenweg, beide Werte farbig nach
@@ -1597,9 +1625,9 @@ QString MainWindow::buildSplitAuditWarningMessage(
             flagLines.append(tr("• %1 — %2, aber %3 (%4: %5 → %6: %7)")
                              .arg(head, storedLabel, detectedLabel)
                              .arg(locale.toString(d.outcome.dateBefore, QLocale::ShortFormat),
-                                  locale.toString(d.outcome.priceBefore, 'f', 2))
+                                  ValueFormatter::formatPrice(d.outcome.priceBefore))
                              .arg(locale.toString(d.outcome.dateAfter, QLocale::ShortFormat),
-                                  locale.toString(d.outcome.priceAfter, 'f', 2)));
+                                  ValueFormatter::formatPrice(d.outcome.priceAfter)));
             break;
         }
 
@@ -1608,9 +1636,9 @@ QString MainWindow::buildSplitAuditWarningMessage(
                                  "(%3: %4 → %5: %6)")
                               .arg(head, describeFactorAsRatio(d.outcome.impliedFactor))
                               .arg(locale.toString(d.outcome.dateBefore, QLocale::ShortFormat),
-                                   locale.toString(d.outcome.priceBefore, 'f', 2))
+                                   ValueFormatter::formatPrice(d.outcome.priceBefore))
                               .arg(locale.toString(d.outcome.dateAfter, QLocale::ShortFormat),
-                                   locale.toString(d.outcome.priceAfter, 'f', 2)));
+                                   ValueFormatter::formatPrice(d.outcome.priceAfter)));
             break;
 
         case SplitAudit::Kind::RatioFromHoldings: {
@@ -2897,10 +2925,10 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
             return -1;
         };
 
-        const QString curPriceStr  = locale.toString(v.curPrice, 'f', 4) + QStringLiteral(" €");
-        const QString prevPriceStr = locale.toString(v.prevDayPrice, 'f', 4) + QStringLiteral(" €");
+        const QString curPriceStr  = ValueFormatter::formatPrice(v.curPrice) + QStringLiteral(" €");
+        const QString prevPriceStr = ValueFormatter::formatPrice(v.prevDayPrice) + QStringLiteral(" €");
         const QString prevDiffStr  = (v.prevDayDiff >= 0 ? QStringLiteral("+") : QString())
-                                   + locale.toString(v.prevDayDiff, 'f', 2) + QStringLiteral(" €");
+                                   + ValueFormatter::formatPrice(v.prevDayDiff) + QStringLiteral(" €");
         const QString prevPctStr   = (v.prevDayPct >= 0 ? QStringLiteral("+") : QString())
                                    + locale.toString(v.prevDayPct, 'f', 2) + QStringLiteral(" %");
         const QString profitStr    = locale.toString(v.profitLoss, 'f', 2) + QStringLiteral(" €");
@@ -2919,8 +2947,14 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
         const QString tooltipVolumeStr = locale.toString(v.volume, 'f', 4);
         // Pro-Stück-Wert nach eigenem Vorzeichen eingefärbt, siehe
         // populatePortfolioTables().
+        // Kurs-Skala statt Geld-Skala (05.09.2026) — der Wert je Stueck muss
+        // dieselbe Genauigkeit haben wie die Kursspalte darueber, sonst
+        // stimmt die im Tooltip gezeigte Multiplikation nicht.
         const QString coloredDiffStr =
-            formatSignedMoneyMaybeColored(v.prevDayDiff, perfColor(v.prevDayDiff));
+            qFuzzyIsNull(v.prevDayDiff)
+                ? formatSignedPrice(v.prevDayDiff)
+                : colorizeToolTip(formatSignedPrice(v.prevDayDiff),
+                                  perfColor(v.prevDayDiff));
         const QString prevDayTotalTooltip =
             tr("<div style=\"white-space:nowrap;\">Gesamtänderung Aktie:<br>"
                "%1 Stk. × %2 = %3</div>")
@@ -2992,7 +3026,7 @@ void MainWindow::onMarketValuesUpdated(const ParserLib::ParserInfoState& state)
                 it->setIcon(devIcon(v.completeProfitPctMarket));
         }
 
-        const QString priceStr = locale.toString(newPrice, 'f', 2);
+        const QString priceStr = ValueFormatter::formatPrice(newPrice);
         addStatusMessage(
             tr("Kurswert aktualisiert: %1 — %2")
                 .arg(m_refreshShare.name(), priceStr),

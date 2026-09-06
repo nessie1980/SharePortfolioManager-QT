@@ -2,6 +2,7 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "ViewDividendEdit.h"
 #include "../../utils/ShareSplitHint.h"
+#include "../../utils/ValueFormatter.h"
 #include "../../utils/DocumentFieldValue.h"
 #include "PresenterDividendEdit.h"
 #include "ModelDividendEdit.h"
@@ -409,9 +410,12 @@ QGroupBox* ViewDividendEdit::createDividenddatenGroup()
     addRow(grid, row, tr("Dividenden-Rendite nach Steuern:"), m_yield, tr("%"));
 
     // ── Kurspreis am Auszahlungstag ───────────────────────────────────────
-    m_priceAtPayday = new QLineEdit(QStringLiteral("0,00"));
+    // Bugfix 05.09.2026: Vorgabe und Validator standen auf zwei Stellen, das
+    // Feld enthaelt aber einen Kurs. Ein aus den Tageswerten uebernommener
+    // Schlusskurs wurde dadurch beim Anzeigen gerundet.
+    m_priceAtPayday = new QLineEdit(QStringLiteral("0,0000"));
     m_priceAtPayday->setAlignment(Qt::AlignRight);
-    m_priceAtPayday->setValidator(new QDoubleValidator(0.0, 9'999'999.0, 2, m_priceAtPayday));
+    m_priceAtPayday->setValidator(new QDoubleValidator(0.0, 9'999'999.0, 4, m_priceAtPayday));
     m_statusLabels[QStringLiteral("priceAtPayday")] =
         addRow(grid, row, tr("Preis der Aktien am Auszahlungstag:"), m_priceAtPayday,
                tr("€"), QStringLiteral("priceAtPayday"));
@@ -645,7 +649,10 @@ void ViewDividendEdit::loadDividend(const DividendObject& d)
     }
     setForeignCurrencyEnabled(d.enableForeignCurrency());
 
-    m_exchangeRatio->setText(formatVolume(d.exchangeRatio() > 0.0 ? d.exchangeRatio() : 1.0));
+    // Devisenkurs bewusst ueber eine eigene Funktion — er hat mit dem
+    // Aktienkurs fachlich nichts zu tun (Nessies Vorgabe 05.09.2026).
+    m_exchangeRatio->setText(
+        ValueFormatter::formatExchangeRate(d.exchangeRatio() > 0.0 ? d.exchangeRatio() : 1.0));
 
     // Select matching currency
     {
@@ -658,12 +665,12 @@ void ViewDividendEdit::loadDividend(const DividendObject& d)
         }
     }
 
-    m_rate->setText(formatVolume(d.rate()));
+    m_rate->setText(ValueFormatter::formatPrice(d.rate()));
     m_volume->setText(formatVolume(d.volume()));
     m_taxAtSource->setText(formatMoney(d.taxAtSource()));
     m_capitalGainsTax->setText(formatMoney(d.capitalGainsTax()));
     m_solidarityTax->setText(formatMoney(d.solidarityTax()));
-    m_priceAtPayday->setText(formatMoney(d.priceAtPayday()));
+    m_priceAtPayday->setText(ValueFormatter::formatPrice(d.priceAtPayday()));
     m_documentPath->setText(d.document());
 
     // Ex-Tag: Sentinel 2000-01-01, wenn die geladene Dividende (noch) keinen
@@ -717,7 +724,7 @@ void ViewDividendEdit::clearForm()
     m_taxAtSource->setText(QStringLiteral("0,00"));
     m_capitalGainsTax->setText(QStringLiteral("0,00"));
     m_solidarityTax->setText(QStringLiteral("0,00"));
-    m_priceAtPayday->setText(QStringLiteral("0,00"));
+    m_priceAtPayday->setText(QStringLiteral("0,0000"));
     m_documentPath->clear();
     m_exDate->setDate(QDate(2000, 1, 1));
     {
@@ -1206,8 +1213,11 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>&   dividends
             iDate->setData(Qt::UserRole, d.guid());
             iDate->setTextAlignment(Qt::AlignCenter);
 
+            // Dividende je Anteil liegt auf der Kurs-Skala, nicht auf der
+            // Stueckzahl-Skala — formatVolume() traf hier nur zufaellig die
+            // richtige Genauigkeit (05.09.2026).
             auto* iRate = new QTableWidgetItem(
-                formatVolume(d.rate()) + QStringLiteral(" €"));
+                ValueFormatter::formatPrice(d.rate()) + QStringLiteral(" €"));
             iRate->setTextAlignment(Qt::AlignCenter);
 
             // Belegzeile: bleibt in BELEG-Skala. "Anteile am Auszahlungstag"

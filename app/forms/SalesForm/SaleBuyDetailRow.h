@@ -32,6 +32,37 @@ struct SaleBuyDetailRow
 };
 
 /**
+ * @brief Woher die im Details-Dialog gezeigte FIFO-Zuteilung stammt.
+ *
+ * Steuert ausschließlich die Beschriftung des Dialogs. Bis zum 05.09.2026
+ * stand hier ein einzelnes `bool editMode`, das nur beantwortete, ob
+ * überhaupt ein gespeicherter Verkauf geladen ist — und damit die beiden
+ * unteren Fälle nicht auseinanderhalten konnte. Der Dialog behauptete beim
+ * Bearbeiten des jüngsten Verkaufs, gespeicherte Werte zu zeigen, obwohl er
+ * live neu rechnete (siehe ARCHITECTURE.md, "Kopfzeile des Details-Dialogs
+ * im Neuberechnungs-Fall irreführend").
+ *
+ * Bewusst ein Enum statt eines zweiten Flags: zwei Bools ließen die
+ * Kombination "kein Edit-Modus, aber neu berechnet" zu, die es fachlich
+ * nicht gibt. Ein Zustand, den niemand je setzt, muss trotzdem von jedem
+ * Leser geprüft werden.
+ */
+enum class FifoAllocationOrigin
+{
+    /// Neuer Verkauf, noch nichts gespeichert — reine Vorschau.
+    PreviewNewSale,
+
+    /// Jüngster Verkauf geladen und weiterhin editierbar; die Zuteilung wird
+    /// aus den aktuellen Formularwerten neu gerechnet und beim Speichern so
+    /// übernommen (Aktiensplit-Behandlung, Phase 2c, 07.08.2026).
+    RecalculatedLatestSale,
+
+    /// Älterer, nicht mehr editierbarer Verkauf — die gespeicherte Zuteilung
+    /// aus `SaleBuyDetails`.
+    StoredAllocation
+};
+
+/**
  * @brief Vollständiger Inhalt des Details-Dialogs: Zeilen plus Summen.
  *
  * @note `fees` und `reduction` sind Geldbeträge und werden NICHT mit dem
@@ -51,11 +82,9 @@ struct SaleBuyDetailSummary
     double totalProfitLoss = 0.0;
 
     /**
-     * @brief true, wenn der Dialog für einen bereits gespeicherten Verkauf
-     * geöffnet wurde (steuert nur die Kopfzeile des Dialogs).
+     * @brief Herkunft der Zuteilung; steuert nur die Kopfzeile des Dialogs.
      *
-     * Entspricht dem bisherigen `m_loadedSale.isValid()` in
-     * `ViewSaleEdit::onShowDetails()`.
+     * Ersetzt seit 05.09.2026 das frühere `bool editMode`.
      */
-    bool editMode = false;
+    FifoAllocationOrigin origin = FifoAllocationOrigin::PreviewNewSale;
 };

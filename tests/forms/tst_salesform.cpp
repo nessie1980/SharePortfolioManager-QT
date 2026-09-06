@@ -1011,6 +1011,65 @@ private slots:
         QVERIFY(qAbs(view.lastBuyDetails.totalFees          - 30.95) < 1e-9);
     }
 
+    // ── Herkunft der FIFO-Zuteilung (Bugfix 05.09.2026) ──────────────────
+    //
+    // Der Details-Dialog beschriftete sich bis hierher anhand eines einzelnen
+    // bool editMode und behauptete beim Bearbeiten des jüngsten Verkaufs,
+    // gespeicherte Werte zu zeigen — tatsächlich rechnet er dort live neu.
+    // Geprüft wird der Zustand, der an die View geht; die Zuordnung von
+    // Zustand zu Beschriftungstext liegt in ViewSaleEdit::showBuyDetails()
+    // hinter QDialog::exec() und bleibt manuell (siehe TESTING.md).
+
+    void test_presenterSaleEdit_buyDetails_newSale_originIsPreview()
+    {
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        p.onShowDetails();
+
+        QCOMPARE(view.showBuyDetailsCallCount, 1);
+        QVERIFY(view.lastBuyDetails.origin == FifoAllocationOrigin::PreviewNewSale);
+    }
+
+    void test_presenterSaleEdit_buyDetails_latestSale_originIsRecalculated()
+    {
+        // Der jüngste Verkauf bleibt editierbar, die Zuteilung wird aus den
+        // aktuellen Formularwerten neu gerechnet (Phase 2c, 07.08.2026).
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        const SaleObject older = makeSale(QStringLiteral("s-old"),
+                                          QStringLiteral("share-1"), 2023);
+        const SaleObject newer = makeSale(QStringLiteral("s-new"),
+                                          QStringLiteral("share-1"), 2024);
+        model.sales = { older, newer };
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onRowSelected(QStringLiteral("s-new"));   // jüngster Verkauf
+        p.onShowDetails();
+
+        QVERIFY(view.lastBuyDetails.origin == FifoAllocationOrigin::RecalculatedLatestSale);
+    }
+
+    void test_presenterSaleEdit_buyDetails_olderSale_originIsStored()
+    {
+        // Ältere Verkäufe sind read-only und zeigen die gespeicherte
+        // Zuteilung — nur hier trifft "Tatsächliche FIFO-Zuteilung" zu.
+        StubViewSaleEdit  view;
+        StubModelSaleEdit model;
+        const SaleObject older = makeSale(QStringLiteral("s-old"),
+                                          QStringLiteral("share-1"), 2023);
+        const SaleObject newer = makeSale(QStringLiteral("s-new"),
+                                          QStringLiteral("share-1"), 2024);
+        model.sales = { older, newer };
+
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+        p.onRowSelected(QStringLiteral("s-old"));   // nicht der jüngste
+        p.onShowDetails();
+
+        QVERIFY(view.lastBuyDetails.origin == FifoAllocationOrigin::StoredAllocation);
+    }
+
     void test_presenterSaleEdit_onShowDetails_profitLossSubtractsBuyCosts()
     {
         // G/V = Verkaufswert - (Kaufsumme + Kaufkosten - Kaufrabatt)

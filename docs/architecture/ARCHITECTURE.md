@@ -677,6 +677,23 @@ Lots hinweg sinnvoll, auch wenn ein Split zwischen zwei Lots liegt):
 | Kosten | anteilige Brokerage des Kaufs (`brokeragePart`) — Geldbetrag, unskaliert |
 | Gesamt | Kaufsumme + Kosten − Rabatt |
 
+Anzeigegenauigkeit (05.09.2026): Anteile und Kaufkurs stehen mit vier
+Nachkommastellen, alle Geldspalten mit zwei. Der Kurs laeuft dafuer ueber
+`ValueFormatter::formatPrice()` — siehe "Erledigt / Archiv",
+"Kurs-Anzeige durchgaengig mit vier Nachkommastellen".
+
+Kopfzeile des Dialogs (05.09.2026), gesteuert ueber
+`SaleBuyDetailSummary::origin`:
+
+| Zustand | Beschriftung |
+| ------ | ------ |
+| `PreviewNewSale` | Vorschau der FIFO-Zuteilung (wird beim Speichern festgelegt) |
+| `RecalculatedLatestSale` | Neuberechnung der FIFO-Zuteilung aus den aktuellen Eingaben (wird beim Speichern uebernommen) |
+| `StoredAllocation` | Tatsaechliche FIFO-Zuteilung des gespeicherten Verkaufs |
+
+Der kursive Fuss-Hinweis nennt den FIFO-Weg in beiden Live-Faellen, die
+Farbgebung unterscheidet nur `StoredAllocation` von den beiden anderen.
+
 Dok.-Spalte: zeigt das Icon des Kauf-Dokuments (PDF/Word/Excel, identische
 Icon-Logik wie Jahres-Tab der Verkaufsübersicht). Kein Dokument → `"-"`.
 Tooltip zeigt Dateipfad + "Doppelklick: Dokument anzeigen".
@@ -5367,26 +5384,50 @@ beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
 
-### Kopfzeile des Details-Dialogs im Neuberechnungs-Fall irrefuehrend (11.08.2026)
+### Kurs beim automatischen Uebernehmen aus den Tageswerten (05.09.2026)
 
-`ViewSaleEdit::showBuyDetails()` beschriftet den Dialog anhand von
-`SaleBuyDetailSummary::editMode`, also danach, ob ein gespeicherter Verkauf
-geladen ist. Beim juengsten Verkauf wird die Zuteilung aber live neu
-gerechnet — die Beschriftung "Tatsaechliche FIFO-Zuteilung des gespeicherten
-Verkaufs" trifft dann nicht zu.
+`PresenterDividendEdit::applyDailyValuePriceAtPayday()` schreibt den aus
+`daily_values` uebernommenen Schlusskurs mit
+`QString::number(closingPrice, 'f', 2)` ins Feld. Zwei Probleme in einer
+Zeile: zwei Nachkommastellen, obwohl das Feld einen Kurs enthaelt, und
+`QString::number()` formatiert immer nach C-Konvention, liefert also einen
+Punkt statt eines Kommas. Beim Laden derselben Dividende steht dort danach
+ein deutsch formatierter, vierstelliger Wert — dieselbe Zahl sieht je nach
+Weg unterschiedlich aus.
 
-Sinnvoll waere ein dritter Zustand, der die Neuberechnung des juengsten
-Verkaufs als solche benennt. Bewusst nicht im Rahmen des Brokerage-Bugfixes
-geaendert (ein Anliegen pro Commit).
+Beim Rollout der Kurs-Anzeige (siehe "Erledigt / Archiv") uebersehen, weil
+die Suche nach `toString(..., 'f', N)` diese Stelle nicht traf. Der Fix ist
+`ValueFormatter::formatPrice()`; mitzuziehen ist `StubViewDividendEdit` in
+`tst_dividendform.cpp`, dessen `setFieldOk()` den Wert per
+`QString::toDouble()` einliest und an einem Komma scheitern wuerde.
 
-### Kaufkurs im Details-Dialog nur mit zwei Nachkommastellen (11.08.2026)
+### formatMoney/formatVolume liegen weiterhin je View doppelt vor (05.09.2026)
 
-Die Spalte Kaufkurs zeigt `formatMoney()`, also zwei Stellen. Bei
-split-bereinigten Kursen entsteht dadurch eine Zeile, die zum Nachrechnen
-einlaedt und dabei scheitert: 200,0000 Stk. mal 48,59 EUR ergibt 9.718,00 EUR,
-angezeigt werden korrekt 9.719,00 EUR (tatsaechlicher Kurs 48,595 EUR). Weil
-die Zeile als Gleichung mit Mal- und Gleichheitszeichen aufgebaut ist, faellt
-das auf. Vier Nachkommastellen wie in der Anteile-Spalte wuerden es aufloesen.
+`ValueFormatter` beherbergt seit dem Kurs-Rollout nur `formatPrice()` und
+`formatExchangeRate()`. Die beiden aelteren Helfer stehen unveraendert je
+View als statische Methode oder lokale Lambda in `ViewBuyEdit`,
+`ViewSaleEdit`, `ViewDividendEdit`, `ViewBrokerageEdit`, `ViewShareEdit`,
+`ViewShareDetails` und `PresenterShareDetails` — sieben nahezu identische
+Einzeiler.
+
+Bewusst nicht mit umgezogen: der Umbau waere mechanisch, aber quer durch
+alle Formulare, und haette den eigentlichen Bugfix im Diff begraben. Der Fall
+`PresenterShareDetails` zeigt, warum es sich trotzdem lohnt — dessen lokales
+`formatVolume()` stand jahrelang auf zwei Nachkommastellen, waehrend alle
+anderen vier zeigten, und niemandem fiel es auf.
+
+### ShareDetailsForm.cpp ist toter Code (05.09.2026)
+
+`app/forms/ShareDetailsForm/ShareDetailsForm.cpp` steht weder in
+`app/CMakeLists.txt` noch in einem Testziel und wird damit nirgends
+kompiliert. Es ist der Rest des ersten, ohne Abgleich mit der C#-Referenz
+gebauten Anlaufs (Tabs fuer Stammdaten, Kaeufe, Verkaeufe, Dividenden,
+Brokerages), den `ViewShareDetails` ersetzt hat.
+
+Aufgefallen bei der Bestandsaufnahme der Kurs-Anzeigen: die Datei enthaelt
+ein knappes Dutzend Kurs-Formatierungen, die alle ins Leere zeigen. Kann
+geloescht werden — gleiche Lage wie beim bereits vermerkten Verzeichnis
+`tests/widgets/`.
 
 ### Diagnose-Knopf hinter einen Debug-Modus legen (06.08.2026)
 
@@ -5546,7 +5587,7 @@ vermerkt, falls tatsächlich mal Bedarf entsteht — keine aktive Aufgabe.
 
 ## Erledigt / Archiv
 
-@note Die folgenden neun Abschnitte standen bis zum 25.08.2026 unter "Offene
+@note Die meisten der folgenden Abschnitte standen bis zum 25.08.2026 unter "Offene
 Punkte" und sind dorthin verschoben worden, weil sie vollstaendig umgesetzt
 sind. Sie bleiben als Begruendungsdokument stehen: die Entscheidungen darin
 (Beleg-Wahrheit, Zurueckhaltung gegenueber stillen Korrekturen, enge
@@ -5554,6 +5595,105 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Kurs-Anzeige durchgaengig mit vier Nachkommastellen (11.08.2026, behoben 05.09.2026)
+
+Die Spalte Kaufkurs im Details-Dialog des Verkaufsformulars zeigte
+`formatMoney()`, also zwei Stellen. Weil die Zeile als Gleichung mit Mal- und
+Gleichheitszeichen aufgebaut ist, laedt sie zum Nachrechnen ein und ging
+dabei nicht auf: 200,0000 Stk. mal angezeigte 48,59 EUR ergibt 9.718,00 EUR,
+in der Summenspalte stand korrekt 9.719,00 EUR — der tatsaechliche Kurs
+betraegt 48,595 EUR.
+
+#### Warum daraus ein Rundumschlag wurde
+
+Nessies Vorgabe (05.09.2026): das Konstrukt soll in allen Dialogen greifen,
+damit eine spaetere Aenderung ueberall wirkt. Die Bestandsaufnahme ergab 26
+Kurs-Anzeigen in acht Dateien — und zwei weitere Stellen mit exakt demselben
+Fehler, die auf keiner Liste standen:
+
+- Der Jahres-Tab der Kauf-Uebersicht. Die Spalte heisst "Kurswert", enthaelt
+  aber `BuyObject::price()`, also den Kurs je Aktie. Der Kommentar im
+  zugehoerigen Test sagt es ausdruecklich, die Formatierung tat es nicht.
+- Der Vortag-Tooltip im Hauptfenster. Er zeigt "Anteile mal Kurswert-Entw.
+  ergibt Gesamtaenderung" — wieder eine Gleichung, wieder mit einem
+  zweistelligen Kurswert in der Mitte.
+
+Dazu die Bestandsbewertungs-Boxen in `PresenterShareDetails`, die nach
+demselben Muster gebaut sind (Anteile mal Kurs ergibt Bestandswert) und den
+Kurs ebenfalls zweistellig zeigten.
+
+#### Die Regel
+
+`ValueFormatter::formatPrice()` bekommt jede Zahl, die der Preis einer
+einzelnen Aktie ist: Kurs, Kaufkurs, Verkaufskurs, Vortageskurs, Dividende je
+Anteil, Preis am Zahltag, Kurs vor und nach einem Ex-Tag, Kurse in
+Chart-Tooltips. Nicht: Summen, Kurswerte im Sinne von Anteile mal Kurs,
+Gebuehren, Steuern, Prozentwerte, Depotwerte, Stueckzahlen.
+
+Mitgenommen wurde die Differenz zweier Kurse (Vortagsentwicklung je Aktie),
+obwohl sie selbst kein Kurs ist: sie liegt auf der Kurs-Skala und steht in
+denselben Gleichungen. Haette man sie ausgelassen, waere in der Vortag-Box
+der Aktien-Details eine Subtraktion stehen geblieben, die nicht aufgeht.
+
+Der Devisenkurs im Dividendenformular hat eine eigene Funktion bekommen,
+`formatExchangeRate()`. Sie liefert heute dasselbe wie `formatPrice()`, aber
+ein Waehrungsumrechnungskurs ist fachlich etwas anderes als ein Aktienkurs
+(Nessies Vorgabe); aendert sich spaeter eine der beiden Konventionen, zieht
+die andere nicht ungewollt mit.
+
+#### Warum header-only
+
+`ValueFormatter` ist eine Klasse mit zwei zustandslosen Einzeilern und ohne
+Abhaengigkeiten ausser QLocale und QString — gleiche Bauweise wie
+`ShareUpdateRules.h`. Eine eigene Uebersetzungseinheit haette in jedes
+Testziel aufgenommen werden muessen, das irgendeine Form anfasst; der
+Aufwand stuende in keinem Verhaeltnis zum Inhalt.
+
+#### Kopfzeile des Details-Dialogs im Neuberechnungs-Fall
+
+Im selben Dialog, deshalb im selben Commit (die uebrigen Bugfixes dieser
+Runde sind Anzeigefehler derselben Maske, siehe unten). `showBuyDetails()`
+beschriftete den Dialog anhand von `SaleBuyDetailSummary::editMode`, also
+danach, ob ueberhaupt ein gespeicherter Verkauf geladen ist. Das ist beim
+juengsten und beim aelteren Verkauf gleichermassen wahr — der Dialog
+behauptete deshalb auch beim juengsten Verkauf, gespeicherte Werte zu
+zeigen, obwohl er die Zuteilung dort live aus den Formularwerten neu rechnet
+(Phase 2c).
+
+Praktische Folge: aenderte man die Verkaufsmenge von 200 auf 150 und
+oeffnete die Details, zeigte die Tabelle die Zuteilung fuer 150 Stueck unter
+einer Ueberschrift, die sie als festgeschrieben auswies. Ausgerechnet der
+eine Fall, in dem die Zahlen noch wackeln, war als endgueltig beschriftet.
+
+`editMode` ist durch `FifoAllocationOrigin` mit drei Werten ersetzt:
+`PreviewNewSale`, `RecalculatedLatestSale`, `StoredAllocation`. Der Presenter
+kannte die Unterscheidung laengst — sie steckte in `m_isLastSale` und wurde
+nur nicht nach aussen gereicht.
+
+Bewusst ein Enum statt eines zweiten Flags: zwei Bools haetten die
+Kombination "kein Edit-Modus, aber neu berechnet" zugelassen, die es fachlich
+nicht gibt. Ein Zustand, den niemand je setzt, muss trotzdem von jedem Leser
+geprueft werden.
+
+Mitbehoben: der kursive Fuss-Hinweis haengt jetzt ebenfalls an der Herkunft
+statt am fruehreren `editMode`. Der Satz "Vorschau nach FIFO: aelteste
+Kaeufe des gewaehlten Depots zuerst" fehlte beim juengsten Verkauf, obwohl
+genau dieser Fall live nach FIFO rechnet. Farben bleiben unveraendert; die
+beiden Live-Faelle teilen sich die gedaempfte Farbe, weil in beiden das
+Gezeigte vorlaeufig ist.
+
+#### Was dabei nicht angefasst wurde
+
+Die Eingabefelder fuer Kurse standen bereits auf vier Stellen — sie liefen
+nur ueber `formatVolume()`, hiessen also falsch. Dort hat sich die Anzeige
+nicht geaendert, nur der Name der aufgerufenen Funktion.
+
+Zwei Felder waren die Ausnahme: "Preis der Aktien am Auszahlungstag" im
+Dividendenformular hatte Vorgabewert und Validator auf zwei Stellen. Ein aus
+den Tageswerten uebernommener Schlusskurs wurde dadurch beim Anzeigen
+gerundet. Beides steht jetzt auf vier.
+
 
 ### Bankerkennung: Mehrdeutigkeit ueber die Depotnummer (21.08.2026, behoben 25.08.2026)
 

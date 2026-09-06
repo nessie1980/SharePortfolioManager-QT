@@ -74,6 +74,8 @@ set(APP_SOURCES
     utils/SaleFifoAllocator.cpp
     utils/ShareSplitHint.h
     utils/ShareSplitHint.cpp
+    # Header-only, bewusst ohne .cpp — Begruendung im Dateikopf (05.09.2026).
+    utils/ValueFormatter.h
     utils/SplitPriceJumpDetector.h
     utils/SplitPriceJumpDetector.cpp
     utils/SplitAudit.h

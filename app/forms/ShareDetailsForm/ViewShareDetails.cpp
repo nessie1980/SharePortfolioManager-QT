@@ -3,6 +3,7 @@
 #include "ViewShareDetails.h"
 #include "../../utils/ShareSplitAdjuster.h"
 #include "../../utils/ShareSplitHint.h"
+#include "../../utils/ValueFormatter.h"
 
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
 #include "../../IconProvider.h"
@@ -587,7 +588,9 @@ void ViewShareDetails::populateDividenden(const QList<DividendObject>&   dividen
     const QLocale loc;
     auto fmtMoney  = [&](double v) { return loc.toString(v, 'f', 2) + QStringLiteral(" €"); };
     auto fmtVolume = [&](double v) { return loc.toString(v, 'f', 4) + QStringLiteral(" stk."); };
-    auto fmtRate   = [&](double v) { return loc.toString(v, 'f', 4) + QStringLiteral(" €"); };
+    // Dividende je Anteil liegt auf der Kurs-Skala (05.09.2026) — Ausgabe
+    // unveraendert, Genauigkeit haengt jetzt zentral an ValueFormatter.
+    auto fmtRate   = [](double v) { return ValueFormatter::formatPrice(v) + QStringLiteral(" €"); };
 
     double totalVal = 0.0;
     for (const DividendObject& d : dividends)

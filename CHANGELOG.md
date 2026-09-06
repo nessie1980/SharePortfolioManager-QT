@@ -10,6 +10,45 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.21.1] - 2026-09-05
+
+### Fixed
+
+- **Kurse wurden mit zwei Nachkommastellen angezeigt und ergaben sichtbar
+  falsche Rechnungen.** Aufgefallen im Details-Dialog des Verkaufsformulars:
+  die Zeile ist als Gleichung aus Anteilen, Kaufkurs und Kaufsumme aufgebaut,
+  laedt damit zum Nachrechnen ein und ging nicht auf. 200,0000 Stk. mal
+  angezeigte 48,59 EUR ergibt 9.718,00 EUR, in der Summenspalte stand
+  korrekt 9.719,00 EUR — der tatsaechliche Kurs betraegt 48,595 EUR. Kurse
+  laufen jetzt projektweit ueber `ValueFormatter::formatPrice()` und werden
+  mit vier Nachkommastellen angezeigt, genau wie die Stueckzahl daneben.
+  Geldbetraege, Gebuehren, Steuern und Prozentwerte behalten ihre zwei
+  Stellen. Betroffen waren neben dem Details-Dialog auch die Spalte
+  "Kurswert" im Jahres-Tab der Kauf-Uebersicht (sie enthaelt entgegen ihrem
+  Namen den Kurs je Aktie), der Vortag-Tooltip im Hauptfenster, die
+  Bestandsbewertungs-Boxen der Aktien-Details, die Kurse in den
+  Chart-Tooltips, die Kurse vor und nach einem Ex-Tag in der
+  Split-Pruefung sowie der Preis am Auszahlungstag im Dividendenformular,
+  dessen Eingabefeld zusaetzlich nur zwei Stellen zuliess.
+
+- **Der Details-Dialog beschriftete neu berechnete Werte als gespeichert.**
+  Beim Bearbeiten des juengsten Verkaufs rechnet der Dialog die
+  FIFO-Zuteilung live aus den aktuellen Eingaben neu, behauptete in der
+  Kopfzeile aber "Tatsaechliche FIFO-Zuteilung des gespeicherten Verkaufs".
+  Wer die Verkaufsmenge aenderte und dann die Details oeffnete, sah die
+  Zuteilung fuer die neue Menge unter einer Ueberschrift, die sie als
+  festgeschrieben auswies — ausgerechnet in dem Fall, in dem die Zahlen
+  noch nicht feststehen. Der Dialog unterscheidet jetzt drei Zustaende:
+  Vorschau eines neuen Verkaufs, Neuberechnung des juengsten Verkaufs und
+  gespeicherte Zuteilung eines aelteren Verkaufs. Der kursive Hinweis unter
+  der Tabelle nennt den FIFO-Weg entsprechend auch beim juengsten Verkauf,
+  wo er bisher fehlte.
+
+- **Stueckzahlen in den Bestandsbewertungs-Boxen der Aktien-Details standen
+  auf zwei Nachkommastellen**, waehrend sie im Rest der Anwendung vier
+  haben. Bei einem Fondsbestand von 168,50796 Anteilen war damit auch der
+  zweite Faktor der Gleichung gerundet dargestellt.
+
 ## [1.21.0] - 2026-09-04
 
 ### Fixed

@@ -2,6 +2,7 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "ShareSplitHint.h"
 #include "ShareSplitAdjuster.h"
+#include "ValueFormatter.h"
 
 #include <QCoreApplication>
 #include <QLocale>
@@ -55,8 +56,11 @@ QString ShareSplitHint::footerText(const QList<ShareSplitObject>& splits,
     const QLocale loc;
     const QString adjustedVolume =
         loc.toString(ShareSplitAdjuster::adjustedVolume(volume, splits, date), 'f', 4);
+    // Kurs ueber ValueFormatter (05.09.2026): identische Ausgabe wie zuvor,
+    // die Genauigkeit haengt jetzt aber projektweit an einer Stelle.
     const QString adjustedPrice =
-        loc.toString(ShareSplitAdjuster::adjustedTransactionPrice(price, splits, date), 'f', 4);
+        ValueFormatter::formatPrice(
+            ShareSplitAdjuster::adjustedTransactionPrice(price, splits, date));
 
     if (count == 1) {
         return QCoreApplication::translate(

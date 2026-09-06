@@ -198,6 +198,26 @@ target_link_libraries(tst_sharesplithint
 
 add_test(NAME tst_sharesplithint COMMAND tst_sharesplithint)
 
+# ── ValueFormatter tests ─────────────────────────────────────────────────────
+# Zentrale Kurs-Formatierung (05.09.2026, siehe ARCHITECTURE.md,
+# "Kurs-Anzeige durchgaengig mit vier Nachkommastellen"). Header-only und
+# zustandslos, deshalb steht hier keine einzige .cpp aus app/ — es gibt keine.
+# Braucht weder Widgets noch Qt6::Sql: QLocale/QString kommen aus Qt6::Core,
+# das ueber Qt6::Test ohnehin verlinkt wird.
+qt_add_executable(tst_valueformatter tst_valueformatter.cpp)
+
+target_include_directories(tst_valueformatter
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_valueformatter PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_valueformatter
+    PRIVATE Qt6::Test
+)
+
+add_test(NAME tst_valueformatter COMMAND tst_valueformatter)
+
 # ── SplitPriceJumpDetector tests ─────────────────────────────────────────────────
 # Heuristik fuer den "Pruefen"-Knopf im Split-Dialog (13.08.2026, siehe
 # ARCHITECTURE.md, "Split-Verhaeltnis: Notation der Bankmitteilungen"):

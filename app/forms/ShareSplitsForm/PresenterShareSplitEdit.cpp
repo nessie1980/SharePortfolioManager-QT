@@ -3,6 +3,7 @@
 #include "PresenterShareSplitEdit.h"
 #include "../../utils/ShareSplitAdjuster.h"
 #include "../../utils/SplitPriceJumpDetector.h"
+#include "../../utils/ValueFormatter.h"
 
 #include <QLocale>
 #include <QUuid>
@@ -289,9 +290,9 @@ void PresenterShareSplitEdit::onCheckPriceJump()
             "Kein Kurssprung erkannt (%1: %2 → %3: %4) — Kurshistorie scheint "
             "bereits bereinigt. Haken gesetzt.")
                 .arg(loc.toString(outcome.dateBefore, QLocale::ShortFormat),
-                     loc.toString(outcome.priceBefore, 'f', 2),
+                     ValueFormatter::formatPrice(outcome.priceBefore),
                      loc.toString(outcome.dateAfter, QLocale::ShortFormat),
-                     loc.toString(outcome.priceAfter, 'f', 2)),
+                     ValueFormatter::formatPrice(outcome.priceAfter)),
             IViewShareSplitEdit::PriceJumpTone::Adopted);
         break;
     case SplitPriceJumpDetector::Result::NotAdjusted:
@@ -304,9 +305,9 @@ void PresenterShareSplitEdit::onCheckPriceJump()
             "Kurssprung erkannt (%1: %2 → %3: %4, Faktor ≈ %5) — Kurshistorie "
             "scheint nicht bereinigt. Haken entfernt.")
                 .arg(loc.toString(outcome.dateBefore, QLocale::ShortFormat),
-                     loc.toString(outcome.priceBefore, 'f', 2),
+                     ValueFormatter::formatPrice(outcome.priceBefore),
                      loc.toString(outcome.dateAfter, QLocale::ShortFormat),
-                     loc.toString(outcome.priceAfter, 'f', 2),
+                     ValueFormatter::formatPrice(outcome.priceAfter),
                      loc.toString(outcome.observedRatio, 'f', 1))
                 + ratioHint,
             outcome.ratioMismatch
@@ -318,9 +319,9 @@ void PresenterShareSplitEdit::onCheckPriceJump()
             "Ergebnis nicht eindeutig (%1: %2 → %3: %4) — bitte manuell "
             "entscheiden, ob die Kurshistorie bereits bereinigt ist.")
                 .arg(loc.toString(outcome.dateBefore, QLocale::ShortFormat),
-                     loc.toString(outcome.priceBefore, 'f', 2),
+                     ValueFormatter::formatPrice(outcome.priceBefore),
                      loc.toString(outcome.dateAfter, QLocale::ShortFormat),
-                     loc.toString(outcome.priceAfter, 'f', 2))
+                     ValueFormatter::formatPrice(outcome.priceAfter))
                 + ratioHint,
             IViewShareSplitEdit::PriceJumpTone::ManualDecisionNeeded);
         break;

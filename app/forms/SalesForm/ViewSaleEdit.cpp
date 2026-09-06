@@ -5,6 +5,7 @@
 #include "../../utils/SaleFifoAllocator.h"
 #include "../../utils/ShareSplitAdjuster.h"
 #include "../../utils/ShareSplitHint.h"
+#include "../../utils/ValueFormatter.h"
 #include "../../utils/DocumentFieldValue.h"
 #include "ModelSaleEdit.h"
 #include "../../IconProvider.h"
@@ -604,7 +605,9 @@ void ViewSaleEdit::loadSale(const SaleObject& sale)
 
     m_orderNumber->setText(sale.orderNumber());
     m_volume->setText(formatVolume(sale.volume()));
-    m_salePrice->setText(formatVolume(sale.salePrice()));
+    // Kurs ueber ValueFormatter (05.09.2026) — unveraenderte Ausgabe, aber
+    // jetzt an derselben Stelle wie alle anderen Kurse der Anwendung.
+    m_salePrice->setText(ValueFormatter::formatPrice(sale.salePrice()));
     m_taxAtSource->setText(formatMoney(sale.taxAtSource()));
     m_capitalGainsTax->setText(formatMoney(sale.capitalGainsTax()));
     m_solidarityTax->setText(formatMoney(sale.solidarityTax()));
@@ -1367,7 +1370,11 @@ void ViewSaleEdit::showBuyDetails(const SaleBuyDetailSummary& summary)
 
     const QList<SaleBuyDetailRow>& rows = summary.rows;
 
-    const bool   isEditMode = summary.editMode;
+    // Bugfix 05.09.2026: bis hierher stand ein einzelnes bool editMode, das
+    // den neu gerechneten juengsten Verkauf nicht vom gespeicherten aelteren
+    // unterscheiden konnte — siehe FifoAllocationOrigin in SaleBuyDetailRow.h.
+    const FifoAllocationOrigin origin = summary.origin;
+    const bool   isStored   = (origin == FifoAllocationOrigin::StoredAllocation);
     const double totVol     = summary.totalVolume;
     const double totFees    = summary.totalFees;
     const double totRed     = summary.totalReduction;
@@ -1388,12 +1395,26 @@ void ViewSaleEdit::showBuyDetails(const SaleBuyDetailSummary& summary)
     mainLayout->setSpacing(8);
 
     // Mode-Hinweis
-    auto* modeLabel = new QLabel(
-        isEditMode
-            ? tr("Tatsächliche FIFO-Zuteilung des gespeicherten Verkaufs:")
-            : tr("Vorschau der FIFO-Zuteilung (wird beim Speichern festgelegt):"));
+    // Drei Zustaende, drei Texte. Die beiden Live-Faelle teilen sich die
+    // Farbe: in beiden ist das Gezeigte vorlaeufig, nur die Herkunft
+    // unterscheidet sich.
+    QString modeText;
+    switch (origin) {
+    case FifoAllocationOrigin::PreviewNewSale:
+        modeText = tr("Vorschau der FIFO-Zuteilung (wird beim Speichern festgelegt):");
+        break;
+    case FifoAllocationOrigin::RecalculatedLatestSale:
+        modeText = tr("Neuberechnung der FIFO-Zuteilung aus den aktuellen Eingaben "
+                      "(wird beim Speichern übernommen):");
+        break;
+    case FifoAllocationOrigin::StoredAllocation:
+        modeText = tr("Tatsächliche FIFO-Zuteilung des gespeicherten Verkaufs:");
+        break;
+    }
+
+    auto* modeLabel = new QLabel(modeText);
     modeLabel->setStyleSheet(
-        isEditMode
+        isStored
             ? QStringLiteral("font-weight: bold; color: #155724;")
             : QStringLiteral("font-weight: bold; color: #856404;"));
     mainLayout->addWidget(modeLabel);
@@ -1490,7 +1511,9 @@ void ViewSaleEdit::showBuyDetails(const SaleBuyDetailSummary& summary)
         dataTable->setItem(i, kColDate,  makeCenter(r.date));
         dataTable->setItem(i, kColVol,   makeCenter(formatVolume(r.volume)   + QStringLiteral(" Stk.")));
         dataTable->setItem(i, kColMul,   makeOp(QStringLiteral("×")));
-        dataTable->setItem(i, kColPrice, makeCenter(formatMoney(r.buyPrice)  + QStringLiteral(" €")));
+        // Bugfix 05.09.2026: hier stand formatMoney(), also zwei Stellen —
+        // die Zeile ist als Gleichung gebaut und ging dadurch nicht auf.
+        dataTable->setItem(i, kColPrice, makeCenter(ValueFormatter::formatPrice(r.buyPrice) + QStringLiteral(" €")));
         dataTable->setItem(i, kColEq1,   makeOp(QStringLiteral("=")));
         dataTable->setItem(i, kColSumme, makeCenter(formatMoney(r.buyValue)  + QStringLiteral(" €")));
         dataTable->setItem(i, kColPlus,  makeOp(QStringLiteral("+")));
@@ -1748,8 +1771,12 @@ void ViewSaleEdit::showBuyDetails(const SaleBuyDetailSummary& summary)
     mainLayout->addWidget(gbGV);
 
     // ── Hinweis + OK ──────────────────────────────────────────────────────
+    // Der FIFO-Satz gehoert an beide Live-Faelle, nicht nur an den neuen
+    // Verkauf: auch beim juengsten Verkauf wird die Zuteilung frisch nach
+    // FIFO gerechnet. Haengt deshalb an isStored, nicht mehr am frueheren
+    // editMode (Bugfix 05.09.2026).
     auto* note = new QLabel(
-        isEditMode
+        isStored
             ? tr("Kaufkosten anteilig aus den zugeordneten Käufen. Gewinn/Verlust inkl. anteiliger Kaufkosten, Verkaufsgebühren und Steuern.")
             : tr("Vorschau nach FIFO: älteste Käufe des gewählten Depots zuerst. "
                  "Kaufkosten anteilig aus den zugeordneten Käufen. Gewinn/Verlust inkl. anteiliger Kaufkosten, Verkaufsgebühren und Steuern."));

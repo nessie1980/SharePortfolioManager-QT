@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterShareDetails.h"
+#include "../../utils/ValueFormatter.h"
 
 #include <QLocale>
 #include <QDateTime>
@@ -13,9 +14,25 @@ QString formatMoney(const QLocale& locale, double value)
     return locale.toString(value, 'f', 2) + QStringLiteral(" €");
 }
 
+/**
+ * @brief Kurs je Aktie, vier Nachkommastellen (05.09.2026).
+ *
+ * Die Boxen dieser Form sind als Gleichungen aufgebaut (Anteile mal Kurs
+ * ergibt Bestandswert). Mit zwei Stellen ging die Zeile bei krummen Kursen
+ * sichtbar nicht auf — derselbe Fehler wie im Details-Dialog des
+ * Verkaufsformulars, siehe ARCHITECTURE.md.
+ */
+QString formatPrice(const QLocale& /*locale*/, double value)
+{
+    return ValueFormatter::formatPrice(value) + QStringLiteral(" €");
+}
+
 QString formatVolume(const QLocale& locale, double value)
 {
-    return locale.toString(value, 'f', 2) + QStringLiteral(" stk.");
+    // Vier Nachkommastellen wie ueberall sonst im Projekt (05.09.2026).
+    // Hier standen zwei — bei einem Fondsbestand von 168,50796 Anteilen war
+    // damit auch der zweite Faktor der Gleichung gerundet dargestellt.
+    return locale.toString(value, 'f', 4) + QStringLiteral(" stk.");
 }
 
 QString formatPercent(const QLocale& locale, double value)
@@ -197,7 +214,7 @@ CalculationRows PresenterShareDetails::buildGesamtBox(const ShareValues& v) cons
 
         CalculationRows rows;
         rows << CalculationRow{ QString(), tr("Anteile:"), formatVolume(locale, v.volume), QColor(), false }
-             << CalculationRow{ QStringLiteral("×"), tr("Aktueller Kurswert:"), formatMoney(locale, v.curPrice), QColor(), false }
+             << CalculationRow{ QStringLiteral("×"), tr("Aktueller Kurswert:"), formatPrice(locale, v.curPrice), QColor(), false }
              << CalculationRow{ QStringLiteral("="), tr("Aktueller Bestandswert:"), formatMoney(locale, v.curValue), QColor(), true }
              << disabledRow(QStringLiteral("+"), tr("Dividenden:"))
              << CalculationRow{ QStringLiteral("+"), tr("Verkäufe:"), formatMoney(locale, v.salePayoutMarket), QColor(), false }
@@ -213,7 +230,7 @@ CalculationRows PresenterShareDetails::buildGesamtBox(const ShareValues& v) cons
 
     CalculationRows rows;
     rows << CalculationRow{ QString(), tr("Anteile:"), formatVolume(locale, v.volume), QColor(), false }
-         << CalculationRow{ QStringLiteral("×"), tr("Aktueller Kurswert:"), formatMoney(locale, v.curPrice), QColor(), false }
+         << CalculationRow{ QStringLiteral("×"), tr("Aktueller Kurswert:"), formatPrice(locale, v.curPrice), QColor(), false }
          << CalculationRow{ QStringLiteral("="), tr("Aktueller Bestandswert:"), formatMoney(locale, v.curValue), QColor(), true }
          << CalculationRow{ QStringLiteral("+"), tr("Dividenden:"), formatMoney(locale, v.totalDividend), QColor(), false }
          << CalculationRow{ QStringLiteral("+"), tr("Verkäufe:"), formatMoney(locale, v.salePayoutFinal), QColor(), false }
@@ -237,12 +254,12 @@ CalculationRows PresenterShareDetails::buildVortagBox(const ShareValues& v) cons
     const double prevDayProfitLoss = roundAway(v.volume * v.prevDayDiff);
 
     CalculationRows rows;
-    rows << CalculationRow{ QString(), tr("Aktueller Kurswert:"), formatMoney(locale, v.curPrice), QColor(), false }
-         << CalculationRow{ QStringLiteral("−"), tr("Vortages-Kurswert:"), formatMoney(locale, v.prevDayPrice), QColor(), false }
-         << CalculationRow{ QStringLiteral("="), tr("Kurswert-Entw.:"), formatMoney(locale, v.prevDayDiff), diffColor, true }
+    rows << CalculationRow{ QString(), tr("Aktueller Kurswert:"), formatPrice(locale, v.curPrice), QColor(), false }
+         << CalculationRow{ QStringLiteral("−"), tr("Vortages-Kurswert:"), formatPrice(locale, v.prevDayPrice), QColor(), false }
+         << CalculationRow{ QStringLiteral("="), tr("Kurswert-Entw.:"), formatPrice(locale, v.prevDayDiff), diffColor, true }
          << CalculationRow{ QString(), tr("Entwicklung:"), formatPercent(locale, v.prevDayPct), diffColor, false }
          << CalculationRow{ QString(), tr("Anteile:"), formatVolume(locale, v.volume), QColor(), false }
-         << CalculationRow{ QStringLiteral("×"), tr("Kurswert-Entw.:"), formatMoney(locale, v.prevDayDiff), QColor(), false }
+         << CalculationRow{ QStringLiteral("×"), tr("Kurswert-Entw.:"), formatPrice(locale, v.prevDayDiff), QColor(), false }
          << CalculationRow{ QStringLiteral("="), tr("Gewinn / Verlust:"), formatMoney(locale, prevDayProfitLoss), diffColor, true };
 
     return rows;
@@ -259,7 +276,7 @@ CalculationRows PresenterShareDetails::buildAktuelleBox(const ShareValues& v) co
         // ShareCalculator::compute()) — no fresh rounding needed here.
         CalculationRows rows;
         rows << CalculationRow{ QString(), tr("Anteile:"), formatVolume(locale, v.volume), QColor(), false }
-             << CalculationRow{ QStringLiteral("×"), tr("Aktueller Kurswert:"), formatMoney(locale, v.curPrice), QColor(), false }
+             << CalculationRow{ QStringLiteral("×"), tr("Aktueller Kurswert:"), formatPrice(locale, v.curPrice), QColor(), false }
              << CalculationRow{ QStringLiteral("="), tr("Aktueller Bestandswert:"), formatMoney(locale, v.curValue), QColor(), true }
              << disabledRow(QStringLiteral("+"), tr("Dividenden:"))
              << CalculationRow{ QStringLiteral("+"), tr("Gewinn / Verlust (Verkäufe):"), formatMoney(locale, v.saleProfitLoss), QColor(), false }
@@ -273,7 +290,7 @@ CalculationRows PresenterShareDetails::buildAktuelleBox(const ShareValues& v) co
 
     CalculationRows rows;
     rows << CalculationRow{ QString(), tr("Anteile:"), formatVolume(locale, v.volume), QColor(), false }
-         << CalculationRow{ QStringLiteral("×"), tr("Aktueller Kurswert:"), formatMoney(locale, v.curPrice), QColor(), false }
+         << CalculationRow{ QStringLiteral("×"), tr("Aktueller Kurswert:"), formatPrice(locale, v.curPrice), QColor(), false }
          << CalculationRow{ QStringLiteral("="), tr("Aktueller Bestandswert:"), formatMoney(locale, v.curValue), QColor(), true }
          << CalculationRow{ QStringLiteral("+"), tr("Dividenden:"), formatMoney(locale, v.totalDividend), QColor(), false }
          << CalculationRow{ QStringLiteral("+"), tr("Gewinn / Verlust (Verkäufe):"), formatMoney(locale, v.saleProfitLossFinal), QColor(), false }

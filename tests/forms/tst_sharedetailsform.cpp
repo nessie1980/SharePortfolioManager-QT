@@ -347,7 +347,10 @@ private slots:
 
         const CalculationRow* diff = FakeViewShareDetails::findRow(view.vortagRows, QStringLiteral("Kurswert-Entw.:"));
         QVERIFY(diff);
-        QCOMPARE(diff->value, locale.toString(41.90, 'f', 2) + QStringLiteral(" €"));
+        // Kurswert-Entw. ist die Differenz zweier Kurse und wird seit
+        // 05.09.2026 vierstellig angezeigt (ValueFormatter::formatPrice) —
+        // die Box ist eine Gleichung, in der dieser Wert als Faktor auftaucht.
+        QCOMPARE(diff->value, locale.toString(41.90, 'f', 4) + QStringLiteral(" €"));
         QCOMPARE(diff->color, QColor(QStringLiteral("green")));
 
         // 40.00 * 41.90 = 1676.00 (matches the C# reference screenshot exactly)
