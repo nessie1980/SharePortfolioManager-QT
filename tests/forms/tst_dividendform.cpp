@@ -210,8 +210,21 @@ public:
         // Mirrors ViewDividendEdit::setFieldOk() writing the value back into
         // the widget — needed so priceAtPayday() reflects an auto-filled
         // value in tests, the same way the real QLineEdit would.
-        if (field == QStringLiteral("priceAtPayday") && !value.isEmpty())
-            m_priceAtPayday = value.toDouble();
+        //
+        // 06.09.2026: hier stand value.toDouble(), also die C-Konvention.
+        // Das passte genau zu dem QString::number(..., 'f', 2), das der
+        // Presenter damals schrieb — Stub und Presenter waren gemeinsam
+        // falsch, weshalb die deutsche Formatierung des Feldes hier nie
+        // auffiel. Jetzt dieselbe Umwandlung wie in
+        // ViewDividendEdit::parseDouble(), damit der Stub den Weg der
+        // echten View nachbildet statt einen eigenen.
+        if (field == QStringLiteral("priceAtPayday") && !value.isEmpty()) {
+            QString parsed = value.trimmed();
+            parsed.replace(QLatin1Char(','), QLatin1Char('.'));
+            bool ok = false;
+            const double v = parsed.toDouble(&ok);
+            m_priceAtPayday = ok ? v : 0.0;
+        }
 
         if (failingFields.contains(field)) return false;
         return true;
@@ -1065,6 +1078,54 @@ private slots:
         QCOMPARE(view.lastFieldOkField, QStringLiteral("priceAtPayday"));
         QCOMPARE(view.priceAtPayday(), 204.71);
         QVERIFY(!view.lastFieldOkTooltip.isEmpty());  // "Aus Tageswerten übernommen ..."
+    }
+
+    void test_presenterDividendEdit_onDateEdited_writesGermanFourDecimalPrice()
+    {
+        // Regression 06.09.2026: der uebernommene Kurs ging als
+        // QString::number(..., 'f', 2) ins Feld, also zwei Stellen und ein
+        // Punkt als Dezimaltrenner. Geprueft wird der geschriebene String
+        // selbst, nicht nur der zurueckgelesene Wert — genau der String war
+        // falsch, waehrend der Wert stimmte.
+        StubViewDividendEdit view;
+        view.m_dateTime         = QStringLiteral("2025-12-17T00:00:00");
+        view.m_priceAtPayday    = 0.0;
+        StubModelDividendEdit model;
+        model.hasClosingPrice      = true;
+        model.closingPriceToReturn = 204.715;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onDateEdited();
+
+        QCOMPARE(view.lastFieldOkValue, QStringLiteral("204,7150"));
+        QCOMPARE(view.priceAtPayday(), 204.715);
+    }
+
+    void test_presenterDividendEdit_onDateEdited_fourDigitPriceSurvivesReadBack()
+    {
+        // Regression 06.09.2026: mit Tausendertrennzeichen ("1.003,0000")
+        // scheitert ViewDividendEdit::parseDouble() und liefert 0,0 — der
+        // Kurs waere beim Speichern verschwunden. Deshalb schreibt der
+        // Presenter ueber formatPriceForInput(), also ohne Trennzeichen.
+        //
+        // @note Das behebt nur diesen einen Schreibweg. Jedes Feld, das
+        // ueber formatMoney()/formatVolume() befuellt wird, hat das Problem
+        // weiterhin — siehe ARCHITECTURE.md, "Zahlenfelder verlieren Werte
+        // ab 1.000 beim Zuruecklesen".
+        StubViewDividendEdit view;
+        view.m_dateTime         = QStringLiteral("2025-12-17T00:00:00");
+        view.m_priceAtPayday    = 0.0;
+        StubModelDividendEdit model;
+        model.hasClosingPrice      = true;
+        model.closingPriceToReturn = 1003.0;
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onDateEdited();
+
+        QVERIFY2(!view.lastFieldOkValue.contains(QLatin1Char('.')),
+                 qPrintable(view.lastFieldOkValue));
+        QCOMPARE(view.lastFieldOkValue, QStringLiteral("1003,0000"));
+        QCOMPARE(view.priceAtPayday(), 1003.0);
     }
 
     void test_presenterDividendEdit_onDateEdited_noDailyValue_leavesPriceAtPaydayUnchanged()

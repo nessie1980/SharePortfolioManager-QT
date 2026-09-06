@@ -5384,22 +5384,39 @@ beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
 
-### Kurs beim automatischen Uebernehmen aus den Tageswerten (05.09.2026)
+### Zahlenfelder verlieren Werte ab 1.000 beim Zuruecklesen (06.09.2026)
 
-`PresenterDividendEdit::applyDailyValuePriceAtPayday()` schreibt den aus
-`daily_values` uebernommenen Schlusskurs mit
-`QString::number(closingPrice, 'f', 2)` ins Feld. Zwei Probleme in einer
-Zeile: zwei Nachkommastellen, obwohl das Feld einen Kurs enthaelt, und
-`QString::number()` formatiert immer nach C-Konvention, liefert also einen
-Punkt statt eines Kommas. Beim Laden derselben Dividende steht dort danach
-ein deutsch formatierter, vierstelliger Wert — dieselbe Zahl sieht je nach
-Weg unterschiedlich aus.
+Die Views schreiben ihre Zahlenfelder ueber `formatMoney()`/`formatVolume()`,
+also mit deutschem Gruppierungszeichen: aus 1003,0 wird "1.003,00". Gelesen
+wird ueber `parseDouble()`, und das ersetzt lediglich das Komma durch einen
+Punkt und ruft `toDouble()`. Das Gruppierungszeichen bleibt stehen, aus
+"1.003,00" wird "1.003.00", `toDouble()` scheitert, die Funktion liefert
+0,0 -- stillschweigend, ohne Feldfehler.
 
-Beim Rollout der Kurs-Anzeige (siehe "Erledigt / Archiv") uebersehen, weil
-die Suche nach `toString(..., 'f', N)` diese Stelle nicht traf. Der Fix ist
-`ValueFormatter::formatPrice()`; mitzuziehen ist `StubViewDividendEdit` in
-`tst_dividendform.cpp`, dessen `setFieldOk()` den Wert per
-`QString::toDouble()` einliest und an einem Komma scheitern wuerde.
+Praktische Folge: eine gespeicherte Dividende mit einem Kurs am Zahltag von
+1.003,00 EUR wird beim Laden korrekt angezeigt und beim naechsten Speichern
+als 0,0 zurueckgeschrieben. Der Nutzer sieht den richtigen Wert im Feld,
+aendert an anderer Stelle etwas, speichert -- und der Kurs ist weg.
+
+Nachgewiesen ist es fuer `ViewDividendEdit`. `ViewSaleEdit`, `ViewBuyEdit`,
+`ViewBrokerageEdit`, `ViewShareEdit`, `ViewShareAdd` und
+`ViewShareSplitEdit` haben dieselbe Bauart aus separator-erzeugendem
+Schreiben und separator-blindem Lesen; dass sie betroffen sind, ist eine
+begruendete Vermutung, keine Messung. Vierstellige Kurse sind nicht exotisch
+-- Alphabet lag vor dem Split ueber 1.000 EUR.
+
+Aufgefallen als Nebenwirkung des Kurs-Rollouts (1.21.2): der dortige Fix
+haette den Fehler in genau diesen einen Pfad erst eingebaut, weil er
+vorher C-formatiert und damit separatorfrei schrieb. Umgangen ist er dort
+mit `ValueFormatter::formatPriceForInput()`, das ohne Gruppierungszeichen
+formatiert -- eine Umgehung an einer Stelle, keine Loesung.
+
+Die Loesung gehoert nach `parseDouble()`: das Gruppierungszeichen der
+aktuellen Locale entfernen, bevor umgewandelt wird. Die Funktion liegt
+allerdings als private statische Methode in jeder View einzeln vor; ein
+Fix bedeutet dieselbe Aenderung an sechs bis sieben Stellen oder das
+Zusammenziehen in eine gemeinsame Funktion. Bestandsaufnahme ueber alle
+Formulare noetig, mit Tests je Dialog.
 
 ### formatMoney/formatVolume liegen weiterhin je View doppelt vor (05.09.2026)
 
@@ -5595,6 +5612,35 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Kurs beim automatischen Uebernehmen aus den Tageswerten (05.09.2026, behoben 06.09.2026)
+
+`PresenterDividendEdit::applyDailyValuePriceAtPayday()` schrieb den aus
+`daily_values` uebernommenen Schlusskurs mit
+`QString::number(closingPrice, 'f', 2)` ins Feld: zwei Nachkommastellen,
+obwohl das Feld einen Kurs enthaelt, und C-Konvention statt deutscher
+Formatierung. Beim Laden derselben Dividende stand dort danach ein deutsch
+formatierter, vierstelliger Wert.
+
+Beim Kurs-Rollout (1.21.1) uebersehen, weil die Bestandsaufnahme nach
+`toString(..., 'f', N)` suchte und diese Stelle `QString::number()`
+verwendet. Merkposten fuer kuenftige Bestandsaufnahmen: beide Schreibweisen
+suchen.
+
+Warum `formatPriceForInput()` und nicht `formatPrice()`: der Wert geht in
+ein `QLineEdit` und wird von dort ueber `parseDouble()` zurueckgelesen, das
+an einem Tausendertrennzeichen scheitert. Ein per `formatPrice()`
+geschriebener vierstelliger Kurs waere beim Speichern verschwunden -- der
+Fix haette den Fehler verschlimmert, den er beheben soll. Siehe "Offene
+Punkte", "Zahlenfelder verlieren Werte ab 1.000 beim Zuruecklesen".
+
+Mitgezogen: `StubViewDividendEdit::setFieldOk()` in `tst_dividendform.cpp`
+las den Wert mit `value.toDouble()` ein, also ebenfalls C-Konvention. Stub
+und Presenter waren gemeinsam falsch, weshalb die deutsche Formatierung des
+Feldes im Test nie auffiel. Der Stub bildet jetzt
+`ViewDividendEdit::parseDouble()` nach statt einen eigenen Weg zu gehen --
+ein Fake, der sich anders verhaelt als das Echte, deckt genau die Fehler
+nicht auf, fuer die er da ist.
 
 ### Kurs-Anzeige durchgaengig mit vier Nachkommastellen (11.08.2026, behoben 05.09.2026)
 

@@ -56,6 +56,34 @@ public:
     }
 
     /**
+     * @brief Kurs fuer ein Eingabefeld, vier Nachkommastellen, OHNE
+     * Tausendertrennzeichen.
+     *
+     * Gegenstueck zu formatPrice() fuer Werte, die in ein QLineEdit
+     * geschrieben und von dort wieder eingelesen werden. In einer Tabelle
+     * ist das Trennzeichen eine Lesehilfe; in einem Eingabefeld ist es ein
+     * Zeichen, das die Gegenrichtung wieder entfernen muesste.
+     *
+     * Anlass (06.09.2026): die parseDouble()-Implementierungen der Views
+     * ersetzen das Komma durch einen Punkt und rufen toDouble(). Ein
+     * stehengebliebenes Trennzeichen macht daraus "1.003.0000", also keine
+     * Zahl mehr -- toDouble() scheitert und liefert 0,0. Ein per
+     * formatPrice() geschriebener vierstelliger Kurs waere beim naechsten
+     * Lesen verschwunden.
+     *
+     * @note Das ist eine Umgehung, keine Loesung. Das eigentliche Problem
+     * sitzt in parseDouble() und betrifft jedes Zahlenfeld, das ueber
+     * formatMoney()/formatVolume() befuellt wird -- siehe ARCHITECTURE.md,
+     * "Zahlenfelder verlieren Werte ab 1.000 beim Zuruecklesen".
+     */
+    static QString formatPriceForInput(double value)
+    {
+        QLocale loc;
+        loc.setNumberOptions(QLocale::OmitGroupSeparator);
+        return loc.toString(value, 'f', 4);
+    }
+
+    /**
      * @brief Devisenkurs (Umrechnungsverhaeltnis), vier Nachkommastellen.
      *
      * Bewusst eine eigene Funktion, obwohl sie heute dasselbe liefert wie

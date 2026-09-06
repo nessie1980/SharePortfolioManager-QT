@@ -5,6 +5,7 @@
 #include "../../config/DocumentFieldNames.h"
 #include "../../utils/DocumentClassifier.h"
 #include "../../utils/DividendVolumeChecker.h"
+#include "../../utils/ValueFormatter.h"
 
 #include <QLocale>
 
@@ -264,9 +265,21 @@ void PresenterDividendEdit::applyDailyValuePriceAtPayday(const QDate& date)
     if (!m_model->findClosingPriceForDate(m_shareGuid, date, closingPrice))
         return;  // Kein Treffer in der DB → Feld bleibt unverändert.
 
+    // Bugfix 06.09.2026: hier stand QString::number(closingPrice, 'f', 2).
+    // Zwei Probleme in einer Zeile — zwei Nachkommastellen, obwohl das Feld
+    // einen Kurs enthaelt, und QString::number() formatiert immer nach
+    // C-Konvention, schrieb also einen Punkt in ein Formular, das sonst
+    // durchgaengig deutsch formatiert. Dieselbe Dividende sah je nach Weg
+    // (uebernommen oder geladen) unterschiedlich aus.
+    //
+    // formatPriceForInput() statt formatPrice(), weil der Wert hier in ein
+    // QLineEdit geht und von dort ueber parseDouble() zurueckgelesen wird —
+    // ein Tausendertrennzeichen wuerde das Zuruecklesen zerstoeren. Siehe
+    // ARCHITECTURE.md, "Zahlenfelder verlieren Werte ab 1.000 beim
+    // Zuruecklesen".
     m_view->setFieldOk(
         QStringLiteral("priceAtPayday"),
-        QString::number(closingPrice, 'f', 2),
+        ValueFormatter::formatPriceForInput(closingPrice),
         QObject::tr("Aus Tageswerten übernommen (Kurs vom %1)")
             .arg(date.toString(QStringLiteral("dd.MM.yyyy"))));
     refreshDerivedValues();

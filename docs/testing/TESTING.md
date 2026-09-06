@@ -2596,6 +2596,8 @@ ViewDividendEdit — Fremdwaehrungs-Modus:
 | `test_presenterDividendEdit_onDateEdited_validDate_setsOk` | Gültiges Datum → Ok-Icon | kein Fehler-Dialog |
 | `test_presenterDividendEdit_onDateEdited_sentinelDate_setsError` | Sentinel 2000-01-01 → Error-Icon | Icon-Only, kein Dialog |
 | `test_presenterDividendEdit_onDateEdited_dailyValueFound_fillsPriceAtPayday` | Datum geändert, Model liefert Schlusskurs | `findClosingPriceForDate` aufgerufen mit korrektem shareGuid/Datum, `priceAtPayday()` = gelieferter Preis, Tooltip gesetzt |
+| `test_presenterDividendEdit_onDateEdited_writesGermanFourDecimalPrice` | Der uebernommene Kurs geht als "204,7150" ins Feld — geprueft wird der geschriebene String, nicht nur der zurueckgelesene Wert (Regression 06.09.2026) |
+| `test_presenterDividendEdit_onDateEdited_fourDigitPriceSurvivesReadBack` | 1003,0 wird ohne Tausendertrennzeichen geschrieben und kommt beim Zuruecklesen unveraendert an |
 | `test_presenterDividendEdit_onDateEdited_noDailyValue_leavesPriceAtPaydayUnchanged` | Datum geändert, kein Treffer in `daily_values` | `priceAtPayday()` bleibt unverändert (bereits manuell gesetzter Wert bleibt erhalten) |
 | `test_presenterDividendEdit_onDateEdited_invalidDate_doesNotQueryDailyValue` | Sentinel-Datum → ungültig | `findClosingPriceForDate` wird **nicht** aufgerufen |
 
@@ -3182,6 +3184,10 @@ formatiert wird und die CI-Runner nicht deutsch laufen.
 | `test_formatPrice_negativeKeepsSign` | Kursdifferenzen koennen negativ sein |
 | `test_formatPrice_zeroIsNotEmpty` | 0,0 wird zu "0,0000" |
 | `test_formatPrice_hasNoUnitSuffix` | kein Euro-Zeichen — die Einheit haengt die Aufrufstelle an |
+| `test_formatPriceForInput_omitsGroupSeparator` | 1003,0 wird zu "1003,0000" — kein Tausendertrennzeichen |
+| `test_formatPriceForInput_keepsGermanDecimalSeparator` | nur das Gruppierungszeichen faellt weg, das Komma bleibt |
+| `test_formatPriceForInput_matchesFormatPriceBelowThousand` | unterhalb 1.000 sind beide Funktionen deckungsgleich |
+| `test_formatPriceForInput_doesNotLeakOptionIntoDefaultLocale` | die NumberOption wirkt nur lokal, nicht auf die Standard-Locale |
 | `test_formatExchangeRate_hasFourDecimals` | Devisenkurs 1,0834 |
 | `test_formatExchangeRate_neutralRatioIsPadded` | Vorgabe 1,0 wird zu "1,0000" |
 

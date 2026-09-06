@@ -10,6 +10,25 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.21.2] - 2026-09-06
+
+### Fixed
+
+- **Der aus den Tageswerten uebernommene Kurs am Auszahlungstag wurde
+  abweichend formatiert.** Er ging mit zwei Nachkommastellen und einem Punkt
+  als Dezimaltrenner ins Feld, waehrend derselbe Wert beim Laden der
+  Dividende deutsch und vierstellig erschien. Dieselbe Zahl sah damit je
+  nach Weg unterschiedlich aus. Nachzuegler zum Kurs-Rollout aus 1.21.1 —
+  die Stelle verwendet `QString::number()` statt `QLocale::toString()` und
+  war deshalb bei der Bestandsaufnahme durchgerutscht.
+
+  Geschrieben wird jetzt ohne Tausendertrennzeichen. Der Grund ist unschoen:
+  die `parseDouble()`-Implementierungen der Views ersetzen beim Zuruecklesen
+  das Komma durch einen Punkt und lassen ein Gruppierungszeichen stehen,
+  woraus "1.003.0000" wird — keine Zahl mehr. Ein vierstelliger Kurs waere
+  beim Speichern verschwunden. Das dahinterliegende Problem betrifft jedes
+  Zahlenfeld der Anwendung und wird getrennt behandelt.
+
 ## [1.21.1] - 2026-09-05
 
 ### Fixed

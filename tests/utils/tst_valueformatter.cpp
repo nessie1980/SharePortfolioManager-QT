@@ -73,6 +73,42 @@ private slots:
         QVERIFY(!ValueFormatter::formatPrice(12.5).contains(QStringLiteral("€")));
     }
 
+    // ── formatPriceForInput ───────────────────────────────────────────────
+
+    void test_formatPriceForInput_omitsGroupSeparator()
+    {
+        // Der Unterschied zu formatPrice(): kein Tausendertrennzeichen.
+        // In einem Eingabefeld waere es ein Zeichen, das die Gegenrichtung
+        // wieder entfernen muesste — und genau das tut parseDouble() nicht.
+        QCOMPARE(ValueFormatter::formatPriceForInput(1003.0),
+                 QStringLiteral("1003,0000"));
+    }
+
+    void test_formatPriceForInput_keepsGermanDecimalSeparator()
+    {
+        // Nur das Gruppierungszeichen faellt weg, das Dezimalkomma bleibt.
+        QCOMPARE(ValueFormatter::formatPriceForInput(204.715),
+                 QStringLiteral("204,7150"));
+    }
+
+    void test_formatPriceForInput_matchesFormatPriceBelowThousand()
+    {
+        // Unterhalb von 1.000 gibt es nichts zu gruppieren — beide
+        // Funktionen liefern dasselbe.
+        QCOMPARE(ValueFormatter::formatPriceForInput(48.595),
+                 ValueFormatter::formatPrice(48.595));
+    }
+
+    void test_formatPriceForInput_doesNotLeakOptionIntoDefaultLocale()
+    {
+        // Die NumberOption wird auf einer lokalen Kopie gesetzt. Wuerde sie
+        // die Standard-Locale veraendern, verloeren alle Tabellen der
+        // Anwendung ihr Tausendertrennzeichen.
+        ValueFormatter::formatPriceForInput(1003.0);
+        QCOMPARE(ValueFormatter::formatPrice(1003.0),
+                 QStringLiteral("1.003,0000"));
+    }
+
     // ── formatExchangeRate ────────────────────────────────────────────────
 
     void test_formatExchangeRate_hasFourDecimals()
