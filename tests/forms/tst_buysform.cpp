@@ -2863,6 +2863,19 @@ private slots:
 
 int main(int argc, char* argv[])
 {
+    // Bugfix 06.09.2026 — siehe ARCHITECTURE.md, "System-Locale-abhängiges
+    // Zahlenformat": muss vor jeder QLocale()-Verwendung gesetzt werden.
+    //
+    // Dieses Testziel war als einziges der acht Formular-Ziele ohne diese
+    // Zeile. Aufgefallen ist es erst mit NumberParser (1.21.3): die alte
+    // parseDouble() ersetzte das Komma durch einen Punkt und wandelte nach
+    // C-Konvention um, war also zufällig locale-unabhängig. Seit die View
+    // über QLocale() liest, las ein englischer Runner "39,998" als 39998 und
+    // "1234,56" als gar nichts. Lokal fiel nichts auf, weil dort die
+    // System-Locale deutsch ist — genau die Sorte Unterschied zwischen
+    // Entwicklungsrechner und CI, für die diese Zeile existiert.
+    QLocale::setDefault(QLocale::German);
+
     QApplication app(argc, argv);
     app.setAttribute(Qt::AA_Use96Dpi, true);
 

@@ -5674,6 +5674,24 @@ Ein leeres Feld gilt als Erfolg mit dem Wert 0,0. Bei den optionalen Feldern
 bedeutet "nichts eingetragen" null und darf keine Meldung ausloesen; fehlende
 Pflichtfelder faengt weiterhin `hasMissingRequiredFields()` ab.
 
+@note Nachtrag zum Locale: die alte Umwandlung war zufaellig
+locale-unabhaengig -- sie ersetzte das Komma durch einen Punkt und wandelte
+nach C-Konvention um. Seit `NumberParser` ueber `QLocale()` liest, haengen
+die Views beim LESEN an der Standard-Locale, so wie sie beim SCHREIBEN schon
+immer daran hingen. In der Anwendung ist das unkritisch, `main.cpp` setzt
+Deutsch. In den Tests fiel dabei auf, dass `tst_buysform.cpp` als einziges
+der acht Formular-Ziele `QLocale::setDefault(QLocale::German)` nie gesetzt
+hatte: auf dem englischen CI-Runner las es "39,998" als 39998 und "1234,56"
+als gar nichts, waehrend lokal alles gruen war. Genau der Fall, fuer den der
+Eintrag "System-Locale-abhaengiges Zahlenformat" vom 23.07.2026 existiert.
+
+Bewusst NICHT gemacht: `QLocale(QLocale::German)` fest in `NumberParser`
+verdrahten. Das haette die CI-Empfindlichkeit beseitigt, aber Lesen und
+Schreiben wieder an unterschiedliche Locales gehaengt -- `ValueFormatter`
+formatiert ueber `QLocale()`. Genau diese Sorte Auseinanderlaufen von
+Schreib- und Leseweg ist die Fehlerklasse, um die es hier die ganze Zeit
+geht.
+
 @note `parseDouble()` hat einen optionalen `bool* ok`-Parameter bekommen, der
 noch von keiner Aufrufstelle ausgewertet wird. Er ist die Vorbereitung fuer
 die Rueckmeldung unlesbarer Eingaben, siehe "Offene Punkte". Bewusst getrennt:
