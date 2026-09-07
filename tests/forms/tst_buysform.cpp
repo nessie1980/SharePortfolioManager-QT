@@ -168,8 +168,12 @@ public:
         if (failingFields.contains(f)) return false;
         return true;
     }
+    // 07.09.2026: der Stub verwarf den Feldschluessel bisher. Fuer die
+    // Rueckmeldung unlesbarer Zahleneingaben muss pruefbar sein, WELCHES
+    // Feld der Presenter rot markiert hat.
+    QStringList fieldErrors;
     void setFieldError(const QString& f, const QString& = QString()) override
-    { Q_UNUSED(f) }
+    { fieldErrors << f; }
     void setDocumentPath(const QString& path)        override
         { m_docPath = path; }
     void setDocumentPreview(const QString&)          override {}
@@ -212,6 +216,16 @@ public:
     void markMissingFieldsAsFailed()                 override {}
     bool hasMissingRequiredFields(QStringList& missing) const override
         { missing.clear(); if (m_missingFields) missing << QStringLiteral("test"); return m_missingFields; }
+
+    // hasUnreadableFields (07.09.2026): der Stub haelt die Antwort in einem
+    // Feld vor, das die Tests setzen. Der Presenter fragt sie ab, um
+    // unlesbare Zahleneingaben rot zu markieren und das Speichern zu
+    // sperren — siehe ARCHITECTURE.md, "Unlesbare Zahleneingaben werden
+    // nicht gemeldet".
+    QStringList unreadableFields;
+    bool hasUnreadableFields(QStringList& fieldKeys) const override
+        { fieldKeys = unreadableFields; return !unreadableFields.isEmpty(); }
+
 };
 // ─────────────────────────────────────────────────────────────────────────────
 class TestBuysForm : public QObject
@@ -2160,6 +2174,75 @@ private slots:
      * auf null zurückgeschrieben, ohne jede Meldung. Siehe ARCHITECTURE.md,
      * "Zahlenfelder verlieren Werte ab 1.000 beim Zurücklesen".
      */
+
+    // ── Unlesbare Zahleneingaben (07.09.2026) ────────────────────────────
+    //
+    // Gegenstueck zu den Pflichtfeld-Tests: dort ist ein Feld leer, hier
+    // steht etwas drin, das keine gueltige deutsche Zahl ist. Ueber
+    // NumberParser ergibt das 0,0 — bei den optionalen Gebuehren- und
+    // Steuerfeldern also einen voellig unauffaelligen Wert. Siehe
+    // ARCHITECTURE.md, "Unlesbare Zahleneingaben werden nicht gemeldet".
+
+    void test_presenterBuyEdit_unreadableField_blocksSave()
+    {
+        openMemoryDb();
+        StubViewBuyEdit  view;
+        StubModelBuyEdit model;
+        view.unreadableFields = { QStringLiteral("provision") };
+        PresenterBuyEdit p(&view, &model, QStringLiteral("share-guid"), nullptr);
+
+        p.onSave();
+
+        QVERIFY2(!view.lastError.isEmpty(), "Speichern muss eine Meldung zeigen");
+        QVERIFY(!view.closed);
+    }
+
+    void test_presenterBuyEdit_unreadableField_isMarkedInTheMask()
+    {
+        openMemoryDb();
+        StubViewBuyEdit  view;
+        StubModelBuyEdit model;
+        view.unreadableFields = { QStringLiteral("provision") };
+        PresenterBuyEdit p(&view, &model, QStringLiteral("share-guid"), nullptr);
+
+        p.onSave();
+
+        QVERIFY(view.fieldErrors.contains(QStringLiteral("provision")));
+    }
+
+    void test_presenterBuyEdit_unreadableField_messageDiffersFromMissingField()
+    {
+        // Der Unterschied ist der Punkt der Uebung: "Feld ist leer" und
+        // "Feld enthaelt keine Zahl" verlangen verschiedene Abhilfen.
+        openMemoryDb();
+        StubViewBuyEdit  view;
+        StubModelBuyEdit model;
+        view.unreadableFields = { QStringLiteral("provision") };
+        PresenterBuyEdit p(&view, &model, QStringLiteral("share-guid"), nullptr);
+        p.onSave();
+        const QString unreadableMessage = view.lastError;
+
+        QVERIFY(!unreadableMessage.contains(QStringLiteral("Pflichtangaben")));
+        QVERIFY(unreadableMessage.contains(QStringLiteral("Zahl")));
+    }
+
+    void test_viewBuyEdit_hasUnreadableFields_detectsNonNumericText()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+        dlg.setFieldOk(QStringLiteral("provision"), QStringLiteral("9,90"));
+
+        QStringList keys;
+        QVERIFY(!dlg.hasUnreadableFields(keys));
+
+        // Unlesbarer Text ins Feld: setFieldOk() schreibt den Rohwert
+        // unveraendert hinein, weil DocumentFieldValue::forNumericField()
+        // daran nichts zu normalisieren findet.
+        dlg.setFieldOk(QStringLiteral("provision"), QStringLiteral("abc"));
+        QVERIFY(dlg.hasUnreadableFields(keys));
+        QVERIFY(keys.contains(QStringLiteral("provision")));
+    }
+
     void test_viewBuyEdit_loadBuy_fourDigitValuesSurviveReadBack()
     {
         openMemoryDb();

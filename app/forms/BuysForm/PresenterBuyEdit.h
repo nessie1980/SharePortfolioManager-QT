@@ -130,6 +130,42 @@ private:
     void    refreshSplitHint();
     QString validateInput() const;
 
+    /**
+     * @brief Markiert alle Felder rot, deren Inhalt sich nicht als Zahl lesen
+     *        laesst, und meldet, ob es welche gab.
+     *
+     * Fragt IView*::hasUnreadableFields() ab. Die View sagt, WAS sie nicht
+     * lesen konnte; was daraus folgt, entscheidet der Presenter — hier die
+     * rote Markierung, in validateInput() zusaetzlich die Speichersperre.
+     *
+     * Wird aus den Live-Slots heraus aufgerufen, damit die Markierung schon
+     * beim Verlassen des Feldes steht und nicht erst beim Speichern
+     * (Nessies Vorgabe 06.09.2026). Ohne Meldungsfenster: ein modaler Dialog
+     * bei jedem Feldwechsel waere unertraeglich, das rote Symbol ist die
+     * sofortige Rueckmeldung.
+     *
+     * Ergaenzt 07.09.2026, siehe ARCHITECTURE.md, "Unlesbare Zahleneingaben
+     * werden nicht gemeldet".
+     */
+    bool markUnreadableFields() const;
+
+    /**
+     * @brief true, wenn genau dieses Feld gerade unlesbaren Text enthaelt.
+     *
+     * Fuer die Live-Slots der OPTIONALEN Felder (Gebuehren, Steuern, Rabatt).
+     * Dort ist 0,0 ein gueltiger Wert, ein unlesbarer Text ergab ueber
+     * NumberParser aber ebenfalls 0,0 und bekam bisher den gruenen Haken —
+     * der Eingabe wurde also ausdruecklich bescheinigt, in Ordnung zu sein,
+     * waehrend ihr Inhalt verworfen wurde.
+     *
+     * Bewusst feldweise statt ueber markUnreadableFields(): beim Verlassen
+     * eines Feldes soll nicht die halbe Maske rot werden, sondern das Feld,
+     * das der Benutzer gerade bearbeitet hat.
+     */
+    bool isFieldUnreadable(const QString& fieldKey) const;
+
+
+
     /** Returns true if @p buyGuid has the most recent dateTime in m_buys. */
     bool    isLatestBuy(const QString& buyGuid) const;
 

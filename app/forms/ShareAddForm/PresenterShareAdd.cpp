@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterShareAdd.h"
+#include <utility>   // std::as_const
 #include "../../utils/PdfTextExtractor.h"   // converterInfo()/converterMissingMessage()
 #include "../../config/DocumentFieldNames.h"
 #include "../../utils/DocumentClassifier.h"
@@ -357,8 +358,34 @@ QString PresenterShareAdd::xmlNameToViewField(const QString& xmlName)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ── markUnreadableFields ──────────────────────────────────────────────────────
+
+bool PresenterShareAdd::markUnreadableFields() const
+{
+    QStringList unreadable;
+    if (!m_view->hasUnreadableFields(unreadable))
+        return false;
+
+    for (const QString& key : std::as_const(unreadable))
+        m_view->setFieldError(key);
+
+    return true;
+}
+
 QString PresenterShareAdd::validateInput() const
 {
+    // Unlesbare Zahleneingaben zuerst — sie ergeben ueber NumberParser 0,0
+    // und saehen sonst wie eine fehlende Pflichtangabe aus, obwohl etwas im
+    // Feld steht. Die falsche Begruendung waere hier schlimmer als keine
+    // (07.09.2026).
+    if (markUnreadableFields()) {
+        return QObject::tr(
+            "Mindestens ein Zahlenfeld enthält keine gültige Zahl.\n"
+            "Die betroffenen Felder sind in der Maske rot markiert.\n\n"
+            "Erwartet wird die deutsche Schreibweise, zum Beispiel 1.234,56 — "
+            "ein Punkt trennt Tausender, ein Komma die Nachkommastellen.");
+    }
+
     // ── Check for fields still missing after PDF parse ────────────────────
     QStringList missingFields;
     if (m_view->hasMissingRequiredFields(missingFields)) {

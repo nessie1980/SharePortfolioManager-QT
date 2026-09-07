@@ -11,6 +11,7 @@
 #include "../UiConstants.h"
 
 #include <QHBoxLayout>
+#include <QPair>
 #include <QVBoxLayout>
 #include <QFileDialog>
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
@@ -931,4 +932,37 @@ void ViewShareAdd::onParseFinished()
 void ViewShareAdd::acceptAndClose()
 {
     QDialog::accept();
+}
+
+// ── hasUnreadableFields ───────────────────────────────────────────────────────
+
+bool ViewShareAdd::hasUnreadableFields(QStringList& fieldKeys) const
+{
+    fieldKeys.clear();
+
+    // Bewusst ueber die Member-Zeiger und nicht ueber m_inputWidgets: nicht
+    // jedes Zahlenfeld ist dort registriert — in ViewDividendEdit fehlen die
+    // drei Steuerfelder —, und eine Liste, die stillschweigend Felder
+    // auslaesst, waere hier besonders unangenehm: sie wuerde melden, es sei
+    // alles in Ordnung. Siehe ARCHITECTURE.md, "Unlesbare Zahleneingaben
+    // werden nicht gemeldet" (07.09.2026).
+    const QList<QPair<QString, const QLineEdit*>> numericFields = {
+        { QStringLiteral("volume"), m_volume },
+        { QStringLiteral("price"), m_price },
+        { QStringLiteral("provision"), m_provision },
+        { QStringLiteral("brokerFee"), m_brokerFee },
+        { QStringLiteral("traderFee"), m_traderFee },
+        { QStringLiteral("reduction"), m_reduction },
+    };
+
+    for (const auto& [key, edit] : numericFields) {
+        if (!edit)
+            continue;
+        bool ok = false;
+        saParseDouble(edit->text(), &ok);
+        if (!ok)
+            fieldKeys.append(key);
+    }
+
+    return !fieldKeys.isEmpty();
 }

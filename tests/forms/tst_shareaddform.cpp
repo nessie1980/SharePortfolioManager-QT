@@ -161,6 +161,16 @@ public:
     void markMissingFieldsAsFailed()                    override {}
     bool hasMissingRequiredFields(QStringList& missing) const override
         { missing.clear(); return false; }
+
+    // hasUnreadableFields (07.09.2026): der Stub haelt die Antwort in einem
+    // Feld vor, das die Tests setzen. Der Presenter fragt sie ab, um
+    // unlesbare Zahleneingaben rot zu markieren und das Speichern zu
+    // sperren — siehe ARCHITECTURE.md, "Unlesbare Zahleneingaben werden
+    // nicht gemeldet".
+    QStringList unreadableFields;
+    bool hasUnreadableFields(QStringList& fieldKeys) const override
+        { fieldKeys = unreadableFields; return !unreadableFields.isEmpty(); }
+
     void onParseFinished()                              override {}
     void acceptAndClose()                               override { closed = true; }
 };
@@ -331,6 +341,57 @@ private slots:
 
         QVERIFY(view.closed);
         QVERIFY(view.lastError.isEmpty());
+    }
+
+    // ── Unlesbare Zahleneingaben (07.09.2026) ────────────────────────────
+    //
+    // Gegenstueck zu den Pflichtfeld-Tests: dort ist ein Feld leer, hier
+    // steht etwas drin, das keine gueltige deutsche Zahl ist. Ueber
+    // NumberParser ergibt das 0,0 — bei den optionalen Gebuehren- und
+    // Steuerfeldern also einen voellig unauffaelligen Wert. Siehe
+    // ARCHITECTURE.md, "Unlesbare Zahleneingaben werden nicht gemeldet".
+
+    void test_presenterShareAdd_unreadableField_blocksSave()
+    {
+        openMemoryDb();
+        StubViewShareAdd view;
+        StubModelShareAdd model;
+        view.unreadableFields = { QStringLiteral("provision") };
+        PresenterShareAdd presenter(&view, &model, &m_docsConfig);
+
+        presenter.onSave();
+
+        QVERIFY2(!view.lastError.isEmpty(), "Speichern muss eine Meldung zeigen");
+        QVERIFY(!view.closed);
+    }
+
+    void test_presenterShareAdd_unreadableField_isMarkedInTheMask()
+    {
+        openMemoryDb();
+        StubViewShareAdd view;
+        StubModelShareAdd model;
+        view.unreadableFields = { QStringLiteral("provision") };
+        PresenterShareAdd presenter(&view, &model, &m_docsConfig);
+
+        presenter.onSave();
+
+        QVERIFY(view.fieldErrors.contains(QStringLiteral("provision")));
+    }
+
+    void test_presenterShareAdd_unreadableField_messageDiffersFromMissingField()
+    {
+        // Der Unterschied ist der Punkt der Uebung: "Feld ist leer" und
+        // "Feld enthaelt keine Zahl" verlangen verschiedene Abhilfen.
+        openMemoryDb();
+        StubViewShareAdd view;
+        StubModelShareAdd model;
+        view.unreadableFields = { QStringLiteral("provision") };
+        PresenterShareAdd presenter(&view, &model, &m_docsConfig);
+
+        presenter.onSave();
+
+        QVERIFY(!view.lastError.contains(QStringLiteral("Pflichtangaben")));
+        QVERIFY(view.lastError.contains(QStringLiteral("Zahl")));
     }
 
     void test_presenterShareAdd_onSave_emptyWkn_showsError()

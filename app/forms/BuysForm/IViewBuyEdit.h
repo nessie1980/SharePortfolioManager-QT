@@ -202,4 +202,29 @@ public:
     // ── Validation (same API as IViewShareAdd) ────────────────────────────
     virtual void markMissingFieldsAsFailed() = 0;
     virtual bool hasMissingRequiredFields(QStringList& missingFields) const = 0;
+
+    /**
+     * @brief Meldet die Zahlenfelder, deren Inhalt sich nicht als Zahl lesen
+     *        laesst.
+     *
+     * Gegenstueck zu hasMissingRequiredFields(), fuer einen anderen Fehler:
+     * dort ist ein Feld LEER, hier steht etwas drin, das keine gueltige
+     * deutsche Zahl ist. Beides muss auseinandergehalten werden, weil die
+     * Abhilfe eine andere ist -- und weil ein unlesbares Feld ueber
+     * NumberParser 0,0 ergibt und bei den optionalen Gebuehrenfeldern
+     * deshalb voellig unauffaellig waere.
+     *
+     * Die View beantwortet nur, WAS sie nicht lesen konnte -- sie besitzt den
+     * Text, das ist ihre Zustaendigkeit. Was daraus folgt (rote Markierung,
+     * Meldung, Speichersperre), entscheidet der Presenter.
+     *
+     * @param fieldKeys  Wird geleert und mit den Feldschluesseln gefuellt,
+     *                   wie sie auch setFieldError() erwartet.
+     * @return true, wenn mindestens ein Feld unlesbar ist.
+     *
+     * Ergaenzt 07.09.2026, siehe ARCHITECTURE.md, "Unlesbare Zahleneingaben
+     * werden nicht gemeldet".
+     */
+    virtual bool hasUnreadableFields(QStringList& fieldKeys) const = 0;
+
 };

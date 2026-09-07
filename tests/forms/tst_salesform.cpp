@@ -235,8 +235,12 @@ public:
         if (failingFields.contains(f)) return false;
         return true;
     }
+    // 07.09.2026: der Stub verwarf den Feldschluessel bisher. Fuer die
+    // Rueckmeldung unlesbarer Zahleneingaben muss pruefbar sein, WELCHES
+    // Feld der Presenter rot markiert hat.
+    QStringList fieldErrors;
     void setFieldError(const QString& f, const QString& = QString()) override
-    { Q_UNUSED(f) }
+    { fieldErrors << f; }
     void setDocumentPath(const QString& path)       override { m_docPath = path; }
     void setDocumentPreview(const QString&)         override {}
 
@@ -292,6 +296,16 @@ public:
         if (m_missingFields) missing << QStringLiteral("test");
         return m_missingFields;
     }
+
+    // hasUnreadableFields (07.09.2026): der Stub haelt die Antwort in einem
+    // Feld vor, das die Tests setzen. Der Presenter fragt sie ab, um
+    // unlesbare Zahleneingaben rot zu markieren und das Speichern zu
+    // sperren — siehe ARCHITECTURE.md, "Unlesbare Zahleneingaben werden
+    // nicht gemeldet".
+    QStringList unreadableFields;
+    bool hasUnreadableFields(QStringList& fieldKeys) const override
+        { fieldKeys = unreadableFields; return !unreadableFields.isEmpty(); }
+
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1009,6 +1023,57 @@ private slots:
         QCOMPARE(view.lastBuyDetails.rows.size(), 1);
         QVERIFY(qAbs(view.lastBuyDetails.rows.first().fees - 30.95) < 1e-9);
         QVERIFY(qAbs(view.lastBuyDetails.totalFees          - 30.95) < 1e-9);
+    }
+
+    // ── Unlesbare Zahleneingaben (07.09.2026) ────────────────────────────
+    //
+    // Gegenstueck zu den Pflichtfeld-Tests: dort ist ein Feld leer, hier
+    // steht etwas drin, das keine gueltige deutsche Zahl ist. Ueber
+    // NumberParser ergibt das 0,0 — bei den optionalen Gebuehren- und
+    // Steuerfeldern also einen voellig unauffaelligen Wert. Siehe
+    // ARCHITECTURE.md, "Unlesbare Zahleneingaben werden nicht gemeldet".
+
+    void test_presenterSaleEdit_unreadableField_blocksSave()
+    {
+        openMemoryDb();
+        StubViewSaleEdit view;
+        StubModelSaleEdit model;
+        view.unreadableFields = { QStringLiteral("provision") };
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        p.onSave();
+
+        QVERIFY2(!view.lastError.isEmpty(), "Speichern muss eine Meldung zeigen");
+        QVERIFY(!view.closed);
+    }
+
+    void test_presenterSaleEdit_unreadableField_isMarkedInTheMask()
+    {
+        openMemoryDb();
+        StubViewSaleEdit view;
+        StubModelSaleEdit model;
+        view.unreadableFields = { QStringLiteral("provision") };
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        p.onSave();
+
+        QVERIFY(view.fieldErrors.contains(QStringLiteral("provision")));
+    }
+
+    void test_presenterSaleEdit_unreadableField_messageDiffersFromMissingField()
+    {
+        // Der Unterschied ist der Punkt der Uebung: "Feld ist leer" und
+        // "Feld enthaelt keine Zahl" verlangen verschiedene Abhilfen.
+        openMemoryDb();
+        StubViewSaleEdit view;
+        StubModelSaleEdit model;
+        view.unreadableFields = { QStringLiteral("provision") };
+        PresenterSaleEdit p(&view, &model, QStringLiteral("share-1"), nullptr);
+
+        p.onSave();
+
+        QVERIFY(!view.lastError.contains(QStringLiteral("Pflichtangaben")));
+        QVERIFY(view.lastError.contains(QStringLiteral("Zahl")));
     }
 
     // ── Herkunft der FIFO-Zuteilung (Bugfix 05.09.2026) ──────────────────

@@ -10,6 +10,27 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.21.4] - 2026-09-07
+
+### Added
+
+- **Unlesbare Zahleneingaben werden gemeldet und blockieren das Speichern.**
+  Bisher ergab ein Feldinhalt, der keine gueltige Zahl ist, stillschweigend
+  0,00. Bei den Pflichtfeldern fiel das noch auf, weil sie damit als fehlend
+  galten -- bei den optionalen Gebuehren-, Steuer- und Rabattfeldern nicht,
+  denn dort ist 0,00 ein voellig gueltiger Wert. Die Eingabe bekam sogar den
+  gruenen Haken: ihr wurde ausdruecklich bescheinigt, in Ordnung zu sein,
+  waehrend ihr Inhalt verworfen wurde.
+
+  Betroffene Felder werden jetzt beim Verlassen rot markiert, und der
+  Speicherversuch bricht mit einer eigenen Meldung ab, die den Fehler benennt
+  und die erwartete Schreibweise zeigt. Die Meldung ist bewusst von
+  "Es fehlen noch Pflichtangaben" verschieden: ein leeres Feld und ein Feld
+  mit unlesbarem Inhalt verlangen verschiedene Abhilfen.
+
+  Umgesetzt in den Formularen Kauf, Verkauf, Dividende und Aktie anlegen.
+  Kosten und Aktiensplits folgen -- dort gibt es bislang keine Feldanzeige.
+
 ## [1.21.3] - 2026-09-06
 
 ### Fixed

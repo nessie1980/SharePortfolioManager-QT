@@ -3201,6 +3201,23 @@ Lesen entsteht; der Parser allein haette den Fehler nie gezeigt.
 | Test | Datei |
 | ---- | ----- |
 | `test_viewBuyEdit_loadBuy_fourDigitValuesSurviveReadBack` | `tst_buysform.cpp` |
+
+Rueckmeldung unlesbarer Eingaben (07.09.2026, je drei Presenter-Tests in vier
+Formularen). Der Stub haelt die Antwort auf `hasUnreadableFields()` in
+`unreadableFields` vor, `setFieldError()` schneidet die markierten
+Feldschluessel in `fieldErrors` mit — beides ergaenzt fuer diese Runde.
+
+| Test (je Formular mit eigenem Praefix) | Prueft |
+| ---- | ----- |
+| `..._unreadableField_blocksSave` | onSave() zeigt eine Meldung und schliesst den Dialog nicht |
+| `..._unreadableField_isMarkedInTheMask` | der Presenter ruft setFieldError() fuer genau dieses Feld |
+| `..._unreadableField_messageDiffersFromMissingField` | die Meldung nennt nicht "Pflichtangaben", sondern die Zahl — beides verlangt verschiedene Abhilfen |
+| `test_viewBuyEdit_hasUnreadableFields_detectsNonNumericText` | die View selbst erkennt unlesbaren Feldinhalt (nur im Kaufformular, stellvertretend fuer alle vier) |
+
+@note Nicht abgedeckt: dass die rote Markierung tatsaechlich am richtigen
+Widget erscheint. Das haengt an den Statussymbolen der echten View und
+bleibt Sichtpruefung — gleiche Lage wie bei der Beschriftung des
+Details-Dialogs.
 | `test_viewSaleEdit_loadSale_fourDigitValuesSurviveReadBack` | `tst_salesform.cpp` |
 | `test_viewBrokerageEdit_loadBrokerage_fourDigitValuesSurviveReadBack` | `tst_brokeragesform.cpp` |
 

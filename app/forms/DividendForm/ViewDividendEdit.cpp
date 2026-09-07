@@ -13,6 +13,7 @@
 #include "../UiConstants.h"
 
 #include <QVBoxLayout>
+#include <QPair>
 #include <QHBoxLayout>
 #include <QFileDialog>
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
@@ -1507,6 +1508,40 @@ double ViewDividendEdit::parseDouble(const QString& text, bool* ok)
     // ARCHITECTURE.md, "Zahlenfelder verlieren Werte ab 1.000 beim
     // Zuruecklesen".
     return NumberParser::parse(text, ok);
+}
+
+// ── hasUnreadableFields ───────────────────────────────────────────────────────
+
+bool ViewDividendEdit::hasUnreadableFields(QStringList& fieldKeys) const
+{
+    fieldKeys.clear();
+
+    // Bewusst ueber die Member-Zeiger und nicht ueber m_inputWidgets: nicht
+    // jedes Zahlenfeld ist dort registriert — in ViewDividendEdit fehlen die
+    // drei Steuerfelder —, und eine Liste, die stillschweigend Felder
+    // auslaesst, waere hier besonders unangenehm: sie wuerde melden, es sei
+    // alles in Ordnung. Siehe ARCHITECTURE.md, "Unlesbare Zahleneingaben
+    // werden nicht gemeldet" (07.09.2026).
+    const QList<QPair<QString, const QLineEdit*>> numericFields = {
+        { QStringLiteral("rate"), m_rate },
+        { QStringLiteral("volume"), m_volume },
+        { QStringLiteral("taxAtSource"), m_taxAtSource },
+        { QStringLiteral("capitalGainsTax"), m_capitalGainsTax },
+        { QStringLiteral("solidarityTax"), m_solidarityTax },
+        { QStringLiteral("priceAtPayday"), m_priceAtPayday },
+        { QStringLiteral("exchangeRatio"), m_exchangeRatio },
+    };
+
+    for (const auto& [key, edit] : numericFields) {
+        if (!edit)
+            continue;
+        bool ok = false;
+        parseDouble(edit->text(), &ok);
+        if (!ok)
+            fieldKeys.append(key);
+    }
+
+    return !fieldKeys.isEmpty();
 }
 
 // ── markMissingFieldsAsFailed ─────────────────────────────────────────────────

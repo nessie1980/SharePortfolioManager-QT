@@ -324,6 +324,13 @@ void PresenterSaleEdit::onVolumeOrPriceEdited()
 
 void PresenterSaleEdit::onFeeEdited(const QString& fieldKey, double value)
 {
+    // Unlesbarer Text darf hier keinen gruenen Haken bekommen (07.09.2026):
+    // er ergibt 0,0, und 0,0 ist bei diesen Feldern ein gueltiger Wert.
+    if (isFieldUnreadable(fieldKey)) {
+        m_view->setFieldError(fieldKey);
+        return;
+    }
+
     if (value < 0.0)
         m_view->setFieldError(fieldKey);
     else
@@ -332,6 +339,13 @@ void PresenterSaleEdit::onFeeEdited(const QString& fieldKey, double value)
 
 void PresenterSaleEdit::onTaxEdited(const QString& fieldKey, double value)
 {
+    // Unlesbarer Text darf hier keinen gruenen Haken bekommen (07.09.2026):
+    // er ergibt 0,0, und 0,0 ist bei diesen Feldern ein gueltiger Wert.
+    if (isFieldUnreadable(fieldKey)) {
+        m_view->setFieldError(fieldKey);
+        return;
+    }
+
     if (value < 0.0)
         m_view->setFieldError(fieldKey);
     else
@@ -934,8 +948,41 @@ void PresenterSaleEdit::onShowDetails()
 
 // ── validateInput ─────────────────────────────────────────────────────────────
 
+// ── markUnreadableFields ──────────────────────────────────────────────────────
+
+bool PresenterSaleEdit::isFieldUnreadable(const QString& fieldKey) const
+{
+    QStringList unreadable;
+    m_view->hasUnreadableFields(unreadable);
+    return unreadable.contains(fieldKey);
+}
+
+bool PresenterSaleEdit::markUnreadableFields() const
+{
+    QStringList unreadable;
+    if (!m_view->hasUnreadableFields(unreadable))
+        return false;
+
+    for (const QString& key : std::as_const(unreadable))
+        m_view->setFieldError(key);
+
+    return true;
+}
+
 QString PresenterSaleEdit::validateInput() const
 {
+    // Unlesbare Zahleneingaben zuerst — sie ergeben ueber NumberParser 0,0
+    // und saehen sonst wie eine fehlende Pflichtangabe aus, obwohl etwas im
+    // Feld steht. Die falsche Begruendung waere hier schlimmer als keine
+    // (07.09.2026).
+    if (markUnreadableFields()) {
+        return QObject::tr(
+            "Mindestens ein Zahlenfeld enthält keine gültige Zahl.\n"
+            "Die betroffenen Felder sind in der Maske rot markiert.\n\n"
+            "Erwartet wird die deutsche Schreibweise, zum Beispiel 1.234,56 — "
+            "ein Punkt trennt Tausender, ein Komma die Nachkommastellen.");
+    }
+
     QStringList missingFields;
     if (m_view->hasMissingRequiredFields(missingFields)) {
         m_view->markMissingFieldsAsFailed();

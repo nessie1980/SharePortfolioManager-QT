@@ -5384,42 +5384,23 @@ beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
 
-### Unlesbare Zahleneingaben werden nicht gemeldet (06.09.2026)
+### Unlesbare Zahleneingaben in Kosten und Aktiensplits (07.09.2026)
 
-Seit 1.21.3 liest `NumberParser` streng deutsch und meldet ueber ein
-Erfolgs-Flag, wenn ein nicht leerer Text keine gueltige Zahl ist. Ausgewertet
-wird das Flag noch nirgends -- alle Aufrufstellen uebergeben `nullptr`, eine
-unlesbare Eingabe ergibt weiterhin 0,0.
+Mit 1.21.4 melden Kauf, Verkauf, Dividende und Aktie anlegen unlesbare
+Zahleneingaben ueber `IView*::hasUnreadableFields()`. `ViewBrokerageEdit` und
+`ViewShareSplitEdit` fehlen noch.
 
-Nessies Vorgabe (06.09.2026) dazu:
+Der Grund ist der Aufwand, nicht die Wichtigkeit: beide Dialoge haben keine
+Feldanzeige. `ViewBrokerageEdit` besitzt zwar ein `FieldState`-Enum und
+`m_fieldStates`, beides wird aber nirgends gelesen -- es gibt weder
+Statussymbole je Zeile noch ein `setFieldError()` im Interface.
+`ViewShareSplitEdit` hat gar nichts, nur `showError()` fuer den ganzen
+Dialog.
 
-- Meldung sofort beim Verlassen des Feldes, nicht erst beim Speichern.
-- Es muss erkennbar sein, WAS falsch ist, nicht nur DASS etwas falsch ist.
-- Gespeichert werden darf nicht.
-- Zustaendig ist der Presenter, nicht die View.
-
-Geplanter Zuschnitt: jedes Interface bekommt neben
-`hasMissingRequiredFields(QStringList&)` ein `hasUnreadableFields(QStringList&)`.
-Die View meldet, welche Felder sie nicht lesen konnte -- sie besitzt den Text,
-das ist ihre Zustaendigkeit. Der Presenter entscheidet ueber die Folge:
-Meldung mit Feldnamen, Speichern abbrechen. Fuer die sofortige Rueckmeldung
-wird `onFeeEdited(key, double)` auf den Rohtext umgestellt, sodass der
-Presenter selbst umwandelt; bei Menge, Kurs und Dividendensatz fehlt die
-`editingFinished`-Verbindung heute ganz und kaeme dazu.
-
-`ViewBrokerageEdit` und `ViewShareSplitEdit` bekommen bewusst KEINE
-Statussymbole je Zeile (Nessies Entscheidung 06.09.2026): dort reicht eine
-Meldung mit Feldnamen beim Speicherversuch. `ViewBrokerageEdit` hat zwar ein
-`FieldState`-Enum samt `m_fieldStates`, beides wird aber nirgends gelesen --
-die Anzeige dafuer existiert nicht und muesste erst gebaut werden.
-
-@note Wie realistisch ist der Fall noch? Jedes Zahlenfeld traegt einen
-`QDoubleValidator`, der Buchstaben schon bei der Eingabe abweist. Die
-haeufigste echte Quelle unlesbarer Feldinhalte war das
-Tausendertrennzeichen -- und die ist mit 1.21.3 weg. Was bleibt, ist ein
-Netz fuer den Fall, dass die Anwendung selbst etwas schreibt, das sie nicht
-zurueckliest. Genau dieser Fall ist zweimal eingetreten (22.08.2026 und
-06.09.2026), das Netz ist also nicht theoretisch.
+Nessies Entscheidung (06.09.2026): dort KEINE Statussymbole nachbauen, eine
+Meldung mit Feldnamen beim Speicherversuch reicht. Das heisst, die beiden
+brauchen `hasUnreadableFields()` mit Anzeigenamen statt Feldschluesseln --
+oder eine Uebersetzung im Presenter.
 
 ### formatMoney/formatVolume liegen weiterhin je View doppelt vor (05.09.2026)
 
@@ -5615,6 +5596,71 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Unlesbare Zahleneingaben wurden nicht gemeldet (06.09.2026, behoben 07.09.2026)
+
+Ein Feldinhalt, der keine gueltige Zahl ist, ergab ueber `NumberParser`
+stillschweigend 0,0. Bei den Pflichtfeldern fiel das auf, weil sie damit als
+fehlend galten -- allerdings mit der falschen Begruendung. Bei den
+optionalen Feldern fiel es gar nicht auf: Gebuehren, Steuern und Rabatt
+duerfen 0,00 sein.
+
+Schlimmer noch: `onFeeEdited()`/`onTaxEdited()` setzten fuer einen solchen
+Wert den GRUENEN Haken. Der Eingabe wurde also ausdruecklich bescheinigt, in
+Ordnung zu sein, waehrend ihr Inhalt verworfen wurde. Eine Anzeige, die
+falsche Sicherheit gibt, ist schlechter als gar keine.
+
+#### Aufteilung der Zustaendigkeit
+
+`IView*::hasUnreadableFields(QStringList&)` beantwortet, WELCHE Felder sich
+nicht lesen lassen -- die View besitzt den Text, das ist ihre Sache. Was
+daraus folgt, entscheidet der Presenter: rote Markierung ueber
+`setFieldError()`, beim Speichern zusaetzlich Abbruch mit eigener Meldung.
+Nessies Vorgabe (06.09.2026) war ausdruecklich "zustaendig ist der
+Presenter"; genau diese Grenze bildet das Paar ab.
+
+Bewusst rein virtuell und ohne Vorgabe-Implementierung: eine, die `false`
+liefert, wuerde in einer vergessenen View lautlos "alles in Ordnung" melden
+-- dieselbe Sorte Fehler, die behoben werden soll.
+
+Bewusst KEINE Aenderung der Presenter-Signaturen. Geplant war, `onFeeEdited(
+key, double)` auf den Rohtext umzustellen, damit der Presenter selbst
+umwandelt. Noetig ist das nicht: `hasUnreadableFields()` beantwortet die
+Frage zu jedem Zeitpunkt, nicht nur beim Verlassen eines bestimmten Feldes.
+Das spart den Umbau von vier Slots samt aller Testaufrufe.
+
+#### Zwei Abfragen, nicht eine
+
+`markUnreadableFields()` markiert ALLE unlesbaren Felder und laeuft in
+`validateInput()` -- beim Speichern soll die ganze Maske ihren Zustand
+zeigen. `isFieldUnreadable(key)` prueft EIN Feld und laeuft in den
+Live-Slots: beim Verlassen eines Feldes soll nicht die halbe Maske rot
+werden, sondern das Feld, das der Benutzer gerade bearbeitet hat.
+
+#### Was sich als unnoetig herausstellte
+
+Angenommen war, dass fuer Menge, Kurs und Dividendensatz die
+`editingFinished`-Verbindungen fehlen. Sie sind alle vorhanden. Und ihre
+Live-Slots markierten unlesbare Eingaben schon vorher rot, weil sie auf
+"> 0,0" pruefen und 0,0 durchfaellt -- nur mit der Begruendung "fehlt"
+statt "unlesbar". Die eigentliche Luecke waren allein die optionalen
+Felder.
+
+#### Reichweite der Meldung
+
+Die Meldung nennt die Feldnamen NICHT, sie verweist auf die roten
+Markierungen und zeigt die erwartete Schreibweise ("1.234,56"). Der Grund
+ist Vermeidung von Doppelpflege: eine Tabelle Feldschluessel-Anzeigename im
+Presenter waere eine zweite Quelle neben den Beschriftungen der View. Fuer
+`ViewBrokerageEdit` und `ViewShareSplitEdit`, die keine Markierungen haben,
+wird sie sich nicht vermeiden lassen -- siehe "Offene Punkte".
+
+@note Wie oft der Fall real auftritt, ist offen. Jedes Zahlenfeld traegt
+einen `QDoubleValidator`, der Buchstaben schon bei der Eingabe abweist, und
+die haeufigste echte Quelle -- das Tausendertrennzeichen -- ist seit 1.21.3
+weg. Was bleibt, ist ein Netz. Zweimal binnen dreier Wochen (22.08.2026 und
+06.09.2026) hat die Anwendung etwas in ein Feld geschrieben, das sie nicht
+zurueckliest; theoretisch ist das Netz also nicht.
 
 ### Zahlenfelder verlieren Werte ab 1.000 beim Zuruecklesen (06.09.2026, behoben 06.09.2026)
 

@@ -286,6 +286,16 @@ public:
     void markMissingFieldsAsFailed()                                override {}
     bool hasMissingRequiredFields(QStringList& missing) const       override
         { missing.clear(); if (m_missingFields) missing << QStringLiteral("test"); return m_missingFields; }
+
+    // hasUnreadableFields (07.09.2026): der Stub haelt die Antwort in einem
+    // Feld vor, das die Tests setzen. Der Presenter fragt sie ab, um
+    // unlesbare Zahleneingaben rot zu markieren und das Speichern zu
+    // sperren — siehe ARCHITECTURE.md, "Unlesbare Zahleneingaben werden
+    // nicht gemeldet".
+    QStringList unreadableFields;
+    bool hasUnreadableFields(QStringList& fieldKeys) const override
+        { fieldKeys = unreadableFields; return !unreadableFields.isEmpty(); }
+
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -447,6 +457,57 @@ private slots:
     }
 
     // ── PresenterDividendEdit (Stub-Tests) ────────────────────────────────
+
+    // ── Unlesbare Zahleneingaben (07.09.2026) ────────────────────────────
+    //
+    // Gegenstueck zu den Pflichtfeld-Tests: dort ist ein Feld leer, hier
+    // steht etwas drin, das keine gueltige deutsche Zahl ist. Ueber
+    // NumberParser ergibt das 0,0 — bei den optionalen Gebuehren- und
+    // Steuerfeldern also einen voellig unauffaelligen Wert. Siehe
+    // ARCHITECTURE.md, "Unlesbare Zahleneingaben werden nicht gemeldet".
+
+    void test_presenterDividendEdit_unreadableField_blocksSave()
+    {
+        openMemoryDb();
+        StubViewDividendEdit view;
+        StubModelDividendEdit model;
+        view.unreadableFields = { QStringLiteral("taxAtSource") };
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onSave();
+
+        QVERIFY2(!view.lastError.isEmpty(), "Speichern muss eine Meldung zeigen");
+        QVERIFY(!view.closed);
+    }
+
+    void test_presenterDividendEdit_unreadableField_isMarkedInTheMask()
+    {
+        openMemoryDb();
+        StubViewDividendEdit view;
+        StubModelDividendEdit model;
+        view.unreadableFields = { QStringLiteral("taxAtSource") };
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onSave();
+
+        QVERIFY(view.fieldErrors.contains(QStringLiteral("taxAtSource")));
+    }
+
+    void test_presenterDividendEdit_unreadableField_messageDiffersFromMissingField()
+    {
+        // Der Unterschied ist der Punkt der Uebung: "Feld ist leer" und
+        // "Feld enthaelt keine Zahl" verlangen verschiedene Abhilfen.
+        openMemoryDb();
+        StubViewDividendEdit view;
+        StubModelDividendEdit model;
+        view.unreadableFields = { QStringLiteral("taxAtSource") };
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onSave();
+
+        QVERIFY(!view.lastError.contains(QStringLiteral("Pflichtangaben")));
+        QVERIFY(view.lastError.contains(QStringLiteral("Zahl")));
+    }
 
     void test_presenterDividendEdit_construction_loadsOverview()
     {

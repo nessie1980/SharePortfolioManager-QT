@@ -152,6 +152,26 @@ private:
      */
     QString validateInput() const;
 
+    /**
+     * @brief Markiert alle Felder rot, deren Inhalt sich nicht als Zahl lesen
+     *        laesst, und meldet, ob es welche gab.
+     *
+     * Fragt IView*::hasUnreadableFields() ab. Die View sagt, WAS sie nicht
+     * lesen konnte; was daraus folgt, entscheidet der Presenter — hier die
+     * rote Markierung, in validateInput() zusaetzlich die Speichersperre.
+     *
+     * Wird aus den Live-Slots heraus aufgerufen, damit die Markierung schon
+     * beim Verlassen des Feldes steht und nicht erst beim Speichern
+     * (Nessies Vorgabe 06.09.2026). Ohne Meldungsfenster: ein modaler Dialog
+     * bei jedem Feldwechsel waere unertraeglich, das rote Symbol ist die
+     * sofortige Rueckmeldung.
+     *
+     * Ergaenzt 07.09.2026, siehe ARCHITECTURE.md, "Unlesbare Zahleneingaben
+     * werden nicht gemeldet".
+     */
+    bool markUnreadableFields() const;
+
+
     // ── Members ───────────────────────────────────────────────────────────
     IViewShareAdd*      m_view   = nullptr;
     IModelShareAdd*     m_model  = nullptr;
