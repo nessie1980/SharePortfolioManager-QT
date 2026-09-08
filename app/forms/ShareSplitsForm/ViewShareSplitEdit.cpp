@@ -5,6 +5,7 @@
 #include "ModelShareSplitEdit.h"
 #include "../../IconProvider.h"
 #include "../../utils/NumberParser.h"
+#include "../../utils/NumericFieldValidator.h"
 #include "../../config/AppSettings.h"
 #include "../../core/DocumentRootMigrator.h"
 #include "../../widgets/DocumentPreviewPanel.h"
@@ -168,7 +169,7 @@ QGroupBox* ViewShareSplitEdit::createSplitDataGroup()
     const auto makeRatioField = [](const QString& objectName) {
         auto* le = new QLineEdit(QStringLiteral("1"));
         le->setObjectName(objectName);
-        le->setValidator(new QDoubleValidator(0.0, 1.0e9, 4, le));
+        le->setValidator(makeNumericValidator(0.0, 1.0e9, 4, le));
         le->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         le->setFixedHeight(UiConstants::kFieldHeight);
         le->setFixedWidth(80);

@@ -10,6 +10,28 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.21.5] - 2026-09-07
+
+### Fixed
+
+- **Aus der Eingabe "20.02" wurde "2,00E+03".** `QDoubleValidator` steht ohne
+  Zutun auf wissenschaftlicher Notation und haelt "2,00E+03" damit fuer eine
+  gueltige Zahl -- er erzeugt sie auch selbst. Beim Verlassen des Feldes ruft
+  Qt `fixup()` des Validators auf, liest den Text mit deutscher Locale, deutet
+  den Punkt als Tausendertrennzeichen (ohne die Gruppengroesse zu pruefen) und
+  schreibt ihn neu. Aus 20,02 EUR wurden auf diesem Weg 2000 EUR, ohne jede
+  Meldung.
+
+  Alle 31 Validator-Stellen der sechs Formulare laufen jetzt ueber eine
+  gemeinsame Fabrik, die ausnahmslos die Standard-Notation setzt. Kurse,
+  Gebuehren und Stueckzahlen sind keine physikalischen Messwerte.
+
+  Nicht behoben ist damit die Umdeutung des Punktes selbst: aus "20.02" wird
+  jetzt "2002,00" statt "2,00E+03" -- die Anzeige ist nicht mehr abwegig, der
+  Wert aber weiterhin stillschweigend falsch. Das verlangt, dass die
+  Eingabefelder auch durchgaengig ohne Tausendertrennzeichen befuellt werden,
+  und folgt getrennt.
+
 ## [1.21.4] - 2026-09-07
 
 ### Added

@@ -5384,6 +5384,34 @@ beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
 
+### Tausendertrennzeichen in Eingabefeldern (07.09.2026)
+
+Mit 1.21.5 steht kein Zahlenfeld mehr auf wissenschaftlicher Notation. Die
+Umdeutung des Punktes bleibt aber: `QDoubleValidator` liest ihn als
+Tausendertrennzeichen und prueft die Gruppengroesse nicht. Aus der Eingabe
+"20.02" wird jetzt "2002,00" statt "2,00E+03" -- nicht mehr abwegig
+anzusehen, aber immer noch stillschweigend um den Faktor 100 falsch, und im
+Widerspruch zu `NumberParser`, der dieselbe Eingabe als unlesbar meldet.
+
+Der Validator kommt dem Parser zuvor: `QLineEdit` ruft beim Verlassen des
+Feldes `fixup()` auf, `NumberParser` sieht nur noch das Ergebnis.
+
+Abhilfe waere `QLocale::RejectGroupSeparator` an der Locale des Validators.
+Dann liesse sich ein Punkt gar nicht erst eintippen, Einfuegen wuerde
+abgewiesen, und `fixup()` haette nichts umzuschreiben -- die Eingabe waere
+genauso streng wie der Parser.
+
+Das verlangt allerdings, dass die Anwendung ihre Eingabefelder durchgaengig
+OHNE Trennzeichen befuellt, also "1003,50" statt "1.003,50". Sonst waere der
+von ihr selbst geschriebene Text fuer den Validator ungueltig und
+`fixup()` wuerde ihn beim Durchtabben anfassen.
+`ValueFormatter::formatPriceForInput()` tut das seit 1.21.2 fuer ein Feld;
+es waere die Ausweitung auf alle editierbaren Zahlenfelder. In Tabellen und
+Uebersichten bleibt das Trennzeichen selbstverstaendlich.
+
+Nessies bewusste Reihenfolge (07.09.2026): erst die Notation (1.21.5), dann
+B2b, dann dieser Punkt.
+
 ### Unlesbare Zahleneingaben in Kosten und Aktiensplits (07.09.2026)
 
 Mit 1.21.4 melden Kauf, Verkauf, Dividende und Aktie anlegen unlesbare
@@ -5596,6 +5624,53 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Wissenschaftliche Notation in Zahlenfeldern (07.09.2026, behoben 07.09.2026)
+
+Nessie tippte 20.02 in ein Gebuehrenfeld, verliess es, und im Feld stand
+2,00E+03.
+
+Zwei Voreinstellungen von `QDoubleValidator` wirkten zusammen, keine davon
+war im Projekt je ueberschrieben worden -- an keiner der 31 Stellen gab es
+ein `setNotation()` oder `setLocale()`:
+
+Erstens steht der Validator ohne Zutun auf `ScientificNotation`. Er haelt
+"2,00E+03" damit fuer eine gueltige Zahl und darf sie auch selbst erzeugen.
+
+Zweitens ruft `QLineEdit` beim Verlassen des Feldes `fixup()` des Validators
+auf, wenn der Text nicht vollstaendig gueltig ist. Qt liest ihn dann mit der
+Locale des Validators -- deutsch, Tausendertrennzeichen erlaubt -- und
+schreibt ihn neu.
+
+Fuer "20.02" hiess das: der Punkt gilt als Tausendertrennzeichen, die
+Gruppengroesse wird nicht geprueft, es kommt 2002 heraus, formatiert mit den
+zwei Nachkommastellen des Feldes in wissenschaftlicher Notation ergibt das
+2,00E+03. Aus 20,02 EUR wurden 2000 EUR, ohne Meldung.
+
+#### Warum es keine Folge von 1.21.4 war
+
+Das Verhalten gab es seit jeher. Neu ist nur, dass es der mit 1.21.3
+eingefuehrten Regel offen widerspricht: `NumberParser` meldet "20.02" als
+unlesbar, der Validator schreibt es vorher still um. Der Parser bekommt die
+Eingabe gar nicht mehr zu Gesicht -- eine Regel, die an einer Stelle
+durchgesetzt und an einer frueheren umgangen wird, ist keine Regel.
+
+#### Zentrale Fabrik statt 31 Einzelzeilen
+
+`app/utils/NumericFieldValidator.h` (header-only) erzeugt alle Validatoren
+und setzt ausnahmslos `StandardNotation`. Kurse, Gebuehren und Stueckzahlen
+sind keine physikalischen Messwerte.
+
+Zentral, obwohl es nur eine Zeile je Stelle waere: 31 Stellen in sechs
+Formularen, eine davon zu vergessen faellt niemandem auf, bis jemand eine
+Zahl eintippt, die der Validator umdeutet. Dieselbe Erfahrung wie mit den
+sieben `parseDouble()`-Kopien -- und der spaeter noetige Zusatz
+`RejectGroupSeparator` ist damit ebenfalls eine Zeile an einer Stelle.
+
+@note Der Test prueft stellvertretend das Kaufformular. Eine Kopie je Dialog
+wuerde nur dieselbe eine Zeile der Fabrik ein weiteres Mal pruefen; die
+Gegenprobe im Test stellt sicher, dass ueberhaupt Zahlenfelder gefunden
+wurden -- sonst liefe er auch dann gruen, wenn es keine mehr gaebe.
 
 ### Unlesbare Zahleneingaben wurden nicht gemeldet (06.09.2026, behoben 07.09.2026)
 

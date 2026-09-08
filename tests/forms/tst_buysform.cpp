@@ -15,6 +15,7 @@
 #include <QDir>
 #include <QTableWidget>
 #include <QLineEdit>
+#include <QDoubleValidator>
 #include <QComboBox>
 #include <QDialog>
 #include <QDateEdit>
@@ -2224,6 +2225,42 @@ private slots:
 
         QVERIFY(!unreadableMessage.contains(QStringLiteral("Pflichtangaben")));
         QVERIFY(unreadableMessage.contains(QStringLiteral("Zahl")));
+    }
+
+    /**
+     * @brief Kein Zahlenfeld darf auf wissenschaftlicher Notation stehen.
+     *
+     * Regression 07.09.2026: QDoubleValidator steht ohne Zutun auf
+     * ScientificNotation. Beim Verlassen des Feldes ruft QLineEdit fixup()
+     * auf, und aus der Eingabe "20.02" wurde dabei "2,00E+03" — aus 20,02 €
+     * also 2000 €, ohne Meldung. Siehe ARCHITECTURE.md, "Wissenschaftliche
+     * Notation in Zahlenfeldern".
+     *
+     * Geprüft wird stellvertretend das Kaufformular; die übrigen fünf
+     * Formulare erzeugen ihre Validatoren über dieselbe Fabrik
+     * (makeNumericValidator), eine Kopie dieses Tests je Dialog würde nur
+     * dieselbe eine Zeile ein weiteres Mal prüfen.
+     */
+    void test_viewBuyEdit_numericValidators_useStandardNotation()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        int checked = 0;
+        const QList<QLineEdit*> edits = dlg.findChildren<QLineEdit*>();
+        for (const QLineEdit* edit : edits) {
+            const auto* validator =
+                qobject_cast<const QDoubleValidator*>(edit->validator());
+            if (!validator)
+                continue;
+            QCOMPARE(validator->notation(), QDoubleValidator::StandardNotation);
+            ++checked;
+        }
+
+        // Ohne diese Gegenprobe liefe der Test auch dann grün, wenn gar kein
+        // Zahlenfeld mehr gefunden würde.
+        QVERIFY2(checked >= 6, qPrintable(QStringLiteral("nur %1 Zahlenfelder gefunden")
+                                              .arg(checked)));
     }
 
     void test_viewBuyEdit_hasUnreadableFields_detectsNonNumericText()

@@ -3213,6 +3213,7 @@ Feldschluessel in `fieldErrors` mit — beides ergaenzt fuer diese Runde.
 | `..._unreadableField_isMarkedInTheMask` | der Presenter ruft setFieldError() fuer genau dieses Feld |
 | `..._unreadableField_messageDiffersFromMissingField` | die Meldung nennt nicht "Pflichtangaben", sondern die Zahl — beides verlangt verschiedene Abhilfen |
 | `test_viewBuyEdit_hasUnreadableFields_detectsNonNumericText` | die View selbst erkennt unlesbaren Feldinhalt (nur im Kaufformular, stellvertretend fuer alle vier) |
+| `test_viewBuyEdit_numericValidators_useStandardNotation` | kein Zahlenfeld steht auf wissenschaftlicher Notation (07.09.2026, stellvertretend fuer alle sechs Formulare) |
 
 @note Nicht abgedeckt: dass die rote Markierung tatsaechlich am richtigen
 Widget erscheint. Das haengt an den Statussymbolen der echten View und

@@ -7,6 +7,7 @@
 #include "../../config/AppSettings.h"
 #include "../../core/DocumentRootMigrator.h"
 #include "../../utils/ShareSplitAdjuster.h"
+#include "../../utils/NumericFieldValidator.h"
 #include "../../utils/ShareSplitHint.h"
 #include "../../utils/NumberParser.h"
 #include "../../utils/ValueFormatter.h"
@@ -198,7 +199,7 @@ QGroupBox* ViewBuyEdit::createKaufdatenGroup()
     // ── Gekaufte Anteile ──────────────────────────────────────────────────
     m_volume = new QLineEdit(QStringLiteral("0,0000"));
     m_volume->setAlignment(Qt::AlignRight);
-    m_volume->setValidator(new QDoubleValidator(0.0, 9'999'999.0, 4, m_volume));
+    m_volume->setValidator(makeNumericValidator(0.0, 9'999'999.0, 4, m_volume));
     m_statusLabels[QStringLiteral("volume")] =
         addRow(grid, row, tr("Gekaufte Anteile:"), m_volume,
                tr("stk."), QStringLiteral("volume"));
@@ -214,7 +215,7 @@ QGroupBox* ViewBuyEdit::createKaufdatenGroup()
     // ── Kurs ──────────────────────────────────────────────────────────────
     m_price = new QLineEdit(QStringLiteral("0,0000"));
     m_price->setAlignment(Qt::AlignRight);
-    m_price->setValidator(new QDoubleValidator(0.0, 9'999'999.0, 4, m_price));
+    m_price->setValidator(makeNumericValidator(0.0, 9'999'999.0, 4, m_price));
     m_statusLabels[QStringLiteral("price")] =
         addRow(grid, row, tr("Kurs:"), m_price,
                tr("€"), QStringLiteral("price"));
@@ -230,7 +231,7 @@ QGroupBox* ViewBuyEdit::createKaufdatenGroup()
     // ── Provision ─────────────────────────────────────────────────────────
     m_provision = new QLineEdit(QStringLiteral("0,00"));
     m_provision->setAlignment(Qt::AlignRight);
-    m_provision->setValidator(new QDoubleValidator(0.0, 99'999.0, 2, m_provision));
+    m_provision->setValidator(makeNumericValidator(0.0, 99'999.0, 2, m_provision));
     m_statusLabels[QStringLiteral("provision")] =
         addRow(grid, row, tr("Provision:"), m_provision,
                tr("€"), QStringLiteral("provision"));
@@ -239,7 +240,7 @@ QGroupBox* ViewBuyEdit::createKaufdatenGroup()
     // ── Courtage ──────────────────────────────────────────────────────────
     m_brokerFee = new QLineEdit(QStringLiteral("0,00"));
     m_brokerFee->setAlignment(Qt::AlignRight);
-    m_brokerFee->setValidator(new QDoubleValidator(0.0, 99'999.0, 2, m_brokerFee));
+    m_brokerFee->setValidator(makeNumericValidator(0.0, 99'999.0, 2, m_brokerFee));
     m_statusLabels[QStringLiteral("brokerFee")] =
         addRow(grid, row, tr("Courtage:"), m_brokerFee,
                tr("€"), QStringLiteral("brokerFee"));
@@ -248,7 +249,7 @@ QGroupBox* ViewBuyEdit::createKaufdatenGroup()
     // ── Handelsplatzgebühr ────────────────────────────────────────────────
     m_traderFee = new QLineEdit(QStringLiteral("0,00"));
     m_traderFee->setAlignment(Qt::AlignRight);
-    m_traderFee->setValidator(new QDoubleValidator(0.0, 99'999.0, 2, m_traderFee));
+    m_traderFee->setValidator(makeNumericValidator(0.0, 99'999.0, 2, m_traderFee));
     m_statusLabels[QStringLiteral("traderFee")] =
         addRow(grid, row, tr("Handelsplatzgebühr:"), m_traderFee,
                tr("€"), QStringLiteral("traderFee"));
@@ -264,7 +265,7 @@ QGroupBox* ViewBuyEdit::createKaufdatenGroup()
     // ── Rabatt ────────────────────────────────────────────────────────────
     m_reduction = new QLineEdit(QStringLiteral("0,00"));
     m_reduction->setAlignment(Qt::AlignRight);
-    m_reduction->setValidator(new QDoubleValidator(0.0, 99'999.0, 2, m_reduction));
+    m_reduction->setValidator(makeNumericValidator(0.0, 99'999.0, 2, m_reduction));
     m_statusLabels[QStringLiteral("reduction")] =
         addRow(grid, row, tr("Rabatt:"), m_reduction,
                tr("€"), QStringLiteral("reduction"));

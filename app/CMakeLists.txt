@@ -78,6 +78,8 @@ set(APP_SOURCES
     utils/ValueFormatter.h
     # Header-only, bewusst ohne .cpp — Begruendung im Dateikopf (06.09.2026).
     utils/NumberParser.h
+    # Header-only, bewusst ohne .cpp — Begruendung im Dateikopf (07.09.2026).
+    utils/NumericFieldValidator.h
     utils/SplitPriceJumpDetector.h
     utils/SplitPriceJumpDetector.cpp
     utils/SplitAudit.h

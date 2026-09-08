@@ -3,6 +3,7 @@
 #include "ViewSaleEdit.h"
 #include "PresenterSaleEdit.h"
 #include "../../utils/SaleFifoAllocator.h"
+#include "../../utils/NumericFieldValidator.h"
 #include "../../utils/ShareSplitAdjuster.h"
 #include "../../utils/ShareSplitHint.h"
 #include "../../utils/ValueFormatter.h"
@@ -208,7 +209,7 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
     // ── Verkaufte Anteile ─────────────────────────────────────────────────
     m_volume = new QLineEdit(QStringLiteral("0,0000"));
     m_volume->setAlignment(Qt::AlignRight);
-    m_volume->setValidator(new QDoubleValidator(0.0, 9'999'999.0, 4, m_volume));
+    m_volume->setValidator(makeNumericValidator(0.0, 9'999'999.0, 4, m_volume));
     m_statusLabels[QStringLiteral("volume")] =
         addRow(grid, row, tr("Verkaufte Anteile:"), m_volume,
                tr("stk."), QStringLiteral("volume"));
@@ -217,7 +218,7 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
     // ── Verkaufs-Preis einer Aktie ────────────────────────────────────────
     m_salePrice = new QLineEdit(QStringLiteral("0,0000"));
     m_salePrice->setAlignment(Qt::AlignRight);
-    m_salePrice->setValidator(new QDoubleValidator(0.0, 9'999'999.0, 4, m_salePrice));
+    m_salePrice->setValidator(makeNumericValidator(0.0, 9'999'999.0, 4, m_salePrice));
     m_statusLabels[QStringLiteral("salePrice")] =
         addRow(grid, row, tr("Verkaufs- Preis einer Aktie:"), m_salePrice,
                tr("€"), QStringLiteral("salePrice"));
@@ -280,7 +281,7 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
     // ── Quellsteuer ───────────────────────────────────────────────────────
     m_taxAtSource = new QLineEdit(QStringLiteral("0,00"));
     m_taxAtSource->setAlignment(Qt::AlignRight);
-    m_taxAtSource->setValidator(new QDoubleValidator(0.0, 99'999.0, 2, m_taxAtSource));
+    m_taxAtSource->setValidator(makeNumericValidator(0.0, 99'999.0, 2, m_taxAtSource));
     m_statusLabels[QStringLiteral("taxAtSource")] =
         addRow(grid, row, tr("Quellsteuer:"), m_taxAtSource,
                tr("€"), QStringLiteral("taxAtSource"));
@@ -289,7 +290,7 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
     // ── Kapitalertragssteuer ──────────────────────────────────────────────
     m_capitalGainsTax = new QLineEdit(QStringLiteral("0,00"));
     m_capitalGainsTax->setAlignment(Qt::AlignRight);
-    m_capitalGainsTax->setValidator(new QDoubleValidator(0.0, 99'999.0, 2, m_capitalGainsTax));
+    m_capitalGainsTax->setValidator(makeNumericValidator(0.0, 99'999.0, 2, m_capitalGainsTax));
     m_statusLabels[QStringLiteral("capitalGainsTax")] =
         addRow(grid, row, tr("Kapitalertragssteuer:"), m_capitalGainsTax,
                tr("€"), QStringLiteral("capitalGainsTax"));
@@ -298,7 +299,7 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
     // ── Solidaritätszuschlag ──────────────────────────────────────────────
     m_solidarityTax = new QLineEdit(QStringLiteral("0,00"));
     m_solidarityTax->setAlignment(Qt::AlignRight);
-    m_solidarityTax->setValidator(new QDoubleValidator(0.0, 99'999.0, 2, m_solidarityTax));
+    m_solidarityTax->setValidator(makeNumericValidator(0.0, 99'999.0, 2, m_solidarityTax));
     m_statusLabels[QStringLiteral("solidarityTax")] =
         addRow(grid, row, tr("Solidaritätszuschlag:"), m_solidarityTax,
                tr("€"), QStringLiteral("solidarityTax"));
@@ -307,7 +308,7 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
     // ── Provision ─────────────────────────────────────────────────────────
     m_provision = new QLineEdit(QStringLiteral("0,00"));
     m_provision->setAlignment(Qt::AlignRight);
-    m_provision->setValidator(new QDoubleValidator(0.0, 99'999.0, 2, m_provision));
+    m_provision->setValidator(makeNumericValidator(0.0, 99'999.0, 2, m_provision));
     m_statusLabels[QStringLiteral("provision")] =
         addRow(grid, row, tr("Provision:"), m_provision,
                tr("€"), QStringLiteral("provision"));
@@ -316,7 +317,7 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
     // ── Courtage ──────────────────────────────────────────────────────────
     m_brokerFee = new QLineEdit(QStringLiteral("0,00"));
     m_brokerFee->setAlignment(Qt::AlignRight);
-    m_brokerFee->setValidator(new QDoubleValidator(0.0, 99'999.0, 2, m_brokerFee));
+    m_brokerFee->setValidator(makeNumericValidator(0.0, 99'999.0, 2, m_brokerFee));
     m_statusLabels[QStringLiteral("brokerFee")] =
         addRow(grid, row, tr("Courtage:"), m_brokerFee,
                tr("€"), QStringLiteral("brokerFee"));
@@ -325,7 +326,7 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
     // ── Handelsplatzgebühr ────────────────────────────────────────────────
     m_traderFee = new QLineEdit(QStringLiteral("0,00"));
     m_traderFee->setAlignment(Qt::AlignRight);
-    m_traderFee->setValidator(new QDoubleValidator(0.0, 99'999.0, 2, m_traderFee));
+    m_traderFee->setValidator(makeNumericValidator(0.0, 99'999.0, 2, m_traderFee));
     m_statusLabels[QStringLiteral("traderFee")] =
         addRow(grid, row, tr("Handelsplatzgebühr:"), m_traderFee,
                tr("€"), QStringLiteral("traderFee"));
@@ -334,7 +335,7 @@ QGroupBox* ViewSaleEdit::createVerkaufsdatenGroup()
     // ── Rabatt ────────────────────────────────────────────────────────────
     m_reduction = new QLineEdit(QStringLiteral("0,00"));
     m_reduction->setAlignment(Qt::AlignRight);
-    m_reduction->setValidator(new QDoubleValidator(0.0, 99'999.0, 2, m_reduction));
+    m_reduction->setValidator(makeNumericValidator(0.0, 99'999.0, 2, m_reduction));
     m_statusLabels[QStringLiteral("reduction")] =
         addRow(grid, row, tr("Rabatt:"), m_reduction,
                tr("€"), QStringLiteral("reduction"));

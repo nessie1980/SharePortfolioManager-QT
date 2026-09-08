@@ -2,6 +2,7 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "ViewDividendEdit.h"
 #include "../../utils/ShareSplitHint.h"
+#include "../../utils/NumericFieldValidator.h"
 #include "../../utils/ValueFormatter.h"
 #include "../../utils/NumberParser.h"
 #include "../../utils/DocumentFieldValue.h"
@@ -212,7 +213,7 @@ QGroupBox* ViewDividendEdit::createDividenddatenGroup()
     // ── Devisenkurs + Währungsauswahl in einer Zeile ──────────────────────
     m_exchangeRatio = new QLineEdit(QStringLiteral("1,0000"));
     m_exchangeRatio->setAlignment(Qt::AlignRight);
-    m_exchangeRatio->setValidator(new QDoubleValidator(0.0001, 999999.0, 4, m_exchangeRatio));
+    m_exchangeRatio->setValidator(makeNumericValidator(0.0001, 999999.0, 4, m_exchangeRatio));
     m_exchangeRatio->setFixedHeight(UiConstants::kFieldHeight);
 
     m_currency = new QComboBox;
@@ -300,7 +301,7 @@ QGroupBox* ViewDividendEdit::createDividenddatenGroup()
     // ── Dividendensatz je Aktie ───────────────────────────────────────────
     m_rate = new QLineEdit(QStringLiteral("0,0000"));
     m_rate->setAlignment(Qt::AlignRight);
-    m_rate->setValidator(new QDoubleValidator(0.0, 999999.0, 4, m_rate));
+    m_rate->setValidator(makeNumericValidator(0.0, 999999.0, 4, m_rate));
     m_rateUnit = new QLabel(QStringLiteral("€"));
     m_rateUnit->setFixedWidth(28);
     m_rateUnit->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -324,7 +325,7 @@ QGroupBox* ViewDividendEdit::createDividenddatenGroup()
     // ── Anteile am Auszahlungstag ─────────────────────────────────────────
     m_volume = new QLineEdit(QStringLiteral("0,0000"));
     m_volume->setAlignment(Qt::AlignRight);
-    m_volume->setValidator(new QDoubleValidator(0.0, 9'999'999.0, 4, m_volume));
+    m_volume->setValidator(makeNumericValidator(0.0, 9'999'999.0, 4, m_volume));
     m_statusLabels[QStringLiteral("volume")] =
         addRow(grid, row, tr("Anteile am Auszahlungstag:"), m_volume,
                tr("stk."), QStringLiteral("volume"));
@@ -379,7 +380,7 @@ QGroupBox* ViewDividendEdit::createDividenddatenGroup()
                           const QString& key) {
         field = new QLineEdit(QStringLiteral("0,00"));
         field->setAlignment(Qt::AlignRight);
-        field->setValidator(new QDoubleValidator(0.0, 99'999.0, 2, field));
+        field->setValidator(makeNumericValidator(0.0, 99'999.0, 2, field));
         m_statusLabels[key] =
             addRow(grid, row, label, field, tr("€"), key);
         m_inputWidgets[key] = field;
@@ -417,7 +418,7 @@ QGroupBox* ViewDividendEdit::createDividenddatenGroup()
     // Schlusskurs wurde dadurch beim Anzeigen gerundet.
     m_priceAtPayday = new QLineEdit(QStringLiteral("0,0000"));
     m_priceAtPayday->setAlignment(Qt::AlignRight);
-    m_priceAtPayday->setValidator(new QDoubleValidator(0.0, 9'999'999.0, 4, m_priceAtPayday));
+    m_priceAtPayday->setValidator(makeNumericValidator(0.0, 9'999'999.0, 4, m_priceAtPayday));
     m_statusLabels[QStringLiteral("priceAtPayday")] =
         addRow(grid, row, tr("Preis der Aktien am Auszahlungstag:"), m_priceAtPayday,
                tr("€"), QStringLiteral("priceAtPayday"));

@@ -5,6 +5,7 @@
 #include "ModelBrokerageEdit.h"
 #include "../../IconProvider.h"
 #include "../../utils/NumberParser.h"
+#include "../../utils/NumericFieldValidator.h"
 #include "../../config/AppSettings.h"
 #include "../../core/DocumentRootMigrator.h"
 #include "../UiConstants.h"
@@ -136,21 +137,21 @@ QGroupBox* ViewBrokerageEdit::createKostendatenGroup()
     // ── Provision ─────────────────────────────────────────────────────────
     m_provision = new QLineEdit(QStringLiteral("0,00"));
     m_provision->setAlignment(Qt::AlignRight);
-    m_provision->setValidator(new QDoubleValidator(0.0, 9999999.0, 2, m_provision));
+    m_provision->setValidator(makeNumericValidator(0.0, 9999999.0, 2, m_provision));
     m_provision->setFixedHeight(UiConstants::kFieldHeight);
     addRow(grid, row, tr("Provision:"), m_provision, tr("€"));
 
     // ── Courtage ──────────────────────────────────────────────────────────
     m_brokerFee = new QLineEdit(QStringLiteral("0,00"));
     m_brokerFee->setAlignment(Qt::AlignRight);
-    m_brokerFee->setValidator(new QDoubleValidator(0.0, 9999999.0, 2, m_brokerFee));
+    m_brokerFee->setValidator(makeNumericValidator(0.0, 9999999.0, 2, m_brokerFee));
     m_brokerFee->setFixedHeight(UiConstants::kFieldHeight);
     addRow(grid, row, tr("Courtage:"), m_brokerFee, tr("€"));
 
     // ── Handelsplatzgebühr ────────────────────────────────────────────────
     m_traderFee = new QLineEdit(QStringLiteral("0,00"));
     m_traderFee->setAlignment(Qt::AlignRight);
-    m_traderFee->setValidator(new QDoubleValidator(0.0, 9999999.0, 2, m_traderFee));
+    m_traderFee->setValidator(makeNumericValidator(0.0, 9999999.0, 2, m_traderFee));
     m_traderFee->setFixedHeight(UiConstants::kFieldHeight);
     addRow(grid, row, tr("Handelsplatzgebühr:"), m_traderFee, tr("€"));
 
@@ -166,7 +167,7 @@ QGroupBox* ViewBrokerageEdit::createKostendatenGroup()
     // ── Rabatt ────────────────────────────────────────────────────────────
     m_reduction = new QLineEdit(QStringLiteral("0,00"));
     m_reduction->setAlignment(Qt::AlignRight);
-    m_reduction->setValidator(new QDoubleValidator(0.0, 9999999.0, 2, m_reduction));
+    m_reduction->setValidator(makeNumericValidator(0.0, 9999999.0, 2, m_reduction));
     m_reduction->setFixedHeight(UiConstants::kFieldHeight);
     addRow(grid, row, tr("Rabatt:"), m_reduction, tr("€"));
 
