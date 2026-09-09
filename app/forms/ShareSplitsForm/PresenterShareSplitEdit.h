@@ -9,6 +9,7 @@
 #include <QObject>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 /**
  * @brief Presenter für den Dialog "Aktiensplits" (MVP-Pattern).
@@ -107,6 +108,21 @@ private:
     void    reloadOverview();
     void    refreshFactorPreview();
     QString validateInput() const;
+
+    /**
+     * @brief Meldung, wenn Zahlenfelder unlesbaren Text enthalten.
+     *
+     * Fragt IView*::hasUnreadableFields() ab, das hier ANZEIGENAMEN liefert
+     * — dieser Dialog hat keine Feldanzeige, die Meldung muss die Felder
+     * also selbst benennen (Nessies Entscheidung 06.09.2026).
+     *
+     * @return Leer, wenn alles lesbar ist; sonst der fertige Meldungstext.
+     *
+     * Ergaenzt 09.09.2026, siehe ARCHITECTURE.md, "Unlesbare Zahleneingaben
+     * in Kosten und Aktiensplits".
+     */
+    QString unreadableFieldsMessage() const;
+
 
     /**
      * @brief Heutiger Bestand für die übergebene Split-Liste.

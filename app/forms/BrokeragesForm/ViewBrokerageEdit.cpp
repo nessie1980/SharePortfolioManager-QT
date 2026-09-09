@@ -12,6 +12,7 @@
 #include "../UiConstants.h"
 
 #include <QVBoxLayout>
+#include <QPair>
 #include <QHBoxLayout>
 #include <QFileDialog>
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
@@ -686,6 +687,36 @@ void ViewBrokerageEdit::onBrowseDocument()
 }
 
 // ── Static helpers ────────────────────────────────────────────────────────────
+
+// ── hasUnreadableFields ───────────────────────────────────────────────────────
+
+bool ViewBrokerageEdit::hasUnreadableFields(QStringList& fieldNames) const
+{
+    fieldNames.clear();
+
+    // ANZEIGENAMEN, nicht Feldschluessel — dieser Dialog hat keine
+    // Feldanzeige, die Meldung des Presenters muss die Felder selbst
+    // benennen. Die Namen stehen hier, weil sie hier auch als
+    // Feldbeschriftung entstehen; eine zweite Tabelle im Presenter waere
+    // eine zweite Quelle fuer dieselben Bezeichner (09.09.2026).
+    const QList<QPair<QString, const QLineEdit*>> numericFields = {
+        { tr("Provision"), m_provision },
+        { tr("Courtage"), m_brokerFee },
+        { tr("Handelsplatzgebühr"), m_traderFee },
+        { tr("Rabatt"), m_reduction },
+    };
+
+    for (const auto& [name, edit] : numericFields) {
+        if (!edit)
+            continue;
+        bool ok = false;
+        parseDouble(edit->text(), &ok);
+        if (!ok)
+            fieldNames.append(name);
+    }
+
+    return !fieldNames.isEmpty();
+}
 
 QString ViewBrokerageEdit::formatMoney(double value)
 {

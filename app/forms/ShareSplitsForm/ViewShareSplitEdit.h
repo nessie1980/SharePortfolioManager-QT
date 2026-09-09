@@ -83,6 +83,9 @@ public:
     bool confirm(const QString& title, const QString& message)      override;
     void acceptAndClose()                                           override;
 
+    /// Siehe IView*::hasUnreadableFields() — liefert ANZEIGENAMEN (09.09.2026).
+    bool hasUnreadableFields(QStringList& fieldNames) const override;
+
 private slots:
     /** Übersetzt die Tabellen-Auswahl in einen onRowSelected()-Aufruf. */
     void onTableSelectionChanged();

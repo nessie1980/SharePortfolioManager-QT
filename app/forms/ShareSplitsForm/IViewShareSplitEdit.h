@@ -7,6 +7,7 @@
 #include <QDate>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 /**
  * @brief Abstraktes View-Interface für den Dialog "Aktiensplits".
@@ -119,6 +120,39 @@ public:
      * @brief Ja/Nein-Rückfrage; liefert true bei "Ja".
      */
     virtual bool confirm(const QString& title, const QString& message) = 0;
+
+    /**
+     * @brief Meldet die Zahlenfelder, deren Inhalt sich nicht als Zahl lesen
+     *        laesst.
+     *
+     * Gegenstueck zu hasMissingRequiredFields(), fuer einen anderen Fehler:
+     * dort ist ein Feld LEER, hier steht etwas drin, das keine gueltige
+     * deutsche Zahl ist. Ueber NumberParser ergibt das 0,0 -- und 0,0 ist
+     * hier ein gueltiger Wert, der Fehler bliebe also unsichtbar.
+     *
+     * Die View beantwortet nur, WAS sie nicht lesen konnte. Was daraus folgt
+     * -- Meldung, Speichersperre --, entscheidet der Presenter.
+     *
+     * @param fieldNames  Wird geleert und mit den ANZEIGENAMEN der Felder
+     *                    gefuellt ("Provision", "Verhaeltnis (neu)"), nicht
+     *                    mit Feldschluesseln.
+     * @return true, wenn mindestens ein Feld unlesbar ist.
+     *
+     * @note Bewusst anders als in IViewBuyEdit/IViewSaleEdit/
+     * IViewDividendEdit/IViewShareAdd, wo dieselbe Methode Feldschluessel
+     * liefert. Dort markiert der Presenter die Felder ueber
+     * setFieldError() rot und verweist in der Meldung darauf; dieser Dialog
+     * hat keine Feldanzeige (Nessies Entscheidung 06.09.2026, keine
+     * Statussymbole nachbauen), die Meldung muss die Felder also selbst
+     * benennen. Die Namen bleiben damit dort, wo auch die Feldbeschriftungen
+     * entstehen -- eine Uebersetzungstabelle im Presenter waere eine zweite
+     * Quelle fuer dieselben Bezeichner. Gleiche Bauweise wie
+     * hasMissingRequiredFields(), das hier ebenfalls Anzeigenamen liefert.
+     *
+     * Ergaenzt 09.09.2026, siehe ARCHITECTURE.md, "Unlesbare Zahleneingaben
+     * in Kosten und Aktiensplits".
+     */
+    virtual bool hasUnreadableFields(QStringList& fieldNames) const = 0;
 
     virtual void acceptAndClose() = 0;
 };

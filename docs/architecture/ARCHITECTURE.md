@@ -5384,24 +5384,6 @@ beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
 
-### Unlesbare Zahleneingaben in Kosten und Aktiensplits (07.09.2026)
-
-Mit 1.21.4 melden Kauf, Verkauf, Dividende und Aktie anlegen unlesbare
-Zahleneingaben ueber `IView*::hasUnreadableFields()`. `ViewBrokerageEdit` und
-`ViewShareSplitEdit` fehlen noch.
-
-Der Grund ist der Aufwand, nicht die Wichtigkeit: beide Dialoge haben keine
-Feldanzeige. `ViewBrokerageEdit` besitzt zwar ein `FieldState`-Enum und
-`m_fieldStates`, beides wird aber nirgends gelesen -- es gibt weder
-Statussymbole je Zeile noch ein `setFieldError()` im Interface.
-`ViewShareSplitEdit` hat gar nichts, nur `showError()` fuer den ganzen
-Dialog.
-
-Nessies Entscheidung (06.09.2026): dort KEINE Statussymbole nachbauen, eine
-Meldung mit Feldnamen beim Speicherversuch reicht. Das heisst, die beiden
-brauchen `hasUnreadableFields()` mit Anzeigenamen statt Feldschluesseln --
-oder eine Uebersetzung im Presenter.
-
 ### formatMoney/formatVolume liegen weiterhin je View doppelt vor (05.09.2026)
 
 `ValueFormatter` beherbergt seit dem Kurs-Rollout nur `formatPrice()` und
@@ -5696,6 +5678,53 @@ sieben `parseDouble()`-Kopien -- und der spaeter noetige Zusatz
 wuerde nur dieselbe eine Zeile der Fabrik ein weiteres Mal pruefen; die
 Gegenprobe im Test stellt sicher, dass ueberhaupt Zahlenfelder gefunden
 wurden -- sonst liefe er auch dann gruen, wenn es keine mehr gaebe.
+
+### Unlesbare Zahleneingaben in Kosten und Aktiensplits (07.09.2026, behoben 09.09.2026)
+
+Nachzuegler zu 1.21.4: `ViewBrokerageEdit` und `ViewShareSplitEdit` waren
+dort ausgenommen, weil beide keine Feldanzeige haben.
+`ViewBrokerageEdit` besitzt zwar ein `FieldState`-Enum samt
+`m_fieldStates`, beides wird aber nirgends gelesen; `ViewShareSplitEdit`
+hat gar nichts ausser `showError()`.
+
+Nessies Entscheidung (06.09.2026): dort KEINE Statussymbole nachbauen, eine
+Meldung mit Feldnamen beim Speicherversuch reicht.
+
+#### Warum dieselbe Methode hier etwas anderes liefert
+
+`hasUnreadableFields()` gibt in diesen beiden Dialogen ANZEIGENAMEN zurueck
+("Provision", "Verhaeltnis (neu)"), in den vier uebrigen dagegen
+Feldschluessel. Der Grund ist der fehlende Anzeigeweg: dort markiert der
+Presenter die Felder ueber `setFieldError()` rot und verweist in der
+Meldung darauf, hier muss die Meldung die Felder selbst benennen.
+
+Die Alternative waere gewesen, ueberall Schluessel zu liefern und in den
+beiden Presentern eine Uebersetzungstabelle Schluessel-Anzeigename zu
+fuehren. Verworfen (Nessies Entscheidung 09.09.2026, Variante A): das waere
+eine zweite Quelle fuer dieselben Bezeichner neben den Feldbeschriftungen
+der View. Doppelt gepflegte Bezeichner haben in dieser Reihe schon zweimal
+Fehler erzeugt, zuletzt `PresenterShareDetails::formatVolume()`, das
+jahrelang auf zwei Nachkommastellen stand, waehrend alle anderen vier
+zeigten.
+
+Der Preis ist eine Methode, die je nach Dialog etwas anderes bedeutet. Das
+steht deshalb ausdruecklich in den Doxygen-Kommentaren beider Interfaces --
+und es folgt der Bauweise, die `hasMissingRequiredFields()` dort schon
+hatte: auch das liefert in diesen Dialogen Anzeigenamen.
+
+#### Warum die Reihenfolge in validateInput() zaehlt
+
+Die Pruefung steht vor den bestehenden Wertpruefungen. Ein unlesbarer Text
+ergibt ueber `NumberParser` 0,0 und liefe sonst in "mindestens ein Wert ...
+groesser als 0,00 EUR" beziehungsweise "Beide Seiten des Verhaeltnisses
+muessen groesser als 0 sein" -- eine Begruendung, die nicht zutrifft,
+waehrend etwas im Feld steht. Je ein Test haelt genau das fest.
+
+@note Wie realistisch der Fall nach 1.21.6 noch ist: kaum. Der Validator
+weist Buchstaben und Tausenderpunkte schon bei der Eingabe ab. Was bleibt,
+ist das Netz fuer den Fall, dass die Anwendung selbst etwas in ein Feld
+schreibt, das sie nicht zurueckliest -- zweimal binnen dreier Wochen
+passiert (22.08.2026 und 06.09.2026).
 
 ### Unlesbare Zahleneingaben wurden nicht gemeldet (06.09.2026, behoben 07.09.2026)
 

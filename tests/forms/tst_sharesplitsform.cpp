@@ -151,6 +151,15 @@ public:
         { confirmCalled = true; lastConfirmMessage = message; return confirmResult; }
 
     void acceptAndClose() override { closedCalled = true; }
+
+    // hasUnreadableFields (09.09.2026): liefert in diesen beiden Dialogen
+    // ANZEIGENAMEN statt Feldschluesseln — sie haben keine Feldanzeige, die
+    // Meldung des Presenters muss die Felder selbst benennen. Der Stub haelt
+    // die Antwort in einem Feld vor, das die Tests setzen.
+    QStringList unreadableFields;
+    bool hasUnreadableFields(QStringList& fieldNames) const override
+        { fieldNames = unreadableFields; return !unreadableFields.isEmpty(); }
+
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -283,6 +292,57 @@ private slots:
     // ─────────────────────────────────────────────────────────────────────
     // PresenterShareSplitEdit — Konstruktion
     // ─────────────────────────────────────────────────────────────────────
+
+    // ── Unlesbare Zahleneingaben (09.09.2026) ────────────────────────────
+    //
+    // Anders als in den vier Formularen aus 1.21.4 liefert
+    // hasUnreadableFields() hier ANZEIGENAMEN: dieser Dialog hat keine
+    // Feldanzeige, die Meldung muss die Felder selbst benennen. Siehe
+    // ARCHITECTURE.md, "Unlesbare Zahleneingaben in Kosten und
+    // Aktiensplits".
+
+    void test_presenter_unreadableField_blocksSave()
+    {
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.unreadableFields = { QStringLiteral("Verhältnis (neu)") };
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY2(!view.lastError.isEmpty(), "Speichern muss eine Meldung zeigen");
+    }
+
+    void test_presenter_unreadableField_messageNamesTheField()
+    {
+        // Der Kern dieser Variante: ohne rote Markierung im Formular muss die
+        // Meldung sagen, WELCHES Feld gemeint ist.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.unreadableFields = { QStringLiteral("Verhältnis (neu)") };
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY2(view.lastError.contains(QStringLiteral("Verhältnis (neu)")),
+                 qPrintable(view.lastError));
+    }
+
+    void test_presenter_unreadableField_messageDiffersFromRatioCheck()
+    {
+        // Unlesbarer Text ergibt 0,0 und liefe sonst in die bestehende
+        // Verhältnis-Prüfung ("Beide Seiten des Verhältnisses müssen grösser
+        // als 0 sein") — mit einer Begründung, die nicht zutrifft.
+        StubViewShareSplitEdit  view;
+        StubModelShareSplitEdit model;
+        view.unreadableFields = { QStringLiteral("Verhältnis (neu)") };
+        PresenterShareSplitEdit p(&view, &model, kShareGuid);
+
+        p.onSave();
+
+        QVERIFY2(!view.lastError.contains(QStringLiteral("Beide Seiten")),
+                 qPrintable(view.lastError));
+    }
 
     void test_presenter_populatesOverviewOnConstruction()
     {

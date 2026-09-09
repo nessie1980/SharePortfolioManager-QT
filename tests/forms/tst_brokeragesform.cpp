@@ -140,6 +140,15 @@ public:
     void showError(const QString& msg) override { lastError = msg; }
     void acceptAndClose()               override { closed = true; }
 
+    // hasUnreadableFields (09.09.2026): liefert in diesen beiden Dialogen
+    // ANZEIGENAMEN statt Feldschluesseln — sie haben keine Feldanzeige, die
+    // Meldung des Presenters muss die Felder selbst benennen. Der Stub haelt
+    // die Antwort in einem Feld vor, das die Tests setzen.
+    QStringList unreadableFields;
+    bool hasUnreadableFields(QStringList& fieldNames) const override
+        { fieldNames = unreadableFields; return !unreadableFields.isEmpty(); }
+
+
     void markMissingFieldsAsFailed() override {}
     bool hasMissingRequiredFields(QStringList& missing) const override
         { missing.clear(); if (m_missingFields) missing << QStringLiteral("date"); return m_missingFields; }
@@ -766,6 +775,60 @@ private slots:
      * Anzeichen, dass etwas verloren ging. Siehe ARCHITECTURE.md,
      * "Zahlenfelder verlieren Werte ab 1.000 beim Zurücklesen".
      */
+    // ── Unlesbare Zahleneingaben (09.09.2026) ────────────────────────────
+    //
+    // Anders als in den vier Formularen aus 1.21.4 liefert
+    // hasUnreadableFields() hier ANZEIGENAMEN: dieser Dialog hat keine
+    // Feldanzeige, die Meldung muss die Felder selbst benennen. Siehe
+    // ARCHITECTURE.md, "Unlesbare Zahleneingaben in Kosten und
+    // Aktiensplits".
+
+    void test_presenterBrokerageEdit_unreadableField_blocksSave()
+    {
+        openMemoryDb();
+        StubViewBrokerageEdit  view;
+        StubModelBrokerageEdit model;
+        view.unreadableFields = { QStringLiteral("Provision") };
+        PresenterBrokerageEdit p(&view, &model, QStringLiteral("share-guid"));
+
+        p.onSave();
+
+        QVERIFY2(!view.lastError.isEmpty(), "Speichern muss eine Meldung zeigen");
+    }
+
+    void test_presenterBrokerageEdit_unreadableField_messageNamesTheField()
+    {
+        // Der Kern dieser Variante: ohne rote Markierung im Formular muss die
+        // Meldung sagen, WELCHES Feld gemeint ist.
+        openMemoryDb();
+        StubViewBrokerageEdit  view;
+        StubModelBrokerageEdit model;
+        view.unreadableFields = { QStringLiteral("Provision") };
+        PresenterBrokerageEdit p(&view, &model, QStringLiteral("share-guid"));
+
+        p.onSave();
+
+        QVERIFY2(view.lastError.contains(QStringLiteral("Provision")),
+                 qPrintable(view.lastError));
+    }
+
+    void test_presenterBrokerageEdit_unreadableField_messageDiffersFromValueCheck()
+    {
+        // Unlesbarer Text ergibt 0,0 und liefe sonst in die bestehende
+        // Wertpruefung ("mindestens ein Wert … grösser als 0,00 €") — mit
+        // einer Begruendung, die nicht zutrifft.
+        openMemoryDb();
+        StubViewBrokerageEdit  view;
+        StubModelBrokerageEdit model;
+        view.unreadableFields = { QStringLiteral("Provision") };
+        PresenterBrokerageEdit p(&view, &model, QStringLiteral("share-guid"));
+
+        p.onSave();
+
+        QVERIFY2(!view.lastError.contains(QStringLiteral("mindestens ein Wert")),
+                 qPrintable(view.lastError));
+    }
+
     void test_viewBrokerageEdit_loadBrokerage_fourDigitValuesSurviveReadBack()
     {
         openMemoryDb();

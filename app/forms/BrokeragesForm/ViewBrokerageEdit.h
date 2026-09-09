@@ -90,6 +90,9 @@ public:
     void markMissingFieldsAsFailed()                                    override;
     bool hasMissingRequiredFields(QStringList& missingFields) const     override;
 
+    /// Siehe IView*::hasUnreadableFields() — liefert ANZEIGENAMEN (09.09.2026).
+    bool hasUnreadableFields(QStringList& fieldNames) const override;
+
 private slots:
     void onBrowseDocument();
 

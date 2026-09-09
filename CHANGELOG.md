@@ -10,6 +10,26 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.21.7] - 2026-09-09
+
+### Added
+
+- **Kosten und Aktiensplits melden unlesbare Zahleneingaben.** Damit gilt in
+  allen sechs Formularen dieselbe Regel: ein Feldinhalt, der keine gueltige
+  Zahl ist, ergibt nicht mehr stillschweigend 0,00, sondern bricht das
+  Speichern mit einer eigenen Meldung ab.
+
+  Diese beiden Dialoge haben keine Feldanzeige (keine Statussymbole je
+  Zeile), deshalb nennt die Meldung die betroffenen Felder beim Namen --
+  "Provision", "Verhaeltnis (neu)" -- statt auf rote Markierungen zu
+  verweisen wie in den vier uebrigen Formularen.
+
+  Ohne diese Pruefung liefe ein unlesbarer Wert in die bestehende
+  Wertpruefung und bekaeme eine Begruendung, die nicht zutrifft:
+  "mindestens ein Wert ... groesser als 0,00 EUR" beziehungsweise "Beide
+  Seiten des Verhaeltnisses muessen groesser als 0 sein", obwohl etwas im
+  Feld steht.
+
 ## [1.21.6] - 2026-09-08
 
 ### Fixed

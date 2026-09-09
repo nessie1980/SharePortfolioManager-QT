@@ -229,8 +229,29 @@ void PresenterBrokerageEdit::refreshDerivedValues()
     m_view->setBrokerageReduction(gesamtGebuehren - m_view->reduction());
 }
 
+QString PresenterBrokerageEdit::unreadableFieldsMessage() const
+{
+    QStringList unreadable;
+    if (!m_view->hasUnreadableFields(unreadable))
+        return QString();
+
+    return QObject::tr("Diese Felder enthalten keine gültige Zahl: %1.\n\n"
+                       "Erwartet wird die deutsche Schreibweise, zum Beispiel "
+                       "1234,56 — ein Komma trennt die Nachkommastellen, ein "
+                       "Tausenderpunkt ist nicht zulässig.")
+        .arg(unreadable.join(QStringLiteral(", ")));
+}
+
 QString PresenterBrokerageEdit::validateInput() const
 {
+    // Unlesbare Zahleneingaben zuerst — sie ergeben ueber NumberParser 0,0
+    // und liefen sonst in eine Meldung mit falscher Begruendung
+    // ("mindestens ein Wert groesser 0" beziehungsweise "beide Seiten des
+    // Verhaeltnisses"), obwohl etwas im Feld steht (09.09.2026).
+    const QString unreadable = unreadableFieldsMessage();
+    if (!unreadable.isEmpty())
+        return unreadable;
+
     // Date must be after the sentinel 2000-01-01
     const QString dtStr = m_view->dateTime();
     if (dtStr.isEmpty() || dtStr <= QStringLiteral("2000-01-01")) {

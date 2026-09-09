@@ -13,6 +13,7 @@
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
 
 #include <QVBoxLayout>
+#include <QPair>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QDoubleValidator>
@@ -666,6 +667,34 @@ void ViewShareSplitEdit::onShowReverseSplitHint()
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// ── hasUnreadableFields ───────────────────────────────────────────────────────
+
+bool ViewShareSplitEdit::hasUnreadableFields(QStringList& fieldNames) const
+{
+    fieldNames.clear();
+
+    // ANZEIGENAMEN, nicht Feldschluessel — dieser Dialog hat keine
+    // Feldanzeige, die Meldung des Presenters muss die Felder selbst
+    // benennen. Die Namen stehen hier, weil sie hier auch als
+    // Feldbeschriftung entstehen; eine zweite Tabelle im Presenter waere
+    // eine zweite Quelle fuer dieselben Bezeichner (09.09.2026).
+    const QList<QPair<QString, const QLineEdit*>> numericFields = {
+        { tr("Verhältnis (neu)"), m_ratioNew },
+        { tr("Verhältnis (alt)"), m_ratioOld },
+    };
+
+    for (const auto& [name, edit] : numericFields) {
+        if (!edit)
+            continue;
+        bool ok = false;
+        parseDouble(edit->text(), &ok);
+        if (!ok)
+            fieldNames.append(name);
+    }
+
+    return !fieldNames.isEmpty();
+}
 
 double ViewShareSplitEdit::parseDouble(const QString& text, bool* ok)
 {

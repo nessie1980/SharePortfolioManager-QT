@@ -7,6 +7,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QList>
 
 /**
@@ -49,6 +50,21 @@ private:
     void    reloadOverview();
     void    refreshDerivedValues();
     QString validateInput() const;
+
+    /**
+     * @brief Meldung, wenn Zahlenfelder unlesbaren Text enthalten.
+     *
+     * Fragt IView*::hasUnreadableFields() ab, das hier ANZEIGENAMEN liefert
+     * — dieser Dialog hat keine Feldanzeige, die Meldung muss die Felder
+     * also selbst benennen (Nessies Entscheidung 06.09.2026).
+     *
+     * @return Leer, wenn alles lesbar ist; sonst der fertige Meldungstext.
+     *
+     * Ergaenzt 09.09.2026, siehe ARCHITECTURE.md, "Unlesbare Zahleneingaben
+     * in Kosten und Aktiensplits".
+     */
+    QString unreadableFieldsMessage() const;
+
 
     /** Returns true when the currently loaded record belongs to a buy/sale
      *  and is therefore read-only (only document path may change). */
