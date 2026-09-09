@@ -31,14 +31,24 @@
  * dieselbe Erfahrung wie mit den sieben `parseDouble()`-Kopien (siehe
  * NumberParser.h).
  *
- * @note NICHT gesetzt ist `QLocale::RejectGroupSeparator`. Der Validator
- * deutet einen Punkt deshalb weiterhin als Tausendertrennzeichen um, aus
- * "20.02" wird jetzt "2002,00" statt "2,00E+03" -- die Anzeige ist nicht mehr
- * abwegig, der Wert aber immer noch stillschweigend falsch. Der Grund ist
- * Nessies bewusste Reihenfolge (07.09.2026): erst die Notation, spaeter das
- * Trennzeichen, weil letzteres verlangt, dass die Eingabefelder auch
- * durchgaengig OHNE Trennzeichen befuellt werden. Siehe ARCHITECTURE.md,
- * "Offene Punkte", "Tausendertrennzeichen in Eingabefeldern".
+ * Seit 08.09.2026 setzt die Fabrik zusaetzlich
+ * `QLocale::RejectGroupSeparator`. Ohne das deutete der Validator einen
+ * Punkt weiterhin als Tausendertrennzeichen um -- ohne die Gruppengroesse
+ * zu pruefen: aus "20.02" wurde "2002,00", stillschweigend um den Faktor
+ * 100 daneben. Jetzt ist der Punkt in einem Zahlenfeld gar keine zulaessige
+ * Eingabe mehr: er laesst sich nicht tippen, Einfuegen wird abgewiesen, und
+ * `fixup()` hat nichts umzuschreiben.
+ *
+ * Damit gilt in Eingabefeldern genau die Regel, die `NumberParser` beim
+ * Lesen anwendet -- vorher setzte der Validator sie ausser Kraft, weil er
+ * dem Parser zuvorkam.
+ *
+ * @note Die Kehrseite: was die Anwendung selbst in ein Eingabefeld
+ * schreibt, muss ebenfalls ohne Trennzeichen auskommen, sonst waere ihr
+ * eigener Text fuer diesen Validator ungueltig. Alle editierbaren
+ * Zahlenfelder laufen deshalb ueber `ValueFormatter::formatForInput()`. In
+ * Tabellen und Uebersichten bleibt das Trennzeichen -- dort ist es eine
+ * Lesehilfe und wird nie zurueckgelesen.
  *
  * @param bottom    Kleinster zulaessiger Wert.
  * @param top       Groesster zulaessiger Wert.
@@ -52,5 +62,10 @@ inline QDoubleValidator* makeNumericValidator(double   bottom,
 {
     auto* validator = new QDoubleValidator(bottom, top, decimals, parent);
     validator->setNotation(QDoubleValidator::StandardNotation);
+
+    QLocale strict;
+    strict.setNumberOptions(QLocale::RejectGroupSeparator);
+    validator->setLocale(strict);
+
     return validator;
 }

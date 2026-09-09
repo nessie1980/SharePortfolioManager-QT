@@ -5384,34 +5384,6 @@ beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
 
-### Tausendertrennzeichen in Eingabefeldern (07.09.2026)
-
-Mit 1.21.5 steht kein Zahlenfeld mehr auf wissenschaftlicher Notation. Die
-Umdeutung des Punktes bleibt aber: `QDoubleValidator` liest ihn als
-Tausendertrennzeichen und prueft die Gruppengroesse nicht. Aus der Eingabe
-"20.02" wird jetzt "2002,00" statt "2,00E+03" -- nicht mehr abwegig
-anzusehen, aber immer noch stillschweigend um den Faktor 100 falsch, und im
-Widerspruch zu `NumberParser`, der dieselbe Eingabe als unlesbar meldet.
-
-Der Validator kommt dem Parser zuvor: `QLineEdit` ruft beim Verlassen des
-Feldes `fixup()` auf, `NumberParser` sieht nur noch das Ergebnis.
-
-Abhilfe waere `QLocale::RejectGroupSeparator` an der Locale des Validators.
-Dann liesse sich ein Punkt gar nicht erst eintippen, Einfuegen wuerde
-abgewiesen, und `fixup()` haette nichts umzuschreiben -- die Eingabe waere
-genauso streng wie der Parser.
-
-Das verlangt allerdings, dass die Anwendung ihre Eingabefelder durchgaengig
-OHNE Trennzeichen befuellt, also "1003,50" statt "1.003,50". Sonst waere der
-von ihr selbst geschriebene Text fuer den Validator ungueltig und
-`fixup()` wuerde ihn beim Durchtabben anfassen.
-`ValueFormatter::formatPriceForInput()` tut das seit 1.21.2 fuer ein Feld;
-es waere die Ausweitung auf alle editierbaren Zahlenfelder. In Tabellen und
-Uebersichten bleibt das Trennzeichen selbstverstaendlich.
-
-Nessies bewusste Reihenfolge (07.09.2026): erst die Notation (1.21.5), dann
-B2b, dann dieser Punkt.
-
 ### Unlesbare Zahleneingaben in Kosten und Aktiensplits (07.09.2026)
 
 Mit 1.21.4 melden Kauf, Verkauf, Dividende und Aktie anlegen unlesbare
@@ -5624,6 +5596,59 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Tausendertrennzeichen in Eingabefeldern (07.09.2026, behoben 08.09.2026)
+
+Der zweite Teil desselben Fehlers: nach 1.21.5 war die abwegige Anzeige
+"2,00E+03" weg, aus "20.02" wurde aber weiterhin 2002. `QDoubleValidator`
+las den Punkt als Tausendertrennzeichen, ohne die Gruppengroesse zu pruefen,
+und `QLineEdit` rief seinen `fixup()` beim Verlassen des Feldes auf --
+`NumberParser`, der dieselbe Eingabe als unlesbar meldet, bekam sie nie zu
+sehen.
+
+Eine Regel, die an einer Stelle durchgesetzt und an einer frueheren umgangen
+wird, ist keine Regel. Der Validator setzte den Parser ausser Kraft.
+
+#### Beide Richtungen, sonst wirkt es nicht
+
+`QLocale::RejectGroupSeparator` an der Locale des Validators -- eine Zeile in
+`NumericFieldValidator.h`, weil die Fabrik aus 1.21.5 alle 31 Stellen
+buendelt. Ein Punkt ist in einem Zahlenfeld damit gar keine zulaessige
+Eingabe mehr.
+
+Das allein waere aber ein Eigentor gewesen: die Anwendung schreibt selbst in
+diese Felder, ueber `formatMoney()`/`formatVolume()`/`formatPrice()`, also
+MIT Trennzeichen. Ihr eigener Text waere fuer ihren eigenen Validator
+ungueltig geworden, und `fixup()` haette ihn beim ersten Durchtabben
+angefasst -- genau die Mechanik, die den Fehler ausgeloest hat.
+
+Deshalb laufen alle editierbaren Zahlenfelder jetzt ueber
+`ValueFormatter::formatForInput(value, decimals)`. Die Funktion
+verallgemeinert `formatPriceForInput()`, das am 06.09.2026 als
+Einzelfall-Umgehung fuer den Preis am Auszahlungstag entstanden war; aus dem
+Einzelfall ist die Regel geworden, und `formatPriceForInput()` ist nur noch
+die benannte Kurzschreibweise fuer vier Nachkommastellen.
+
+#### Wo das Trennzeichen bleibt
+
+In Tabellen, Uebersichten und den nur anzeigenden Feldern -- Kurswert,
+Endbetrag, Auszahlung, Gesamtgebuehren, Rendite. Dort ist es eine Lesehilfe
+und wird nie zurueckgelesen. Die Trennlinie verlaeuft nicht zwischen "Geld
+und Nicht-Geld", sondern zwischen "wird wieder eingelesen" und "wird nur
+angesehen".
+
+@note Sichtbare Aenderung fuer den Benutzer: ein Kauf zu 2500 Stueck steht
+im Formular jetzt als "2500,0000" statt "2.500,0000". Bewusst in Kauf
+genommen -- ein Feld soll das enthalten, was man selbst hineinschreiben
+wuerde.
+
+@note Mitgezogen wurden zwei Stellen ausserhalb der Formulare:
+`ValueFormatter::formatExchangeRate()` (einziger Aufrufer ist das
+Eingabefeld "Devisenkurs"; vierstellige Kurse gibt es, etwa beim
+indonesischen Rupiah) und `ViewShareSplitEdit::formatRatioPart()`. Ein
+Split-Verhaeltnis jenseits von 1.000 gibt es praktisch nicht -- aber eine
+Ausnahme, die "praktisch nie" greift, ist genau die Sorte, die beim einen
+Mal dann doch zuschlaegt.
 
 ### Wissenschaftliche Notation in Zahlenfeldern (07.09.2026, behoben 07.09.2026)
 

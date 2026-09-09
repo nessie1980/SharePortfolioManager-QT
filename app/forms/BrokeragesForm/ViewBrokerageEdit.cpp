@@ -6,6 +6,7 @@
 #include "../../IconProvider.h"
 #include "../../utils/NumberParser.h"
 #include "../../utils/NumericFieldValidator.h"
+#include "../../utils/ValueFormatter.h"
 #include "../../config/AppSettings.h"
 #include "../../core/DocumentRootMigrator.h"
 #include "../UiConstants.h"
@@ -356,8 +357,12 @@ void ViewBrokerageEdit::loadBrokerage(const BrokerageObject& brokerage)
         m_time->setTime(dt.time());
     }
 
+    // Editierbare Felder ohne Tausendertrennzeichen (08.09.2026): der
+    // Validator laesst dort keines mehr zu, der von der Anwendung
+    // geschriebene Text muss also derselbe sein, den der Benutzer selbst
+    // eintippen koennte. Siehe NumericFieldValidator.h.
     const auto setMoney = [](QLineEdit* le, double v) {
-        le->setText(QLocale().toString(v, 'f', 2));
+        le->setText(ValueFormatter::formatForInput(v, 2));
     };
     setMoney(m_provision, brokerage.provision());
     setMoney(m_brokerFee, brokerage.brokerFee());

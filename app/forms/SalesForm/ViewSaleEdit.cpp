@@ -607,17 +607,23 @@ void ViewSaleEdit::loadSale(const SaleObject& sale)
     }
 
     m_orderNumber->setText(sale.orderNumber());
-    m_volume->setText(formatVolume(sale.volume()));
+    // Editierbare Zahlenfelder werden seit 08.09.2026 OHNE
+    // Tausendertrennzeichen befuellt: der Validator laesst dort keines mehr
+    // zu, der von der Anwendung geschriebene Text muss also derselbe sein,
+    // den der Benutzer selbst eintippen koennte. Siehe
+    // NumericFieldValidator.h und ARCHITECTURE.md, "Tausendertrennzeichen
+    // in Eingabefeldern". Die Anzeigefelder darunter behalten es.
+    m_volume->setText(ValueFormatter::formatForInput(sale.volume(), 4));
     // Kurs ueber ValueFormatter (05.09.2026) — unveraenderte Ausgabe, aber
     // jetzt an derselben Stelle wie alle anderen Kurse der Anwendung.
-    m_salePrice->setText(ValueFormatter::formatPrice(sale.salePrice()));
-    m_taxAtSource->setText(formatMoney(sale.taxAtSource()));
-    m_capitalGainsTax->setText(formatMoney(sale.capitalGainsTax()));
-    m_solidarityTax->setText(formatMoney(sale.solidarityTax()));
-    m_provision->setText(formatMoney(sale.provision()));
-    m_brokerFee->setText(formatMoney(sale.brokerFee()));
-    m_traderFee->setText(formatMoney(sale.traderFee()));
-    m_reduction->setText(formatMoney(sale.reduction()));
+    m_salePrice->setText(ValueFormatter::formatPriceForInput(sale.salePrice()));
+    m_taxAtSource->setText(ValueFormatter::formatForInput(sale.taxAtSource(), 2));
+    m_capitalGainsTax->setText(ValueFormatter::formatForInput(sale.capitalGainsTax(), 2));
+    m_solidarityTax->setText(ValueFormatter::formatForInput(sale.solidarityTax(), 2));
+    m_provision->setText(ValueFormatter::formatForInput(sale.provision(), 2));
+    m_brokerFee->setText(ValueFormatter::formatForInput(sale.brokerFee(), 2));
+    m_traderFee->setText(ValueFormatter::formatForInput(sale.traderFee(), 2));
+    m_reduction->setText(ValueFormatter::formatForInput(sale.reduction(), 2));
     m_documentPath->setText(sale.document());
 }
 

@@ -10,6 +10,36 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.21.6] - 2026-09-08
+
+### Fixed
+
+- **Aus der Eingabe "20.02" wurde 2002.** Der Validator der Zahlenfelder
+  deutete einen Punkt als Tausendertrennzeichen um, ohne die Gruppengroesse zu
+  pruefen. Aus 20,02 EUR wurden damit 2002 EUR, stillschweigend um den Faktor
+  100 daneben. Mit 1.21.5 war nur die abwegige Anzeige "2,00E+03" beseitigt,
+  der Rechenfehler blieb.
+
+  Ein Punkt ist in einem Zahlenfeld jetzt gar keine zulaessige Eingabe mehr:
+  er laesst sich nicht tippen, Einfuegen wird abgewiesen, und Qt hat beim
+  Verlassen des Feldes nichts mehr umzuschreiben. Damit gilt beim Eintippen
+  genau die Regel, die `NumberParser` beim Lesen anwendet -- vorher setzte der
+  Validator sie ausser Kraft, weil er dem Parser zuvorkam.
+
+### Changed
+
+- **Eingabefelder zeigen keine Tausendertrennzeichen mehr.** Ein Kauf zu
+  2500 Stueck steht im Formular jetzt als "2500,0000" statt "2.500,0000". Das
+  ist die Kehrseite der Aenderung oben: was die Anwendung selbst in ein
+  Eingabefeld schreibt, muss dasselbe sein, was der Benutzer dort eintippen
+  koennte -- sonst waere ihr eigener Text fuer ihren eigenen Validator
+  ungueltig.
+
+  Betrifft die editierbaren Zahlenfelder aller sechs Formulare. In Tabellen,
+  Uebersichten und den nur anzeigenden Feldern (Kurswert, Endbetrag,
+  Auszahlung, Gesamtgebuehren) bleibt das Trennzeichen -- dort ist es eine
+  Lesehilfe und wird nie zurueckgelesen.
+
 ## [1.21.5] - 2026-09-07
 
 ### Fixed

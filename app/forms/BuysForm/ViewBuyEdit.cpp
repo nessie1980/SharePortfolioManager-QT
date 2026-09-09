@@ -532,15 +532,21 @@ void ViewBuyEdit::loadBuy(const BuyObject& buy, const BrokerageObject& brokerage
     // Icons are set by the validation slots called from onRowSelected() after loadBuy.
 
     m_orderNumber->setText(buy.orderNumber());
-    m_volume->setText(formatVolume(buy.volume()));
+    // Editierbare Zahlenfelder werden seit 08.09.2026 OHNE
+    // Tausendertrennzeichen befuellt: der Validator laesst dort keines mehr
+    // zu, der von der Anwendung geschriebene Text muss also derselbe sein,
+    // den der Benutzer selbst eintippen koennte. Siehe
+    // NumericFieldValidator.h und ARCHITECTURE.md, "Tausendertrennzeichen
+    // in Eingabefeldern". Die Anzeigefelder darunter behalten es.
+    m_volume->setText(ValueFormatter::formatForInput(buy.volume(), 4));
     // Kurs ueber ValueFormatter (05.09.2026) — unveraenderte Ausgabe.
-    m_price->setText(ValueFormatter::formatPrice(buy.price()));
+    m_price->setText(ValueFormatter::formatPriceForInput(buy.price()));
     m_documentPath->setText(buy.document());
 
-    m_provision->setText(formatMoney(brokerage.isValid() ? brokerage.provision()  : 0.0));
-    m_brokerFee->setText(formatMoney(brokerage.isValid() ? brokerage.brokerFee()  : 0.0));
-    m_traderFee->setText(formatMoney(brokerage.isValid() ? brokerage.traderFee()  : 0.0));
-    m_reduction->setText(formatMoney(brokerage.isValid() ? brokerage.reduction()  : 0.0));
+    m_provision->setText(ValueFormatter::formatForInput(brokerage.isValid() ? brokerage.provision()  : 0.0, 2));
+    m_brokerFee->setText(ValueFormatter::formatForInput(brokerage.isValid() ? brokerage.brokerFee()  : 0.0, 2));
+    m_traderFee->setText(ValueFormatter::formatForInput(brokerage.isValid() ? brokerage.traderFee()  : 0.0, 2));
+    m_reduction->setText(ValueFormatter::formatForInput(brokerage.isValid() ? brokerage.reduction()  : 0.0, 2));
 }
 
 void ViewBuyEdit::clearForm()

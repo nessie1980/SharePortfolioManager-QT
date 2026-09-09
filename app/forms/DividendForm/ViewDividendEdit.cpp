@@ -668,12 +668,18 @@ void ViewDividendEdit::loadDividend(const DividendObject& d)
         }
     }
 
-    m_rate->setText(ValueFormatter::formatPrice(d.rate()));
-    m_volume->setText(formatVolume(d.volume()));
-    m_taxAtSource->setText(formatMoney(d.taxAtSource()));
-    m_capitalGainsTax->setText(formatMoney(d.capitalGainsTax()));
-    m_solidarityTax->setText(formatMoney(d.solidarityTax()));
-    m_priceAtPayday->setText(ValueFormatter::formatPrice(d.priceAtPayday()));
+    // Editierbare Zahlenfelder werden seit 08.09.2026 OHNE
+    // Tausendertrennzeichen befuellt: der Validator laesst dort keines mehr
+    // zu, der von der Anwendung geschriebene Text muss also derselbe sein,
+    // den der Benutzer selbst eintippen koennte. Siehe
+    // NumericFieldValidator.h und ARCHITECTURE.md, "Tausendertrennzeichen
+    // in Eingabefeldern". Die Anzeigefelder darunter behalten es.
+    m_rate->setText(ValueFormatter::formatPriceForInput(d.rate()));
+    m_volume->setText(ValueFormatter::formatForInput(d.volume(), 4));
+    m_taxAtSource->setText(ValueFormatter::formatForInput(d.taxAtSource(), 2));
+    m_capitalGainsTax->setText(ValueFormatter::formatForInput(d.capitalGainsTax(), 2));
+    m_solidarityTax->setText(ValueFormatter::formatForInput(d.solidarityTax(), 2));
+    m_priceAtPayday->setText(ValueFormatter::formatPriceForInput(d.priceAtPayday()));
     m_documentPath->setText(d.document());
 
     // Ex-Tag: Sentinel 2000-01-01, wenn die geladene Dividende (noch) keinen

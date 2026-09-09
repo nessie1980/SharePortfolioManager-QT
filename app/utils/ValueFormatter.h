@@ -56,31 +56,46 @@ public:
     }
 
     /**
-     * @brief Kurs fuer ein Eingabefeld, vier Nachkommastellen, OHNE
-     * Tausendertrennzeichen.
+     * @brief Zahl fuer ein EINGABEFELD, ohne Tausendertrennzeichen.
      *
-     * Gegenstueck zu formatPrice() fuer Werte, die in ein QLineEdit
-     * geschrieben und von dort wieder eingelesen werden. In einer Tabelle
-     * ist das Trennzeichen eine Lesehilfe; in einem Eingabefeld ist es ein
-     * Zeichen, das die Gegenrichtung wieder entfernen muesste.
+     * Gegenstueck zu den uebrigen Funktionen dieser Klasse, die fuer die
+     * ANZEIGE formatieren. In einer Tabelle ist das Gruppierungszeichen eine
+     * Lesehilfe; in einem Feld, in das der Benutzer hineintippt, ist es ein
+     * Fremdkoerper -- er selbst schreibt es nicht, und seit 1.21.6 kann er
+     * es dort auch gar nicht mehr eingeben (siehe NumericFieldValidator.h,
+     * RejectGroupSeparator).
      *
-     * Ursprünglicher Anlass (06.09.2026) war ein Zwang: die damaligen
-     * parseDouble()-Implementierungen scheiterten an einem
-     * Tausendertrennzeichen, ein per formatPrice() geschriebener
-     * vierstelliger Kurs waere beim naechsten Lesen verschwunden.
+     * Genau daraus folgt der Zwang: was die Anwendung selbst in ein
+     * Eingabefeld schreibt, muss auch das sein, was der Benutzer dort
+     * eintippen koennte. Sonst waere der von ihr geschriebene Text fuer den
+     * eigenen Validator ungueltig, und QLineEdit wuerde ihn beim Verlassen
+     * des Feldes ueber fixup() anfassen -- dieselbe Mechanik, die aus
+     * "20.02" einmal "2,00E+03" gemacht hat.
      *
-     * @note Dieser Zwang ist mit NumberParser entfallen -- die Views lesen
-     * ein Trennzeichen seit 1.21.3 korrekt. Die Funktion bleibt trotzdem,
-     * jetzt aus einem Darstellungsgrund: in einem Feld, in das der Benutzer
-     * hineintippt, ist ein Gruppierungszeichen ein Fremdkoerper. Es steht
-     * dort nicht, wenn er selbst tippt, und laedt dazu ein, den Wert anders
-     * zu schreiben als die Anwendung ihn hinterlassen hat.
+     * @param value     Der Wert.
+     * @param decimals  Nachkommastellen: 2 fuer Geldbetraege, 4 fuer Kurse,
+     *                  Stueckzahlen und Devisenkurse.
      */
-    static QString formatPriceForInput(double value)
+    static QString formatForInput(double value, int decimals)
     {
         QLocale loc;
         loc.setNumberOptions(QLocale::OmitGroupSeparator);
-        return loc.toString(value, 'f', 4);
+        return loc.toString(value, 'f', decimals);
+    }
+
+    /**
+     * @brief Kurs fuer ein Eingabefeld, vier Nachkommastellen, ohne
+     * Tausendertrennzeichen.
+     *
+     * Seit 1.21.6 nur noch die benannte Kurz-Schreibweise fuer
+     * formatForInput(value, 4). Die Funktion entstand am 06.09.2026 als
+     * Einzelfall-Umgehung fuer den Preis am Auszahlungstag; mit der
+     * Umstellung ALLER editierbaren Zahlenfelder ist daraus die Regel
+     * geworden.
+     */
+    static QString formatPriceForInput(double value)
+    {
+        return formatForInput(value, 4);
     }
 
     /**
@@ -93,6 +108,10 @@ public:
      */
     static QString formatExchangeRate(double value)
     {
-        return QLocale().toString(value, 'f', 4);
+        // Ohne Tausendertrennzeichen (08.09.2026): der einzige Aufrufer ist
+        // das Eingabefeld "Devisenkurs" im Dividendenformular. Kurse
+        // jenseits von 1.000 sind selten, aber es gibt sie -- der
+        // indonesische Rupiah etwa.
+        return formatForInput(value, 4);
     }
 };

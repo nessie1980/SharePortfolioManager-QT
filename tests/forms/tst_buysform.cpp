@@ -16,6 +16,7 @@
 #include <QTableWidget>
 #include <QLineEdit>
 #include <QDoubleValidator>
+#include <QValidator>
 #include <QComboBox>
 #include <QDialog>
 #include <QDateEdit>
@@ -2241,6 +2242,73 @@ private slots:
      * (makeNumericValidator), eine Kopie dieses Tests je Dialog würde nur
      * dieselbe eine Zeile ein weiteres Mal prüfen.
      */
+    /**
+     * @brief Kein Zahlenfeld darf ein Tausendertrennzeichen annehmen.
+     *
+     * Regression 08.09.2026: der Validator deutete einen Punkt als
+     * Tausendertrennzeichen um, ohne die Gruppengroesse zu pruefen — aus der
+     * Eingabe "20.02" wurde beim Verlassen des Feldes 2002, stillschweigend
+     * um den Faktor 100 daneben. NumberParser meldet dieselbe Eingabe als
+     * unlesbar; der Validator kam ihm nur zuvor.
+     */
+    void test_viewBuyEdit_numericValidators_rejectGroupSeparator()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        int checked = 0;
+        const QList<QLineEdit*> edits = dlg.findChildren<QLineEdit*>();
+        for (const QLineEdit* edit : edits) {
+            const auto* validator =
+                qobject_cast<const QDoubleValidator*>(edit->validator());
+            if (!validator)
+                continue;
+
+            QString withSeparator = QStringLiteral("20.02");
+            int pos = 0;
+            QCOMPARE(validator->validate(withSeparator, pos),
+                     QValidator::Invalid);
+
+            // Gegenprobe: die deutsche Schreibweise ohne Trennzeichen bleibt
+            // selbstverstaendlich gueltig.
+            QString plain = QStringLiteral("20,02");
+            pos = 0;
+            QCOMPARE(validator->validate(plain, pos), QValidator::Acceptable);
+
+            ++checked;
+        }
+
+        QVERIFY2(checked >= 6, qPrintable(QStringLiteral("nur %1 Zahlenfelder gefunden")
+                                              .arg(checked)));
+    }
+
+    /**
+     * @brief Was loadBuy() in ein EINGABEfeld schreibt, darf kein
+     *        Tausendertrennzeichen enthalten.
+     *
+     * Sonst waere der von der Anwendung selbst geschriebene Text fuer ihren
+     * eigenen Validator ungueltig, und QLineEdit wuerde ihn beim Verlassen
+     * des Feldes ueber fixup() anfassen (08.09.2026).
+     */
+    void test_viewBuyEdit_loadBuy_inputFieldsHaveNoGroupSeparator()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        const BuyObject buy = makeBuy(QStringLiteral("buy-sep"),
+                                      QStringLiteral("share-guid"),
+                                      2024, 2500.0, 1003.50);
+        const BrokerageObject brokerage =
+            makeBrokerage(QStringLiteral("buy-sep"),
+                          QStringLiteral("share-guid"), 1234.56);
+        dlg.loadBuy(buy, brokerage);
+
+        // Die Werte muessen trotzdem unveraendert zurueckgelesen werden.
+        QCOMPARE(dlg.volume(),    2500.0);
+        QCOMPARE(dlg.price(),     1003.50);
+        QCOMPARE(dlg.provision(), 1234.56);
+    }
+
     void test_viewBuyEdit_numericValidators_useStandardNotation()
     {
         openMemoryDb();

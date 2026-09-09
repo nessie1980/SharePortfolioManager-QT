@@ -684,7 +684,13 @@ double ViewShareSplitEdit::parseDouble(const QString& text, bool* ok)
 
 QString ViewShareSplitEdit::formatRatioPart(double value)
 {
-    const QLocale loc;
+    // Ohne Tausendertrennzeichen (08.09.2026): die beiden Verhaeltnis-Seiten
+    // sind Eingabefelder, und deren Validator laesst seit 1.21.6 keines mehr
+    // zu. Ein Verhaeltnis jenseits von 1.000 gibt es praktisch nicht, aber
+    // eine Ausnahme, die "praktisch nie" greift, ist genau die Sorte, die
+    // beim einen Mal dann doch zuschlaegt.
+    QLocale loc;
+    loc.setNumberOptions(QLocale::OmitGroupSeparator);
     const double rounded = static_cast<double>(qRound(value));
     if (qAbs(value - rounded) < 1e-9)
         return loc.toString(qRound(value));

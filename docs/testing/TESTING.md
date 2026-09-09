@@ -3214,6 +3214,8 @@ Feldschluessel in `fieldErrors` mit — beides ergaenzt fuer diese Runde.
 | `..._unreadableField_messageDiffersFromMissingField` | die Meldung nennt nicht "Pflichtangaben", sondern die Zahl — beides verlangt verschiedene Abhilfen |
 | `test_viewBuyEdit_hasUnreadableFields_detectsNonNumericText` | die View selbst erkennt unlesbaren Feldinhalt (nur im Kaufformular, stellvertretend fuer alle vier) |
 | `test_viewBuyEdit_numericValidators_useStandardNotation` | kein Zahlenfeld steht auf wissenschaftlicher Notation (07.09.2026, stellvertretend fuer alle sechs Formulare) |
+| `test_viewBuyEdit_numericValidators_rejectGroupSeparator` | "20.02" ist fuer jeden Zahlenfeld-Validator Invalid, "20,02" bleibt Acceptable (08.09.2026) |
+| `test_viewBuyEdit_loadBuy_inputFieldsHaveNoGroupSeparator` | was die Anwendung in ein Eingabefeld schreibt, kommt unveraendert zurueck — auch vierstellig |
 
 @note Nicht abgedeckt: dass die rote Markierung tatsaechlich am richtigen
 Widget erscheint. Das haengt an den Statussymbolen der echten View und

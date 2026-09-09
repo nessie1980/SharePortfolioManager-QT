@@ -109,6 +109,36 @@ private slots:
                  QStringLiteral("1.003,0000"));
     }
 
+    void test_formatForInput_omitsGroupSeparatorForMoney()
+    {
+        // Zwei Nachkommastellen fuer Geldbetraege in Eingabefeldern
+        // (08.09.2026, Ausweitung auf alle editierbaren Zahlenfelder).
+        QCOMPARE(ValueFormatter::formatForInput(1234.56, 2),
+                 QStringLiteral("1234,56"));
+    }
+
+    void test_formatForInput_omitsGroupSeparatorForVolume()
+    {
+        QCOMPARE(ValueFormatter::formatForInput(2500.0, 4),
+                 QStringLiteral("2500,0000"));
+    }
+
+    void test_formatPriceForInput_isFormatForInputWithFourDecimals()
+    {
+        // formatPriceForInput() ist seit 1.21.6 nur noch die benannte
+        // Kurzschreibweise — die beiden duerfen nicht auseinanderlaufen.
+        QCOMPARE(ValueFormatter::formatPriceForInput(1003.5),
+                 ValueFormatter::formatForInput(1003.5, 4));
+    }
+
+    void test_formatExchangeRate_omitsGroupSeparator()
+    {
+        // Der Devisenkurs steht in einem Eingabefeld; vierstellige Kurse
+        // gibt es (indonesischer Rupiah).
+        QCOMPARE(ValueFormatter::formatExchangeRate(16250.0),
+                 QStringLiteral("16250,0000"));
+    }
+
     // ── formatExchangeRate ────────────────────────────────────────────────
 
     void test_formatExchangeRate_hasFourDecimals()
