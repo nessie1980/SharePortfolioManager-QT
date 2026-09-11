@@ -601,22 +601,22 @@ void ViewBuyEdit::clearForm()
 
 void ViewBuyEdit::setVolumeSold(double value)
 {
-    m_volumeSold->setText(formatVolume(value));
+    m_volumeSold->setText(ValueFormatter::formatVolume(value));
 }
 
 void ViewBuyEdit::setKurswert(double value)
 {
-    m_kurswert->setText(formatMoney(value));
+    m_kurswert->setText(ValueFormatter::formatMoney(value));
 }
 
 void ViewBuyEdit::setGesGebuehren(double value)
 {
-    m_gesGebuehren->setText(formatMoney(value));
+    m_gesGebuehren->setText(ValueFormatter::formatMoney(value));
 }
 
 void ViewBuyEdit::setEndbetrag(double value)
 {
-    m_endbetrag->setText(formatMoney(value));
+    m_endbetrag->setText(ValueFormatter::formatMoney(value));
 }
 
 // ── Field status (1:1 wie ViewShareAdd) ───────────────────────────────────────
@@ -956,9 +956,9 @@ void ViewBuyEdit::populateOverview(const QList<BuyObject>&        buys,
             auto* iYear = new QTableWidgetItem(QString::number(y));
             auto* iVol  = new QTableWidgetItem(
                 ShareSplitHint::withMarker(
-                    formatVolume(yearVolToday.value(y)) + QStringLiteral(" stk."),
+                    ValueFormatter::formatVolume(yearVolToday.value(y)) + QStringLiteral(" stk."),
                     yearVolAffected.value(y)));
-            auto* iVal  = new QTableWidgetItem(formatMoney(yearVal.value(y)) + QStringLiteral(" €"));
+            auto* iVal  = new QTableWidgetItem(ValueFormatter::formatMoney(yearVal.value(y)) + QStringLiteral(" €"));
             iYear->setTextAlignment(Qt::AlignCenter);
             iVol->setTextAlignment(Qt::AlignCenter);
             iVal->setTextAlignment(Qt::AlignCenter);
@@ -976,8 +976,8 @@ void ViewBuyEdit::populateOverview(const QList<BuyObject>&        buys,
         auto* iLabel = new QTableWidgetItem(tr("Gesamt:"));
         auto* iVol   = new QTableWidgetItem(
             ShareSplitHint::withMarker(
-                formatVolume(totalVolToday) + QStringLiteral(" stk."), totalVolAffected));
-        auto* iVal   = new QTableWidgetItem(formatMoney(totalVal) + QStringLiteral(" €"));
+                ValueFormatter::formatVolume(totalVolToday) + QStringLiteral(" stk."), totalVolAffected));
+        auto* iVal   = new QTableWidgetItem(ValueFormatter::formatMoney(totalVal) + QStringLiteral(" €"));
         iLabel->setTextAlignment(Qt::AlignCenter);
         iVol->setTextAlignment(Qt::AlignCenter);
         iVal->setTextAlignment(Qt::AlignCenter);
@@ -988,7 +988,7 @@ void ViewBuyEdit::populateOverview(const QList<BuyObject>&        buys,
         f->setItem(0, 2, iVal);
     };
 
-    const QString uebersichtTitle = tr("Übersicht (%1 €)").arg(formatMoney(totalEinzahlung));
+    const QString uebersichtTitle = tr("Übersicht (%1 €)").arg(ValueFormatter::formatMoney(totalEinzahlung));
 
     // ── Jahres-Tabs (Datum | Anteile | Kurswert | Gebühren | Einzahlung | Dok.) ──
     constexpr int kColDate       = 0;
@@ -1039,21 +1039,21 @@ void ViewBuyEdit::populateOverview(const QList<BuyObject>&        buys,
 
             auto* iVol = new QTableWidgetItem(
                 ShareSplitHint::withMarker(
-                    formatVolume(b.volume()) + QStringLiteral(" stk."), affected));
+                    ValueFormatter::formatVolume(b.volume()) + QStringLiteral(" stk."), affected));
             iVol->setTextAlignment(Qt::AlignCenter);
             if (!rowTip.isEmpty())
                 iVol->setToolTip(rowTip);
 
             // Bugfix 05.09.2026: die Spalte heisst "Kurswert", enthaelt aber
-            // den Kurs je Aktie (b.price()) — formatMoney() zeigte davon nur
+            // den Kurs je Aktie (b.price()) — das damalige lokale formatMoney() zeigte davon nur
             // zwei Stellen, waehrend die Anteile-Spalte daneben vier zeigt.
             auto* iKurswert = new QTableWidgetItem(ValueFormatter::formatPrice(kurswert) + QStringLiteral(" €"));
             iKurswert->setTextAlignment(Qt::AlignCenter);
 
-            auto* iGebuehr = new QTableWidgetItem(formatMoney(gebuehren) + QStringLiteral(" €"));
+            auto* iGebuehr = new QTableWidgetItem(ValueFormatter::formatMoney(gebuehren) + QStringLiteral(" €"));
             iGebuehr->setTextAlignment(Qt::AlignCenter);
 
-            auto* iEinzahlung = new QTableWidgetItem(formatMoney(einzahlung) + QStringLiteral(" €"));
+            auto* iEinzahlung = new QTableWidgetItem(ValueFormatter::formatMoney(einzahlung) + QStringLiteral(" €"));
             iEinzahlung->setTextAlignment(Qt::AlignCenter);
 
             auto* iDoc = new QTableWidgetItem;
@@ -1110,11 +1110,11 @@ void ViewBuyEdit::populateOverview(const QList<BuyObject>&        buys,
         auto* iLabel      = new QTableWidgetItem(tr("Gesamt:"));
         auto* iVol        = new QTableWidgetItem(
             ShareSplitHint::withMarker(
-                formatVolume(yearVolToday.value(year)) + QStringLiteral(" stk."),
+                ValueFormatter::formatVolume(yearVolToday.value(year)) + QStringLiteral(" stk."),
                 yearVolAffected.value(year)));
         auto* iKurswert   = new QTableWidgetItem(QStringLiteral("-"));
-        auto* iGebuehr    = new QTableWidgetItem(formatMoney(totGebuehr) + QStringLiteral(" €"));
-        auto* iEinzahlung = new QTableWidgetItem(formatMoney(totEinzahlung) + QStringLiteral(" €"));
+        auto* iGebuehr    = new QTableWidgetItem(ValueFormatter::formatMoney(totGebuehr) + QStringLiteral(" €"));
+        auto* iEinzahlung = new QTableWidgetItem(ValueFormatter::formatMoney(totEinzahlung) + QStringLiteral(" €"));
         auto* iDoc        = new QTableWidgetItem(QStringLiteral("-"));
         for (auto* it : { iLabel, iVol, iKurswert, iGebuehr, iEinzahlung, iDoc })
             it->setTextAlignment(Qt::AlignCenter);
@@ -1139,7 +1139,7 @@ void ViewBuyEdit::populateOverview(const QList<BuyObject>&        buys,
                              ? buys.at(i).buyValue() + br.brokerageReduction()
                              : buys.at(i).buyValue();
         }
-        return tr("%1 (%2 €)").arg(year).arg(formatMoney(yearTotal));
+        return tr("%1 (%2 €)").arg(year).arg(ValueFormatter::formatMoney(yearTotal));
     };
 
     // Dokument-Spalte fest auf 36px, reine Icon-Spalte ohne Textinhalt und
@@ -1315,16 +1315,6 @@ QLabel* ViewBuyEdit::addRow(QGridLayout* grid, int& row,
 
     ++row;
     return statusLabel;
-}
-
-QString ViewBuyEdit::formatMoney(double value)
-{
-    return QLocale().toString(value, 'f', 2);
-}
-
-QString ViewBuyEdit::formatVolume(double value)
-{
-    return QLocale().toString(value, 'f', 4);
 }
 
 double ViewBuyEdit::parseDouble(const QString& text, bool* ok)

@@ -5,6 +5,7 @@
 #include "ModelShareAdd.h"
 #include "../../IconProvider.h"
 #include "../../utils/NumberParser.h"
+#include "../../utils/ValueFormatter.h"
 #include "../../utils/NumericFieldValidator.h"
 #include "../../config/AppSettings.h"
 #include "../../core/DocumentRootMigrator.h"
@@ -512,10 +513,9 @@ void ViewShareAdd::recalcDerivedValues()
     const double ges = parse(m_provision->text()) + parse(m_brokerFee->text())
                        + parse(m_traderFee->text());
     const double end = kw + ges - parse(m_reduction->text());
-    const QLocale loc;
-    m_kurswert->setText(loc.toString(kw,  'f', 2));
-    m_gesGebuehren->setText(loc.toString(ges, 'f', 2));
-    m_endbetrag->setText(loc.toString(end, 'f', 2));
+    m_kurswert->setText(ValueFormatter::formatMoney(kw));
+    m_gesGebuehren->setText(ValueFormatter::formatMoney(ges));
+    m_endbetrag->setText(ValueFormatter::formatMoney(end));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

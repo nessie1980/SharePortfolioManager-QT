@@ -777,33 +777,33 @@ void ViewDividendEdit::clearForm()
     m_parseStatus->clear();
 
     // Abgeleitete read-only-Felder auf Null zurücksetzen
-    m_payout->setText(formatMoney(0.0));
-    m_payoutFc->setText(formatMoney(0.0));
-    m_taxSum->setText(formatMoney(0.0));
-    m_payoutWithTaxes->setText(formatMoney(0.0));
-    m_yield->setText(formatPercent(0.0));
+    m_payout->setText(ValueFormatter::formatMoney(0.0));
+    m_payoutFc->setText(ValueFormatter::formatMoney(0.0));
+    m_taxSum->setText(ValueFormatter::formatMoney(0.0));
+    m_payoutWithTaxes->setText(ValueFormatter::formatMoney(0.0));
+    m_yield->setText(ValueFormatter::formatPercent(0.0));
 
     clearPdfPreview();
 }
 
 void ViewDividendEdit::setDividendPayout(double value)
 {
-    m_payout->setText(formatMoney(value));
+    m_payout->setText(ValueFormatter::formatMoney(value));
 }
 
 void ViewDividendEdit::setDividendPayoutFc(double value)
 {
-    m_payoutFc->setText(formatMoney(value));
+    m_payoutFc->setText(ValueFormatter::formatMoney(value));
 }
 
 void ViewDividendEdit::setTaxSum(double value)
 {
-    m_taxSum->setText(formatMoney(value));
+    m_taxSum->setText(ValueFormatter::formatMoney(value));
 }
 
 void ViewDividendEdit::setDividendPayoutWithTaxes(double value)
 {
-    m_payoutWithTaxes->setText(formatMoney(value));
+    m_payoutWithTaxes->setText(ValueFormatter::formatMoney(value));
     // Color: green if positive, red if negative
     if (value >= 0.0)
         m_payoutWithTaxes->setStyleSheet(
@@ -815,7 +815,7 @@ void ViewDividendEdit::setDividendPayoutWithTaxes(double value)
 
 void ViewDividendEdit::setYield(double value)
 {
-    m_yield->setText(formatPercent(value));
+    m_yield->setText(ValueFormatter::formatPercent(value));
 }
 
 void ViewDividendEdit::setForeignCurrencyEnabled(bool enabled)
@@ -1160,7 +1160,7 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>&   dividends
     for (int y : std::as_const(years)) totalVal += yearVal.value(y);
 
     const QString uebersichtTitle =
-        tr("Übersicht (%1 €)").arg(formatMoney(totalVal));
+        tr("Übersicht (%1 €)").arg(ValueFormatter::formatMoney(totalVal));
 
     auto populateUebersichtData = [years, yearVal](QTableWidget* tbl) {
         tbl->setRowCount(years.size());
@@ -1168,7 +1168,7 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>&   dividends
             const int y = years.at(i);
             auto* iYear = new QTableWidgetItem(QString::number(y));
             auto* iVal  = new QTableWidgetItem(
-                formatMoney(yearVal.value(y)) + QStringLiteral(" €"));
+                ValueFormatter::formatMoney(yearVal.value(y)) + QStringLiteral(" €"));
             iYear->setTextAlignment(Qt::AlignCenter);
             iVal->setTextAlignment(Qt::AlignCenter);
             iYear->setData(Qt::UserRole, y);
@@ -1180,7 +1180,7 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>&   dividends
     auto populateUebersichtFooter = [totalVal](QTableWidget* f) {
         auto* iLabel = new QTableWidgetItem(tr("Gesamt:"));
         auto* iVal   = new QTableWidgetItem(
-            formatMoney(totalVal) + QStringLiteral(" €"));
+            ValueFormatter::formatMoney(totalVal) + QStringLiteral(" €"));
         iLabel->setTextAlignment(Qt::AlignCenter);
         iVal->setTextAlignment(Qt::AlignCenter);
         f->setItem(0, 0, iLabel);
@@ -1204,7 +1204,7 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>&   dividends
         for (const DividendObject& d : dividends)
             if (d.year() == year)
                 yearTotal += d.dividendPayoutWithTaxes();
-        return tr("%1 (%2 €)").arg(year).arg(formatMoney(yearTotal));
+        return tr("%1 (%2 €)").arg(year).arg(ValueFormatter::formatMoney(yearTotal));
     };
 
     auto populateJahresData = [this, dividends, splits, kColDate, kColRate, kColVolume,
@@ -1223,8 +1223,8 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>&   dividends
             iDate->setTextAlignment(Qt::AlignCenter);
 
             // Dividende je Anteil liegt auf der Kurs-Skala, nicht auf der
-            // Stueckzahl-Skala — formatVolume() traf hier nur zufaellig die
-            // richtige Genauigkeit (05.09.2026).
+            // Stueckzahl-Skala — das damalige lokale formatVolume() traf hier
+            // nur zufaellig die richtige Genauigkeit (05.09.2026).
             auto* iRate = new QTableWidgetItem(
                 ValueFormatter::formatPrice(d.rate()) + QStringLiteral(" €"));
             iRate->setTextAlignment(Qt::AlignCenter);
@@ -1250,13 +1250,13 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>&   dividends
 
             auto* iVol = new QTableWidgetItem(
                 ShareSplitHint::withMarker(
-                    formatVolume(d.volume()) + QStringLiteral(" stk."), volAffected));
+                    ValueFormatter::formatVolume(d.volume()) + QStringLiteral(" stk."), volAffected));
             iVol->setTextAlignment(Qt::AlignCenter);
             if (!volTooltip.isEmpty())
                 iVol->setToolTip(volTooltip);
 
             auto* iDiv = new QTableWidgetItem(
-                formatMoney(d.dividendPayoutWithTaxes()) + QStringLiteral(" €"));
+                ValueFormatter::formatMoney(d.dividendPayoutWithTaxes()) + QStringLiteral(" €"));
             iDiv->setTextAlignment(Qt::AlignCenter);
 
             auto* iDoc = new QTableWidgetItem;
@@ -1317,7 +1317,7 @@ void ViewDividendEdit::populateOverview(const QList<DividendObject>&   dividends
         iVol->setToolTip(tr("Anteile beziehen sich auf verschiedene "
                             "Auszahlungstage und lassen sich nicht summieren."));
         auto* iDiv   = new QTableWidgetItem(
-            formatMoney(totDiv) + QStringLiteral(" €"));
+            ValueFormatter::formatMoney(totDiv) + QStringLiteral(" €"));
         iDiv->setTextAlignment(Qt::AlignCenter);
         auto* iDoc   = new QTableWidgetItem(QStringLiteral("-"));
         iDoc->setTextAlignment(Qt::AlignCenter);
@@ -1489,21 +1489,6 @@ QLabel* ViewDividendEdit::addRow(QGridLayout* grid, int& row,
 
     ++row;
     return statusLabel;
-}
-
-QString ViewDividendEdit::formatMoney(double value)
-{
-    return QLocale().toString(value, 'f', 2);
-}
-
-QString ViewDividendEdit::formatVolume(double value)
-{
-    return QLocale().toString(value, 'f', 4);
-}
-
-QString ViewDividendEdit::formatPercent(double value)
-{
-    return QLocale().toString(value, 'f', 2);
 }
 
 double ViewDividendEdit::parseDouble(const QString& text, bool* ok)

@@ -139,6 +139,53 @@ private slots:
                  QStringLiteral("16250,0000"));
     }
 
+    // ── formatMoney / formatVolume / formatPercent ────────────────────────
+
+    void test_formatMoney_hasTwoDecimals()
+    {
+        QCOMPARE(ValueFormatter::formatMoney(1234.5), QStringLiteral("1.234,50"));
+    }
+
+    void test_formatMoney_keepsGroupSeparator()
+    {
+        // Geldbetraege stehen in Tabellen und Anzeigefeldern — dort ist das
+        // Tausendertrennzeichen eine Lesehilfe. Nur in EINGABEfeldern nicht,
+        // dafuer gibt es formatForInput().
+        QVERIFY(ValueFormatter::formatMoney(9999.99).contains(QLatin1Char('.')));
+    }
+
+    void test_formatVolume_hasFourDecimals()
+    {
+        // Der Anlass der Zusammenlegung: PresenterShareDetails hatte ein
+        // eigenes formatVolume() mit ZWEI Stellen, waehrend alle anderen vier
+        // zeigten. Ein Fondsbestand von 168,50796 Anteilen erschien dort als
+        // 168,51 — in einer Box, die "Anteile mal Kurs" rechnet.
+        QCOMPARE(ValueFormatter::formatVolume(168.50796),
+                 QStringLiteral("168,5080"));
+    }
+
+    void test_formatPercent_hasTwoDecimals()
+    {
+        QCOMPARE(ValueFormatter::formatPercent(3.456), QStringLiteral("3,46"));
+    }
+
+    void test_formatMoney_hasNoUnitSuffix()
+    {
+        // Wie bei formatPrice(): die Einheit haengt die Aufrufstelle an,
+        // weil sie sich je Tabelle unterscheidet (" €", " stk.", " %").
+        QVERIFY(!ValueFormatter::formatMoney(5.0).contains(QStringLiteral("€")));
+        QVERIFY(!ValueFormatter::formatVolume(5.0).contains(QStringLiteral("stk")));
+        QVERIFY(!ValueFormatter::formatPercent(5.0).contains(QLatin1Char('%')));
+    }
+
+    void test_formatMoney_andFormatPriceDifferInPrecision()
+    {
+        // Die fachliche Trennung, um die es in dieser Reihe ging: ein Kurs
+        // ist kein Geldbetrag.
+        QVERIFY(ValueFormatter::formatMoney(48.595)
+                != ValueFormatter::formatPrice(48.595));
+    }
+
     // ── formatExchangeRate ────────────────────────────────────────────────
 
     void test_formatExchangeRate_hasFourDecimals()

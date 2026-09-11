@@ -9,9 +9,17 @@
 
 namespace {
 
-QString formatMoney(const QLocale& locale, double value)
+// Die drei Helfer hier haengen nur noch die EINHEIT an; die Formatierung
+// selbst kommt seit 09.09.2026 aus ValueFormatter. Der QLocale-Parameter
+// bleibt in der Signatur, damit die rund dreissig Aufrufstellen unveraendert
+// bleiben — er wird nicht mehr gebraucht, weil ValueFormatter ueber die
+// Standard-Locale formatiert (dieselbe, die hier hereingereicht wurde).
+// Siehe ARCHITECTURE.md, "formatMoney/formatVolume lagen je View doppelt
+// vor".
+
+QString formatMoney(const QLocale& /*locale*/, double value)
 {
-    return locale.toString(value, 'f', 2) + QStringLiteral(" €");
+    return ValueFormatter::formatMoney(value) + QStringLiteral(" €");
 }
 
 /**
@@ -27,17 +35,19 @@ QString formatPrice(const QLocale& /*locale*/, double value)
     return ValueFormatter::formatPrice(value) + QStringLiteral(" €");
 }
 
-QString formatVolume(const QLocale& locale, double value)
+QString formatVolume(const QLocale& /*locale*/, double value)
 {
     // Vier Nachkommastellen wie ueberall sonst im Projekt (05.09.2026).
     // Hier standen zwei — bei einem Fondsbestand von 168,50796 Anteilen war
-    // damit auch der zweite Faktor der Gleichung gerundet dargestellt.
-    return locale.toString(value, 'f', 4) + QStringLiteral(" stk.");
+    // damit auch der zweite Faktor der Gleichung gerundet dargestellt. Genau
+    // diese Abweichung war der Anlass, die Formatierer zusammenzuziehen: sie
+    // konnte nur entstehen, weil jede Form ihre eigene Kopie hatte.
+    return ValueFormatter::formatVolume(value) + QStringLiteral(" stk.");
 }
 
-QString formatPercent(const QLocale& locale, double value)
+QString formatPercent(const QLocale& /*locale*/, double value)
 {
-    return locale.toString(value, 'f', 2) + QStringLiteral(" %");
+    return ValueFormatter::formatPercent(value) + QStringLiteral(" %");
 }
 
 /**

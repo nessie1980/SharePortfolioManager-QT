@@ -110,7 +110,6 @@ private:
                    QWidget* field,
                    const QString& unitText = QString());
 
-    static QString formatMoney(double value);
     /**
      * @brief Liest ein Zahlenfeld dieses Dialogs (delegiert an NumberParser).
      * @param ok  Optional; false bei nicht leerem, unlesbarem Text.

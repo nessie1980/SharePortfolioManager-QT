@@ -406,12 +406,12 @@ void ViewBrokerageEdit::clearForm()
 
 void ViewBrokerageEdit::setGesamtGebuehren(double value)
 {
-    m_gesGebuehren->setText(formatMoney(value));
+    m_gesGebuehren->setText(ValueFormatter::formatMoney(value));
 }
 
 void ViewBrokerageEdit::setBrokerageReduction(double value)
 {
-    m_nettoKosten->setText(formatMoney(value));
+    m_nettoKosten->setText(ValueFormatter::formatMoney(value));
     const QString style = value > 0.0
         ? QStringLiteral("QLineEdit { background: #d4edda; color: #155724; font-weight: bold; }")
         : QStringLiteral("QLineEdit { background: #f8d7da; color: #721c24; font-weight: bold; }");
@@ -456,7 +456,7 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
     for (const auto& b : brokerages)
         totalNetto += b.brokerageReduction();
 
-    const QString uebersichtTitle = tr("Übersicht (%1 €)").arg(formatMoney(totalNetto));
+    const QString uebersichtTitle = tr("Übersicht (%1 €)").arg(ValueFormatter::formatMoney(totalNetto));
 
     auto populateUebersichtData = [this, brokerages, years](QTableWidget* data) {
         data->setRowCount(years.size());
@@ -469,7 +469,7 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
             auto* iYear = new QTableWidgetItem(QString::number(yr));
             iYear->setData(Qt::UserRole, yr);
             iYear->setTextAlignment(Qt::AlignCenter);
-            auto* iNetto = new QTableWidgetItem(formatMoney(netto) + QStringLiteral(" €"));
+            auto* iNetto = new QTableWidgetItem(ValueFormatter::formatMoney(netto) + QStringLiteral(" €"));
             iNetto->setTextAlignment(Qt::AlignCenter);
             data->setItem(i, 0, iYear);
             data->setItem(i, 1, iNetto);
@@ -478,7 +478,7 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
 
     auto populateUebersichtFooter = [this, totalNetto](QTableWidget* footer) {
         auto* iLabel = new QTableWidgetItem(tr("Gesamt:"));
-        auto* iValue = new QTableWidgetItem(formatMoney(totalNetto) + QStringLiteral(" €"));
+        auto* iValue = new QTableWidgetItem(ValueFormatter::formatMoney(totalNetto) + QStringLiteral(" €"));
         iLabel->setTextAlignment(Qt::AlignCenter);
         iValue->setTextAlignment(Qt::AlignCenter);
         footer->setItem(0, 0, iLabel);
@@ -499,7 +499,7 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
         double yearNetto = 0.0;
         for (const auto& b : brokerages)
             if (b.year() == year) yearNetto += b.brokerageReduction();
-        return tr("%1 (%2 €)").arg(year).arg(formatMoney(yearNetto));
+        return tr("%1 (%2 €)").arg(year).arg(ValueFormatter::formatMoney(yearNetto));
     };
 
     auto populateJahresData = [this, brokerages, kColDate, kColTyp, kColGeb, kColRab, kColNetto, kColDoc]
@@ -532,9 +532,9 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
             data->setItem(i, kColDate, dateItem);
 
             setCell(kColTyp,   typ);
-            setCell(kColGeb,   formatMoney(b.brokerage()));
-            setCell(kColRab,   formatMoney(b.reduction()));
-            setCell(kColNetto, formatMoney(b.brokerageReduction()));
+            setCell(kColGeb,   ValueFormatter::formatMoney(b.brokerage()));
+            setCell(kColRab,   ValueFormatter::formatMoney(b.reduction()));
+            setCell(kColNetto, ValueFormatter::formatMoney(b.brokerageReduction()));
 
             const QString doc = b.document();
             if (!doc.isEmpty()) {
@@ -565,9 +565,9 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
         };
         setFooter(kColDate,  tr("Gesamt:"));
         setFooter(kColTyp,   QStringLiteral("-"));
-        setFooter(kColGeb,   formatMoney(sumGeb));
-        setFooter(kColRab,   formatMoney(sumRabatt));
-        setFooter(kColNetto, formatMoney(sumNetto));
+        setFooter(kColGeb,   ValueFormatter::formatMoney(sumGeb));
+        setFooter(kColRab,   ValueFormatter::formatMoney(sumRabatt));
+        setFooter(kColNetto, ValueFormatter::formatMoney(sumNetto));
         setFooter(kColDoc,   QStringLiteral(""));
     };
 
@@ -716,11 +716,6 @@ bool ViewBrokerageEdit::hasUnreadableFields(QStringList& fieldNames) const
     }
 
     return !fieldNames.isEmpty();
-}
-
-QString ViewBrokerageEdit::formatMoney(double value)
-{
-    return QLocale().toString(value, 'f', 2);
 }
 
 double ViewBrokerageEdit::parseDouble(const QString& text, bool* ok)

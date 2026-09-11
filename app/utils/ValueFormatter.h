@@ -56,6 +56,50 @@ public:
     }
 
     /**
+     * @brief Geldbetrag fuer die ANZEIGE, zwei Nachkommastellen.
+     *
+     * Summen, Gebuehren, Steuern, Depot- und Kurswerte. Nicht fuer Kurse --
+     * dafuer gibt es formatPrice(), siehe dort.
+     *
+     * Zusammengezogen am 09.09.2026 aus fuenf zeichengleichen `formatMoney()`
+     * in `ViewBuyEdit`, `ViewSaleEdit`, `ViewDividendEdit`,
+     * `ViewBrokerageEdit` und `ViewShareEdit`, dazu den Lambdas in
+     * `ViewShareDetails` und den freien Funktionen in
+     * `PresenterShareDetails`. Siehe ARCHITECTURE.md,
+     * "formatMoney/formatVolume lagen je View doppelt vor".
+     */
+    static QString formatMoney(double value)
+    {
+        return QLocale().toString(value, 'f', 2);
+    }
+
+    /**
+     * @brief Stueckzahl fuer die ANZEIGE, vier Nachkommastellen.
+     *
+     * Bruchstuecke entstehen bei Splits und bei Fondsanteilen; zwei Stellen
+     * genuegen dafuer nicht. Genau dieser Fall war der Anlass fuer die
+     * Zusammenlegung: `PresenterShareDetails` hatte ein eigenes
+     * `formatVolume()`, das jahrelang auf ZWEI Stellen stand, waehrend alle
+     * anderen vier zeigten -- in einer Box, die "Anteile mal Kurs ergibt
+     * Bestandswert" rechnet.
+     */
+    static QString formatVolume(double value)
+    {
+        return QLocale().toString(value, 'f', 4);
+    }
+
+    /**
+     * @brief Prozentwert fuer die ANZEIGE, zwei Nachkommastellen.
+     *
+     * Ohne Prozentzeichen -- das haengt die Aufrufstelle an, wie bei den
+     * uebrigen Funktionen dieser Klasse auch.
+     */
+    static QString formatPercent(double value)
+    {
+        return QLocale().toString(value, 'f', 2);
+    }
+
+    /**
      * @brief Zahl fuer ein EINGABEFELD, ohne Tausendertrennzeichen.
      *
      * Gegenstueck zu den uebrigen Funktionen dieser Klasse, die fuer die

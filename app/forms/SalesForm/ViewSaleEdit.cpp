@@ -698,7 +698,7 @@ void ViewSaleEdit::setSplits(const QList<ShareSplitObject>& splits)
 
 void ViewSaleEdit::setSaleValue(double value)
 {
-    m_saleValue->setText(formatMoney(value));
+    m_saleValue->setText(ValueFormatter::formatMoney(value));
     // Color: positive = green, negative = red
     if (value >= 0.0)
         m_saleValue->setStyleSheet(QStringLiteral("background: palette(midlight);"));
@@ -708,12 +708,12 @@ void ViewSaleEdit::setSaleValue(double value)
 
 void ViewSaleEdit::setKaufwert(double value)
 {
-    m_kaufwert->setText(formatMoney(value));
+    m_kaufwert->setText(ValueFormatter::formatMoney(value));
 }
 
 void ViewSaleEdit::setGewinnVerlust(double value)
 {
-    m_gewinnVerlust->setText(formatMoney(value));
+    m_gewinnVerlust->setText(ValueFormatter::formatMoney(value));
     // Positive = green tint, negative = red tint
     if (value >= 0.0)
         m_gewinnVerlust->setStyleSheet(
@@ -725,7 +725,7 @@ void ViewSaleEdit::setGewinnVerlust(double value)
 
 void ViewSaleEdit::setGesGebuehren(double value)
 {
-    m_gesGebuehren->setText(formatMoney(value));
+    m_gesGebuehren->setText(ValueFormatter::formatMoney(value));
 }
 
 void ViewSaleEdit::setTaxSum(double value)
@@ -736,7 +736,7 @@ void ViewSaleEdit::setTaxSum(double value)
 
 void ViewSaleEdit::setAuszahlung(double value)
 {
-    m_auszahlung->setText(formatMoney(value));
+    m_auszahlung->setText(ValueFormatter::formatMoney(value));
     if (value >= 0.0)
         m_auszahlung->setStyleSheet(
             QStringLiteral("background: #d4edda; color: #155724; font-weight: bold;"));
@@ -1067,12 +1067,12 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>&       sales,
             auto* iY = new QTableWidgetItem(QString::number(y));
             auto* iV = new QTableWidgetItem(
                 ShareSplitHint::withMarker(
-                    formatVolume(yearVolToday.value(y)) + QStringLiteral(" stk."),
+                    ValueFormatter::formatVolume(yearVolToday.value(y)) + QStringLiteral(" stk."),
                     yearVolAffected.value(y)));
             auto* iP = new QTableWidgetItem(
-                formatMoney(yearPayout.value(y)) + QStringLiteral(" €"));
+                ValueFormatter::formatMoney(yearPayout.value(y)) + QStringLiteral(" €"));
             auto* iG = new QTableWidgetItem(
-                formatMoney(yearGV.value(y)) + QStringLiteral(" €"));
+                ValueFormatter::formatMoney(yearGV.value(y)) + QStringLiteral(" €"));
             for (auto* it : { iY, iV, iP, iG })
                 it->setTextAlignment(Qt::AlignCenter);
             iY->setData(Qt::UserRole, y);
@@ -1090,9 +1090,9 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>&       sales,
         auto* iL = new QTableWidgetItem(tr("Gesamt:"));
         auto* iV = new QTableWidgetItem(
             ShareSplitHint::withMarker(
-                formatVolume(totVolToday) + QStringLiteral(" stk."), totalVolAffected));
-        auto* iP = new QTableWidgetItem(formatMoney(totPayout) + QStringLiteral(" €"));
-        auto* iG = new QTableWidgetItem(formatMoney(totGV) + QStringLiteral(" €"));
+                ValueFormatter::formatVolume(totVolToday) + QStringLiteral(" stk."), totalVolAffected));
+        auto* iP = new QTableWidgetItem(ValueFormatter::formatMoney(totPayout) + QStringLiteral(" €"));
+        auto* iG = new QTableWidgetItem(ValueFormatter::formatMoney(totGV) + QStringLiteral(" €"));
         for (auto* it : { iL, iV, iP, iG })
             it->setTextAlignment(Qt::AlignCenter);
         if (!totalVolTooltip.isEmpty())
@@ -1101,7 +1101,7 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>&       sales,
         f->setItem(0, 2, iP); f->setItem(0, 3, iG);
     };
 
-    const QString uebersichtTitle = tr("Übersicht (%1 €)").arg(formatMoney(totPayout));
+    const QString uebersichtTitle = tr("Übersicht (%1 €)").arg(ValueFormatter::formatMoney(totPayout));
 
     // ── Jahres-Tabs ───────────────────────────────────────────────────────
     constexpr int kColDate       = 0;
@@ -1137,17 +1137,17 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>&       sales,
 
             auto* iVol = new QTableWidgetItem(
                 ShareSplitHint::withMarker(
-                    formatVolume(s.volume()) + QStringLiteral(" stk."), volAffected));
+                    ValueFormatter::formatVolume(s.volume()) + QStringLiteral(" stk."), volAffected));
             iVol->setTextAlignment(Qt::AlignCenter);
             if (!volTooltip.isEmpty())
                 iVol->setToolTip(volTooltip);
 
             auto* iAusz = new QTableWidgetItem(
-                formatMoney(s.payoutBrokerageReduction()) + QStringLiteral(" €"));
+                ValueFormatter::formatMoney(s.payoutBrokerageReduction()) + QStringLiteral(" €"));
             iAusz->setTextAlignment(Qt::AlignCenter);
 
             auto* iGV = new QTableWidgetItem(
-                formatMoney(s.profitLossBrokerageReduction()) + QStringLiteral(" €"));
+                ValueFormatter::formatMoney(s.profitLossBrokerageReduction()) + QStringLiteral(" €"));
             iGV->setTextAlignment(Qt::AlignCenter);
 
             auto* iDoc = new QTableWidgetItem;
@@ -1198,10 +1198,10 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>&       sales,
         auto* iL = new QTableWidgetItem(tr("Gesamt:"));
         auto* iV = new QTableWidgetItem(
             ShareSplitHint::withMarker(
-                formatVolume(volToday) + QStringLiteral(" stk."),
+                ValueFormatter::formatVolume(volToday) + QStringLiteral(" stk."),
                 yearVolAffected.value(year)));
-        auto* iP = new QTableWidgetItem(formatMoney(payout)  + QStringLiteral(" €"));
-        auto* iG = new QTableWidgetItem(formatMoney(gv)      + QStringLiteral(" €"));
+        auto* iP = new QTableWidgetItem(ValueFormatter::formatMoney(payout)  + QStringLiteral(" €"));
+        auto* iG = new QTableWidgetItem(ValueFormatter::formatMoney(gv)      + QStringLiteral(" €"));
         auto* iD = new QTableWidgetItem(QStringLiteral("-"));
         for (auto* it : { iL, iV, iP, iG, iD })
             it->setTextAlignment(Qt::AlignCenter);
@@ -1216,7 +1216,7 @@ void ViewSaleEdit::populateOverview(const QList<SaleObject>&       sales,
         double payout = 0;
         for (const SaleObject& s : sales)
             if (s.year() == year) payout += s.payoutBrokerageReduction();
-        return tr("%1 (%2 €)").arg(year).arg(formatMoney(payout));
+        return tr("%1 (%2 €)").arg(year).arg(ValueFormatter::formatMoney(payout));
     };
 
     // Dokument-Spalte fest auf 36px, reine Icon-Spalte ohne Textinhalt und
@@ -1518,19 +1518,19 @@ void ViewSaleEdit::showBuyDetails(const SaleBuyDetailSummary& summary)
     for (int i = 0; i < rows.size(); ++i) {
         const DetailRow& r = rows.at(i);
         dataTable->setItem(i, kColDate,  makeCenter(r.date));
-        dataTable->setItem(i, kColVol,   makeCenter(formatVolume(r.volume)   + QStringLiteral(" Stk.")));
+        dataTable->setItem(i, kColVol,   makeCenter(ValueFormatter::formatVolume(r.volume)   + QStringLiteral(" Stk.")));
         dataTable->setItem(i, kColMul,   makeOp(QStringLiteral("×")));
-        // Bugfix 05.09.2026: hier stand formatMoney(), also zwei Stellen —
+        // Bugfix 05.09.2026: hier stand das lokale formatMoney(), also zwei Stellen —
         // die Zeile ist als Gleichung gebaut und ging dadurch nicht auf.
         dataTable->setItem(i, kColPrice, makeCenter(ValueFormatter::formatPrice(r.buyPrice) + QStringLiteral(" €")));
         dataTable->setItem(i, kColEq1,   makeOp(QStringLiteral("=")));
-        dataTable->setItem(i, kColSumme, makeCenter(formatMoney(r.buyValue)  + QStringLiteral(" €")));
+        dataTable->setItem(i, kColSumme, makeCenter(ValueFormatter::formatMoney(r.buyValue)  + QStringLiteral(" €")));
         dataTable->setItem(i, kColPlus,  makeOp(QStringLiteral("+")));
-        dataTable->setItem(i, kColFees,  makeCenter(formatMoney(r.fees)      + QStringLiteral(" €")));
+        dataTable->setItem(i, kColFees,  makeCenter(ValueFormatter::formatMoney(r.fees)      + QStringLiteral(" €")));
         dataTable->setItem(i, kColMinus, makeOp(QStringLiteral("-")));
-        dataTable->setItem(i, kColRed,   makeCenter(formatMoney(r.reduction) + QStringLiteral(" €")));
+        dataTable->setItem(i, kColRed,   makeCenter(ValueFormatter::formatMoney(r.reduction) + QStringLiteral(" €")));
         dataTable->setItem(i, kColEq2,   makeOp(QStringLiteral("=")));
-        dataTable->setItem(i, kColTotal, makeCenter(formatMoney(r.buyValue + r.fees - r.reduction) + QStringLiteral(" €")));
+        dataTable->setItem(i, kColTotal, makeCenter(ValueFormatter::formatMoney(r.buyValue + r.fees - r.reduction) + QStringLiteral(" €")));
 
         // Dokument-Icon
         auto* iDoc = new QTableWidgetItem;
@@ -1669,17 +1669,17 @@ void ViewSaleEdit::showBuyDetails(const SaleBuyDetailSummary& summary)
     };
 
     footerTable->setItem(0, kColDate,  makeSumItem(QString()));
-    footerTable->setItem(0, kColVol,   makeSumItem(formatVolume(totVol)   + QStringLiteral(" Stk.")));
+    footerTable->setItem(0, kColVol,   makeSumItem(ValueFormatter::formatVolume(totVol)   + QStringLiteral(" Stk.")));
     footerTable->setItem(0, kColMul,   makeSumItem(QString()));
     footerTable->setItem(0, kColPrice, makeSumItem(QString()));
     footerTable->setItem(0, kColEq1,   makeSumItem(QString()));
-    footerTable->setItem(0, kColSumme, makeSumItem(formatMoney(totBuyVal) + QStringLiteral(" €")));
+    footerTable->setItem(0, kColSumme, makeSumItem(ValueFormatter::formatMoney(totBuyVal) + QStringLiteral(" €")));
     footerTable->setItem(0, kColPlus,  makeSumItem(QString()));
-    footerTable->setItem(0, kColFees,  makeSumItem(formatMoney(totFees)   + QStringLiteral(" €")));
+    footerTable->setItem(0, kColFees,  makeSumItem(ValueFormatter::formatMoney(totFees)   + QStringLiteral(" €")));
     footerTable->setItem(0, kColMinus, makeSumItem(QString()));
-    footerTable->setItem(0, kColRed,   makeSumItem(formatMoney(totRed)    + QStringLiteral(" €")));
+    footerTable->setItem(0, kColRed,   makeSumItem(ValueFormatter::formatMoney(totRed)    + QStringLiteral(" €")));
     footerTable->setItem(0, kColEq2,   makeSumItem(QString()));
-    footerTable->setItem(0, kColTotal, makeSumItem(formatMoney(totBuyValWithFees) + QStringLiteral(" €")));
+    footerTable->setItem(0, kColTotal, makeSumItem(ValueFormatter::formatMoney(totBuyValWithFees) + QStringLiteral(" €")));
     footerTable->setItem(0, kColDoc,   makeSumItem(QString()));
 
     // Spaltenbreiten initial vom dataTable übernehmen (nach erstem Layout-Durchlauf),
@@ -1762,19 +1762,19 @@ void ViewSaleEdit::showBuyDetails(const SaleBuyDetailSummary& summary)
     };
 
     addGvCell(tr("Ges. Anteile"),
-              formatVolume(totVol) + QStringLiteral(" Stk."));
+              ValueFormatter::formatVolume(totVol) + QStringLiteral(" Stk."));
     addGvSep(QStringLiteral("·"));
     addGvCell(tr("Ges. Verkauf"),
-              formatMoney(totSaleVal) + QStringLiteral(" €"));
+              ValueFormatter::formatMoney(totSaleVal) + QStringLiteral(" €"));
     addGvSep(QStringLiteral("−"));
     addGvCell(tr("Ges. Kauf (inkl. Kosten)"),
-              formatMoney(totBuyValWithFees) + QStringLiteral(" €"));
+              ValueFormatter::formatMoney(totBuyValWithFees) + QStringLiteral(" €"));
     addGvSep(QStringLiteral("−"));
     addGvCell(tr("Verkaufsgebühren / Steuern"),
-              formatMoney(saleFees) + QStringLiteral(" €"));
+              ValueFormatter::formatMoney(saleFees) + QStringLiteral(" €"));
     addGvSep(QStringLiteral("="));
     addGvCell(tr("Gewinn / Verlust"),
-              formatMoney(totPL) + QStringLiteral(" €"),
+              ValueFormatter::formatMoney(totPL) + QStringLiteral(" €"),
               plFg, plBg);
 
     mainLayout->addWidget(gbGV);
@@ -1839,16 +1839,6 @@ QLabel* ViewSaleEdit::addRow(QGridLayout* grid, int& row,
 
     ++row;
     return statusLabel;
-}
-
-QString ViewSaleEdit::formatMoney(double value)
-{
-    return QLocale().toString(value, 'f', 2);
-}
-
-QString ViewSaleEdit::formatVolume(double value)
-{
-    return QLocale().toString(value, 'f', 4);
 }
 
 double ViewSaleEdit::parseDouble(const QString& text, bool* ok)

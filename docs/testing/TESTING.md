@@ -3264,6 +3264,12 @@ formatiert wird und die CI-Runner nicht deutsch laufen.
 | `test_formatPriceForInput_keepsGermanDecimalSeparator` | nur das Gruppierungszeichen faellt weg, das Komma bleibt |
 | `test_formatPriceForInput_matchesFormatPriceBelowThousand` | unterhalb 1.000 sind beide Funktionen deckungsgleich |
 | `test_formatPriceForInput_doesNotLeakOptionIntoDefaultLocale` | die NumberOption wirkt nur lokal, nicht auf die Standard-Locale |
+| `test_formatMoney_hasTwoDecimals` | Geldbetrag 1.234,50 |
+| `test_formatMoney_keepsGroupSeparator` | in der ANZEIGE bleibt das Tausendertrennzeichen |
+| `test_formatVolume_hasFourDecimals` | 168,50796 wird zu "168,5080" — der Fall, der die Zusammenlegung ausgeloest hat |
+| `test_formatPercent_hasTwoDecimals` | Prozentwert 3,46 |
+| `test_formatMoney_hasNoUnitSuffix` | keine Einheit — die haengt die Aufrufstelle an |
+| `test_formatMoney_andFormatPriceDifferInPrecision` | ein Kurs ist kein Geldbetrag |
 | `test_formatExchangeRate_hasFourDecimals` | Devisenkurs 1,0834 |
 | `test_formatExchangeRate_neutralRatioIsPadded` | Vorgabe 1,0 wird zu "1,0000" |
 

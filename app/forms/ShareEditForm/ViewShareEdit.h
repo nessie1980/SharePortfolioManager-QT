@@ -127,8 +127,6 @@ private:
                           QWidget* field,
                           const QString& unitText = QString());
 
-    /** Helper: format a monetary value for display in a read-only field. */
-    static QString formatMoney(double value);
 
     /**
      * @brief Helper: Kurzform eines Splits, z. B. "20:1 am 18.07.2022".

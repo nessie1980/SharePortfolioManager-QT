@@ -127,8 +127,6 @@ private:
                    const QString& unitText  = QString(),
                    const QString& statusKey = QString());
 
-    static QString formatMoney(double value);
-    static QString formatVolume(double value);
     /**
      * @brief Liest ein Zahlenfeld dieses Dialogs (delegiert an NumberParser).
      * @param ok  Optional; false bei nicht leerem, unlesbarem Text.

@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "ViewShareEdit.h"
+#include "../../utils/ValueFormatter.h"
 #include "PresenterShareEdit.h"
 #include "ModelShareEdit.h"
 #include "../../IconProvider.h"
@@ -515,7 +516,7 @@ void ViewShareEdit::setFirstBuyDate(const QString& dateStr)
 
 void ViewShareEdit::setCurrentVolume(double volume)
 {
-    m_anteile->setText(QLocale().toString(volume, 'f', 4));
+    m_anteile->setText(ValueFormatter::formatVolume(volume));
 }
 
 void ViewShareEdit::setSplitInfo(const QList<ShareSplitObject>& splits)
@@ -571,18 +572,18 @@ void ViewShareEdit::setDailyValuesRequired(bool required)
 
 void ViewShareEdit::setTotalBuys(double value, int /*count*/)
 {
-    m_totalBuys->setText(formatMoney(value));
-    m_einzahlung->setText(formatMoney(value));
+    m_totalBuys->setText(ValueFormatter::formatMoney(value));
+    m_einzahlung->setText(ValueFormatter::formatMoney(value));
 }
 
 void ViewShareEdit::setTotalSales(double value, int /*count*/)
 {
-    m_totalSales->setText(formatMoney(value));
+    m_totalSales->setText(ValueFormatter::formatMoney(value));
 }
 
 void ViewShareEdit::setTotalProfitLoss(double value, int /*count*/)
 {
-    m_totalProfitLoss->setText(formatMoney(value));
+    m_totalProfitLoss->setText(ValueFormatter::formatMoney(value));
     if (value < 0.0)
         m_totalProfitLoss->setStyleSheet(QStringLiteral("color: red;"));
     else if (value > 0.0)
@@ -593,12 +594,12 @@ void ViewShareEdit::setTotalProfitLoss(double value, int /*count*/)
 
 void ViewShareEdit::setTotalDividends(double value, int /*count*/)
 {
-    m_totalDividends->setText(formatMoney(value));
+    m_totalDividends->setText(ValueFormatter::formatMoney(value));
 }
 
 void ViewShareEdit::setTotalBrokerages(double value, int /*count*/)
 {
-    m_totalBrokerages->setText(formatMoney(value));
+    m_totalBrokerages->setText(ValueFormatter::formatMoney(value));
 }
 
 // ── IViewShareEdit: feedback ──────────────────────────────────────────────────
@@ -711,11 +712,6 @@ QLabel* ViewShareEdit::addRow(QGridLayout* grid, int& row,
     }
     ++row;
     return lbl;
-}
-
-QString ViewShareEdit::formatMoney(double value)
-{
-    return QLocale().toString(value, 'f', 2);
 }
 
 QString ViewShareEdit::formatSplit(const ShareSplitObject& split)

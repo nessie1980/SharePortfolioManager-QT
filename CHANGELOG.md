@@ -10,6 +10,23 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.21.8] - 2026-09-09
+
+### Changed
+
+- **Die Zahlenformatierung liegt vollstaendig in `ValueFormatter`.** Fuenf
+  Formulare hatten je eine eigene, zeichengleiche `formatMoney()`, vier davon
+  zusaetzlich ein eigenes `formatVolume()`; die Aktien-Detailansicht
+  formatierte in Lambdas und freien Funktionen. Diese Kopien sind entfernt,
+  alle rund 130 Aufrufstellen gehen jetzt ueber die zentrale Klasse.
+
+  Reiner Umbau ohne sichtbare Aenderung -- mit einer Ausnahme, die schon in
+  1.21.1 behoben wurde und hier nur nicht wiederkommen kann: das lokale
+  `formatVolume()` der Aktien-Detailansicht stand jahrelang auf zwei statt
+  vier Nachkommastellen, in einer Box, die "Anteile mal Kurs ergibt
+  Bestandswert" rechnet. Genau diese Art Abweichung kann jetzt nicht mehr
+  entstehen.
+
 ## [1.21.7] - 2026-09-09
 
 ### Added

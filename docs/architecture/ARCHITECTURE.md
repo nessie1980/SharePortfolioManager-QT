@@ -5384,21 +5384,6 @@ beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
 
-### formatMoney/formatVolume liegen weiterhin je View doppelt vor (05.09.2026)
-
-`ValueFormatter` beherbergt seit dem Kurs-Rollout nur `formatPrice()` und
-`formatExchangeRate()`. Die beiden aelteren Helfer stehen unveraendert je
-View als statische Methode oder lokale Lambda in `ViewBuyEdit`,
-`ViewSaleEdit`, `ViewDividendEdit`, `ViewBrokerageEdit`, `ViewShareEdit`,
-`ViewShareDetails` und `PresenterShareDetails` — sieben nahezu identische
-Einzeiler.
-
-Bewusst nicht mit umgezogen: der Umbau waere mechanisch, aber quer durch
-alle Formulare, und haette den eigentlichen Bugfix im Diff begraben. Der Fall
-`PresenterShareDetails` zeigt, warum es sich trotzdem lohnt — dessen lokales
-`formatVolume()` stand jahrelang auf zwei Nachkommastellen, waehrend alle
-anderen vier zeigten, und niemandem fiel es auf.
-
 ### ShareDetailsForm.cpp ist toter Code (05.09.2026)
 
 `app/forms/ShareDetailsForm/ShareDetailsForm.cpp` steht weder in
@@ -5678,6 +5663,57 @@ sieben `parseDouble()`-Kopien -- und der spaeter noetige Zusatz
 wuerde nur dieselbe eine Zeile der Fabrik ein weiteres Mal pruefen; die
 Gegenprobe im Test stellt sicher, dass ueberhaupt Zahlenfelder gefunden
 wurden -- sonst liefe er auch dann gruen, wenn es keine mehr gaebe.
+
+### formatMoney/formatVolume lagen je View doppelt vor (05.09.2026, behoben 09.09.2026)
+
+Fuenf Formulare hatten je eine eigene statische `formatMoney()`, Zeichen fuer
+Zeichen dieselbe Zeile; vier davon zusaetzlich ein eigenes `formatVolume()`,
+`ViewDividendEdit` noch ein `formatPercent()`. `ViewShareDetails`
+formatierte in Lambdas, `PresenterShareDetails` in freien Funktionen einer
+anonymen Namensraum-Gruppe. `ViewShareAdd` und `ViewShareEdit` riefen
+`QLocale::toString()` direkt auf.
+
+Beim Kurs-Rollout (1.21.1) bewusst liegengelassen: der Umbau waere
+mechanisch, aber quer durch alle Formulare gegangen und haette den
+eigentlichen Bugfix im Diff begraben.
+
+#### Warum es sich gelohnt hat
+
+Der Fall, der die Sache entschieden hat, stand schon damals im Archiv:
+`PresenterShareDetails::formatVolume()` zeigte ZWEI Nachkommastellen,
+waehrend alle anderen Kopien vier zeigten. Jahrelang, unbemerkt, in einer
+Box, die "Anteile mal Kurs ergibt Bestandswert" rechnet -- ein Fondsbestand
+von 168,50796 Anteilen erschien dort als 168,51, und die Gleichung ging
+nicht auf.
+
+Eine Abweichung dieser Art kann nur entstehen, wo es mehr als eine Kopie
+gibt. Sie faellt auch nur dort nicht auf: wer eine der anderen sechs las,
+hatte keinen Anlass nachzusehen.
+
+#### Zuschnitt
+
+`ValueFormatter` hat `formatMoney()`, `formatVolume()` und `formatPercent()`
+bekommen; die lokalen Kopien samt Header-Deklarationen sind entfernt, rund
+130 Aufrufstellen gehen jetzt ueber die zentrale Klasse.
+
+Die Einheiten-Anhaengsel bleiben lokal. `PresenterShareDetails` und
+`ViewShareDetails` haengen " EUR", " stk." und " %" an, je nach Tabelle
+unterschiedlich; das ist keine Formatierung, sondern Beschriftung. Deren
+Helfer sind zu Einzeilern geschrumpft, die nur noch die Einheit ergaenzen.
+
+Der `QLocale`-Parameter der drei Helfer in `PresenterShareDetails` bleibt in
+der Signatur, obwohl er nicht mehr gebraucht wird -- `ValueFormatter`
+formatiert ueber die Standard-Locale, dieselbe, die dort hereingereicht
+wurde. Ihn zu entfernen haette rund dreissig Aufrufstellen ohne inhaltlichen
+Gewinn angefasst.
+
+`MainWindow` steht weiterhin nicht auf der Liste: es formatiert durchgaengig
+direkt ueber `locale.toString()`, teils mit Vorzeichen und Faerbung
+verwoben. Das waere ein eigenes Vorhaben, kein Anhaengsel an diesen Umbau.
+
+@note Drei tote `const QLocale`-Variablen sind dabei weggefallen, in
+`ViewShareDetails` und `ViewShareAdd`. Sie wurden nur noch von den
+entfernten Lambdas beziehungsweise den umgestellten Zeilen benutzt.
 
 ### Unlesbare Zahleneingaben in Kosten und Aktiensplits (07.09.2026, behoben 09.09.2026)
 

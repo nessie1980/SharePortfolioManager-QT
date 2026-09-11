@@ -415,9 +415,8 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>&       sa
             years.append(s.year());
     std::sort(years.begin(), years.end(), std::greater<int>());
 
-    const QLocale loc;
-    auto fmtMoney  = [&](double v) { return loc.toString(v, 'f', 2) + QStringLiteral(" €"); };
-    auto fmtVolume = [&](double v) { return loc.toString(v, 'f', 4) + QStringLiteral(" stk."); };
+    auto fmtMoney  = [](double v) { return ValueFormatter::formatMoney(v) + QStringLiteral(" €"); };
+    auto fmtVolume = [](double v) { return ValueFormatter::formatVolume(v) + QStringLiteral(" stk."); };
 
     double totalPayout = 0.0;
     for (const SaleObject& s : sales)
@@ -585,9 +584,8 @@ void ViewShareDetails::populateDividenden(const QList<DividendObject>&   dividen
             years.append(d.year());
     std::sort(years.begin(), years.end(), std::greater<int>());
 
-    const QLocale loc;
-    auto fmtMoney  = [&](double v) { return loc.toString(v, 'f', 2) + QStringLiteral(" €"); };
-    auto fmtVolume = [&](double v) { return loc.toString(v, 'f', 4) + QStringLiteral(" stk."); };
+    auto fmtMoney  = [](double v) { return ValueFormatter::formatMoney(v) + QStringLiteral(" €"); };
+    auto fmtVolume = [](double v) { return ValueFormatter::formatVolume(v) + QStringLiteral(" stk."); };
     // Dividende je Anteil liegt auf der Kurs-Skala (05.09.2026) — Ausgabe
     // unveraendert, Genauigkeit haengt jetzt zentral an ValueFormatter.
     auto fmtRate   = [](double v) { return ValueFormatter::formatPrice(v) + QStringLiteral(" €"); };
@@ -711,8 +709,7 @@ void ViewShareDetails::populateKosten(const QList<BrokerageObject>& brokerages)
             years.append(b.year());
     std::sort(years.begin(), years.end(), std::greater<int>());
 
-    const QLocale loc;
-    auto fmtMoney = [&](double v) { return loc.toString(v, 'f', 2) + QStringLiteral(" €"); };
+    auto fmtMoney = [](double v) { return ValueFormatter::formatMoney(v) + QStringLiteral(" €"); };
 
     double totalNetto = 0.0;
     for (const BrokerageObject& b : brokerages)
