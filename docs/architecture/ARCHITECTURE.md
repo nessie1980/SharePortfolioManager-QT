@@ -5384,19 +5384,6 @@ beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
 
-### ShareDetailsForm.cpp ist toter Code (05.09.2026)
-
-`app/forms/ShareDetailsForm/ShareDetailsForm.cpp` steht weder in
-`app/CMakeLists.txt` noch in einem Testziel und wird damit nirgends
-kompiliert. Es ist der Rest des ersten, ohne Abgleich mit der C#-Referenz
-gebauten Anlaufs (Tabs fuer Stammdaten, Kaeufe, Verkaeufe, Dividenden,
-Brokerages), den `ViewShareDetails` ersetzt hat.
-
-Aufgefallen bei der Bestandsaufnahme der Kurs-Anzeigen: die Datei enthaelt
-ein knappes Dutzend Kurs-Formatierungen, die alle ins Leere zeigen. Kann
-geloescht werden — gleiche Lage wie beim bereits vermerkten Verzeichnis
-`tests/widgets/`.
-
 ### Diagnose-Knopf hinter einen Debug-Modus legen (06.08.2026)
 
 Der Knopf "Diagnose speichern…" im Depotwert-Chart bleibt vorerst dauerhaft
@@ -5663,6 +5650,27 @@ sieben `parseDouble()`-Kopien -- und der spaeter noetige Zusatz
 wuerde nur dieselbe eine Zeile der Fabrik ein weiteres Mal pruefen; die
 Gegenprobe im Test stellt sicher, dass ueberhaupt Zahlenfelder gefunden
 wurden -- sonst liefe er auch dann gruen, wenn es keine mehr gaebe.
+
+### ShareDetailsForm.cpp war toter Code (05.09.2026, geloescht 11.09.2026)
+
+`ShareDetailsForm.cpp` und `ShareDetailsForm.h` sind entfernt. Sie standen
+weder in `app/CMakeLists.txt` noch in einem Testziel, wurden also nirgends
+kompiliert, und kein `#include` verwies auf sie.
+
+Es war der Rest des ersten, ohne Abgleich mit der C#-Referenz gebauten
+Anlaufs an der Aktien-Detailansicht -- Tabs fuer Stammdaten, Kaeufe,
+Verkaeufe, Dividenden, Brokerages. Ersetzt hat ihn das MVP-Trio
+`IViewShareDetails`/`PresenterShareDetails`/`ViewShareDetails`;
+`MainWindow::openShareDetails()` oeffnet seit jeher `ViewShareDetails`.
+
+Aufgefallen bei der Bestandsaufnahme der Kurs-Anzeigen (1.21.1): die Datei
+enthielt ein knappes Dutzend Kurs-Formatierungen, die alle ins Leere
+zeigten. Zwei davon waren nach dem damaligen Muster falsch -- sie haetten in
+einem Rollout mitgezogen werden muessen, waeren sie noch in Gebrauch
+gewesen. Genau daran zeigt sich der Preis von totem Code: er kostet bei
+jeder Bestandsaufnahme Aufmerksamkeit, die er nicht verdient.
+
+@note In derselben Lage ist weiterhin das Verzeichnis `tests/widgets/`.
 
 ### formatMoney/formatVolume lagen je View doppelt vor (05.09.2026, behoben 09.09.2026)
 

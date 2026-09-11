@@ -10,6 +10,16 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.21.9] - 2026-09-11
+
+### Removed
+
+- **`ShareDetailsForm.cpp/.h` geloescht.** Die beiden Dateien wurden nirgends
+  kompiliert -- weder in `app/CMakeLists.txt` noch in einem Testziel gelistet,
+  und kein `#include` verwies auf sie. Rest des ersten Anlaufs an der
+  Aktien-Detailansicht, den das MVP-Trio um `ViewShareDetails` ersetzt hat.
+  Keine Auswirkung auf die Anwendung.
+
 ## [1.21.8] - 2026-09-09
 
 ### Changed
