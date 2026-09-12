@@ -94,6 +94,9 @@ set(APP_SOURCES
     utils/DocumentClassifier.cpp
 
     # ── Widgets (shared) ──────────────────────────────────────────────────
+    # Header-only — App-weite Grid-Selektionsfarbe (29.07.2026). Nur gelistet,
+    # damit der Header in der IDE auftaucht; am Bau aendert sich nichts.
+    widgets/GridStyle.h
     widgets/OverviewTabWidget.h
     widgets/OverviewTabWidget.cpp
     widgets/DocumentPreviewPanel.h

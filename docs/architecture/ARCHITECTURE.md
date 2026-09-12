@@ -4497,291 +4497,6 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### Zurückbleibender pdftotext-Prozess (behoben, 27.08.2026)
-
-Aufgefallen im Testlauf zum Statuszeilen-Umbau: nach den Dokument-Tests stand
-im Protokoll
-
-@code{.unparsed}
-QProcess: Destroyed while process is still running.
-@endcode
-
-Es war nicht nur Lärm. Die Aufräum-Ereignisse dieser Prozesse lagen quer in
-der Ereignisschlange und haben
-`test_presenterShareAdd_populateFromResult_allFieldsTaken_reportsOk` beim
-ersten Lauf gekippt (siehe TESTING.md, "Sichtbarkeit zugunsten der
-Testbarkeit"). Im Test ist das über `QTRY_COMPARE` aufgefangen — am Symptom.
-Die Ursache lag in `PdfTextExtractor` und betraf die laufende Anwendung
-genauso.
-
-#### Drei Befunde in einer Klasse
-
-Alle drei hängen am selben Prozesslebenszyklus und sind in einem Zug behoben:
-
-| Befund | Wirkung in der Anwendung |
-| --- | --- |
-| Destruktor war `= default` | Dialog während der Umwandlung schließen blockierte den GUI-Thread |
-| Zweiter `extract()`-Aufruf überschrieb `m_process` | Text des VORIGEN Dokuments konnte unter dem neuen Namen ankommen |
-| `FailedToStart` wurde nicht behandelt | Fehlendes `pdftotext` meldete gar nichts, die Statuszeile blieb stehen |
-
-Zum ersten Punkt: der vom Compiler erzeugte Destruktor überließ den noch
-laufenden `QProcess` dem `QObject`-Destruktor. Der ruft `kill()` und wartet
-anschließend mit `waitForFinished()` OHNE Zeitschranke — im GUI-Thread.
-
-Zum zweiten: der Header schrieb "eine Umwandlung zur Zeit" als Pflicht des
-Aufrufers fest. Die vier Presenter halten sich nicht daran, zweimal zügig
-hintereinander ein Dokument auswählen genügt. Der überschriebene Prozess lief
-weiter, meldete sich über `sender()` zurück und löste ein zweites
-`finished()` aus.
-
-Zum dritten: `QProcess` meldet ein Programm, das sich gar nicht starten lässt,
-ausschließlich über `errorOccurred(FailedToStart)`. `finished()` kommt in
-diesem Fall nie — und damit kam auch `PdfTextExtractor::finished()` nie. Kein
-Fehlerdialog, keine Statusmeldung; die Zeile blieb bei "Analysiere Dokument …"
-stehen. Für eine frische Windows-Installation ohne Poppler ist das der
-Regelfall, nicht der Ausnahmefall.
-
-#### Die Klasse besitzt den Prozess jetzt vollständig
-
-Die Sequenzierung ist keine Pflicht des Aufrufers mehr — die vier Presenter
-und `MainWindow` bleiben unverändert:
-
-- `extract()` bricht eine laufende Umwandlung ab und startet die neue. Die
-  abgebrochene meldet nichts.
-- `cancel()` (neu, öffentlich) bricht ab, ohne etwas zu melden. Ein Abbruch
-  ist keine fehlgeschlagene Umwandlung, und wer abbricht, will das Ergebnis
-  nicht mehr.
-- Der Destruktor bricht ab. Es bleibt nichts zurück.
-- `finished()` kommt höchstens einmal je `extract()`-Aufruf und nie für eine
-  Umwandlung, die der Aufrufer längst ersetzt hat.
-
-Das gemeinsame `stopProcess()` trennt zuerst die Verbindungen und tötet erst
-danach. Andersherum löste `kill()` ein `finished()` mit Absturz-Status aus,
-und der Aufrufer bekäme "fehlgeschlagen" gemeldet, wo in Wahrheit
-zurückgezogen wurde. Getötet wird mit `kill()`, nicht `terminate()`:
-`pdftotext` schreibt nach stdout und hat keinen Zustand, den ein sauberes
-Herunterfahren retten würde — und `terminate()` erreicht unter Windows eine
-Konsolenanwendung ohnehin nicht.
-
-@note `cancel()` hat heute keinen Aufrufer. Aufgenommen, weil
-`MainWindow::m_documentCaptureExtractor` so lange lebt wie das Fenster: dort
-gäbe es sonst gar keinen Weg abzubrechen, während die Presenter ihren
-Extractor beim Schließen des Dialogs mitnehmen.
-
-@note `start()` steht in `extract()` bewusst als letzte Anweisung. Unter
-Windows lässt ein fehlgeschlagenes `CreateProcess` `errorOccurred()` synchron
-feuern, `finished(false, …)` kann also noch aus `extract()` heraus kommen.
-Nach dem Aufruf darf nichts mehr `m_process` anfassen. Alle fünf
-Aufrufstellen rufen `extract()` bereits als letzte Anweisung ihrer Methode
-auf, für sie ändert sich dadurch nichts.
-
-@note Kein automatisierter Test — die Projektkonvention, `QProcess`-getriebene
-`pdftotext`-Codepfade nicht zu automatisieren, gilt weiter (siehe TESTING.md).
-Prüfbar ist die Behebung am Protokoll: die Zeile "QProcess: Destroyed while
-process is still running" verschwindet aus dem Testlauf.
-
-### Fehlendes pdftotext wird nicht als solches benannt (behoben, 03.09.2026)
-
-Seit der Behebung oben meldet sich die Anwendung überhaupt, wenn `pdftotext`
-fehlt. Was sie meldet, stimmt aber nicht: alle fünf Aufrufstellen zeigen
-"PDF-Konvertierung fehlgeschlagen oder kein Text extrahierbar." — dieselbe
-Meldung wie bei einem Beleg, aus dem sich kein Text ziehen lässt. Der Benutzer
-sucht den Fehler dann beim Dokument statt bei der fehlenden Installation.
-
-Bewusst nicht miterledigt: `PdfTextExtractor::finished(bool, QString)` trägt
-keinen Grund mit sich, und ihn nachzurüsten heißt, alle fünf Aufrufstellen
-anzufassen. Das ist ein eigener Commit.
-
-Denkbare Wege, absteigend nach Aufwand: ein drittes Argument oder ein kleines
-Ergebnis-Enum am Signal; ein `errorText()`-Abfrager, den die Aufrufstellen bei
-`!success` heranziehen können; oder — am günstigsten — die Prüfung nach vorn
-ziehen und beim Programmstart einmal melden, dass kein PDF-Wandler gefunden
-wurde. Der Über-Dialog ermittelt das mit `pdftotext -v` bereits, nur sucht es
-dort niemand.
-
-#### Bevorzugter Weg: Prüfung beim Programmstart (Nessies Entscheidung, 27.08.2026)
-
-Der dritte Weg ist gewählt. Er fasst `PdfTextExtractor` und die fünf
-Aufrufstellen gar nicht erst an und beantwortet die Frage dort, wo sie
-entsteht: bevor der Benutzer den ersten Beleg fallen lässt.
-
-`MainWindow::checkAndLoadConfigurations()` hat das Muster bereits — der
-Abschnitt "Sound files (non-critical — warn but don't disable controls)"
-prüft die beiden Sounddateien, setzt bei fehlender Datei eine
-`MessageType::Warning` in die Statusliste und schaltet die betroffene
-Funktion ab, ohne `allOk` anzufassen. Ein fehlender PDF-Wandler ist derselbe
-Fall: die Anwendung bleibt voll bedienbar, nur das Einlesen von Belegen
-funktioniert nicht.
-
-Die Ermittlung ist schon da. `AboutForm::pdftotextInfo()` ruft `pdftotext -v`
-auf und unterscheidet dabei sogar zwischen Poppler und XpdfReader. Zwei
-Voraussetzungen, bevor sie sich von `MainWindow` aus nutzen lässt: die Methode
-ist heute `private static` und die von ihr gelieferte Struktur
-`PdfConverterInfo` ist ein privat verschachtelter Typ. Beides müsste
-öffentlich werden — oder, sauberer, die Ermittlung wandert nach
-`app/utils/PdfTextExtractor` als zweite statische Funktion neben `extract()`,
-und der Über-Dialog wird ihr erster Aufrufer statt ihr Eigentümer. Die zweite
-Variante ist vorzuziehen: der Über-Dialog ist ein Anzeigefenster und kein
-Ort, an dem Systemprüfungen wohnen.
-
-@note Der Aufruf kostet Startzeit — `AboutForm::pdftotextInfo()` wartet bis zu
-drei Sekunden auf den Prozess. Beim Öffnen eines Dialogs fällt das nicht auf,
-im Startlauf schon. Die Wartezeit gehört beim Umbau deutlich kürzer gesetzt,
-oder die Prüfung läuft asynchron und trägt ihre Meldung nach.
-
-@note Die bestehende Fehlermeldung an den fünf Aufrufstellen bleibt dabei
-unverändert stehen. Sie ist dann nicht mehr die einzige Auskunft, sondern die
-zweite — wer die Startmeldung übersehen hat, bekommt beim Einlesen immer noch
-einen Hinweis, nur eben weiterhin einen unspezifischen. Wen das stört, greift
-zusätzlich zu einem der beiden anderen Wege.
-
-#### Umgesetzt (03.09.2026)
-
-Anders als beim Entwurf gedacht bleibt es nicht bei der Startmeldung. Die
-Prüfung sitzt jetzt an sechs Stellen, und die fünf Aufrufstellen fragen sie
-vor dem Umwandeln ab, statt einen aussichtslosen Prozess zu starten
-(Nessies Entscheidung). Der Benutzer weiß damit an jedem Punkt, woran er ist.
-
-#### Anhängen und Auswerten sind zwei Dinge (korrigiert 04.09.2026)
-
-Der Riegel stand in den vier Presentern zuerst ganz oben in
-`onDocumentSelected()` — mit der Begründung, ein halb gefülltes Formular mit
-einem Pfad, zu dem nie etwas kommt, sei schlechter als eines, das unangetastet
-bleibt. Das war falsch.
-
-`onDocumentSelected()` macht zwei Dinge: das Dokument **anhängen** (Pfad,
-Vorschau, Dublettenprüfung) und es **auswerten**. Nur das zweite braucht
-`pdftotext`. Der Pfad landet unabhängig davon in der Datenbank, und die Felder
-lassen sich von Hand füllen — ohne Wandler einen Beleg anzuhängen ist ein
-vollkommen sinnvoller Vorgang.
-
-Der Riegel oben nahm genau den weg: ohne `pdftotext` liess sich kein Beleg
-mehr zuordnen. Keine Absicherung, sondern eine weggenommene Funktion.
-
-Die Prüfung sitzt jetzt unmittelbar vor `m_pdfExtractor.extract()`, direkt
-neben dem bereits vorhandenen Ausstieg für den Fall "nicht der jüngste
-Kauf/Verkauf" — der genau dieselbe Form hat: anhängen ja, auswerten nein.
-
-@note Aufgefallen an sechs fehlgeschlagenen Testfällen in `tst_salesform` und
-den Geschwisterzielen. Sie prüfen, dass `onDocumentSelected()` den Pfad in die
-View schreibt, und liefen gegen einen Rechner, auf dem `pdftotext` für die
-Handprobe umbenannt war. Die Tests hatten recht: das Verhalten, das sie
-festhalten, ist das richtige.
-
-@note `MainWindow::handleDroppedDocument()` behält die Prüfung ganz oben. Dort
-gibt es nichts anzuhängen — der Zweck dieses Wegs IST die Auswertung, sie
-entscheidet erst, welcher Dialog überhaupt geöffnet wird.
-
-Die Ermittlung ist von `AboutForm` nach `PdfTextExtractor` gewandert — zwei
-neue statische Funktionen neben `extract()`:
-
-| Funktion | Zweck |
-| --- | --- |
-| `converterInfo()` | Ermittelt einmalig Name, Version und Verfügbarkeit |
-| `converterMissingMessage()` | Der Text, den alle sechs Stellen zeigen |
-
-Die Struktur `PdfConverterInfo` heisst jetzt `PdfTextExtractor::ConverterInfo`
-und hat ein drittes Feld bekommen: `available`. Vorher liess sich der Fall
-"kein Wandler" nur daran ablesen, dass `name` auf dem Text "nicht gefunden"
-stand — ein übersetzter Anzeigetext als Zustandsmerkmal, der bei jeder
-Sprachumstellung gebrochen wäre.
-
-#### Die Startmeldung ist zusätzlich modal (04.09.2026)
-
-Eine Zeile im Meldungsbereich war für diesen Fall zu leise (Nessie): ohne
-Wandler lässt sich keine einzige Belegfunktion benutzen, und wer die Zeile
-beim Start überliest, sucht später an der falschen Stelle. Der Startlauf
-zeigt deshalb zusätzlich ein `OwnMessageBox::critical`.
-
-Der Eintrag im Meldungsbereich bleibt trotzdem stehen — nach dem Schließen
-des Dialogs soll der Hinweis nicht spurlos verschwinden. Dieselbe Bauweise
-wie `warnAboutSharesWithoutDailyValues()`.
-
-@note Verzögert per `QTimer::singleShot(0, …)`. `checkAndLoadConfigurations()`
-läuft mitten im Konstruktor; ein modaler Dialog erschiene sonst vor einem
-noch leeren Hauptfenster, und der Benutzer sähe seinen Kontext nicht.
-
-@note Gegated über `m_showStartupWarnings`. Beim ersten Anlauf war das
-wirkungslos: das Kennzeichen setzte nur der Test-Konstruktor mit dem
-`QNetworkAccessManager` auf `false`, und `tst_mainwindow` benutzt 36-mal den
-Produktivkonstruktor. Der Dialog erschien in jedem dieser Tests und musste
-weggeklickt werden — aufgefallen bei einer Handprobe mit umbenanntem
-`pdftotext`. Siehe den nächsten Abschnitt.
-
-#### Der Schutz vor modalen Start-Dialogen war Zufall (04.09.2026)
-
-Dass die beiden bestehenden Start-Hinweise — Tageswert-Historie und
-Split-Prüfung — die Tests nie gestört haben, lag nicht am Kennzeichen. Es lag
-daran, dass ihr Text in diesen Tests leer bleibt und beide Methoden vorher
-aussteigen. Kein Schutz, sondern Glück. Der PDF-Wandler-Dialog hat das
-sichtbar gemacht, weil er diese Ausstiegsbedingung nicht hat.
-
-Seit dem 04.09.2026 gibt es einen prozessweiten Freischalter:
-
-@code{.unparsed}
-static void MainWindow::setStartupDialogsEnabled(bool enabled);
-@endcode
-
-Vorgabe ist AUS. `main.cpp` schaltet ihn für die Anwendung ein; jedes
-Testziel bleibt still, ohne selbst etwas tun zu müssen — auch ein künftig neu
-angelegtes.
-
-@note Die Richtung ist bewusst so herum. Die beiden Fehlermodi sind
-unsymmetrisch: vergisst jemand die Zeile in `main.cpp`, fehlt ein Dialog —
-ärgerlich, aber sofort sichtbar. Vergäße ein Testziel den umgekehrten Aufruf,
-hinge es an einem Klick, den niemand macht, und die CI liefe in den
-Zeitablauf statt in einen Fehlschlag. Ein Aussetzer ohne erkennbare Ursache
-ist die teurere Sorte Fehler.
-
-@note Der Test-Konstruktor setzt `m_showStartupWarnings` weiterhin hart auf
-`false`. Das ist seit der Umstellung ohnehin die Vorgabe, bleibt aber stehen:
-sein Verhalten soll nicht davon abhängen, was ein Testziel sonst noch
-schaltet.
-
-@note `tst_mainwindow.cpp` musste dafür nicht angefasst werden — das war der
-Punkt der gewählten Richtung.
-
-@note Die vier Aufrufstellen in den Dialogen zeigen über
-`IView::showError()` ohnehin einen modalen Kasten. Ohne Kasten bleibt allein
-`MainWindow::handleDroppedDocument()`, wo eine Statusmeldung genügt: der
-Meldungsbereich liegt dort direkt unter dem Ablegefeld und ist im Blick.
-
-@note `available == false` deckt zwei Fälle ab: `pdftotext` ist nicht
-installiert, oder es antwortet in einer Form, aus der sich nichts lesen lässt.
-Für die Reaktion ist das gleich, für den Wortlaut nicht — deshalb heisst die
-Meldung "Kein PDF-Wandler gefunden" und nicht "Poppler ist nicht installiert".
-Der zweite Satz wäre im zweiten Fall schlicht falsch.
-
-@note Das Ergebnis wird in BEIDEN Richtungen gemerkt (Nessies Entscheidung).
-Ein funktionslokales `static` sorgt für genau einen Prozessstart je
-Programmlauf. Der Preis: wird `pdftotext` während des Betriebs
-nachinstalliert, bemerkt die Anwendung das bis zum Neustart nicht — auch der
-Über-Dialog zeigt dann weiterhin "nicht gefunden". Deshalb nennt die Meldung
-den Neustart ausdrücklich; ohne diesen Zusatz stünde der Benutzer vor einer
-Sperre, die er gerade beseitigt hat.
-
-@note Kein zweiter Riegel in `extract()` (Nessies Entscheidung gegen
-Redundanz). Die Vorprüfung liegt allein bei den Aufrufstellen. Der Preis: ein
-künftiger sechster Aufrufer muss sie selbst mitbringen. Die Klassennotiz in
-`PdfTextExtractor.h` sagt das ausdrücklich.
-
-@note Die Wartezeit steht auf einer Sekunde statt drei. Dass der Über-Dialog
-bisher schnell aufging, zeigt nur den Erfolgsfall — ein fehlendes Programm
-meldet `FailedToStart` und wartet gar nicht. Die Schranke greift allein bei
-einem vorhandenen, aber hängenden `pdftotext`, und `pdftotext -v` antwortet in
-Millisekunden oder nie.
-
-@note Keine CMake-Änderung nötig. Jedes Testziel, das `AboutForm.cpp`
-kompiliert (`tst_mainwindow`, `tst_backupform`), kompiliert
-`PdfTextExtractor.cpp` bereits mit. Das war der Grund, die Ermittlung in die
-bestehende Klasse zu legen statt in eine neue Datei — nach der
-`DocumentFieldNames`-Erfahrung diesmal vorher geprüft.
-
-@note Weiterhin ungetestet, konsistent mit der Projektkonvention für
-`QProcess`-getriebene `pdftotext`-Codepfade. `converterInfo()` liesse sich nur
-mit einem von aussen setzbaren Programmnamen prüfen — dieselbe Naht-Frage wie
-beim Prozesslebenszyklus, und dieselbe Antwort.
-
 ### QSqlDatabase-Warnung am Ende jedes Testlaufs (offen, 27.08.2026)
 
 Am Ende jedes Testlaufs steht:
@@ -4805,357 +4520,15 @@ eigener Commit.
 gewöhnt einen daran, die letzten Zeilen zu überlesen. Genau dort stünde eine
 echte Meldung.
 
-### Analyse-Statuszeile und Feldsymbole (behoben, 27.08.2026)
-
-Nach dem Einlesen eines Belegs konnte die Statuszeile "Analyse OK — 5/5
-Pflicht" melden, während daneben ein Pflichtfeld ein rotes Fehlersymbol trug.
-Beides stimmte für sich, maß aber Verschiedenes:
-
-| | zählte | Ort |
-| --- | --- | --- |
-| Statuszeile | was der PARSER aus dem Beleg herausgeholt hat | `Presenter*::populateFromResult()` |
-| Feldsymbol | was die MASKE mit dem Rohwert anfangen konnte | `View*::setFieldOk()` |
-
-Aufgelöst ist der Widerspruch, indem `setFieldOk()` das Ergebnis der Übernahme
-zurückmeldet und die Statuszeile nur noch zählt, was tatsächlich in der Maske
-gelandet ist:
-
-```cpp
-if (m_view->setFieldOk(viewField, values.first().trimmed())) {
-    ++found;
-    if (requiredXmlNames.contains(xmlName)) ++requiredFound;
-}
-```
-
-`setFieldOk()` liefert `false`, wenn ein nicht-leerer Rohwert nicht ins
-Zielfeld passte — unbrauchbares Datum, unbrauchbare Uhrzeit, oder eine
-Depotnummer, die nicht in `Documents.xml` steht. Die View ruft in diesem Fall
-selbst `setFieldError()` auf; der Presenter passt nur noch seine Zählung an.
-Pflicht- und Optionalfelder werden gleich behandelt: zwei Zähler in einer
-Zeile, die Verschiedenes messen, wären derselbe Widerspruch eine Ebene tiefer.
-
-#### Was die Statuszeile dadurch nicht mehr sagt
-
-Sie unterscheidet nicht mehr zwischen "die Regel hat nicht gegriffen" und "die
-Regel hat etwas Unbrauchbares gefangen". Für den Benutzer ist das richtig — er
-will wissen, ob die Maske gefüllt ist. Beim Schreiben von Regeln für
-`Documents.xml` ist es eine Einbuße, und die wird an der Stelle ausgeglichen,
-wo hingeschaut wird: `setFieldError()` nimmt seit demselben Umbau den Rohwert
-entgegen und zeigt ihn im Tooltip des Fehlersymbols an
-(`Nicht verwertbar: „Schlusstag 04/02"`). Ohne Rohwert — so rufen es die
-Aufrufe aus der Live-Validierung — bleibt es beim bisherigen, allgemeinen
-Text.
-
-#### Einheitliche Bauweise in allen vier Views
-
-`ViewShareAdd::setFieldOk()` führte bereits einen lokalen Merker `converted`
-und setzte den Feldzustand erst am Schluss. Die drei Editier-Dialoge setzten
-das grüne Symbol dagegen ZUERST und riefen bei misslungener Umwandlung
-mittendrin `setFieldError()` — das funktionierte nur, weil dieses das Symbol
-wieder überschrieb, und ließ sich nicht als Rückgabewert ausdrücken. Alle vier
-folgen jetzt demselben Muster: Merker, Rohwert in `rejected`, Feldzustand am
-Schluss, ein Rückgabepunkt.
-
-#### Unbekannte Depotnummer ist ein Fehler
-
-Der Umbau hat einen zweiten, bis dahin unbemerkten Fall aufgedeckt: eine
-Depotnummer aus dem Beleg, die in `Documents.xml` nicht hinterlegt ist, wurde
-in **keiner** der vier Views gemeldet. `ViewShareAdd` und `ViewBuyEdit` ließen
-die Auswahl still auf dem Platzhalter stehen — mit grünem Haken, und das
-Speichern scheiterte später mit "Depotnummer fehlt". `ViewSaleEdit` und
-`ViewDividendEdit` fügten den unbekannten Wert der Liste hinzu, womit eine
-Depotnummer in der Datenbank landen konnte, die nirgends konfiguriert war.
-
-Alle vier melden jetzt einen Fehler. Nessies Begründung (27.08.2026): die
-Zuordnung wird für die Bestandsprüfung pro Depot gebraucht — die
-Stückzahl-Plausibilitätsprüfung bei der Dividendeneingabe rechnet gegen den
-Bestand des gewählten Depots am Ex-Tag und braucht dafür eine eindeutige,
-gepflegte Zuordnung. Eine unbekannte Depotnummer ist damit kein Sonderfall,
-den die Maske glattbügeln darf, sondern ein Konfigurationsfehler, den der
-Benutzer in `Documents.xml` beheben muss.
-
-@note Für `ViewSaleEdit` und `ViewDividendEdit` ist das eine Verschärfung:
-Belege mit unbekannter Depotnummer ließen sich bisher speichern. Bereits
-gespeicherte Datensätze bleiben unberührt — `loadSale()`/`loadDividend()`
-nehmen einen anderen Weg als `setFieldOk()`.
-
-@note Der Feldschlüssel `document` hat absichtlich kein Eingabefeld: der Pfad
-kommt über `setDocumentPath()`, `setFieldOk("document", QString())` setzt nur
-das Symbol. Deshalb liefert `setFieldOk()` bei einem Schlüssel ohne
-Eingabefeld `true` und nicht `false` — ein `false` hätte hier ein erfolgreich
-geladenes Dokument rot markiert.
-
-@note `populateFromResult()` ist in allen vier Presentern von `private` auf
-`public` gewechselt. Anders war die geänderte Zählung von keinem Test
-erreichbar: die Methode ist kein Slot, `QMetaObject::invokeMethod` kommt also
-nicht heran, und der Weg über `onDocumentSelected()` bräuchte ein echtes PDF
-samt `pdftotext` auf dem Runner.
-
-### Feldschlüssel-Tabellen sind an keiner Stelle geprüft (offen, 27.08.2026)
-
-Zwischen `Documents.xml` und den Eingabemasken liegen zwei Übersetzungen, die
-beide nur aus handgepflegten Tabellen bestehen und die niemand prüft. Fällt
-eine davon aus, geht ein Wert lautlos verloren: der Parser findet ihn, aber
-er landet nirgends.
-
-@note Korrektur vom 02.09.2026: hier stand, die Statuszeile zähle einen
-solchen Wert seit dem 27.08.2026 korrekt NICHT mehr mit. Das stimmt nur für
-einen VERWORFENEN Wert — unbrauchbares Datum, unbekannte Depotnummer. Bei
-einem unbekannten FELDSCHLÜSSEL meldete `setFieldOk()` Erfolg, und die
-Statuszeile zählte weiter mit. Siehe den Abschnitt "Erste Tabelle" unten.
-
-Aufgefallen beim Umbau der Statuszeile; ausdrücklich NICHT dort miterledigt,
-weil es zwei eigene Prüfungen an anderer Stelle sind.
-
-#### Erste Tabelle: XML-Name → Feldschlüssel der Maske
-
-`Presenter*::xmlNameToViewField()` ist eine statische `QMap` im C++-Code, je
-Formular eine eigene. Links steht der Tag-Name aus `Documents.xml`, rechts der
-Feldschlüssel, unter dem die View ihr Widget in `m_inputWidgets` und ihr
-Symbol in `m_statusLabels` ablegt:
-
-```cpp
-static const QMap<QString, QString> map = {
-    { QStringLiteral("Date"),        QStringLiteral("date")        },
-    { QStringLiteral("DepotNumber"), QStringLiteral("depotNumber") },
-    ...
-```
-
-Ein Tippfehler auf der RECHTEN Seite — `"depotnumber"` statt `"depotNumber"` —
-lässt `m_inputWidgets.value(field)` ins Leere greifen. Der Wert landet
-nirgends, es gibt kein Symbol, das sich einfärben ließe, und der Fehler fällt
-erst auf, wenn jemand einen Beleg einliest und sich wundert.
-
-Der Loader von `Documents.xml` kann das nicht abfangen: `DocumentsConfig`
-kennt nach dem Laden die Tag-Namen, aber nicht die Feldschlüssel der Masken.
-Die entstehen erst, wenn der jeweilige Dialog seine Widgets aufbaut, und sind
-je Formular verschieden — beim Programmstart existiert keiner dieser Dialoge,
-es gibt also nichts zu vergleichen. Eine Startmeldung scheidet damit aus.
-
-#### Der Befund war schlimmer als angenommen (02.09.2026)
-
-Beim Entwurf der Prüfung stellte sich heraus, dass ein unbekannter
-Feldschlüssel nicht nur unbemerkt bleibt, sondern aktiv als Erfolg gemeldet
-wird. `ViewShareAdd::setFieldOk()` durchläuft für `"depotnumber"` folgenden
-Weg:
-
-- keiner der drei `qobject_cast`-Zweige greift, `m_inputWidgets.value(field)`
-  liefert `nullptr`
-- der `depotNumber`-Zweig greift nicht, der Schlüssel stimmt ja nicht
-- `converted` bleibt unangetastet auf `true`
-- `m_fieldStates[field] = FieldState::Ok` legt einen Phantom-Eintrag an
-- `m_statusLabels.value(field)` ist `nullptr`, es erscheint also kein Symbol
-- `return true`
-
-Der Presenter zählt das als Treffer. Bei einem Tippfehler in einem Pflichtfeld
-meldet die Statuszeile weiterhin "Analyse OK — 8/8 Pflicht", während der Wert
-nirgends steht und an der Maske überhaupt kein Symbol auftaucht. Der am
-27.08.2026 eingeführte Rückgabewert deckt den verworfenen Wert ab, den
-unbekannten Schlüssel nicht.
-
-Damit ist der Punkt kein reiner Test mehr. Ein Wächter am Anfang von
-`setFieldOk()` und `setFieldError()` — Schlüssel weder in `m_inputWidgets`
-noch in `m_statusLabels` — behebt das zur Laufzeit:
-
-| Methode | Verhalten bei unbekanntem Schlüssel |
-| --- | --- |
-| `setFieldOk()` | `qWarning`, dann `false` statt `true` |
-| `setFieldError()` | `qWarning`, dann Rückkehr; die Methode ist `void` |
-
-@note Bewusst nur `qWarning`, kein `Q_ASSERT` im Debug-Build (Nessie,
-02.09.2026). Ein Assert nähme die Anwendung wegen eines Konfigurationsfehlers
-herunter, den sie sonst überlebt.
-
-@note Der Wächter unterscheidet "unbekannt" von "bekannt, aber ohne Symbol".
-`time` steht nur in `m_inputWidgets` und teilt sich das Symbol mit `date` —
-`setFieldError("time", …)` kehrt weiterhin still zurück, das ist kein Fehler,
-sondern schlicht nichts zu färben.
-
-#### Der Test braucht dadurch keinen Zugriff auf die privaten Maps
-
-Mit dem Wächter beantwortet `setFieldOk()` die Frage selbst. Der Test ruft für
-jeden Wert der rechten Seite `setFieldOk(key, "")` auf und prüft auf `true`.
-Der leere Rohwert ist dabei kein Kunstgriff, sondern die in `IViewShareAdd.h`
-dokumentierte Aufrufart der Live-Validierung, die nur das Symbol setzt und den
-Feldinhalt nicht anfasst. Ein `fieldKeys()`-Abfrager an der View, wie zuerst
-erwogen, entfällt damit.
-
-Vorausgesetzt ist nur, dass die Testdatei die linke Seite aufzählen kann:
-`knownXmlNames()` und `requiredXmlNames()` sind dafür aus
-`populateFromResult()` heraus in öffentliche statische Funktionen gewandert,
-`xmlNameToViewField()` von `private` nach `public`. Inhalt unverändert.
-
-#### Eine dritte Tabelle, beim Umbau beseitigt
-
-`PresenterShareAdd::startParserForText()` führte für den Fall "kein Depot
-erkannt" eine eigene, von Hand gepflegte Liste derselben acht Feldschlüssel,
-um sie alle rot zu markieren. Sie war die einzige der drei Tabellen, gegen die
-niemand etwas abgeglichen hat. Sie entsteht jetzt aus `requiredXmlNames()`
-über dieselbe Übersetzung, die auch `populateFromResult()` benutzt, und kann
-damit nicht mehr auseinanderlaufen.
-
-@note Der Feldschlüssel `document` ist die vorgesehene Ausnahme: er steht
-absichtlich nur in `m_statusLabels` und hat kein Eingabefeld, weil der Pfad
-nicht aus einer Regel kommt, sondern über `setDocumentPath()`. In
-`ViewShareAdd` kommt er nicht vor, in `ViewBuyEdit` schon. Der Wächter lässt
-ihn durch — er prüft auf "in KEINER der beiden Maps", nicht auf "hat ein
-Eingabefeld". `test_buyEdit_documentFieldKeyIsRegistered` pinnt genau diese
-Kombination fest, damit der Wächter beim nächsten Umbau nicht versehentlich
-strenger wird.
-
-#### Vierter Satz Feldschlüssel: die Live-Validierung (02.09.2026)
-
-Bei BuyEdit kam ein Satz hinzu, den ShareAdd nicht hat: die
-Live-Validierungs-Slots in `PresenterBuyEdit` (`onDateEdited()`,
-`onDepotNumberEdited()`, `onOrderNumberEdited()`, `onVolumeOrPriceEdited()`,
-`onDocumentPathEdited()`) rufen `setFieldOk()`/`setFieldError()` mit fest
-verdrahteten Schlüsseln auf, und `onFeeEdited()` bekommt seinen Schlüssel
-sogar von aussen — aus vier `connectFee()`-Aufrufen im Konstruktor der View.
-
-Diese Schlüssel stehen in keiner Tabelle und lassen sich nicht aufzählen, sind
-also nicht wie die übrigen prüfbar. Der Wächter deckt sie trotzdem ab: er
-sitzt in der View und wirkt unabhängig davon, woher der Schlüssel kam. Ein
-Tippfehler in einem `connectFee()`-Aufruf erzeugt jetzt eine Warnung im
-Protokoll, statt still eine Rückmeldung zu unterschlagen. Genau dafür ist der
-Wächter der bessere Ort als ein Test.
-
-#### Zweite Tabelle: verwendete Tag-Namen in Documents.xml
-
-Die Gegenrichtung: ein Tag in `Documents.xml`, den kein Formular verarbeitet,
-weil er in keiner `knownXmlNames`-Liste steht. Die Regel läuft, der Wert wird
-gefangen und dann verworfen. Auch das meldet heute niemand.
-
-Hierfür gibt es bereits das passende Testziel: `tst_documentsxml` liest die
-ausgelieferte `app/config/Documents.xml` und lässt ihre Regeln über
-anonymisierte Auszüge echter Belege laufen. Dort ließe sich ergänzen, dass
-jeder verwendete Tag-Name von mindestens einem der vier Formulare in
-`knownXmlNames` geführt wird. Voraussetzung: die vier Listen müssten von außen
-erreichbar sein, heute sind sie `static const` innerhalb von
-`populateFromResult()`.
-
-@note Beide Prüfungen sind Tests, keine Startlauf-Prüfungen, und beide sind
-unabhängig voneinander umsetzbar. Die erste ist die wichtigere: sie deckt den
-Fall ab, bei dem ein Wert trotz greifender Regel nicht in der Maske ankommt.
-
-#### Der Fund: currency war nirgends registriert (02.09.2026)
-
-Bei DividendEdit hat die Prüfung geliefert, wofür sie gebaut wurde.
-`PresenterDividendEdit::xmlNameToViewField()` bildet `Currency` auf
-`currency` ab — `ViewDividendEdit` kannte diesen Schlüssel nicht, weder in
-`m_inputWidgets` noch in `m_statusLabels`. `setFieldOk("currency", "USD")`
-lief damit durch alle Zweige hindurch, meldete `true`, und die
-Optional-Zählung nahm den Wert mit. Ein Statussymbol gab es nicht.
-
-Funktional ging nichts verloren: die Währung kommt weiter unten über
-`setForeignCurrency(isForeign, parsedCurrency)` doch noch an. Der Aufruf in
-der Schleife war reine Zählung ohne Wirkung — eine Zählung, die etwas
-bestätigte, das an dieser Stelle nicht stattfand.
-
-@note Es ist derselbe Befund, der am 21.08.2026 schon einmal behoben wurde.
-Der Devisenkurs war damals "als einziges beschreibbares Feld weder in
-`m_statusLabels` noch in `m_inputWidgets` eingetragen"; `exchangeRatio` wurde
-nachgetragen, `currency` — im selben Zeilen-Widget, direkt daneben — blieb
-übrig. Zwei Felder, ein Fehler, eines davon behoben. Genau die Sorte Rest, die
-ohne eine aufzählende Prüfung liegen bleibt.
-
-Behoben durch Registrierung in `m_inputWidgets`, ohne eigenes Statussymbol
-(Nessies Entscheidung, 02.09.2026): Devisenkurs und Währung teilen sich eine
-Zeile und damit `fcStatus`. Zwei Schlüssel, die dasselbe Label beschreiben,
-würden einander überschreiben — dieselbe Aufteilung wie bei `time`, das sich
-sein Symbol mit `date` teilt. Gesetzt wird die Währung weiterhin von
-`setForeignCurrency()`, weil dort auch der Haken
-"Fremdwährungseingabe aktivieren" hängt, ohne den `onSave()` den Devisenkurs
-verwerfen würde.
-
-Verworfen wurden zwei Alternativen: einen generischen ComboBox-Zweig in
-`setFieldOk()` einzubauen (er fügt bei unbekanntem Wert einen Eintrag hinzu
-und widerspräche damit `setForeignCurrency()`, das eine unbekannte Währung
-ausdrücklich ignoriert), und `Currency` aus `knownXmlNames()` zu streichen
-(die Optional-Zählung wäre um eins gesunken, ohne dass ein Feld weniger
-gelesen würde).
-
-@note `ViewDividendEdit` hat als einziger Dialog einen dritten Eingang mit
-einem Feldschlüssel: `setFieldHint()`, der Ersatzhinweis für den fehlenden
-Ex-Tag bei Cortal Consors. Er hat denselben Wächter bekommen.
-
-#### Die Kapitalertragssteuer kam bei Verkäufen nie an (02.09.2026)
-
-Der zweite echte Fund, und der teurere. `PresenterSaleEdit` suchte den Tag
-`CapitalGainsTax` — MIT s. `Documents.xml` kennt diese Schreibweise an keiner
-Stelle:
-
-| Schreibweise | Vorkommen in Documents.xml |
-| --- | --- |
-| `CapitalGainTax` | 15 |
-| `CapitalGainsTax` | 0 |
-
-Alle drei Depots, alle Belegarten: durchgängig ohne s. `PresenterDividendEdit`
-hatte es richtig, `PresenterSaleEdit` nicht.
-
-Die Folge: `populateFromResult()` schlägt den Wert unter einem Namen nach, den
-die Ergebnis-Map nicht enthält, bekommt eine leere Liste und überspringt ihn.
-Die Kapitalertragssteuer eines Verkaufsbelegs wurde damit **nie** ins Formular
-übernommen. Der Parser findet sie durchaus — `tst_documentsxml` prüft das seit
-Längerem und vergleicht den gefangenen Wert mit dem Beleg. Sie kam nur nie
-dort an, wo sie hingehört.
-
-Sichtbar war das für den Benutzer nur indirekt: das Feld blieb auf 0,00 mit
-dem Info-Symbol "Wert fehlt noch — bitte manuell eingeben", und die
-Optional-Zählung war dauerhaft eins zu kurz. Beides sah aus wie ein Beleg, der
-die Angabe nicht enthält.
-
-Behoben durch die richtige Schreibweise an beiden Stellen — in
-`DocumentFieldNames::saleKnown()` und in
-`PresenterSaleEdit::xmlNameToViewField()`. Die RECHTE Seite der Übersetzung
-bleibt `capitalGainsTax`: das ist der Feldschlüssel der Maske, und der heisst
-korrekt mit s. Genau diese Asymmetrie hat den Fehler so lange getragen — beide
-Schreibweisen sind an ihrem Platz richtig, nur nicht an beiden Plätzen
-dieselbe.
-
-@note Gefunden hat ihn die Gegenrichtung der Prüfung, noch bevor sie als Test
-geschrieben war: die Namensliste enthielt einen Namen, den keine
-`Documents.xml` je liefert. Das ist der Fall, den die erste Prüfung
-strukturell NICHT sehen kann — sie vergleicht die Tabellen mit der Maske, nicht
-mit der Konfigurationsdatei. Ein Beleg dafür, dass die zweite Prüfung ihren
-eigenen Wert hat und nicht nur die Umkehrung der ersten ist.
-
-#### Kostenbelege werden von keinem Formular eingelesen (geklärt, 02.09.2026)
-
-Beim Zuschnitt der Gegenprüfung fiel auf, dass `Brokerage` unter den vier
-Belegarten keinen Abnehmer hat. `PresenterBrokerageEdit` besitzt überhaupt
-keine Parse-Strecke — kein `PdfTextExtractor`, kein
-`setFieldOk()`/`setFieldError()`, keine Feldschlüssel-Tabelle, und
-`ViewBrokerageEdit` führt weder `m_inputWidgets` noch `m_statusLabels`.
-
-Das ist so gewollt (Nessie, 02.09.2026). Die fachliche Begründung:
-
-- Kosten fallen im Normalfall nur bei Käufen und Verkäufen an, und dort stehen
-  sie auf dem Kauf- bzw. Verkaufsbeleg. Ausgelesen werden sie deshalb aus
-  jenem Beleg, über `buyKnown()` bzw. `saleKnown()` — beide führen alle vier
-  Kostenfelder.
-- Bei Dividenden fallen keine Kosten an. Dass der Dividendendialog die
-  Gebührenfelder nicht kennt, ist folgerichtig und kein Versäumnis.
-- Die Kostenmaske ist für den Fall gedacht, dass es zu den Kosten gar keinen
-  eigenen Beleg gibt. Ohne Beleg gibt es nichts zu parsen; der Benutzer trägt
-  die Werte von Hand ein.
-
-Die Direkte Dokumentenerfassung behandelt den Typ folgerichtig als nicht
-unterstützt: `MainWindow::openCaptureDialog()` gibt für `DocumentType::Brokerage`
-eine Statusmeldung aus und öffnet keinen Dialog (Vorgabe vom 27.07.2026).
-
-@note Deshalb ist `test_fieldNames_everyBrokerageTagIsReadBySomeForm` bewusst
-schwächer als seine drei Geschwister: es prüft nur, dass ÜBERHAUPT jemand
-jeden Tag lesen kann (`buyKnown()` ∪ `saleKnown()`), nicht dass ein
-zuständiges Formular es tut. Ein zuständiges gibt es nicht und soll es nicht
-geben.
-
-#### Breite Belegkennungen gewinnen gegen den Dialog-Fallback (offen, 02.09.2026)
-
-Aufgefallen beim Nachgehen der Frage oben. `DocumentClassifier` prüft die vier
-Kennungen in fester Reihenfolge — Kauf, Verkauf, Dividende, Kosten — und die
-erste, die trifft, gewinnt. Die Ausweichregel "der Benutzer hat den
-Verkaufsdialog geöffnet, also nimm `Sale` an" greift nur, wenn ÜBERHAUPT KEINE
-Kennung trifft. Eine breite Kennung schlägt den Fallback also, statt von ihm
+### Breite Belegkennungen gewinnen gegen den Dialog-Fallback (offen, 02.09.2026)
+
+Aufgefallen beim Zuschnitt der Feldschlüssel-Gegenprüfung, beim Nachgehen
+der Frage, wer Kostenbelege einliest (siehe "Feldschlüssel-Tabellen sind an
+keiner Stelle geprüft" unter "Erledigt / Archiv"). `DocumentClassifier`
+prüft die vier Kennungen in fester Reihenfolge — Kauf, Verkauf, Dividende,
+Kosten — und die erste, die trifft, gewinnt. Die Ausweichregel "der Benutzer
+hat den Verkaufsdialog geöffnet, also nimm `Sale` an" greift nur, wenn
+ÜBERHAUPT KEINE Kennung trifft. Eine breite Kennung schlägt den Fallback also, statt von ihm
 korrigiert zu werden.
 
 Bei DKB und ING ist das unkritisch: ihr `BrokerageIdentifier` lautet
@@ -5194,94 +4567,6 @@ verdeckt genau diesen Zusammenhang.
 Steht auf einem ING-Verkaufsbeleg irgendwo "Kauf" mit grossem K, gewinnt die
 Kaufkennung gegen die Verkaufskennung. Ob das vorkommt, lässt sich nur an
 echten Belegen feststellen.
-
-#### Stand der Umsetzung — abgeschlossen mit 1.20.0 (02.09.2026)
-
-| Formular | Wächter | Tests |
-| --- | --- | --- |
-| ShareAdd | erledigt | erledigt |
-| BuyEdit | erledigt | erledigt |
-| SaleEdit | erledigt | erledigt |
-| DividendEdit | erledigt | erledigt |
-| BrokerageEdit | entfällt | entfällt |
-| Auslagerung nach `DocumentFieldNames` | erledigt | entfällt |
-| Zweite Tabelle (`tst_documentsxml`) | entfällt | erledigt |
-
-Drei Funde in fünf Runden, und zwei davon hätte keine der beiden
-Prüfrichtungen allein gefunden:
-
-| Fund | Gefunden von |
-| --- | --- |
-| `setFieldOk()` meldet Erfolg für unbekannte Schlüssel | Der Wächter selbst, beim Entwurf |
-| `currency` in `ViewDividendEdit` nicht registriert | Vorwärtsprüfung: Tabelle gegen Maske |
-| `CapitalGainTax` im Verkaufsformular falsch geschrieben | Gegenprüfung: Liste gegen Documents.xml |
-
-@note Der letzte ist das Argument dafür, dass die zweite Prüfung ihren eigenen
-Wert hat und nicht die Umkehrung der ersten ist. Die Vorwärtsprüfung
-vergleicht die Tabellen mit der Maske und hätte `CapitalGainsTax` durchgelassen
-— der Feldschlüssel `capitalGainsTax` ist ja korrekt registriert. Falsch war
-die Seite, die auf die Datei zeigt.
-
-@note `BrokerageEdit` entfällt in beiden Spalten: das Formular hat keine
-Parse-Strecke, und das ist so gewollt. Siehe "Kostenbelege werden von keinem
-Formular eingelesen".
-
-Der Wächter wandert je Formular mit, nicht in einem Zug in alle vier Views
-(Nessie, 02.09.2026) — so bleibt jede Runde für sich baubar und prüfbar. Alle
-vier Runden gehen in einen gemeinsamen Commit.
-
-#### Der Fall, der den Aufwand rechtfertigt: SaleEdit (02.09.2026)
-
-Bei ShareAdd und BuyEdit heißen die Feldschlüssel fast durchgängig wie die
-Namen im Beleg, nur klein geschrieben. Bei SaleEdit nicht: `Price` wird zu
-`salePrice`, weil das Zielfeld in dieser Maske anders heißt. Damit ist
-`"price"` in `ViewSaleEdit` ein UNBEKANNTER Schlüssel — und genau der Wert,
-der bei einem Verkauf am meisten zählt.
-
-Kopiert jemand die Tabelle von `PresenterBuyEdit` herüber, weil sie zu neun
-Zehnteln gleich aussieht, ginge der Verkaufspreis still verloren: keine
-Meldung, kein Symbol, und vor dem Wächter hätte die Statuszeile "Analyse OK"
-gemeldet. `test_saleEdit_priceMapsToSalePriceNotPrice` prüft beide Seiten —
-dass `Price` auf `salePrice` zeigt, und dass `"price"` vom Dialog
-zurückgewiesen wird.
-
-@note Der zweite Teil des Tests ist die interessantere Hälfte: er hält fest,
-dass ein Feldschlüssel hier ABWESEND sein muss. Solche Zusagen gehen sonst
-beim nächsten Vereinheitlichungsversuch als Erstes verloren.
-
-#### Die Listen wohnen jetzt in DocumentFieldNames (02.09.2026)
-
-Entschieden zugunsten eines abhängigkeitsfreien
-`app/config/DocumentFieldNames.h/.cpp` (Nessie, 02.09.2026). Zwei Gründe:
-
-Erstens beschreiben diese Listen `Documents.xml` und nicht die Masken — sie
-gehören neben `DocumentsConfig`. Zweitens braucht `tst_documentsxml` sie für
-die Gegenrichtung; lägen sie an den Presentern, müsste das Testziel vier
-Presenter-`.cpp` samt `IView`, `IModel`, Models, `ShareSplitAdjuster`,
-`SaleFifoAllocator`, `PdfTextExtractor` und `Parser` mitkompilieren. Heute
-linkt es `DocumentsConfig`, `DocumentClassifier` und ParserLib, sonst nichts.
-
-@note `xmlNameToViewField()` bleibt bei den Presentern. Die linke Seite dieser
-Übersetzung beschreibt die Datei, die rechte die jeweilige Maske — und die
-fällt je Formular anders aus (`Price` → `salePrice`, `DividendRate` → `rate`).
-Das ist Wissen der Maske, nicht der Konfiguration.
-
-@note Die vier Presenter behalten ihre `knownXmlNames()` / `requiredXmlNames()`
-als schlanke Weiterleitungen. Formularcode fragt damit weiterhin sein eigenes
-Formular, und die 27 Tests der vier Form-Ziele bleiben unverändert — das war
-der Punkt: eine reine Verschiebung soll keine Testdatei anfassen.
-
-@note Vier Listen, keine Ableitung. `shareAddKnown()` ist exakt `buyKnown()`
-plus `Wkn`, `Isin` und `Name`; die Liste wird trotzdem ausgeschrieben. Eine
-Ableitung würde stillschweigend mitziehen, sobald jemand die Kaufliste
-erweitert, und niemand käme dabei auf den Gedanken, an "Aktie hinzufügen" zu
-denken.
-
-@note Beim Zusammentragen fiel eine Ungleichheit auf, die vorher auf vier
-Dateien verteilt nicht sichtbar war: die Verkaufsliste führte
-`CapitalGainsTax` MIT s, die Dividendenliste `CapitalGainTax` OHNE. Ich habe
-das zunächst für den Stand von `Documents.xml` gehalten und als "kein Fehler"
-vermerkt. Es war einer — siehe den nächsten Abschnitt.
 
 ### Consors-Themen (offen, aktuell ohne Priorität)
 
@@ -5679,11 +4964,10 @@ Regression aufzudecken -- diesmal.
 Testziel kompiliert `OverviewTabWidget.cpp` ohnehin und hat `app/` im
 Include-Pfad.
 
-@note `app/widgets/GridStyle.h` ist in `app/CMakeLists.txt` nicht gelistet.
-Funktional ohne Belang (header-only), aber abweichend von der sonstigen
-Handhabung -- `ValueFormatter.h`, `NumberParser.h` und
-`NumericFieldValidator.h` stehen dort. Bei Gelegenheit nachtragen, damit der
-Header in der IDE auftaucht.
+@note `app/widgets/GridStyle.h` fehlte in `app/CMakeLists.txt` -- funktional
+ohne Belang (header-only), aber abweichend von der sonstigen Handhabung:
+`ValueFormatter.h`, `NumberParser.h` und `NumericFieldValidator.h` stehen
+dort. Am 12.09.2026 nachgetragen, damit der Header in der IDE auftaucht.
 
 ### ShareDetailsForm.cpp war toter Code (05.09.2026, geloescht 11.09.2026)
 
@@ -6088,6 +5372,729 @@ Dividendenformular hatte Vorgabewert und Validator auf zwei Stellen. Ein aus
 den Tageswerten uebernommener Schlusskurs wurde dadurch beim Anzeigen
 gerundet. Beides steht jetzt auf vier.
 
+
+### Fehlendes pdftotext wird nicht als solches benannt (behoben, 03.09.2026)
+
+Seit der Behebung oben meldet sich die Anwendung überhaupt, wenn `pdftotext`
+fehlt. Was sie meldet, stimmt aber nicht: alle fünf Aufrufstellen zeigen
+"PDF-Konvertierung fehlgeschlagen oder kein Text extrahierbar." — dieselbe
+Meldung wie bei einem Beleg, aus dem sich kein Text ziehen lässt. Der Benutzer
+sucht den Fehler dann beim Dokument statt bei der fehlenden Installation.
+
+Bewusst nicht miterledigt: `PdfTextExtractor::finished(bool, QString)` trägt
+keinen Grund mit sich, und ihn nachzurüsten heißt, alle fünf Aufrufstellen
+anzufassen. Das ist ein eigener Commit.
+
+Denkbare Wege, absteigend nach Aufwand: ein drittes Argument oder ein kleines
+Ergebnis-Enum am Signal; ein `errorText()`-Abfrager, den die Aufrufstellen bei
+`!success` heranziehen können; oder — am günstigsten — die Prüfung nach vorn
+ziehen und beim Programmstart einmal melden, dass kein PDF-Wandler gefunden
+wurde. Der Über-Dialog ermittelt das mit `pdftotext -v` bereits, nur sucht es
+dort niemand.
+
+#### Bevorzugter Weg: Prüfung beim Programmstart (Nessies Entscheidung, 27.08.2026)
+
+Der dritte Weg ist gewählt. Er fasst `PdfTextExtractor` und die fünf
+Aufrufstellen gar nicht erst an und beantwortet die Frage dort, wo sie
+entsteht: bevor der Benutzer den ersten Beleg fallen lässt.
+
+`MainWindow::checkAndLoadConfigurations()` hat das Muster bereits — der
+Abschnitt "Sound files (non-critical — warn but don't disable controls)"
+prüft die beiden Sounddateien, setzt bei fehlender Datei eine
+`MessageType::Warning` in die Statusliste und schaltet die betroffene
+Funktion ab, ohne `allOk` anzufassen. Ein fehlender PDF-Wandler ist derselbe
+Fall: die Anwendung bleibt voll bedienbar, nur das Einlesen von Belegen
+funktioniert nicht.
+
+Die Ermittlung ist schon da. `AboutForm::pdftotextInfo()` ruft `pdftotext -v`
+auf und unterscheidet dabei sogar zwischen Poppler und XpdfReader. Zwei
+Voraussetzungen, bevor sie sich von `MainWindow` aus nutzen lässt: die Methode
+ist heute `private static` und die von ihr gelieferte Struktur
+`PdfConverterInfo` ist ein privat verschachtelter Typ. Beides müsste
+öffentlich werden — oder, sauberer, die Ermittlung wandert nach
+`app/utils/PdfTextExtractor` als zweite statische Funktion neben `extract()`,
+und der Über-Dialog wird ihr erster Aufrufer statt ihr Eigentümer. Die zweite
+Variante ist vorzuziehen: der Über-Dialog ist ein Anzeigefenster und kein
+Ort, an dem Systemprüfungen wohnen.
+
+@note Der Aufruf kostet Startzeit — `AboutForm::pdftotextInfo()` wartet bis zu
+drei Sekunden auf den Prozess. Beim Öffnen eines Dialogs fällt das nicht auf,
+im Startlauf schon. Die Wartezeit gehört beim Umbau deutlich kürzer gesetzt,
+oder die Prüfung läuft asynchron und trägt ihre Meldung nach.
+
+@note Die bestehende Fehlermeldung an den fünf Aufrufstellen bleibt dabei
+unverändert stehen. Sie ist dann nicht mehr die einzige Auskunft, sondern die
+zweite — wer die Startmeldung übersehen hat, bekommt beim Einlesen immer noch
+einen Hinweis, nur eben weiterhin einen unspezifischen. Wen das stört, greift
+zusätzlich zu einem der beiden anderen Wege.
+
+#### Umgesetzt (03.09.2026)
+
+Anders als beim Entwurf gedacht bleibt es nicht bei der Startmeldung. Die
+Prüfung sitzt jetzt an sechs Stellen, und die fünf Aufrufstellen fragen sie
+vor dem Umwandeln ab, statt einen aussichtslosen Prozess zu starten
+(Nessies Entscheidung). Der Benutzer weiß damit an jedem Punkt, woran er ist.
+
+#### Anhängen und Auswerten sind zwei Dinge (korrigiert 04.09.2026)
+
+Der Riegel stand in den vier Presentern zuerst ganz oben in
+`onDocumentSelected()` — mit der Begründung, ein halb gefülltes Formular mit
+einem Pfad, zu dem nie etwas kommt, sei schlechter als eines, das unangetastet
+bleibt. Das war falsch.
+
+`onDocumentSelected()` macht zwei Dinge: das Dokument **anhängen** (Pfad,
+Vorschau, Dublettenprüfung) und es **auswerten**. Nur das zweite braucht
+`pdftotext`. Der Pfad landet unabhängig davon in der Datenbank, und die Felder
+lassen sich von Hand füllen — ohne Wandler einen Beleg anzuhängen ist ein
+vollkommen sinnvoller Vorgang.
+
+Der Riegel oben nahm genau den weg: ohne `pdftotext` liess sich kein Beleg
+mehr zuordnen. Keine Absicherung, sondern eine weggenommene Funktion.
+
+Die Prüfung sitzt jetzt unmittelbar vor `m_pdfExtractor.extract()`, direkt
+neben dem bereits vorhandenen Ausstieg für den Fall "nicht der jüngste
+Kauf/Verkauf" — der genau dieselbe Form hat: anhängen ja, auswerten nein.
+
+@note Aufgefallen an sechs fehlgeschlagenen Testfällen in `tst_salesform` und
+den Geschwisterzielen. Sie prüfen, dass `onDocumentSelected()` den Pfad in die
+View schreibt, und liefen gegen einen Rechner, auf dem `pdftotext` für die
+Handprobe umbenannt war. Die Tests hatten recht: das Verhalten, das sie
+festhalten, ist das richtige.
+
+@note `MainWindow::handleDroppedDocument()` behält die Prüfung ganz oben. Dort
+gibt es nichts anzuhängen — der Zweck dieses Wegs IST die Auswertung, sie
+entscheidet erst, welcher Dialog überhaupt geöffnet wird.
+
+Die Ermittlung ist von `AboutForm` nach `PdfTextExtractor` gewandert — zwei
+neue statische Funktionen neben `extract()`:
+
+| Funktion | Zweck |
+| --- | --- |
+| `converterInfo()` | Ermittelt einmalig Name, Version und Verfügbarkeit |
+| `converterMissingMessage()` | Der Text, den alle sechs Stellen zeigen |
+
+Die Struktur `PdfConverterInfo` heisst jetzt `PdfTextExtractor::ConverterInfo`
+und hat ein drittes Feld bekommen: `available`. Vorher liess sich der Fall
+"kein Wandler" nur daran ablesen, dass `name` auf dem Text "nicht gefunden"
+stand — ein übersetzter Anzeigetext als Zustandsmerkmal, der bei jeder
+Sprachumstellung gebrochen wäre.
+
+#### Die Startmeldung ist zusätzlich modal (04.09.2026)
+
+Eine Zeile im Meldungsbereich war für diesen Fall zu leise (Nessie): ohne
+Wandler lässt sich keine einzige Belegfunktion benutzen, und wer die Zeile
+beim Start überliest, sucht später an der falschen Stelle. Der Startlauf
+zeigt deshalb zusätzlich ein `OwnMessageBox::critical`.
+
+Der Eintrag im Meldungsbereich bleibt trotzdem stehen — nach dem Schließen
+des Dialogs soll der Hinweis nicht spurlos verschwinden. Dieselbe Bauweise
+wie `warnAboutSharesWithoutDailyValues()`.
+
+@note Verzögert per `QTimer::singleShot(0, …)`. `checkAndLoadConfigurations()`
+läuft mitten im Konstruktor; ein modaler Dialog erschiene sonst vor einem
+noch leeren Hauptfenster, und der Benutzer sähe seinen Kontext nicht.
+
+@note Gegated über `m_showStartupWarnings`. Beim ersten Anlauf war das
+wirkungslos: das Kennzeichen setzte nur der Test-Konstruktor mit dem
+`QNetworkAccessManager` auf `false`, und `tst_mainwindow` benutzt 36-mal den
+Produktivkonstruktor. Der Dialog erschien in jedem dieser Tests und musste
+weggeklickt werden — aufgefallen bei einer Handprobe mit umbenanntem
+`pdftotext`. Siehe den nächsten Abschnitt.
+
+#### Der Schutz vor modalen Start-Dialogen war Zufall (04.09.2026)
+
+Dass die beiden bestehenden Start-Hinweise — Tageswert-Historie und
+Split-Prüfung — die Tests nie gestört haben, lag nicht am Kennzeichen. Es lag
+daran, dass ihr Text in diesen Tests leer bleibt und beide Methoden vorher
+aussteigen. Kein Schutz, sondern Glück. Der PDF-Wandler-Dialog hat das
+sichtbar gemacht, weil er diese Ausstiegsbedingung nicht hat.
+
+Seit dem 04.09.2026 gibt es einen prozessweiten Freischalter:
+
+@code{.unparsed}
+static void MainWindow::setStartupDialogsEnabled(bool enabled);
+@endcode
+
+Vorgabe ist AUS. `main.cpp` schaltet ihn für die Anwendung ein; jedes
+Testziel bleibt still, ohne selbst etwas tun zu müssen — auch ein künftig neu
+angelegtes.
+
+@note Die Richtung ist bewusst so herum. Die beiden Fehlermodi sind
+unsymmetrisch: vergisst jemand die Zeile in `main.cpp`, fehlt ein Dialog —
+ärgerlich, aber sofort sichtbar. Vergäße ein Testziel den umgekehrten Aufruf,
+hinge es an einem Klick, den niemand macht, und die CI liefe in den
+Zeitablauf statt in einen Fehlschlag. Ein Aussetzer ohne erkennbare Ursache
+ist die teurere Sorte Fehler.
+
+@note Der Test-Konstruktor setzt `m_showStartupWarnings` weiterhin hart auf
+`false`. Das ist seit der Umstellung ohnehin die Vorgabe, bleibt aber stehen:
+sein Verhalten soll nicht davon abhängen, was ein Testziel sonst noch
+schaltet.
+
+@note `tst_mainwindow.cpp` musste dafür nicht angefasst werden — das war der
+Punkt der gewählten Richtung.
+
+@note Die vier Aufrufstellen in den Dialogen zeigen über
+`IView::showError()` ohnehin einen modalen Kasten. Ohne Kasten bleibt allein
+`MainWindow::handleDroppedDocument()`, wo eine Statusmeldung genügt: der
+Meldungsbereich liegt dort direkt unter dem Ablegefeld und ist im Blick.
+
+@note `available == false` deckt zwei Fälle ab: `pdftotext` ist nicht
+installiert, oder es antwortet in einer Form, aus der sich nichts lesen lässt.
+Für die Reaktion ist das gleich, für den Wortlaut nicht — deshalb heisst die
+Meldung "Kein PDF-Wandler gefunden" und nicht "Poppler ist nicht installiert".
+Der zweite Satz wäre im zweiten Fall schlicht falsch.
+
+@note Das Ergebnis wird in BEIDEN Richtungen gemerkt (Nessies Entscheidung).
+Ein funktionslokales `static` sorgt für genau einen Prozessstart je
+Programmlauf. Der Preis: wird `pdftotext` während des Betriebs
+nachinstalliert, bemerkt die Anwendung das bis zum Neustart nicht — auch der
+Über-Dialog zeigt dann weiterhin "nicht gefunden". Deshalb nennt die Meldung
+den Neustart ausdrücklich; ohne diesen Zusatz stünde der Benutzer vor einer
+Sperre, die er gerade beseitigt hat.
+
+@note Kein zweiter Riegel in `extract()` (Nessies Entscheidung gegen
+Redundanz). Die Vorprüfung liegt allein bei den Aufrufstellen. Der Preis: ein
+künftiger sechster Aufrufer muss sie selbst mitbringen. Die Klassennotiz in
+`PdfTextExtractor.h` sagt das ausdrücklich.
+
+@note Die Wartezeit steht auf einer Sekunde statt drei. Dass der Über-Dialog
+bisher schnell aufging, zeigt nur den Erfolgsfall — ein fehlendes Programm
+meldet `FailedToStart` und wartet gar nicht. Die Schranke greift allein bei
+einem vorhandenen, aber hängenden `pdftotext`, und `pdftotext -v` antwortet in
+Millisekunden oder nie.
+
+@note Keine CMake-Änderung nötig. Jedes Testziel, das `AboutForm.cpp`
+kompiliert (`tst_mainwindow`, `tst_backupform`), kompiliert
+`PdfTextExtractor.cpp` bereits mit. Das war der Grund, die Ermittlung in die
+bestehende Klasse zu legen statt in eine neue Datei — nach der
+`DocumentFieldNames`-Erfahrung diesmal vorher geprüft.
+
+@note Weiterhin ungetestet, konsistent mit der Projektkonvention für
+`QProcess`-getriebene `pdftotext`-Codepfade. `converterInfo()` liesse sich nur
+mit einem von aussen setzbaren Programmnamen prüfen — dieselbe Naht-Frage wie
+beim Prozesslebenszyklus, und dieselbe Antwort.
+
+### Feldschlüssel-Tabellen sind an keiner Stelle geprüft (27.08.2026, erledigt 02.09.2026)
+
+Zwischen `Documents.xml` und den Eingabemasken liegen zwei Übersetzungen, die
+beide nur aus handgepflegten Tabellen bestehen und die niemand prüft. Fällt
+eine davon aus, geht ein Wert lautlos verloren: der Parser findet ihn, aber
+er landet nirgends.
+
+@note Korrektur vom 02.09.2026: hier stand, die Statuszeile zähle einen
+solchen Wert seit dem 27.08.2026 korrekt NICHT mehr mit. Das stimmt nur für
+einen VERWORFENEN Wert — unbrauchbares Datum, unbekannte Depotnummer. Bei
+einem unbekannten FELDSCHLÜSSEL meldete `setFieldOk()` Erfolg, und die
+Statuszeile zählte weiter mit. Siehe den Abschnitt "Erste Tabelle" unten.
+
+Aufgefallen beim Umbau der Statuszeile; ausdrücklich NICHT dort miterledigt,
+weil es zwei eigene Prüfungen an anderer Stelle sind.
+
+#### Erste Tabelle: XML-Name → Feldschlüssel der Maske
+
+`Presenter*::xmlNameToViewField()` ist eine statische `QMap` im C++-Code, je
+Formular eine eigene. Links steht der Tag-Name aus `Documents.xml`, rechts der
+Feldschlüssel, unter dem die View ihr Widget in `m_inputWidgets` und ihr
+Symbol in `m_statusLabels` ablegt:
+
+```cpp
+static const QMap<QString, QString> map = {
+    { QStringLiteral("Date"),        QStringLiteral("date")        },
+    { QStringLiteral("DepotNumber"), QStringLiteral("depotNumber") },
+    ...
+```
+
+Ein Tippfehler auf der RECHTEN Seite — `"depotnumber"` statt `"depotNumber"` —
+lässt `m_inputWidgets.value(field)` ins Leere greifen. Der Wert landet
+nirgends, es gibt kein Symbol, das sich einfärben ließe, und der Fehler fällt
+erst auf, wenn jemand einen Beleg einliest und sich wundert.
+
+Der Loader von `Documents.xml` kann das nicht abfangen: `DocumentsConfig`
+kennt nach dem Laden die Tag-Namen, aber nicht die Feldschlüssel der Masken.
+Die entstehen erst, wenn der jeweilige Dialog seine Widgets aufbaut, und sind
+je Formular verschieden — beim Programmstart existiert keiner dieser Dialoge,
+es gibt also nichts zu vergleichen. Eine Startmeldung scheidet damit aus.
+
+#### Der Befund war schlimmer als angenommen (02.09.2026)
+
+Beim Entwurf der Prüfung stellte sich heraus, dass ein unbekannter
+Feldschlüssel nicht nur unbemerkt bleibt, sondern aktiv als Erfolg gemeldet
+wird. `ViewShareAdd::setFieldOk()` durchläuft für `"depotnumber"` folgenden
+Weg:
+
+- keiner der drei `qobject_cast`-Zweige greift, `m_inputWidgets.value(field)`
+  liefert `nullptr`
+- der `depotNumber`-Zweig greift nicht, der Schlüssel stimmt ja nicht
+- `converted` bleibt unangetastet auf `true`
+- `m_fieldStates[field] = FieldState::Ok` legt einen Phantom-Eintrag an
+- `m_statusLabels.value(field)` ist `nullptr`, es erscheint also kein Symbol
+- `return true`
+
+Der Presenter zählt das als Treffer. Bei einem Tippfehler in einem Pflichtfeld
+meldet die Statuszeile weiterhin "Analyse OK — 8/8 Pflicht", während der Wert
+nirgends steht und an der Maske überhaupt kein Symbol auftaucht. Der am
+27.08.2026 eingeführte Rückgabewert deckt den verworfenen Wert ab, den
+unbekannten Schlüssel nicht.
+
+Damit ist der Punkt kein reiner Test mehr. Ein Wächter am Anfang von
+`setFieldOk()` und `setFieldError()` — Schlüssel weder in `m_inputWidgets`
+noch in `m_statusLabels` — behebt das zur Laufzeit:
+
+| Methode | Verhalten bei unbekanntem Schlüssel |
+| --- | --- |
+| `setFieldOk()` | `qWarning`, dann `false` statt `true` |
+| `setFieldError()` | `qWarning`, dann Rückkehr; die Methode ist `void` |
+
+@note Bewusst nur `qWarning`, kein `Q_ASSERT` im Debug-Build (Nessie,
+02.09.2026). Ein Assert nähme die Anwendung wegen eines Konfigurationsfehlers
+herunter, den sie sonst überlebt.
+
+@note Der Wächter unterscheidet "unbekannt" von "bekannt, aber ohne Symbol".
+`time` steht nur in `m_inputWidgets` und teilt sich das Symbol mit `date` —
+`setFieldError("time", …)` kehrt weiterhin still zurück, das ist kein Fehler,
+sondern schlicht nichts zu färben.
+
+#### Der Test braucht dadurch keinen Zugriff auf die privaten Maps
+
+Mit dem Wächter beantwortet `setFieldOk()` die Frage selbst. Der Test ruft für
+jeden Wert der rechten Seite `setFieldOk(key, "")` auf und prüft auf `true`.
+Der leere Rohwert ist dabei kein Kunstgriff, sondern die in `IViewShareAdd.h`
+dokumentierte Aufrufart der Live-Validierung, die nur das Symbol setzt und den
+Feldinhalt nicht anfasst. Ein `fieldKeys()`-Abfrager an der View, wie zuerst
+erwogen, entfällt damit.
+
+Vorausgesetzt ist nur, dass die Testdatei die linke Seite aufzählen kann:
+`knownXmlNames()` und `requiredXmlNames()` sind dafür aus
+`populateFromResult()` heraus in öffentliche statische Funktionen gewandert,
+`xmlNameToViewField()` von `private` nach `public`. Inhalt unverändert.
+
+#### Eine dritte Tabelle, beim Umbau beseitigt
+
+`PresenterShareAdd::startParserForText()` führte für den Fall "kein Depot
+erkannt" eine eigene, von Hand gepflegte Liste derselben acht Feldschlüssel,
+um sie alle rot zu markieren. Sie war die einzige der drei Tabellen, gegen die
+niemand etwas abgeglichen hat. Sie entsteht jetzt aus `requiredXmlNames()`
+über dieselbe Übersetzung, die auch `populateFromResult()` benutzt, und kann
+damit nicht mehr auseinanderlaufen.
+
+@note Der Feldschlüssel `document` ist die vorgesehene Ausnahme: er steht
+absichtlich nur in `m_statusLabels` und hat kein Eingabefeld, weil der Pfad
+nicht aus einer Regel kommt, sondern über `setDocumentPath()`. In
+`ViewShareAdd` kommt er nicht vor, in `ViewBuyEdit` schon. Der Wächter lässt
+ihn durch — er prüft auf "in KEINER der beiden Maps", nicht auf "hat ein
+Eingabefeld". `test_buyEdit_documentFieldKeyIsRegistered` pinnt genau diese
+Kombination fest, damit der Wächter beim nächsten Umbau nicht versehentlich
+strenger wird.
+
+#### Vierter Satz Feldschlüssel: die Live-Validierung (02.09.2026)
+
+Bei BuyEdit kam ein Satz hinzu, den ShareAdd nicht hat: die
+Live-Validierungs-Slots in `PresenterBuyEdit` (`onDateEdited()`,
+`onDepotNumberEdited()`, `onOrderNumberEdited()`, `onVolumeOrPriceEdited()`,
+`onDocumentPathEdited()`) rufen `setFieldOk()`/`setFieldError()` mit fest
+verdrahteten Schlüsseln auf, und `onFeeEdited()` bekommt seinen Schlüssel
+sogar von aussen — aus vier `connectFee()`-Aufrufen im Konstruktor der View.
+
+Diese Schlüssel stehen in keiner Tabelle und lassen sich nicht aufzählen, sind
+also nicht wie die übrigen prüfbar. Der Wächter deckt sie trotzdem ab: er
+sitzt in der View und wirkt unabhängig davon, woher der Schlüssel kam. Ein
+Tippfehler in einem `connectFee()`-Aufruf erzeugt jetzt eine Warnung im
+Protokoll, statt still eine Rückmeldung zu unterschlagen. Genau dafür ist der
+Wächter der bessere Ort als ein Test.
+
+#### Zweite Tabelle: verwendete Tag-Namen in Documents.xml
+
+Die Gegenrichtung: ein Tag in `Documents.xml`, den kein Formular verarbeitet,
+weil er in keiner `knownXmlNames`-Liste steht. Die Regel läuft, der Wert wird
+gefangen und dann verworfen. Auch das meldet heute niemand.
+
+Hierfür gibt es bereits das passende Testziel: `tst_documentsxml` liest die
+ausgelieferte `app/config/Documents.xml` und lässt ihre Regeln über
+anonymisierte Auszüge echter Belege laufen. Dort ließe sich ergänzen, dass
+jeder verwendete Tag-Name von mindestens einem der vier Formulare in
+`knownXmlNames` geführt wird. Voraussetzung: die vier Listen müssten von außen
+erreichbar sein, heute sind sie `static const` innerhalb von
+`populateFromResult()`.
+
+@note Beide Prüfungen sind Tests, keine Startlauf-Prüfungen, und beide sind
+unabhängig voneinander umsetzbar. Die erste ist die wichtigere: sie deckt den
+Fall ab, bei dem ein Wert trotz greifender Regel nicht in der Maske ankommt.
+
+#### Der Fund: currency war nirgends registriert (02.09.2026)
+
+Bei DividendEdit hat die Prüfung geliefert, wofür sie gebaut wurde.
+`PresenterDividendEdit::xmlNameToViewField()` bildet `Currency` auf
+`currency` ab — `ViewDividendEdit` kannte diesen Schlüssel nicht, weder in
+`m_inputWidgets` noch in `m_statusLabels`. `setFieldOk("currency", "USD")`
+lief damit durch alle Zweige hindurch, meldete `true`, und die
+Optional-Zählung nahm den Wert mit. Ein Statussymbol gab es nicht.
+
+Funktional ging nichts verloren: die Währung kommt weiter unten über
+`setForeignCurrency(isForeign, parsedCurrency)` doch noch an. Der Aufruf in
+der Schleife war reine Zählung ohne Wirkung — eine Zählung, die etwas
+bestätigte, das an dieser Stelle nicht stattfand.
+
+@note Es ist derselbe Befund, der am 21.08.2026 schon einmal behoben wurde.
+Der Devisenkurs war damals "als einziges beschreibbares Feld weder in
+`m_statusLabels` noch in `m_inputWidgets` eingetragen"; `exchangeRatio` wurde
+nachgetragen, `currency` — im selben Zeilen-Widget, direkt daneben — blieb
+übrig. Zwei Felder, ein Fehler, eines davon behoben. Genau die Sorte Rest, die
+ohne eine aufzählende Prüfung liegen bleibt.
+
+Behoben durch Registrierung in `m_inputWidgets`, ohne eigenes Statussymbol
+(Nessies Entscheidung, 02.09.2026): Devisenkurs und Währung teilen sich eine
+Zeile und damit `fcStatus`. Zwei Schlüssel, die dasselbe Label beschreiben,
+würden einander überschreiben — dieselbe Aufteilung wie bei `time`, das sich
+sein Symbol mit `date` teilt. Gesetzt wird die Währung weiterhin von
+`setForeignCurrency()`, weil dort auch der Haken
+"Fremdwährungseingabe aktivieren" hängt, ohne den `onSave()` den Devisenkurs
+verwerfen würde.
+
+Verworfen wurden zwei Alternativen: einen generischen ComboBox-Zweig in
+`setFieldOk()` einzubauen (er fügt bei unbekanntem Wert einen Eintrag hinzu
+und widerspräche damit `setForeignCurrency()`, das eine unbekannte Währung
+ausdrücklich ignoriert), und `Currency` aus `knownXmlNames()` zu streichen
+(die Optional-Zählung wäre um eins gesunken, ohne dass ein Feld weniger
+gelesen würde).
+
+@note `ViewDividendEdit` hat als einziger Dialog einen dritten Eingang mit
+einem Feldschlüssel: `setFieldHint()`, der Ersatzhinweis für den fehlenden
+Ex-Tag bei Cortal Consors. Er hat denselben Wächter bekommen.
+
+#### Die Kapitalertragssteuer kam bei Verkäufen nie an (02.09.2026)
+
+Der zweite echte Fund, und der teurere. `PresenterSaleEdit` suchte den Tag
+`CapitalGainsTax` — MIT s. `Documents.xml` kennt diese Schreibweise an keiner
+Stelle:
+
+| Schreibweise | Vorkommen in Documents.xml |
+| --- | --- |
+| `CapitalGainTax` | 15 |
+| `CapitalGainsTax` | 0 |
+
+Alle drei Depots, alle Belegarten: durchgängig ohne s. `PresenterDividendEdit`
+hatte es richtig, `PresenterSaleEdit` nicht.
+
+Die Folge: `populateFromResult()` schlägt den Wert unter einem Namen nach, den
+die Ergebnis-Map nicht enthält, bekommt eine leere Liste und überspringt ihn.
+Die Kapitalertragssteuer eines Verkaufsbelegs wurde damit **nie** ins Formular
+übernommen. Der Parser findet sie durchaus — `tst_documentsxml` prüft das seit
+Längerem und vergleicht den gefangenen Wert mit dem Beleg. Sie kam nur nie
+dort an, wo sie hingehört.
+
+Sichtbar war das für den Benutzer nur indirekt: das Feld blieb auf 0,00 mit
+dem Info-Symbol "Wert fehlt noch — bitte manuell eingeben", und die
+Optional-Zählung war dauerhaft eins zu kurz. Beides sah aus wie ein Beleg, der
+die Angabe nicht enthält.
+
+Behoben durch die richtige Schreibweise an beiden Stellen — in
+`DocumentFieldNames::saleKnown()` und in
+`PresenterSaleEdit::xmlNameToViewField()`. Die RECHTE Seite der Übersetzung
+bleibt `capitalGainsTax`: das ist der Feldschlüssel der Maske, und der heisst
+korrekt mit s. Genau diese Asymmetrie hat den Fehler so lange getragen — beide
+Schreibweisen sind an ihrem Platz richtig, nur nicht an beiden Plätzen
+dieselbe.
+
+@note Gefunden hat ihn die Gegenrichtung der Prüfung, noch bevor sie als Test
+geschrieben war: die Namensliste enthielt einen Namen, den keine
+`Documents.xml` je liefert. Das ist der Fall, den die erste Prüfung
+strukturell NICHT sehen kann — sie vergleicht die Tabellen mit der Maske, nicht
+mit der Konfigurationsdatei. Ein Beleg dafür, dass die zweite Prüfung ihren
+eigenen Wert hat und nicht nur die Umkehrung der ersten ist.
+
+#### Kostenbelege werden von keinem Formular eingelesen (geklärt, 02.09.2026)
+
+Beim Zuschnitt der Gegenprüfung fiel auf, dass `Brokerage` unter den vier
+Belegarten keinen Abnehmer hat. `PresenterBrokerageEdit` besitzt überhaupt
+keine Parse-Strecke — kein `PdfTextExtractor`, kein
+`setFieldOk()`/`setFieldError()`, keine Feldschlüssel-Tabelle, und
+`ViewBrokerageEdit` führt weder `m_inputWidgets` noch `m_statusLabels`.
+
+Das ist so gewollt (Nessie, 02.09.2026). Die fachliche Begründung:
+
+- Kosten fallen im Normalfall nur bei Käufen und Verkäufen an, und dort stehen
+  sie auf dem Kauf- bzw. Verkaufsbeleg. Ausgelesen werden sie deshalb aus
+  jenem Beleg, über `buyKnown()` bzw. `saleKnown()` — beide führen alle vier
+  Kostenfelder.
+- Bei Dividenden fallen keine Kosten an. Dass der Dividendendialog die
+  Gebührenfelder nicht kennt, ist folgerichtig und kein Versäumnis.
+- Die Kostenmaske ist für den Fall gedacht, dass es zu den Kosten gar keinen
+  eigenen Beleg gibt. Ohne Beleg gibt es nichts zu parsen; der Benutzer trägt
+  die Werte von Hand ein.
+
+Die Direkte Dokumentenerfassung behandelt den Typ folgerichtig als nicht
+unterstützt: `MainWindow::openCaptureDialog()` gibt für `DocumentType::Brokerage`
+eine Statusmeldung aus und öffnet keinen Dialog (Vorgabe vom 27.07.2026).
+
+@note Deshalb ist `test_fieldNames_everyBrokerageTagIsReadBySomeForm` bewusst
+schwächer als seine drei Geschwister: es prüft nur, dass ÜBERHAUPT jemand
+jeden Tag lesen kann (`buyKnown()` ∪ `saleKnown()`), nicht dass ein
+zuständiges Formular es tut. Ein zuständiges gibt es nicht und soll es nicht
+geben.
+
+@note Aus diesem Abschnitt herausgelöst (12.09.2026): der Unterpunkt "Breite
+Belegkennungen gewinnen gegen den Dialog-Fallback" fiel beim Nachgehen der
+Brokerage-Frage oben auf, ist aber ein eigenes Thema und weiterhin offen. Er
+steht deshalb unter "Offene Punkte".
+
+#### Stand der Umsetzung — abgeschlossen mit 1.20.0 (02.09.2026)
+
+| Formular | Wächter | Tests |
+| --- | --- | --- |
+| ShareAdd | erledigt | erledigt |
+| BuyEdit | erledigt | erledigt |
+| SaleEdit | erledigt | erledigt |
+| DividendEdit | erledigt | erledigt |
+| BrokerageEdit | entfällt | entfällt |
+| Auslagerung nach `DocumentFieldNames` | erledigt | entfällt |
+| Zweite Tabelle (`tst_documentsxml`) | entfällt | erledigt |
+
+Drei Funde in fünf Runden, und zwei davon hätte keine der beiden
+Prüfrichtungen allein gefunden:
+
+| Fund | Gefunden von |
+| --- | --- |
+| `setFieldOk()` meldet Erfolg für unbekannte Schlüssel | Der Wächter selbst, beim Entwurf |
+| `currency` in `ViewDividendEdit` nicht registriert | Vorwärtsprüfung: Tabelle gegen Maske |
+| `CapitalGainTax` im Verkaufsformular falsch geschrieben | Gegenprüfung: Liste gegen Documents.xml |
+
+@note Der letzte ist das Argument dafür, dass die zweite Prüfung ihren eigenen
+Wert hat und nicht die Umkehrung der ersten ist. Die Vorwärtsprüfung
+vergleicht die Tabellen mit der Maske und hätte `CapitalGainsTax` durchgelassen
+— der Feldschlüssel `capitalGainsTax` ist ja korrekt registriert. Falsch war
+die Seite, die auf die Datei zeigt.
+
+@note `BrokerageEdit` entfällt in beiden Spalten: das Formular hat keine
+Parse-Strecke, und das ist so gewollt. Siehe "Kostenbelege werden von keinem
+Formular eingelesen".
+
+Der Wächter wandert je Formular mit, nicht in einem Zug in alle vier Views
+(Nessie, 02.09.2026) — so bleibt jede Runde für sich baubar und prüfbar. Alle
+vier Runden gehen in einen gemeinsamen Commit.
+
+#### Der Fall, der den Aufwand rechtfertigt: SaleEdit (02.09.2026)
+
+Bei ShareAdd und BuyEdit heißen die Feldschlüssel fast durchgängig wie die
+Namen im Beleg, nur klein geschrieben. Bei SaleEdit nicht: `Price` wird zu
+`salePrice`, weil das Zielfeld in dieser Maske anders heißt. Damit ist
+`"price"` in `ViewSaleEdit` ein UNBEKANNTER Schlüssel — und genau der Wert,
+der bei einem Verkauf am meisten zählt.
+
+Kopiert jemand die Tabelle von `PresenterBuyEdit` herüber, weil sie zu neun
+Zehnteln gleich aussieht, ginge der Verkaufspreis still verloren: keine
+Meldung, kein Symbol, und vor dem Wächter hätte die Statuszeile "Analyse OK"
+gemeldet. `test_saleEdit_priceMapsToSalePriceNotPrice` prüft beide Seiten —
+dass `Price` auf `salePrice` zeigt, und dass `"price"` vom Dialog
+zurückgewiesen wird.
+
+@note Der zweite Teil des Tests ist die interessantere Hälfte: er hält fest,
+dass ein Feldschlüssel hier ABWESEND sein muss. Solche Zusagen gehen sonst
+beim nächsten Vereinheitlichungsversuch als Erstes verloren.
+
+#### Die Listen wohnen jetzt in DocumentFieldNames (02.09.2026)
+
+Entschieden zugunsten eines abhängigkeitsfreien
+`app/config/DocumentFieldNames.h/.cpp` (Nessie, 02.09.2026). Zwei Gründe:
+
+Erstens beschreiben diese Listen `Documents.xml` und nicht die Masken — sie
+gehören neben `DocumentsConfig`. Zweitens braucht `tst_documentsxml` sie für
+die Gegenrichtung; lägen sie an den Presentern, müsste das Testziel vier
+Presenter-`.cpp` samt `IView`, `IModel`, Models, `ShareSplitAdjuster`,
+`SaleFifoAllocator`, `PdfTextExtractor` und `Parser` mitkompilieren. Heute
+linkt es `DocumentsConfig`, `DocumentClassifier` und ParserLib, sonst nichts.
+
+@note `xmlNameToViewField()` bleibt bei den Presentern. Die linke Seite dieser
+Übersetzung beschreibt die Datei, die rechte die jeweilige Maske — und die
+fällt je Formular anders aus (`Price` → `salePrice`, `DividendRate` → `rate`).
+Das ist Wissen der Maske, nicht der Konfiguration.
+
+@note Die vier Presenter behalten ihre `knownXmlNames()` / `requiredXmlNames()`
+als schlanke Weiterleitungen. Formularcode fragt damit weiterhin sein eigenes
+Formular, und die 27 Tests der vier Form-Ziele bleiben unverändert — das war
+der Punkt: eine reine Verschiebung soll keine Testdatei anfassen.
+
+@note Vier Listen, keine Ableitung. `shareAddKnown()` ist exakt `buyKnown()`
+plus `Wkn`, `Isin` und `Name`; die Liste wird trotzdem ausgeschrieben. Eine
+Ableitung würde stillschweigend mitziehen, sobald jemand die Kaufliste
+erweitert, und niemand käme dabei auf den Gedanken, an "Aktie hinzufügen" zu
+denken.
+
+@note Beim Zusammentragen fiel eine Ungleichheit auf, die vorher auf vier
+Dateien verteilt nicht sichtbar war: die Verkaufsliste führte
+`CapitalGainsTax` MIT s, die Dividendenliste `CapitalGainTax` OHNE. Ich habe
+das zunächst für den Stand von `Documents.xml` gehalten und als "kein Fehler"
+vermerkt. Es war einer — siehe "Die Kapitalertragssteuer kam bei Verkäufen
+nie an" weiter oben.
+
+### Zurückbleibender pdftotext-Prozess (behoben, 27.08.2026)
+
+Aufgefallen im Testlauf zum Statuszeilen-Umbau: nach den Dokument-Tests stand
+im Protokoll
+
+@code{.unparsed}
+QProcess: Destroyed while process is still running.
+@endcode
+
+Es war nicht nur Lärm. Die Aufräum-Ereignisse dieser Prozesse lagen quer in
+der Ereignisschlange und haben
+`test_presenterShareAdd_populateFromResult_allFieldsTaken_reportsOk` beim
+ersten Lauf gekippt (siehe TESTING.md, "Sichtbarkeit zugunsten der
+Testbarkeit"). Im Test ist das über `QTRY_COMPARE` aufgefangen — am Symptom.
+Die Ursache lag in `PdfTextExtractor` und betraf die laufende Anwendung
+genauso.
+
+#### Drei Befunde in einer Klasse
+
+Alle drei hängen am selben Prozesslebenszyklus und sind in einem Zug behoben:
+
+| Befund | Wirkung in der Anwendung |
+| --- | --- |
+| Destruktor war `= default` | Dialog während der Umwandlung schließen blockierte den GUI-Thread |
+| Zweiter `extract()`-Aufruf überschrieb `m_process` | Text des VORIGEN Dokuments konnte unter dem neuen Namen ankommen |
+| `FailedToStart` wurde nicht behandelt | Fehlendes `pdftotext` meldete gar nichts, die Statuszeile blieb stehen |
+
+Zum ersten Punkt: der vom Compiler erzeugte Destruktor überließ den noch
+laufenden `QProcess` dem `QObject`-Destruktor. Der ruft `kill()` und wartet
+anschließend mit `waitForFinished()` OHNE Zeitschranke — im GUI-Thread.
+
+Zum zweiten: der Header schrieb "eine Umwandlung zur Zeit" als Pflicht des
+Aufrufers fest. Die vier Presenter halten sich nicht daran, zweimal zügig
+hintereinander ein Dokument auswählen genügt. Der überschriebene Prozess lief
+weiter, meldete sich über `sender()` zurück und löste ein zweites
+`finished()` aus.
+
+Zum dritten: `QProcess` meldet ein Programm, das sich gar nicht starten lässt,
+ausschließlich über `errorOccurred(FailedToStart)`. `finished()` kommt in
+diesem Fall nie — und damit kam auch `PdfTextExtractor::finished()` nie. Kein
+Fehlerdialog, keine Statusmeldung; die Zeile blieb bei "Analysiere Dokument …"
+stehen. Für eine frische Windows-Installation ohne Poppler ist das der
+Regelfall, nicht der Ausnahmefall.
+
+#### Die Klasse besitzt den Prozess jetzt vollständig
+
+Die Sequenzierung ist keine Pflicht des Aufrufers mehr — die vier Presenter
+und `MainWindow` bleiben unverändert:
+
+- `extract()` bricht eine laufende Umwandlung ab und startet die neue. Die
+  abgebrochene meldet nichts.
+- `cancel()` (neu, öffentlich) bricht ab, ohne etwas zu melden. Ein Abbruch
+  ist keine fehlgeschlagene Umwandlung, und wer abbricht, will das Ergebnis
+  nicht mehr.
+- Der Destruktor bricht ab. Es bleibt nichts zurück.
+- `finished()` kommt höchstens einmal je `extract()`-Aufruf und nie für eine
+  Umwandlung, die der Aufrufer längst ersetzt hat.
+
+Das gemeinsame `stopProcess()` trennt zuerst die Verbindungen und tötet erst
+danach. Andersherum löste `kill()` ein `finished()` mit Absturz-Status aus,
+und der Aufrufer bekäme "fehlgeschlagen" gemeldet, wo in Wahrheit
+zurückgezogen wurde. Getötet wird mit `kill()`, nicht `terminate()`:
+`pdftotext` schreibt nach stdout und hat keinen Zustand, den ein sauberes
+Herunterfahren retten würde — und `terminate()` erreicht unter Windows eine
+Konsolenanwendung ohnehin nicht.
+
+@note `cancel()` hat heute keinen Aufrufer. Aufgenommen, weil
+`MainWindow::m_documentCaptureExtractor` so lange lebt wie das Fenster: dort
+gäbe es sonst gar keinen Weg abzubrechen, während die Presenter ihren
+Extractor beim Schließen des Dialogs mitnehmen.
+
+@note `start()` steht in `extract()` bewusst als letzte Anweisung. Unter
+Windows lässt ein fehlgeschlagenes `CreateProcess` `errorOccurred()` synchron
+feuern, `finished(false, …)` kann also noch aus `extract()` heraus kommen.
+Nach dem Aufruf darf nichts mehr `m_process` anfassen. Alle fünf
+Aufrufstellen rufen `extract()` bereits als letzte Anweisung ihrer Methode
+auf, für sie ändert sich dadurch nichts.
+
+@note Kein automatisierter Test — die Projektkonvention, `QProcess`-getriebene
+`pdftotext`-Codepfade nicht zu automatisieren, gilt weiter (siehe TESTING.md).
+Prüfbar ist die Behebung am Protokoll: die Zeile "QProcess: Destroyed while
+process is still running" verschwindet aus dem Testlauf.
+
+### Analyse-Statuszeile und Feldsymbole (behoben, 27.08.2026)
+
+Nach dem Einlesen eines Belegs konnte die Statuszeile "Analyse OK — 5/5
+Pflicht" melden, während daneben ein Pflichtfeld ein rotes Fehlersymbol trug.
+Beides stimmte für sich, maß aber Verschiedenes:
+
+| | zählte | Ort |
+| --- | --- | --- |
+| Statuszeile | was der PARSER aus dem Beleg herausgeholt hat | `Presenter*::populateFromResult()` |
+| Feldsymbol | was die MASKE mit dem Rohwert anfangen konnte | `View*::setFieldOk()` |
+
+Aufgelöst ist der Widerspruch, indem `setFieldOk()` das Ergebnis der Übernahme
+zurückmeldet und die Statuszeile nur noch zählt, was tatsächlich in der Maske
+gelandet ist:
+
+```cpp
+if (m_view->setFieldOk(viewField, values.first().trimmed())) {
+    ++found;
+    if (requiredXmlNames.contains(xmlName)) ++requiredFound;
+}
+```
+
+`setFieldOk()` liefert `false`, wenn ein nicht-leerer Rohwert nicht ins
+Zielfeld passte — unbrauchbares Datum, unbrauchbare Uhrzeit, oder eine
+Depotnummer, die nicht in `Documents.xml` steht. Die View ruft in diesem Fall
+selbst `setFieldError()` auf; der Presenter passt nur noch seine Zählung an.
+Pflicht- und Optionalfelder werden gleich behandelt: zwei Zähler in einer
+Zeile, die Verschiedenes messen, wären derselbe Widerspruch eine Ebene tiefer.
+
+#### Was die Statuszeile dadurch nicht mehr sagt
+
+Sie unterscheidet nicht mehr zwischen "die Regel hat nicht gegriffen" und "die
+Regel hat etwas Unbrauchbares gefangen". Für den Benutzer ist das richtig — er
+will wissen, ob die Maske gefüllt ist. Beim Schreiben von Regeln für
+`Documents.xml` ist es eine Einbuße, und die wird an der Stelle ausgeglichen,
+wo hingeschaut wird: `setFieldError()` nimmt seit demselben Umbau den Rohwert
+entgegen und zeigt ihn im Tooltip des Fehlersymbols an
+(`Nicht verwertbar: „Schlusstag 04/02"`). Ohne Rohwert — so rufen es die
+Aufrufe aus der Live-Validierung — bleibt es beim bisherigen, allgemeinen
+Text.
+
+#### Einheitliche Bauweise in allen vier Views
+
+`ViewShareAdd::setFieldOk()` führte bereits einen lokalen Merker `converted`
+und setzte den Feldzustand erst am Schluss. Die drei Editier-Dialoge setzten
+das grüne Symbol dagegen ZUERST und riefen bei misslungener Umwandlung
+mittendrin `setFieldError()` — das funktionierte nur, weil dieses das Symbol
+wieder überschrieb, und ließ sich nicht als Rückgabewert ausdrücken. Alle vier
+folgen jetzt demselben Muster: Merker, Rohwert in `rejected`, Feldzustand am
+Schluss, ein Rückgabepunkt.
+
+#### Unbekannte Depotnummer ist ein Fehler
+
+Der Umbau hat einen zweiten, bis dahin unbemerkten Fall aufgedeckt: eine
+Depotnummer aus dem Beleg, die in `Documents.xml` nicht hinterlegt ist, wurde
+in **keiner** der vier Views gemeldet. `ViewShareAdd` und `ViewBuyEdit` ließen
+die Auswahl still auf dem Platzhalter stehen — mit grünem Haken, und das
+Speichern scheiterte später mit "Depotnummer fehlt". `ViewSaleEdit` und
+`ViewDividendEdit` fügten den unbekannten Wert der Liste hinzu, womit eine
+Depotnummer in der Datenbank landen konnte, die nirgends konfiguriert war.
+
+Alle vier melden jetzt einen Fehler. Nessies Begründung (27.08.2026): die
+Zuordnung wird für die Bestandsprüfung pro Depot gebraucht — die
+Stückzahl-Plausibilitätsprüfung bei der Dividendeneingabe rechnet gegen den
+Bestand des gewählten Depots am Ex-Tag und braucht dafür eine eindeutige,
+gepflegte Zuordnung. Eine unbekannte Depotnummer ist damit kein Sonderfall,
+den die Maske glattbügeln darf, sondern ein Konfigurationsfehler, den der
+Benutzer in `Documents.xml` beheben muss.
+
+@note Für `ViewSaleEdit` und `ViewDividendEdit` ist das eine Verschärfung:
+Belege mit unbekannter Depotnummer ließen sich bisher speichern. Bereits
+gespeicherte Datensätze bleiben unberührt — `loadSale()`/`loadDividend()`
+nehmen einen anderen Weg als `setFieldOk()`.
+
+@note Der Feldschlüssel `document` hat absichtlich kein Eingabefeld: der Pfad
+kommt über `setDocumentPath()`, `setFieldOk("document", QString())` setzt nur
+das Symbol. Deshalb liefert `setFieldOk()` bei einem Schlüssel ohne
+Eingabefeld `true` und nicht `false` — ein `false` hätte hier ein erfolgreich
+geladenes Dokument rot markiert.
+
+@note `populateFromResult()` ist in allen vier Presentern von `private` auf
+`public` gewechselt. Anders war die geänderte Zählung von keinem Test
+erreichbar: die Methode ist kein Slot, `QMetaObject::invokeMethod` kommt also
+nicht heran, und der Weg über `onDocumentSelected()` bräuchte ein echtes PDF
+samt `pdftotext` auf dem Runner.
 
 ### Bankerkennung: Mehrdeutigkeit ueber die Depotnummer (21.08.2026, behoben 25.08.2026)
 
