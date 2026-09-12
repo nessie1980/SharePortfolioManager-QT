@@ -38,7 +38,7 @@ public:
     virtual void setMaxIntervalCount(int maxCount) = 0;
 
     /** Ersetzt die dargestellte Kurve vollständig. */
-    virtual void setChartData(const PortfolioChartData& data) = 0;
+    virtual void setChartData(const PortfolioChartData& chartData) = 0;
 
     /** Hinweis anstelle des Charts, z.B. ohne Daten im gewählten Zeitraum. */
     virtual void showEmptyChart(const QString& message) = 0;

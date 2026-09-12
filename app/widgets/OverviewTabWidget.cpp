@@ -173,35 +173,35 @@ QWidget* OverviewTabWidget::buildFrozenTable(
     int docColumn)
 {
     // ── Data table ──────────────────────────────────────────────────────────
-    auto* data = new QTableWidget(0, colCount);
-    data->setHorizontalHeaderLabels(headers);
-    data->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    data->setSelectionBehavior(QAbstractItemView::SelectRows);
-    data->setSelectionMode(QAbstractItemView::SingleSelection);
-    data->setAlternatingRowColors(true);
+    auto* dataTable = new QTableWidget(0, colCount);
+    dataTable->setHorizontalHeaderLabels(headers);
+    dataTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    dataTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    dataTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    dataTable->setAlternatingRowColors(true);
     // Einheitliche App-weite Selektionsfarbe (Blau/Gelb, wie C#-Referenz) —
     // footer bleibt unangetastet, da NoSelection (siehe unten).
-    GridStyle::applySelectionStyle(data);
-    data->verticalHeader()->setVisible(false);
-    data->setFrameShape(QFrame::NoFrame);
-    data->horizontalHeader()->setStretchLastSection(false);
+    GridStyle::applySelectionStyle(dataTable);
+    dataTable->verticalHeader()->setVisible(false);
+    dataTable->setFrameShape(QFrame::NoFrame);
+    dataTable->horizontalHeader()->setStretchLastSection(false);
 
     // Spaltenköpfe immer fett, unabhängig von der Zeilen-Selektion — vorher
     // erschienen sie erst fett, sobald Qt's Style (highlightSections) die zur
     // Selektion gehörige Kopfspalte hervorhob (Bugfix 14.07.2026, Nessies
     // Feedback nach dem ersten Build).
     const QFont headerBoldFont = [] { QFont f; f.setBold(true); return f; }();
-    data->horizontalHeader()->setFont(headerBoldFont);
-    data->horizontalHeader()->setHighlightSections(false);
+    dataTable->horizontalHeader()->setFont(headerBoldFont);
+    dataTable->horizontalHeader()->setHighlightSections(false);
 
-    populateData(data);
+    populateData(dataTable);
 
     // Apply fixed initial widths; -1 means stretch that column
     for (int c = 0; c < colCount && c < colWidths.size(); ++c) {
         if (colWidths.at(c) < 0)
-            data->horizontalHeader()->setSectionResizeMode(c, QHeaderView::Stretch);
+            dataTable->horizontalHeader()->setSectionResizeMode(c, QHeaderView::Stretch);
         else
-            data->setColumnWidth(c, colWidths.at(c));
+            dataTable->setColumnWidth(c, colWidths.at(c));
     }
 
     // ── Footer table (1 row, no header, no scrollbars) ────────────────────
@@ -216,7 +216,7 @@ QWidget* OverviewTabWidget::buildFrozenTable(
     footer->horizontalHeader()->setStretchLastSection(false);
 
     // Match the row height of the data table
-    const int rowH = data->rowHeight(0) > 0 ? data->rowHeight(0) : 22;
+    const int rowH = dataTable->rowHeight(0) > 0 ? dataTable->rowHeight(0) : 22;
     footer->setFixedHeight(rowH + 2);
 
     populateFooter(footer);
@@ -230,13 +230,13 @@ QWidget* OverviewTabWidget::buildFrozenTable(
     }
 
     // Footer bekommt keinen Stretch-Modus — seine Spaltenbreiten werden
-    // ausschließlich pixelgenau vom data-Widget übernommen (sectionResized).
+    // ausschließlich pixelgenau vom dataTable-Widget übernommen (sectionResized).
     for (int c = 0; c < colCount && c < colWidths.size(); ++c) {
         if (colWidths.at(c) >= 0)
             footer->setColumnWidth(c, colWidths.at(c));
     }
 
-    connect(data->horizontalHeader(), &QHeaderView::sectionResized,
+    connect(dataTable->horizontalHeader(), &QHeaderView::sectionResized,
             footer, [footer](int idx, int, int newSize) {
                 footer->setColumnWidth(idx, newSize);
             });
@@ -250,19 +250,19 @@ QWidget* OverviewTabWidget::buildFrozenTable(
     auto* separator = new QFrame;
     separator->setFrameShape(QFrame::HLine);
 
-    cl->addWidget(data, 1);
+    cl->addWidget(dataTable, 1);
     cl->addWidget(separator);
     cl->addWidget(footer);
 
-    container->setProperty("dataTable", QVariant::fromValue<QObject*>(data));
+    container->setProperty("dataTable", QVariant::fromValue<QObject*>(dataTable));
     container->setProperty("footerTable", QVariant::fromValue<QObject*>(footer));
 
     // Initiale Spaltenbreiten-Übertragung für Stretch-Spalten, sobald der Tab
     // zum ersten Mal ein Layout durchlaufen hat (vor dem ersten Layout-Pass
-    // liefert data->columnWidth() für Stretch-Spalten noch keinen sinnvollen Wert).
-    QTimer::singleShot(0, footer, [data, footer, colCount]() {
+    // liefert dataTable->columnWidth() für Stretch-Spalten noch keinen sinnvollen Wert).
+    QTimer::singleShot(0, footer, [dataTable, footer, colCount]() {
         for (int c = 0; c < colCount; ++c)
-            footer->setColumnWidth(c, data->columnWidth(c));
+            footer->setColumnWidth(c, dataTable->columnWidth(c));
     });
 
     // Klick auf eine beliebige Stelle einer Zeile → rowActivated() (immer,
@@ -271,15 +271,15 @@ QWidget* OverviewTabWidget::buildFrozenTable(
     // Zeile — neu seit 19.07.2026 für Kontexte ohne Presenter-Aktion (z.B.
     // ViewShareDetails), siehe OverviewTabWidget.h. Der Aufrufer entscheidet,
     // was mit dem Dokumentpfad passiert — kein Popup, keine PDF-Logik hier.
-    connect(data, &QTableWidget::cellClicked, this, [this, data, docColumn](int row, int) {
-        auto* item0 = data->item(row, 0);
+    connect(dataTable, &QTableWidget::cellClicked, this, [this, dataTable, docColumn](int row, int) {
+        auto* item0 = dataTable->item(row, 0);
         onJahresRowActivated(item0);
         if (!item0)
             return;
 
         QString documentPath;
         if (docColumn >= 0) {
-            if (const auto* docItem = data->item(row, docColumn))
+            if (const auto* docItem = dataTable->item(row, docColumn))
                 documentPath = docItem->data(Qt::UserRole).toString();
         }
         emit rowActivatedWithDocument(item0->data(Qt::UserRole), documentPath);
@@ -291,11 +291,11 @@ QWidget* OverviewTabWidget::buildFrozenTable(
     // Aufrufer entscheidet, was damit passiert (z.B. eingebettete Vorschau
     // aktualisieren) — kein Popup, keine PDF-Logik hier.
     if (docColumn >= 0) {
-        connect(data, &QTableWidget::cellDoubleClicked, this,
-                [this, data, docColumn](int row, int col) {
+        connect(dataTable, &QTableWidget::cellDoubleClicked, this,
+                [this, dataTable, docColumn](int row, int col) {
                     if (col != docColumn)
                         return;
-                    const auto* item = data->item(row, docColumn);
+                    const auto* item = dataTable->item(row, docColumn);
                     if (!item)
                         return;
                     const QString path = item->data(Qt::UserRole).toString();
@@ -387,7 +387,7 @@ void OverviewTabWidget::populateOverview(
     for (int year : years) {
         auto* container = buildFrozenTable(
             jahresHeaders.size(), jahresHeaders, jahresColWidths,
-            [&populateJahresData, year](QTableWidget* data) { populateJahresData(year, data); },
+            [&populateJahresData, year](QTableWidget* dataTable) { populateJahresData(year, dataTable); },
             [&populateJahresFooter, year](QTableWidget* footer) { populateJahresFooter(year, footer); },
             jahresDocColumn);
 

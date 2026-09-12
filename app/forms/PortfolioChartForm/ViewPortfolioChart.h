@@ -61,7 +61,7 @@ public:
     // ── IViewPortfolioChart: Setter ───────────────────────────────────────
     void setDefaultStartDate(const QDate& date) override;
     void setMaxIntervalCount(int maxCount) override;
-    void setChartData(const PortfolioChartData& data) override;
+    void setChartData(const PortfolioChartData& chartData) override;
     void showEmptyChart(const QString& message) override;
     void showCalculating(const QString& message) override;
     void setWarning(const QString& message) override;

@@ -458,8 +458,8 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
 
     const QString uebersichtTitle = tr("Übersicht (%1 €)").arg(ValueFormatter::formatMoney(totalNetto));
 
-    auto populateUebersichtData = [this, brokerages, years](QTableWidget* data) {
-        data->setRowCount(years.size());
+    auto populateUebersichtData = [this, brokerages, years](QTableWidget* dataTable) {
+        dataTable->setRowCount(years.size());
         for (int i = 0; i < years.size(); ++i) {
             const int yr = years.at(i);
             double netto = 0.0;
@@ -471,8 +471,8 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
             iYear->setTextAlignment(Qt::AlignCenter);
             auto* iNetto = new QTableWidgetItem(ValueFormatter::formatMoney(netto) + QStringLiteral(" €"));
             iNetto->setTextAlignment(Qt::AlignCenter);
-            data->setItem(i, 0, iYear);
-            data->setItem(i, 1, iNetto);
+            dataTable->setItem(i, 0, iYear);
+            dataTable->setItem(i, 1, iNetto);
         }
     };
 
@@ -503,12 +503,12 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
     };
 
     auto populateJahresData = [this, brokerages, kColDate, kColTyp, kColGeb, kColRab, kColNetto, kColDoc]
-                              (int year, QTableWidget* data) {
+                              (int year, QTableWidget* dataTable) {
         QList<BrokerageObject> yearBrokerages;
         for (const auto& b : brokerages)
             if (b.year() == year) yearBrokerages.append(b);
 
-        data->setRowCount(yearBrokerages.size());
+        dataTable->setRowCount(yearBrokerages.size());
         for (int i = 0; i < yearBrokerages.size(); ++i) {
             const BrokerageObject& b = yearBrokerages.at(i);
 
@@ -522,14 +522,14 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
                 auto* it = new QTableWidgetItem(txt);
                 it->setTextAlignment(Qt::AlignCenter);
                 it->setFlags(it->flags() & ~Qt::ItemIsEditable);
-                data->setItem(i, col, it);
+                dataTable->setItem(i, col, it);
             };
 
             auto* dateItem = new QTableWidgetItem(b.dateAsStr());
             dateItem->setData(Qt::UserRole, b.guid());
             dateItem->setTextAlignment(Qt::AlignCenter);
             dateItem->setFlags(dateItem->flags() & ~Qt::ItemIsEditable);
-            data->setItem(i, kColDate, dateItem);
+            dataTable->setItem(i, kColDate, dateItem);
 
             setCell(kColTyp,   typ);
             setCell(kColGeb,   ValueFormatter::formatMoney(b.brokerage()));
@@ -541,8 +541,8 @@ void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerage
                 auto* docItem = new QTableWidgetItem;
                 docItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
                 docItem->setData(Qt::UserRole, doc);
-                data->setItem(i, kColDoc, docItem);
-                data->setCellWidget(i, kColDoc, makeDocIconWidget(doc));
+                dataTable->setItem(i, kColDoc, docItem);
+                dataTable->setCellWidget(i, kColDoc, makeDocIconWidget(doc));
             } else {
                 setCell(kColDoc, QStringLiteral("-"));
             }

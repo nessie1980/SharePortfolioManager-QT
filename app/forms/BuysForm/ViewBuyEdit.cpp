@@ -489,8 +489,8 @@ QString ViewBuyEdit::dateTime() const
 QString ViewBuyEdit::depotNumber() const
 {
     // Return the raw BankIdentifierValue stored as item data — same as ViewShareAdd
-    const QVariant data = m_depotNumber->currentData();
-    return data.isValid() ? data.toString() : QString();
+    const QVariant value = m_depotNumber->currentData();
+    return value.isValid() ? value.toString() : QString();
 }
 
 QString ViewBuyEdit::orderNumber()  const { return m_orderNumber->text(); }

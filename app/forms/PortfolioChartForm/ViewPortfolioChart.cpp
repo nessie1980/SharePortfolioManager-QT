@@ -284,27 +284,27 @@ void ViewPortfolioChart::setMaxIntervalCount(int maxCount)
     m_countSpin->setMaximum(std::max(1, maxCount));
 }
 
-void ViewPortfolioChart::setChartData(const PortfolioChartData& data)
+void ViewPortfolioChart::setChartData(const PortfolioChartData& chartData)
 {
     m_stack->setCurrentIndex(0);
     m_chart->removeAllSeries();
     m_points.clear();
     m_pointsX.clear();
 
-    rebuildAxes(data.points);
+    rebuildAxes(chartData.points);
 
-    if (data.points.isEmpty())
+    if (chartData.points.isEmpty())
         return;
 
-    m_points = data.points;
+    m_points = chartData.points;
     m_pointsX.reserve(m_points.size());
     for (const PortfolioChartPoint& point : m_points)
         m_pointsX.append(toMSecs(point.date));
 
     // Zero line first so the curve is drawn on top of it.
     auto* zeroLine = new QLineSeries();
-    zeroLine->append(static_cast<double>(toMSecs(data.points.constFirst().date)), 0.0);
-    zeroLine->append(static_cast<double>(toMSecs(data.points.constLast().date)),  0.0);
+    zeroLine->append(static_cast<double>(toMSecs(chartData.points.constFirst().date)), 0.0);
+    zeroLine->append(static_cast<double>(toMSecs(chartData.points.constLast().date)),  0.0);
     m_chart->addSeries(zeroLine);
     QPen zeroPen(kPortfolioZeroLineColor);
     zeroPen.setStyle(Qt::DashLine);
@@ -315,7 +315,7 @@ void ViewPortfolioChart::setChartData(const PortfolioChartData& data)
     zeroLine->attachAxis(m_xAxis);
     zeroLine->attachAxis(m_yAxis);
 
-    for (const CurveSegment& segment : buildSegments(data.points)) {
+    for (const CurveSegment& segment : buildSegments(chartData.points)) {
         auto* line = new QLineSeries();
         for (const QPointF& point : segment.points)
             line->append(point);

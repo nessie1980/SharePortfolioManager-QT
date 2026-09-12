@@ -465,8 +465,8 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>&       sa
         tr("Übersicht (%1)").arg(fmtMoney(totalPayout)),
         { tr("Jahr"), tr("Anteile"), tr("Auszahlung"), tr("Gewinn / Verlust") },
         { 100, -1, -1, -1 },
-        [&](QTableWidget* data) {
-            data->setRowCount(years.size());
+        [&](QTableWidget* dataTable) {
+            dataTable->setRowCount(years.size());
             for (int i = 0; i < years.size(); ++i) {
                 const int yr = years.at(i);
                 double volToday = 0.0, payout = 0.0, gv = 0.0;
@@ -478,14 +478,14 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>&       sa
                 }
                 auto* iYear = centeredItem(QString::number(yr));
                 iYear->setData(Qt::UserRole, yr);
-                data->setItem(i, 0, iYear);
+                dataTable->setItem(i, 0, iYear);
                 auto* iVol = centeredItem(ShareSplitHint::withMarker(
                     fmtVolume(volToday), yearVolAffected(yr)));
                 if (!yearVolTooltip(yr).isEmpty())
                     iVol->setToolTip(yearVolTooltip(yr));
-                data->setItem(i, 1, iVol);
-                data->setItem(i, 2, centeredItem(fmtMoney(payout)));
-                data->setItem(i, 3, centeredItem(fmtMoney(gv)));
+                dataTable->setItem(i, 1, iVol);
+                dataTable->setItem(i, 2, centeredItem(fmtMoney(payout)));
+                dataTable->setItem(i, 3, centeredItem(fmtMoney(gv)));
             }
         },
         [&](QTableWidget* footer) {
@@ -510,17 +510,17 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>&       sa
             for (const SaleObject& s : sales) if (s.year() == year) yearPayout += salePayout(s);
             return QStringLiteral("%1 (%2)").arg(year).arg(fmtMoney(yearPayout));
         },
-        [&](int year, QTableWidget* data) {
+        [&](int year, QTableWidget* dataTable) {
             QList<SaleObject> yearSales;
             for (const SaleObject& s : sales) if (s.year() == year) yearSales.append(s);
 
-            data->setRowCount(yearSales.size());
+            dataTable->setRowCount(yearSales.size());
             for (int i = 0; i < yearSales.size(); ++i) {
                 const SaleObject& s = yearSales.at(i);
 
                 auto* iDate = centeredItem(s.dateAsStr());
                 iDate->setData(Qt::UserRole, s.guid());
-                data->setItem(i, 0, iDate);
+                dataTable->setItem(i, 0, iDate);
 
                 // Belegzeile: bleibt in BELEG-Skala. Die Zeile ist eine
                 // Abschrift des Dokuments, das nach einem Zeilenklick rechts
@@ -532,19 +532,19 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>&       sa
                     splits, s.date(), s.volume(), s.salePrice());
                 if (!volTooltip.isEmpty())
                     iVol->setToolTip(volTooltip);
-                data->setItem(i, 1, iVol);
+                dataTable->setItem(i, 1, iVol);
 
-                data->setItem(i, 2, centeredItem(fmtMoney(salePayout(s))));
-                data->setItem(i, 3, centeredItem(fmtMoney(saleProfitLoss(s))));
+                dataTable->setItem(i, 2, centeredItem(fmtMoney(salePayout(s))));
+                dataTable->setItem(i, 3, centeredItem(fmtMoney(saleProfitLoss(s))));
 
                 if (!s.document().isEmpty()) {
                     auto* docItem = new QTableWidgetItem;
                     docItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
                     docItem->setData(Qt::UserRole, s.document());
-                    data->setItem(i, 4, docItem);
-                    data->setCellWidget(i, 4, documentIconWidget(s.document()));
+                    dataTable->setItem(i, 4, docItem);
+                    dataTable->setCellWidget(i, 4, documentIconWidget(s.document()));
                 } else {
-                    data->setItem(i, 4, centeredItem(QStringLiteral("-")));
+                    dataTable->setItem(i, 4, centeredItem(QStringLiteral("-")));
                 }
             }
         },
@@ -599,8 +599,8 @@ void ViewShareDetails::populateDividenden(const QList<DividendObject>&   dividen
         tr("Übersicht (%1)").arg(fmtMoney(totalVal)),
         { tr("Jahr"), tr("Dividende") },
         { 100, -1 },
-        [&](QTableWidget* data) {
-            data->setRowCount(years.size());
+        [&](QTableWidget* dataTable) {
+            dataTable->setRowCount(years.size());
             for (int i = 0; i < years.size(); ++i) {
                 const int yr = years.at(i);
                 double yearVal = 0.0;
@@ -609,8 +609,8 @@ void ViewShareDetails::populateDividenden(const QList<DividendObject>&   dividen
 
                 auto* iYear = centeredItem(QString::number(yr));
                 iYear->setData(Qt::UserRole, yr);
-                data->setItem(i, 0, iYear);
-                data->setItem(i, 1, centeredItem(fmtMoney(yearVal)));
+                dataTable->setItem(i, 0, iYear);
+                dataTable->setItem(i, 1, centeredItem(fmtMoney(yearVal)));
             }
         },
         [&](QTableWidget* footer) {
@@ -624,18 +624,18 @@ void ViewShareDetails::populateDividenden(const QList<DividendObject>&   dividen
             for (const DividendObject& d : dividends) if (d.year() == year) yearTotal += d.dividendPayoutWithTaxes();
             return QStringLiteral("%1 (%2)").arg(year).arg(fmtMoney(yearTotal));
         },
-        [&](int year, QTableWidget* data) {
+        [&](int year, QTableWidget* dataTable) {
             QList<DividendObject> yearDivs;
             for (const DividendObject& d : dividends) if (d.year() == year) yearDivs.append(d);
 
-            data->setRowCount(yearDivs.size());
+            dataTable->setRowCount(yearDivs.size());
             for (int i = 0; i < yearDivs.size(); ++i) {
                 const DividendObject& d = yearDivs.at(i);
 
                 auto* iDate = centeredItem(d.dateAsStr());
                 iDate->setData(Qt::UserRole, d.guid());
-                data->setItem(i, 0, iDate);
-                data->setItem(i, 1, centeredItem(fmtRate(d.rate())));
+                dataTable->setItem(i, 0, iDate);
+                dataTable->setItem(i, 1, centeredItem(fmtRate(d.rate())));
 
                 // Belegzeile: bleibt in BELEG-Skala. "Anteile am
                 // Auszahlungstag" ist die Stückzahl, auf die die Bank
@@ -654,18 +654,18 @@ void ViewShareDetails::populateDividenden(const QList<DividendObject>&   dividen
                     splits, volRefDate, d.volume(), d.rate());
                 if (!volTooltip.isEmpty())
                     iVol->setToolTip(volTooltip);
-                data->setItem(i, 2, iVol);
+                dataTable->setItem(i, 2, iVol);
 
-                data->setItem(i, 3, centeredItem(fmtMoney(d.dividendPayoutWithTaxes())));
+                dataTable->setItem(i, 3, centeredItem(fmtMoney(d.dividendPayoutWithTaxes())));
 
                 if (!d.document().isEmpty()) {
                     auto* docItem = new QTableWidgetItem;
                     docItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
                     docItem->setData(Qt::UserRole, d.document());
-                    data->setItem(i, 4, docItem);
-                    data->setCellWidget(i, 4, documentIconWidget(d.document()));
+                    dataTable->setItem(i, 4, docItem);
+                    dataTable->setCellWidget(i, 4, documentIconWidget(d.document()));
                 } else {
-                    data->setItem(i, 4, centeredItem(QStringLiteral("-")));
+                    dataTable->setItem(i, 4, centeredItem(QStringLiteral("-")));
                 }
             }
         },
@@ -720,8 +720,8 @@ void ViewShareDetails::populateKosten(const QList<BrokerageObject>& brokerages)
         tr("Übersicht (%1)").arg(fmtMoney(totalNetto)),
         { tr("Jahr"), tr("Netto-Kosten") },
         { 80, -1 },
-        [&](QTableWidget* data) {
-            data->setRowCount(years.size());
+        [&](QTableWidget* dataTable) {
+            dataTable->setRowCount(years.size());
             for (int i = 0; i < years.size(); ++i) {
                 const int yr = years.at(i);
                 double netto = 0.0;
@@ -730,8 +730,8 @@ void ViewShareDetails::populateKosten(const QList<BrokerageObject>& brokerages)
 
                 auto* iYear = centeredItem(QString::number(yr));
                 iYear->setData(Qt::UserRole, yr);
-                data->setItem(i, 0, iYear);
-                data->setItem(i, 1, centeredItem(fmtMoney(netto)));
+                dataTable->setItem(i, 0, iYear);
+                dataTable->setItem(i, 1, centeredItem(fmtMoney(netto)));
             }
         },
         [&](QTableWidget* footer) {
@@ -745,11 +745,11 @@ void ViewShareDetails::populateKosten(const QList<BrokerageObject>& brokerages)
             for (const BrokerageObject& b : brokerages) if (b.year() == year) yearNetto += b.brokerageReduction();
             return QStringLiteral("%1 (%2)").arg(year).arg(fmtMoney(yearNetto));
         },
-        [&](int year, QTableWidget* data) {
+        [&](int year, QTableWidget* dataTable) {
             QList<BrokerageObject> yearBrokerages;
             for (const BrokerageObject& b : brokerages) if (b.year() == year) yearBrokerages.append(b);
 
-            data->setRowCount(yearBrokerages.size());
+            dataTable->setRowCount(yearBrokerages.size());
             for (int i = 0; i < yearBrokerages.size(); ++i) {
                 const BrokerageObject& b = yearBrokerages.at(i);
 
@@ -761,20 +761,20 @@ void ViewShareDetails::populateKosten(const QList<BrokerageObject>& brokerages)
 
                 auto* iDate = centeredItem(b.dateAsStr());
                 iDate->setData(Qt::UserRole, b.guid());
-                data->setItem(i, 0, iDate);
-                data->setItem(i, 1, centeredItem(typ));
-                data->setItem(i, 2, centeredItem(fmtMoney(b.brokerage())));
-                data->setItem(i, 3, centeredItem(fmtMoney(b.reduction())));
-                data->setItem(i, 4, centeredItem(fmtMoney(b.brokerageReduction())));
+                dataTable->setItem(i, 0, iDate);
+                dataTable->setItem(i, 1, centeredItem(typ));
+                dataTable->setItem(i, 2, centeredItem(fmtMoney(b.brokerage())));
+                dataTable->setItem(i, 3, centeredItem(fmtMoney(b.reduction())));
+                dataTable->setItem(i, 4, centeredItem(fmtMoney(b.brokerageReduction())));
 
                 if (!b.document().isEmpty()) {
                     auto* docItem = new QTableWidgetItem;
                     docItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
                     docItem->setData(Qt::UserRole, b.document());
-                    data->setItem(i, 5, docItem);
-                    data->setCellWidget(i, 5, documentIconWidget(b.document()));
+                    dataTable->setItem(i, 5, docItem);
+                    dataTable->setCellWidget(i, 5, documentIconWidget(b.document()));
                 } else {
-                    data->setItem(i, 5, centeredItem(QStringLiteral("-")));
+                    dataTable->setItem(i, 5, centeredItem(QStringLiteral("-")));
                 }
             }
         },

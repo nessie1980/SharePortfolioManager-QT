@@ -621,8 +621,8 @@ QString ViewDividendEdit::exDate() const
 QString ViewDividendEdit::depotNumber() const
 {
     // Rohen BankIdentifierValue aus den item data zurückgeben — wie ViewBuyEdit::depotNumber().
-    const QVariant data = m_depotNumber->currentData();
-    return data.isValid() ? data.toString() : QString();
+    const QVariant value = m_depotNumber->currentData();
+    return value.isValid() ? value.toString() : QString();
 }
 
 double ViewDividendEdit::exchangeRatio() const
@@ -634,8 +634,8 @@ double ViewDividendEdit::exchangeRatio() const
 QString ViewDividendEdit::currency() const
 {
     // Return the IETF locale string stored as item data
-    const QVariant data = m_currency->currentData();
-    return data.isValid() ? data.toString() : QStringLiteral("en-US");
+    const QVariant value = m_currency->currentData();
+    return value.isValid() ? value.toString() : QStringLiteral("en-US");
 }
 
 // ── IViewDividendEdit — write methods ─────────────────────────────────────────

@@ -562,8 +562,8 @@ QString ViewSaleEdit::dateTime() const
 
 QString ViewSaleEdit::depotNumber() const
 {
-    const QVariant data = m_depotNumber->currentData();
-    return data.isValid() ? data.toString() : QString();
+    const QVariant value = m_depotNumber->currentData();
+    return value.isValid() ? value.toString() : QString();
 }
 
 QString ViewSaleEdit::orderNumber()  const { return m_orderNumber->text(); }
