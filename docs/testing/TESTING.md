@@ -2068,6 +2068,17 @@ dritten Spalte als konfigurierter Dokument-Spalte (`jahresDocColumn = 2`).
 | `test_documentColumnDoubleClick_stillEmitsDocumentActivated` | Regression: Doppelklick auf die Dokument-Spalte | `documentActivated(path)` feuert weiterhin 1× mit korrektem Pfad — dieser Mechanismus wurde beim Nachziehen von `rowActivatedWithDocument()` versehentlich kurz entfernt (brach den Build von `ViewBuyEdit` & Co.), seither bewusst als Ergänzung statt als Ersatz umgesetzt |
 | `test_documentColumnDoubleClick_emptyPath_doesNotEmitDocumentActivated` | Doppelklick auf die Dokument-Spalte einer Zeile ohne Dokument | Signal feuert nicht |
 | `test_documentColumnDoubleClick_wrongColumn_doesNotEmitDocumentActivated` | Doppelklick außerhalb der Dokument-Spalte | Signal feuert nicht |
+| `test_populateOverview_dataTablesHaveGridSelectionStyle` | Jede `dataTable` — Übersicht wie Jahres-Tabs | trägt `GridStyle::kSelectionBackground` und `kSelectionForeground` im Stylesheet |
+| `test_populateOverview_footerTableHasNoGridSelectionStyle` | Die `footerTable` | trägt es bewusst NICHT — sie ist `NoSelection` |
+
+@note Die letzten beiden Tests stammen vom 29.07.2026, liefen aber erst ab
+dem 11.09.2026. Sie lagen in `tests/widgets/tst_overviewtabwidget.cpp` —
+einem Verzeichnis ohne `CMakeLists.txt`, das von keinem
+`add_subdirectory()` erfasst wurde. Sechs Wochen lang geschrieben,
+committet und nie ausgeführt. Beim Auflösen des Verzeichnisses hat sich
+gezeigt, dass die tote Kopie eine echte Obermenge der gebauten war; sie hat
+diese ersetzt. Siehe ARCHITECTURE.md, "Verwaistes Verzeichnis
+tests/widgets".
 
 `ViewShareDetails::onMainTabChanged()` ist kein `OverviewTabWidget`-Verhalten mehr, sondern lebt
 in `ViewShareDetails` und braucht eine echte Dialog-Instanz mit Mehrjahres-

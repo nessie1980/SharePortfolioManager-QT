@@ -65,11 +65,6 @@ spm-qt/
     └── forms/           # Unit-Tests für Forms (MainWindow, ShareAddForm, ShareEditForm, BuysForm, SalesForm, DividendForm, BrokeragesForm, OwnMessageBox, BackupProgressForm, ShareDetailsForm, ChartForm, PortfolioChartForm, OverviewTabWidget, BackupSettingsForm, TraySettingsForm, DocumentsSettingsForm)
 @endcode
 
-@note Nicht enthalten: `tests/widgets/`. Das Verzeichnis liegt im
-Repository, wird aber von keinem `add_subdirectory()` erfasst und ist damit
-tot — siehe "Offene Punkte", "Verwaistes Verzeichnis tests/widgets
-entfernen".
-
 ---
 
 ## Schichtenarchitektur
@@ -5414,13 +5409,6 @@ Datenbasis ist dieselbe, nur die Aggregation unterscheidet sich —
 sinnvollerweise später als per Checkbox umschaltbare zweite Serie im selben
 Chart.
 
-### Verwaistes Verzeichnis tests/widgets entfernen (05.08.2026)
-
-`tests/widgets/` enthält `tst_overviewtabwidget.cpp`, hat aber keine
-`CMakeLists.txt` und wird von der Root-`CMakeLists.txt` nicht eingebunden.
-Dieselbe Datei liegt zusätzlich in `tests/forms/` und wird von dort gebaut —
-`tests/widgets/` ist also eine verwaiste Dublette und kann gelöscht werden.
-
 ### Übersetzung ist vollständig offen (07.08.2026)
 
 Die Oberfläche ist durchgängig deutsch. Alle Benutzertexte stehen zwar
@@ -5651,6 +5639,52 @@ wuerde nur dieselbe eine Zeile der Fabrik ein weiteres Mal pruefen; die
 Gegenprobe im Test stellt sicher, dass ueberhaupt Zahlenfelder gefunden
 wurden -- sonst liefe er auch dann gruen, wenn es keine mehr gaebe.
 
+### Verwaistes Verzeichnis tests/widgets (05.08.2026, aufgeloest 11.09.2026)
+
+`tests/widgets/` enthielt eine zweite Kopie von `tst_overviewtabwidget.cpp`,
+hatte aber keine eigene `CMakeLists.txt` und wurde von der
+Root-`CMakeLists.txt` nicht eingebunden. Die Datei wurde also nie
+kompiliert; gebaut wurde nur die Kopie in `tests/forms/`.
+
+#### Die Dublette war nicht identisch
+
+Das ist der eigentliche Fund. Ein Vergleich vor dem Loeschen zeigte, dass die
+TOTE Kopie die neuere war: sie enthielt zwei Testfaelle, die der lebenden
+fehlten --
+`test_populateOverview_dataTablesHaveGridSelectionStyle` und
+`test_populateOverview_footerTableHasNoGridSelectionStyle`. Sie gehoeren zum
+Feature "einheitliche Grid-Selektionsfarbe" (29.07.2026, Nessies Vorgabe) und
+pruefen, dass jede `dataTable` das Selektions-Stylesheet aus `GridStyle`
+traegt, die `footerTable` dagegen nicht -- sie ist `NoSelection`.
+
+Geschrieben, committet, nie ausgefuehrt. Sechs Wochen lang.
+
+Der Diff bestand aus genau zwei Hunks, beide reine Loeschungen: die tote
+Kopie war eine echte Obermenge. Zusammenfuehren war deshalb nicht noetig,
+sie hat die lebende per `git mv -f` ersetzt.
+
+#### Was daran lehrreich ist
+
+Ein Verzeichnis ohne `CMakeLists.txt` sieht aus wie Code, verhaelt sich aber
+wie eine Textdatei. Wer dort einen Test ergaenzt, bekommt kein Signal --
+weder einen Fehlschlag noch einen Erfolg. Der Autor der beiden Testfaelle
+hatte keinen Grund anzunehmen, dass sie nicht laufen.
+
+Das Feature selbst war in Ordnung: `OverviewTabWidget::buildFrozenTable()`
+ruft `GridStyle::applySelectionStyle()` genau einmal auf, auf der
+Datentabelle. Die Tests bestaetigen also bestehendes Verhalten, statt eine
+Regression aufzudecken -- diesmal.
+
+@note Keine CMake-Anpassung noetig: `GridStyle` ist header-only, das
+Testziel kompiliert `OverviewTabWidget.cpp` ohnehin und hat `app/` im
+Include-Pfad.
+
+@note `app/widgets/GridStyle.h` ist in `app/CMakeLists.txt` nicht gelistet.
+Funktional ohne Belang (header-only), aber abweichend von der sonstigen
+Handhabung -- `ValueFormatter.h`, `NumberParser.h` und
+`NumericFieldValidator.h` stehen dort. Bei Gelegenheit nachtragen, damit der
+Header in der IDE auftaucht.
+
 ### ShareDetailsForm.cpp war toter Code (05.09.2026, geloescht 11.09.2026)
 
 `ShareDetailsForm.cpp` und `ShareDetailsForm.h` sind entfernt. Sie standen
@@ -5670,7 +5704,10 @@ einem Rollout mitgezogen werden muessen, waeren sie noch in Gebrauch
 gewesen. Genau daran zeigt sich der Preis von totem Code: er kostet bei
 jeder Bestandsaufnahme Aufmerksamkeit, die er nicht verdient.
 
-@note In derselben Lage ist weiterhin das Verzeichnis `tests/widgets/`.
+@note In derselben Lage war das Verzeichnis `tests/widgets/` — seit dem
+11.09.2026 ebenfalls aufgeloest, siehe den eigenen Abschnitt weiter oben.
+Dort steckte allerdings mehr drin als hier: zwei nie ausgefuehrte
+Testfaelle.
 
 ### formatMoney/formatVolume lagen je View doppelt vor (05.09.2026, behoben 09.09.2026)
 

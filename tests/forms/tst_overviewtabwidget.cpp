@@ -20,6 +20,7 @@
 #include <QStringList>
 
 #include "../../app/widgets/OverviewTabWidget.h"
+#include "../../app/widgets/GridStyle.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TestOverviewTabWidget
@@ -164,6 +165,41 @@ private slots:
             [](int, QTableWidget*) {}, [](int, QTableWidget*) {});
 
         QCOMPARE(w.count(), 0);
+    }
+
+    // ── Grid-Selektionsfarbe (Feature 29.07.2026, Nessies Vorgabe: wie im
+    // Haupt-Grid, konsistent in allen Grids) ────────────────────────────────
+
+    /** Sowohl der Übersicht- als auch jeder Jahres-Tab müssen die einheitliche
+     *  Blau/Gelb-Selektionsfarbe (GridStyle) auf ihrer dataTable tragen — die
+     *  footerTable bleibt unangetastet, da nicht selektierbar. */
+    void test_populateOverview_dataTablesHaveGridSelectionStyle()
+    {
+        OverviewTabWidget w;
+        populateSample(w);
+
+        for (int i = 0; i < w.count(); ++i) {
+            auto* dataTable = dataTableOf(w.widget(i));
+            if (!dataTable) QFAIL("dataTable nicht gefunden");
+            QVERIFY(dataTable->styleSheet().contains(GridStyle::kSelectionBackground));
+            QVERIFY(dataTable->styleSheet().contains(GridStyle::kSelectionForeground));
+        }
+    }
+
+    /** footerTable ist nicht selektierbar (NoSelection) und bekommt daher
+     *  bewusst kein Selektions-Stylesheet. */
+    void test_populateOverview_footerTableHasNoGridSelectionStyle()
+    {
+        OverviewTabWidget w;
+        populateSample(w);
+
+        auto* container = w.widget(1);
+        if (!container) QFAIL("Container nicht gefunden");
+        auto* footerTable = qobject_cast<QTableWidget*>(
+            container->property("footerTable").value<QObject*>());
+        if (!footerTable) QFAIL("footerTable nicht gefunden");
+
+        QVERIFY(!footerTable->styleSheet().contains(GridStyle::kSelectionBackground));
     }
 
     // ── setCurrentIndex() / currentIndex() ──────────────────────────────────

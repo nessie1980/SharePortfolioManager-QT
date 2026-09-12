@@ -10,6 +10,22 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.21.10] - 2026-09-11
+
+### Removed
+
+- **Verwaistes Verzeichnis `tests/widgets/` aufgeloest.** Es enthielt eine
+  zweite Kopie von `tst_overviewtabwidget.cpp`, wurde aber mangels
+  `CMakeLists.txt` nie kompiliert.
+
+### Fixed
+
+- **Zwei Testfaelle liefen sechs Wochen lang nicht.** Die tote Kopie war die
+  neuere: sie enthielt zwei Pruefungen zur einheitlichen Grid-Selektionsfarbe
+  (Feature vom 29.07.2026), die der gebauten Kopie fehlten. Sie sind jetzt
+  Teil des laufenden Testziels. Das gepruefte Verhalten selbst war in
+  Ordnung -- die Tests bestaetigen es, sie decken keine Regression auf.
+
 ## [1.21.9] - 2026-09-11
 
 ### Removed
