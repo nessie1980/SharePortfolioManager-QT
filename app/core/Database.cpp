@@ -18,7 +18,16 @@ Database::Database(QObject* parent)
 
 Database::~Database()
 {
-    close();
+    // Bewusst KEIN close() (12.09.2026): dieser Singleton wird erst bei der
+    // statischen Zerstoerung abgebaut, also nachdem main() zurueckgekehrt und
+    // die QCoreApplication bereits weg ist. Jeder QSqlDatabase-Aufruf zu
+    // diesem Zeitpunkt schreibt "QSqlDatabase requires a QCoreApplication"
+    // ins Protokoll -- genau die Zeile, die bisher am Ende jedes Testlaufs
+    // stand. Freizugeben ist hier auch nichts mehr: die Klasse haelt keine
+    // Verbindung als Member, und close() wird ausdruecklich aufgerufen (in
+    // main() vor dem Ende, in cleanupTestCase() der Testziele). Unterbleibt
+    // das, raeumt Qt seine Verbindungsliste beim Herunterfahren selbst ab.
+    // Siehe ARCHITECTURE.md, "QSqlDatabase-Warnung am Ende jedes Testlaufs".
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -26,17 +35,20 @@ bool Database::open(const QString& path)
 {
     // If a connection with this name still exists (e.g. from a previous open/close
     // cycle), remove it first so Qt doesn't warn about a duplicate connection name.
-    if (QSqlDatabase::contains(k_connectionName)) {
-        m_db = QSqlDatabase(); // drop our reference before removing
+    if (QSqlDatabase::contains(k_connectionName))
         QSqlDatabase::removeDatabase(k_connectionName);
-    }
 
-    m_db = QSqlDatabase::addDatabase("QSQLITE", k_connectionName);
-    m_db.setDatabaseName(path);
+    // Eigener Gueltigkeitsbereich: die lokale QSqlDatabase faellt am Ende des
+    // Blocks weg, damit diese Klasse keine Referenz auf die Verbindung behaelt
+    // (siehe connection()). Alles Weitere arbeitet ueber connection().
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", k_connectionName);
+        db.setDatabaseName(path);
 
-    if (!m_db.open()) {
-        qCritical() << "[Database] Failed to open:" << m_db.lastError().text();
-        return false;
+        if (!db.open()) {
+            qCritical() << "[Database] Failed to open:" << db.lastError().text();
+            return false;
+        }
     }
 
     // Enable WAL mode and foreign keys for every connection
@@ -62,32 +74,42 @@ bool Database::open(const QString& path)
 
 void Database::close()
 {
-    if (m_db.isOpen())
-        m_db.close();
+    if (!QSqlDatabase::contains(k_connectionName))
+        return;
 
-    // Reset m_db to a default-constructed (invalid) instance so Qt's internal
-    // reference count drops to zero before removeDatabase() is called.
-    // open() performs the same reset before addDatabase() to handle rapid
-    // close/open cycles without Qt warning about duplicate connection names.
-    m_db = QSqlDatabase();
+    // Eigener Gueltigkeitsbereich, damit die lokale Referenz vor
+    // removeDatabase() wieder weg ist -- sonst meldet Qt "connection
+    // 'spm_main' is still in use".
+    {
+        QSqlDatabase db = QSqlDatabase::database(k_connectionName, /*open=*/false);
+        if (db.isOpen())
+            db.close();
+    }
 
-    if (QSqlDatabase::contains(k_connectionName))
-        QSqlDatabase::removeDatabase(k_connectionName);
+    QSqlDatabase::removeDatabase(k_connectionName);
+}
+
+QSqlDatabase Database::connection() const
+{
+    // Rueckgabe per Wert, siehe Begruendung an der Deklaration in Database.h:
+    // die geholte Verbindung lebt nur so lange wie der Ausdruck der
+    // Aufrufstelle, diese Klasse haelt selbst keine.
+    return QSqlDatabase::database(k_connectionName, /*open=*/false);
 }
 
 bool Database::isOpen() const
 {
-    return m_db.isOpen();
+    return connection().isOpen();
 }
 
 QSqlError Database::lastError() const
 {
-    return m_db.lastError();
+    return connection().lastError();
 }
 
 bool Database::execute(const QString& sql)
 {
-    QSqlQuery sqlQuery(m_db);
+    QSqlQuery sqlQuery(connection());
     if (!sqlQuery.exec(sql)) {
         qWarning() << "[Database] SQL error:" << sqlQuery.lastError().text()
                    << "\nStatement:" << sql;
@@ -96,9 +118,9 @@ bool Database::execute(const QString& sql)
     return true;
 }
 
-bool Database::beginTransaction()    { return m_db.transaction(); }
-bool Database::commitTransaction()   { return m_db.commit(); }
-bool Database::rollbackTransaction() { return m_db.rollback(); }
+bool Database::beginTransaction()    { return connection().transaction(); }
+bool Database::commitTransaction()   { return connection().commit(); }
+bool Database::rollbackTransaction() { return connection().rollback(); }
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 bool Database::createSchema()
@@ -344,7 +366,7 @@ bool Database::ensureColumn(const QString& table,
 
 bool Database::hasColumn(const QString& table, const QString& column) const
 {
-    QSqlQuery sqlQuery(m_db);
+    QSqlQuery sqlQuery(connection());
 
     // PRAGMA table_info liefert eine leere Ergebnismenge, wenn die Tabelle
     // gar nicht existiert — der Aufrufer bekommt dann false und würde ein

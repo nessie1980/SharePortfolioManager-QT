@@ -66,10 +66,15 @@ public:
     /**
      * @brief Close the database connection and release all resources.
      *
-     * Resets the internal QSqlDatabase member to a default-constructed
-     * (invalid) instance before calling QSqlDatabase::removeDatabase().
-     * This ensures Qt's internal reference count drops to zero first,
-     * preventing the "connection still in use" warning.
+     * Schliesst die Verbindung und meldet sie bei Qt ab. Die dafuer noetige
+     * QSqlDatabase wird nur fuer die Dauer des Aufrufs geholt, damit beim
+     * anschliessenden QSqlDatabase::removeDatabase() keine Referenz mehr
+     * offen ist ("connection still in use").
+     *
+     * @note Muss ausdruecklich aufgerufen werden, solange die
+     * QCoreApplication noch lebt — main() tut das vor dem Ende, die
+     * Testziele in cleanupTestCase(). Der Destruktor holt das NICHT nach,
+     * siehe dessen Begruendung in Database.cpp.
      */
     void close();
 
@@ -176,7 +181,19 @@ private:
      */
     bool hasColumn(const QString& table, const QString& column) const;
 
-    QSqlDatabase m_db;
+    /**
+     * @brief Die benannte Verbindung, geholt fuer die Dauer des Aufrufs.
+     *
+     * Bewusst Rueckgabe per Wert und kein Member (12.09.2026): eine als
+     * Member gehaltene QSqlDatabase haelt Qts interne Verbindung bis zur
+     * Zerstoerung dieses Singletons fest — und die findet nach dem Abbau der
+     * QCoreApplication statt. Jeder QSqlDatabase-Zugriff zu diesem Zeitpunkt
+     * schreibt "QSqlDatabase requires a QCoreApplication" ins Protokoll.
+     * Siehe ARCHITECTURE.md, "QSqlDatabase-Warnung am Ende jedes Testlaufs".
+     *
+     * @return Die Verbindung k_connectionName; ungueltig, wenn keine offen ist.
+     */
+    QSqlDatabase connection() const;
 
     static constexpr const char* k_connectionName = "spm_main";
 };

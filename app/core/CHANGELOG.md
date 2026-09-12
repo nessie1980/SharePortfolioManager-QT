@@ -8,6 +8,29 @@ ARCHITECTURE.md, Abschnitt "Versionierung".
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.3.1] - 2026-09-12
+
+### Behoben
+
+- `QSqlDatabase requires a QCoreApplication` am Ende jedes Anwendungs- und
+  Testlaufs. `Database` hielt seine `QSqlDatabase` als Member fest und gab sie
+  erst im Destruktor frei — der als prozessweiter Singleton erst bei der
+  statischen Zerstörung läuft, also nachdem `main()` zurückgekehrt und die
+  `QCoreApplication` abgebaut ist. Genau dann schreibt Qt diese Zeile ins
+  Protokoll.
+
+  Der Member ist entfallen. Die Verbindung wird über den neuen privaten Helfer
+  `connection()` für die Dauer des jeweiligen Aufrufs geholt und per Wert
+  zurückgegeben; `open()` und `close()` kapseln ihre lokale Instanz in einen
+  eigenen Gültigkeitsbereich, damit vor `QSqlDatabase::removeDatabase()` keine
+  Referenz mehr offen ist. Der Destruktor ruft kein `close()` mehr auf.
+
+  Ohne Auswirkung auf das Verhalten: die öffentliche Schnittstelle ist
+  unverändert, das ausdrückliche `close()` bleibt nötig, solange die
+  `QCoreApplication` lebt (`main()` vor dem Ende, `cleanupTestCase()` der
+  Testziele). Siehe `docs/architecture/ARCHITECTURE.md`,
+  "QSqlDatabase-Warnung am Ende jedes Testlaufs".
+
 ## [1.3.0] - 2026-08-21
 
 ### Hinzugefügt

@@ -4497,29 +4497,6 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### QSqlDatabase-Warnung am Ende jedes Testlaufs (offen, 27.08.2026)
-
-Am Ende jedes Testlaufs steht:
-
-@code{.unparsed}
-qt.sql.qsqldatabase: QSqlDatabase requires a QCoreApplication
-@endcode
-
-Sie erscheint, nachdem `main()` zurückgekehrt ist: die `QApplication` ist
-schon abgebaut, und `Database` räumt als prozessweiter Singleton erst danach
-seine Verbindung ab. Auf das Testergebnis wirkt sich das nicht aus, der Lauf
-ist zu diesem Zeitpunkt vorbei.
-
-Zu beheben wäre es, indem `cleanupTestCase()` die Verbindung schließt — das
-tun die Ziele bereits — und `Database` seine `QSqlDatabase` nicht bis zur
-statischen Zerstörung festhält. Der zweite Teil ist der eigentliche Punkt und
-betrifft die Datenbank-Bibliothek, nicht die Tests. Eigene Versionsspur,
-eigener Commit.
-
-@note Rein kosmetisch, aber die Warnung steht in jedem CI-Protokoll und
-gewöhnt einen daran, die letzten Zeilen zu überlesen. Genau dort stünde eine
-echte Meldung.
-
 ### Breite Belegkennungen gewinnen gegen den Dialog-Fallback (offen, 02.09.2026)
 
 Aufgefallen beim Zuschnitt der Feldschlüssel-Gegenprüfung, beim Nachgehen
@@ -4823,6 +4800,38 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### QSqlDatabase-Warnung am Ende jedes Testlaufs (27.08.2026, behoben 12.09.2026)
+
+Am Ende jedes Testlaufs steht:
+
+@code{.unparsed}
+qt.sql.qsqldatabase: QSqlDatabase requires a QCoreApplication
+@endcode
+
+Sie erscheint, nachdem `main()` zurückgekehrt ist: die `QApplication` ist
+schon abgebaut, und `Database` räumt als prozessweiter Singleton erst danach
+seine Verbindung ab. Auf das Testergebnis wirkt sich das nicht aus, der Lauf
+ist zu diesem Zeitpunkt vorbei.
+
+Behoben in der Datenbank-Bibliothek (1.3.1): `Database` hält keine
+`QSqlDatabase` mehr als Member. Die Verbindung wird über den neuen privaten
+Helfer `connection()` für die Dauer des jeweiligen Aufrufs geholt und per
+Wert zurückgegeben; `open()` und `close()` kapseln ihre lokale Instanz in
+einen eigenen Gültigkeitsbereich, damit vor `removeDatabase()` keine Referenz
+mehr offen ist. Der Destruktor ruft kein `close()` mehr auf — zu diesem
+Zeitpunkt gäbe es nichts freizugeben, und genau dieser Aufruf war die Quelle
+der Meldung.
+
+@note Das ausdrückliche `close()` bleibt nötig, solange die
+`QCoreApplication` lebt: `main()` tut es vor dem Ende, die Testziele in
+`cleanupTestCase()`. Unterbleibt es, räumt Qt seine Verbindungsliste beim
+Herunterfahren selbst ab — ohne Warnung, weil niemand mehr eine Referenz
+hält.
+
+@note Rein kosmetisch, aber die Warnung steht in jedem CI-Protokoll und
+gewöhnt einen daran, die letzten Zeilen zu überlesen. Genau dort stünde eine
+echte Meldung.
 
 ### Tausendertrennzeichen in Eingabefeldern (07.09.2026, behoben 08.09.2026)
 
