@@ -1,0 +1,81 @@
+name: 'Install poppler-utils (Windows)'
+description: >
+  Laedt das aktuelle poppler-windows-Release herunter, entpackt es und haengt
+  sein bin-Verzeichnis an den PATH. Liefert pdftotext und pdftoppm, die die
+  Anwendung ueber QProcess aufruft.
+
+# Bis zum 12.09.2026 stand dieser Block zeichengleich in build.yml und
+# package.yml. Herausgezogen, weil eine Kopie an zwei Stellen genau dann
+# auseinanderlaeuft, wenn es niemand bemerkt -- dieselbe Ueberlegung wie bei
+# den Helfern im Anwendungscode.
+
+inputs:
+  token:
+    description: >
+      Token fuer die Release-Abfrage gegen api.github.com. Ohne Token zaehlt
+      die Anfrage gegen das knappe unauthentifizierte Kontingent, das sich
+      alle Runner einer IP teilen -- 403 "rate limit exceeded" kommt dann
+      ohne Verzoegerung zurueck und der Schritt scheitert nach einer Sekunde.
+      Aufrufer geben hier secrets.GITHUB_TOKEN mit.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install poppler-utils (pdftotext / pdftoppm)
+      shell: pwsh
+      env:
+        POPPLER_TOKEN: ${{ inputs.token }}
+      run: |
+        $ErrorActionPreference = 'Stop'
+
+        # Ohne das zeichnet Invoke-WebRequest unter Windows fuer jeden
+        # Datenblock eine Fortschrittsleiste und wird dadurch spuerbar
+        # langsamer.
+        $ProgressPreference = 'SilentlyContinue'
+
+        $headers = @{ 'User-Agent' = 'spm-qt-ci' }
+        if ($env:POPPLER_TOKEN) {
+          $headers['Authorization'] = "Bearer $env:POPPLER_TOKEN"
+        } else {
+          Write-Host "Kein Token uebergeben - Release-Abfrage laeuft unauthentifiziert."
+        }
+
+        # Drei Anlaeufe mit wachsender Pause. Beide Netzaufrufe koennen aus
+        # Gruenden scheitern, die beim naechsten Versuch weg sind: gedrosselte
+        # API, abgebrochener Download, kurzer Ausfall der Release-CDN.
+        function Invoke-MitWiederholung {
+            param([scriptblock] $Aktion, [string] $Beschreibung)
+
+            foreach ($versuch in 1..3) {
+                try {
+                    return & $Aktion
+                } catch {
+                    Write-Host "$Beschreibung - Versuch $versuch fehlgeschlagen: $($_.Exception.Message)"
+                    if ($versuch -eq 3) { throw }
+                    Start-Sleep -Seconds (5 * $versuch)
+                }
+            }
+        }
+
+        $apiUrl = "https://api.github.com/repos/oschwartz10612/poppler-windows/releases/latest"
+        $release = Invoke-MitWiederholung -Beschreibung "Release-Abfrage" -Aktion {
+            Invoke-RestMethod -Uri $apiUrl -Headers $headers
+        }
+
+        $asset = $release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
+        if (-not $asset) { throw "Kein ZIP-Asset im aktuellen poppler-windows-Release gefunden." }
+        Write-Host "Gefunden: $($asset.name) aus Release $($release.tag_name)"
+
+        Invoke-MitWiederholung -Beschreibung "Download $($asset.name)" -Aktion {
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile poppler.zip
+        } | Out-Null
+
+        Expand-Archive -Path poppler.zip -DestinationPath poppler
+
+        $binDir = Get-ChildItem -Path poppler -Recurse -Directory -Filter "bin" | Select-Object -First 1
+        if (-not $binDir) { throw "Kein bin-Verzeichnis im entpackten poppler-Archiv gefunden." }
+
+        $binDir.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        Write-Host "PATH ergaenzt um: $($binDir.FullName)"

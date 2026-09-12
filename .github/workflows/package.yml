@@ -29,17 +29,13 @@ jobs:
         with:
           arch: x64
 
+      # Herausgezogen am 12.09.2026 - der Block stand zeichengleich auch in
+      # build.yml. Token gegen die Drosselung der unauthentifizierten
+      # GitHub-API, Wiederholungen gegen kurze Ausfaelle.
       - name: Install poppler-utils (pdftotext / pdftoppm)
-        shell: pwsh
-        run: |
-          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/oschwartz10612/poppler-windows/releases/latest"
-          $asset = $release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
-          if (-not $asset) { throw "Kein ZIP-Asset im aktuellen poppler-windows-Release gefunden." }
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile poppler.zip
-          Expand-Archive -Path poppler.zip -DestinationPath poppler
-          $binDir = Get-ChildItem -Path poppler -Recurse -Directory -Filter "bin" | Select-Object -First 1
-          if (-not $binDir) { throw "Kein bin-Verzeichnis im entpackten poppler-Archiv gefunden." }
-          $binDir.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        uses: ./.github/actions/install-poppler-windows
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure (Release)
         run: cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release

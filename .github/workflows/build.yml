@@ -37,13 +37,25 @@ jobs:
         run: cmake --build build --parallel 2
 
       - name: Test
+        id: test
         env:
           QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build --output-on-failure
 
+      # Nur wenn wirklich die Tests gescheitert sind. Mit blossem failure()
+      # lief dieser Schritt auch, wenn ein frueherer Schritt abbrach und
+      # deshalb gar nicht getestet wurde - er fand dann keine Logdatei und
+      # haengte seinen eigenen Pfadfehler als letzte Zeile ans Protokoll,
+      # wo er die echte Ursache verdeckte (12.09.2026).
       - name: Show full test log on failure
-        if: failure()
-        run: tail -n 300 build/Testing/Temporary/LastTest.log
+        if: failure() && steps.test.outcome == 'failure'
+        run: |
+          LOG=build/Testing/Temporary/LastTest.log
+          if [ -f "$LOG" ]; then
+            tail -n 300 "$LOG"
+          else
+            echo "Keine $LOG vorhanden - ctest ist gescheitert, bevor es ein Protokoll angelegt hat."
+          fi
 
   build-windows:
     name: Windows (MSVC)
@@ -65,17 +77,13 @@ jobs:
         with:
           arch: x64
 
+      # Herausgezogen am 12.09.2026 - der Block stand zeichengleich auch in
+      # package.yml. Token gegen die Drosselung der unauthentifizierten
+      # GitHub-API, Wiederholungen gegen kurze Ausfaelle.
       - name: Install poppler-utils (pdftotext / pdftoppm)
-        shell: pwsh
-        run: |
-          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/oschwartz10612/poppler-windows/releases/latest"
-          $asset = $release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
-          if (-not $asset) { throw "Kein ZIP-Asset im aktuellen poppler-windows-Release gefunden." }
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile poppler.zip
-          Expand-Archive -Path poppler.zip -DestinationPath poppler
-          $binDir = Get-ChildItem -Path poppler -Recurse -Directory -Filter "bin" | Select-Object -First 1
-          if (-not $binDir) { throw "Kein bin-Verzeichnis im entpackten poppler-Archiv gefunden." }
-          $binDir.FullName | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        uses: ./.github/actions/install-poppler-windows
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure
         run: cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
@@ -84,11 +92,22 @@ jobs:
         run: cmake --build build --parallel 2
 
       - name: Test
+        id: test
         env:
           QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build --output-on-failure
 
+      # Siehe die Begruendung beim Linux-Job - genau hier ist der Fall am
+      # 12.09.2026 aufgetreten: die Poppler-Installation scheiterte, es wurde
+      # nie getestet, und im Protokoll stand als letzte Zeile "Cannot find
+      # path ... LastTest.log".
       - name: Show full test log on failure
-        if: failure()
+        if: failure() && steps.test.outcome == 'failure'
         shell: pwsh
-        run: Get-Content build\Testing\Temporary\LastTest.log -Tail 300
+        run: |
+          $log = "build\Testing\Temporary\LastTest.log"
+          if (Test-Path $log) {
+            Get-Content $log -Tail 300
+          } else {
+            Write-Host "Keine $log vorhanden - ctest ist gescheitert, bevor es ein Protokoll angelegt hat."
+          }
