@@ -3655,6 +3655,34 @@ verschiebt die Indizes und würde ein Scheitern melden, das nichts über echte
 Belege aussagt. Genau deshalb suchen alle in Phase 5 ergänzten Regeln über
 die BESCHRIFTUNG statt über die Position.
 
+Belegart-Kennungen gegen sich selbst (ergaenzt 12.09.2026):
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_documentType_everyIdentifierClassifiesAsItsOwnType` | Abgeleitete Textprobe je Kennung | Keine früher geprüfte Kennung verschluckt eine spätere |
+| `test_documentType_realDocumentsAreClassifiedCorrectly` | Die hinterlegten Belegtexte | Jeder Beleg wird seiner eigenen Belegart zugeordnet |
+
+`detectDocumentType()` prüft die vier Kennungen eines Depots in fester
+Reihenfolge, und die erste Übereinstimmung gewinnt; die Ausweichregel des
+Dialogs greift nur, wenn überhaupt keine trifft. Eine zu breit gefasste
+Kennung schlägt damit jede spätere. Der erste Test baut aus jedem Muster eine
+wörtliche Textprobe — `(Verkauf)` wird zu `Verkauf`,
+`(ORDERABRECHNUNG\s+KAUF)` zu `ORDERABRECHNUNG KAUF` — und verlangt, dass die
+Einstufung genau die eigene Belegart liefert. Kein echter Beleg nötig.
+
+@note Was der Test wirklich schützt, ist ein einzelnes Attribut. ING führt
+`(Kauf)` vor `(Verkauf)`; dass ein Verkaufsbeleg trotzdem als Verkauf
+durchgeht, liegt allein an `RegexOptions="None"` und daran, dass "Verkauf" ein
+kleines k trägt. Steht dort eines Tages `IgnoreCase`, wird jeder
+ING-Verkaufsbeleg zum Kauf — und am Muster selbst sieht man das nicht. Genau
+dieser Rückbau lässt den Test fehlschlagen.
+
+@note Nicht pruefbare Kennungen werden uebersprungen und per `qInfo()`
+benannt, nicht geraten. Betrifft heute Consors' leere `SaleIdentifier`-Regel
+und würde jedes Muster betreffen, das sich nicht verlustfrei in Text
+zurückübersetzen lässt. Eine Selbstprobe stellt vorher sicher, dass die
+abgeleitete Textprobe ihre eigene Kennung überhaupt trifft — schlägt sie fehl,
+ist die Ableitung schuld und nicht die Konfiguration.
+
 Feldnamen gegen die Formularlisten (ergänzt 28.08.2026):
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|

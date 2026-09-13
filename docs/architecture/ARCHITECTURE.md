@@ -4497,6 +4497,32 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
+### Node-20-Abkündigung betrifft msvc-dev-cmd (offen, 12.09.2026)
+
+GitHub entfernt Node 20 am 16.09.2026 von den Runnern. Actions, die darauf
+zielen, liefen zuletzt nur noch unter erzwungenem Node 24 und haben danach
+keine Laufzeit mehr. `actions/checkout` ist am 12.09.2026 auf v5 gehoben
+worden und damit erledigt; offen bleibt `ilammy/msvc-dev-cmd@v1`, das die
+MSVC-Entwicklungsumgebung für den Ninja-Generator im Windows-Job setzt.
+
+Ein Versionssprung hilft dort nicht: die neueste Fassung v1.13.0 setzt selbst
+auf Node 20. Vorbereiteter Ersatz ist `egor-tensin/vs-shell@v2`, das ohne
+Node auskommt und in der Node-20-Diskussion des Projekts genau dafür
+vorgeschlagen wird -- hier aber nie erprobt wurde. Als größerer Umbau bliebe,
+Ninja aufzugeben und CMake den Visual-Studio-Generator nehmen zu lassen,
+womit die Entwicklungsumgebung ganz entfiele.
+
+Entschieden ist: abwarten. Der erste Windows-Lauf nach dem 16.09.2026 zeigt,
+ob die Action noch funktioniert. Fällt sie aus, ist der Fehlschlag sichtbar
+und der Ersatz eine Zeile. Der Log-Schritt ist seit dem 12.09.2026
+abgesichert und zeigt in diesem Fall die echte Ursache statt eines
+Pfadfehlers.
+
+@note Betrifft nur den Windows-Job. Der Linux-Job hatte mit
+`actions/checkout` seine einzige Node-20-Action und ist seit dem Sprung auf
+v5 warnungsfrei.
+
+
 ### Breite Belegkennungen gewinnen gegen den Dialog-Fallback (offen, 02.09.2026)
 
 Aufgefallen beim Zuschnitt der Feldschlüssel-Gegenprüfung, beim Nachgehen
@@ -4539,6 +4565,15 @@ konfiguriert werden: dann kämen Verkaufsregelsatz und `SaleIdentifier` hinzu,
 und die Falle wäre entschärft — aber nur, solange die Verkaufskennung
 tatsächlich vor der Kostenkennung trifft. Die heute leere Verkaufskennung
 verdeckt genau diesen Zusammenhang.
+
+Seit dem 12.09.2026 ist der Zustand wenigstens gegen Verschlimmerung
+gesichert: `test_documentType_everyIdentifierClassifiesAsItsOwnType` in
+`tst_documentsxml` baut aus jeder Kennung der ausgelieferten Datei eine
+wörtliche Textprobe und verlangt, dass die Einstufung genau ihre eigene
+Belegart liefert. Das fängt Reihenfolge, Breite und Groß-/Kleinschreibung ab —
+insbesondere ein späteres `IgnoreCase` auf INGs `BuyIdentifier`, das sonst
+jeden Verkaufsbeleg zum Kauf machte. Die Frage, welche Wörter auf einem echten
+Beleg tatsächlich stehen, bleibt davon unberührt; der Punkt bleibt offen.
 
 @note Dasselbe Muster steckt in ING: `BuyIdentifier` ist schlicht `(Kauf)`.
 Steht auf einem ING-Verkaufsbeleg irgendwo "Kauf" mit grossem K, gewinnt die

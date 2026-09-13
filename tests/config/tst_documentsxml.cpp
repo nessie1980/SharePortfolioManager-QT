@@ -261,6 +261,79 @@ const char* kDepotDkb     = "501403950";
 const char* kDepotIng     = "8006189848";
 const char* kDepotConsors = "0878031421";
 
+// ── Textproben aus den Belegart-Kennungen (12.09.2026) ───────────────────
+//
+// Fuer die Pruefung weiter unten, dass keine frueher gepruefte Kennung eine
+// spaeter gepruefte verschluckt. Aus dem Muster einer Kennung wird ein Text
+// gewonnen, der genau diese Kennung trifft -- ohne echten Beleg.
+
+/// Wie DocumentClassifier::regexMatches(), nur hier sichtbar: Muster samt
+/// seiner RegexOptions gegen einen Text pruefen. Die Optionen sind der Punkt
+/// -- steht auf einer Kennung eines Tages `IgnoreCase`, aendert das, was sie
+/// trifft, ohne dass am Muster selbst etwas anders aussieht.
+bool patternMatches(const ParserLib::RegExElement& element, const QString& text)
+{
+    if (element.regexExpression.isEmpty())
+        return false;
+
+    QRegularExpression re(element.regexExpression);
+    for (const auto option : element.regexOptions)
+        re.setPatternOptions(re.patternOptions() | option);
+    return re.isValid() && re.match(text).hasMatch();
+}
+
+/// Baut aus einem Kennungsmuster eine woertliche Textprobe.
+///
+/// Die Kennungen der ausgelieferten Datei sind durchweg Literale, hoechstens
+/// in eine Fanggruppe gefasst, mit Alternativen oder mit `\s+` zwischen zwei
+/// Woertern. Genau diese drei Faelle werden zurueckuebersetzt:
+///
+/// - `(Verkauf)` wird zu `Verkauf`
+/// - `(Dividendengutschrift|Ertragsgutschrift)` wird zu `Dividendengutschrift`
+/// - `(ORDERABRECHNUNG\s+KAUF)` wird zu `ORDERABRECHNUNG KAUF`
+///
+/// Bleibt danach etwas Regex-Artiges stehen, liefert die Funktion einen leeren
+/// Text: dann taugt das Muster nicht als Probe, und der Aufrufer sagt das,
+/// statt sich eine zurechtzulegen. Der Punkt `.` ist dabei unschaedlich und
+/// bleibt erlaubt -- er trifft in `(Ges. Kosten)` den Punkt der Probe selbst.
+QString literalProbe(const ParserLib::RegExElement& element)
+{
+    QString pattern = element.regexExpression.trimmed();
+    if (pattern.isEmpty())
+        return {};
+
+    // Aeussere Fanggruppe abstreifen, wenn sie das ganze Muster umschliesst.
+    if (pattern.startsWith(QLatin1Char('(')) && pattern.endsWith(QLatin1Char(')'))) {
+        const QString inner = pattern.mid(1, pattern.size() - 2);
+        if (!inner.contains(QLatin1Char('(')) && !inner.contains(QLatin1Char(')')))
+            pattern = inner;
+    }
+
+    // Bei Alternativen genuegt die erste -- geprueft wird die Kennung, nicht
+    // jede ihrer Schreibweisen.
+    pattern = pattern.section(QLatin1Char('|'), 0, 0);
+
+    pattern.replace(QStringLiteral("\\s+"), QStringLiteral(" "));
+
+    static const QRegularExpression meta(QStringLiteral(R"([\\\[\]\(\)\{\}\*\+\?\^\$])"));
+    if (pattern.contains(meta))
+        return {};
+
+    return pattern.trimmed();
+}
+
+/// Klartextname einer Belegart fuer die Fehlermeldungen.
+QString typeName(DocumentType type)
+{
+    switch (type) {
+    case DocumentType::Buy:       return QStringLiteral("Buy");
+    case DocumentType::Sale:      return QStringLiteral("Sale");
+    case DocumentType::Dividend:  return QStringLiteral("Dividend");
+    case DocumentType::Brokerage: return QStringLiteral("Brokerage");
+    }
+    return QStringLiteral("?");
+}
+
 } // namespace
 
 class TestDocumentsXml : public QObject
@@ -1001,6 +1074,148 @@ private slots:
             const DocumentEntry* doc = DocumentsConfig::findDocument(*dkb, type);
             QVERIFY(doc);
             QCOMPARE(doc->regexList.value(QStringLiteral("Wkn")).regexFoundPosition, 1);
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Belegart-Kennungen: keine verschluckt eine spaetere (12.09.2026)
+    //
+    // detectDocumentType() prueft die vier Kennungen eines Depots in fester
+    // Reihenfolge -- Buy, Sale, Dividend, Brokerage -- und die erste, die
+    // trifft, gewinnt. Eine zu breit gefasste Kennung schlaegt damit jede
+    // spaeter gepruefte, und der Beleg wird mit dem falschen Regelsatz
+    // ausgewertet. Die Ausweichregel des Dialogs greift nicht: sie kommt nur
+    // zum Zug, wenn UEBERHAUPT KEINE Kennung trifft.
+    //
+    // Der Fall ist nicht hypothetisch. ING fuehrt `(Kauf)` als Kaufkennung
+    // und `(Verkauf)` als Verkaufskennung, geprueft in dieser Reihenfolge.
+    // Dass das heute gutgeht, haengt an einem einzigen Attribut: beide tragen
+    // `RegexOptions="None"`, und "Verkauf" traegt ein kleines k. Steht dort
+    // eines Tages `IgnoreCase` -- naheliegend, wenn ein Muster einmal nicht
+    // trifft --, wird JEDER ING-Verkaufsbeleg zum Kauf. Am Muster selbst
+    // sieht man das nicht.
+    //
+    // Geprueft wird ohne echte Belege: aus jeder Kennung wird eine woertliche
+    // Textprobe gebaut (literalProbe()) und verlangt, dass die Einstufung
+    // genau ihre eigene Belegart liefert. Das deckt Reihenfolge, Breite und
+    // Gross-/Kleinschreibung ab, nicht aber die Frage, welche Woerter auf
+    // einem realen Beleg tatsaechlich stehen -- dafuer die Pruefung darunter.
+    //
+    // Siehe ARCHITECTURE.md, "Breite Belegkennungen gewinnen gegen den
+    // Dialog-Fallback".
+
+    void test_documentType_everyIdentifierClassifiesAsItsOwnType()
+    {
+        const QList<DepotEntry> depots = m_config.entries();
+        QVERIFY(!depots.isEmpty());
+
+        const QList<QPair<DocumentType, QString>> arten {
+            { DocumentType::Buy,       QStringLiteral("BuyIdentifier")       },
+            { DocumentType::Sale,      QStringLiteral("SaleIdentifier")      },
+            { DocumentType::Dividend,  QStringLiteral("DividendIdentifier")  },
+            { DocumentType::Brokerage, QStringLiteral("BrokerageIdentifier") },
+        };
+
+        int geprueft = 0;
+
+        for (const DepotEntry& depot : depots) {
+            for (const QPair<DocumentType, QString>& art : arten) {
+                const ParserLib::RegExElement element =
+                    depot.identifierRegexList.value(art.second);
+
+                const QString probe = literalProbe(element);
+                if (probe.isEmpty()) {
+                    // Leere Kennung -- Consors fuehrt keine Verkaufsbelege --
+                    // oder ein Muster, das sich nicht verlustfrei in Text
+                    // zurueckuebersetzen laesst. Beides ist kein Fehler,
+                    // sondern schlicht nicht pruefbar. Das wird gesagt, statt
+                    // sich eine Probe zurechtzulegen.
+                    qInfo() << "Keine Textprobe aus" << art.second << "von"
+                            << depot.bankName << depot.depotNumber
+                            << "-- uebersprungen";
+                    continue;
+                }
+
+                // Selbstprobe: taugt der Text ueberhaupt als Stellvertreter?
+                // Schlaegt sie fehl, ist die Ableitung schuld, nicht die
+                // Konfiguration -- und die Aussage waere wertlos.
+                QVERIFY2(patternMatches(element, probe),
+                         qPrintable(QStringLiteral(
+                             "%1 (%2): die Textprobe \"%3\" aus %4 trifft die "
+                             "eigene Kennung nicht -- literalProbe() passt "
+                             "nicht mehr zum Muster \"%5\"")
+                             .arg(depot.bankName, depot.depotNumber, probe,
+                                  art.second, element.regexExpression)));
+
+                // Bewusst eine andere Art als Ausweichwert: liefert
+                // detectDocumentType() den Fallback, faellt das auf.
+                const DocumentType fallback = (art.first == DocumentType::Dividend)
+                                                  ? DocumentType::Buy
+                                                  : DocumentType::Dividend;
+
+                const DocumentType erkannt =
+                    DocumentClassifier::detectDocumentType(probe, depot, fallback);
+
+                QVERIFY2(erkannt == art.first,
+                         qPrintable(QStringLiteral(
+                             "%1 (%2): der Text \"%3\" stammt aus %4, wird aber "
+                             "als %5 eingestuft statt als %6 -- eine frueher "
+                             "gepruefte Kennung ist zu breit gefasst und "
+                             "verschluckt die eigene")
+                             .arg(depot.bankName, depot.depotNumber, probe,
+                                  art.second, typeName(erkannt),
+                                  typeName(art.first))));
+                ++geprueft;
+            }
+        }
+
+        QVERIFY2(geprueft > 0,
+                 "Keine einzige Kennung war pruefbar -- entweder ist "
+                 "Documents.xml leer oder literalProbe() liefert nichts mehr");
+    }
+
+    /**
+     * @brief Die empirische Gegenprobe: die hinterlegten Belegtexte werden
+     *        ihrer eigenen Belegart zugeordnet.
+     *
+     * Die Pruefung darueber arbeitet mit abgeleiteten Textproben und kann
+     * deshalb nur sagen, dass sich die Kennungen nicht gegenseitig im Weg
+     * stehen. Ob auf einem echten Verkaufsbeleg zufaellig ein Wort steht, das
+     * eine frueher gepruefte Kennung trifft, zeigt erst ein echter Beleg --
+     * genau die Frage, die im offenen Punkt zu den breiten Kennungen ohne
+     * Antwort bleibt, solange keine Consors- und ING-Belege vorliegen.
+     */
+    void test_documentType_realDocumentsAreClassifiedCorrectly()
+    {
+        const QList<QPair<const char*, DocumentType>> belege {
+            { kDkbUsd,    DocumentType::Dividend },
+            { kIngUsd,    DocumentType::Dividend },
+            { kCortalEur, DocumentType::Dividend },
+            { kDkbSale,   DocumentType::Sale     },
+        };
+
+        for (const QPair<const char*, DocumentType>& beleg : belege) {
+            const QString text = QString::fromUtf8(beleg.first);
+
+            int index = -1;
+            QVERIFY2(DocumentClassifier::matchDepotIndex(text, m_config, index),
+                     "Belegtext wurde keinem Depot zugeordnet");
+
+            const DepotEntry depot = m_config.entries().at(index);
+
+            // Ausweichwert bewusst falsch -- er darf hier nie zum Zug kommen.
+            const DocumentType fallback = (beleg.second == DocumentType::Dividend)
+                                              ? DocumentType::Brokerage
+                                              : DocumentType::Dividend;
+
+            const DocumentType erkannt =
+                DocumentClassifier::detectDocumentType(text, depot, fallback);
+
+            QVERIFY2(erkannt == beleg.second,
+                     qPrintable(QStringLiteral(
+                         "Beleg von %1 (%2) wird als %3 eingestuft statt als %4")
+                         .arg(depot.bankName, depot.depotNumber,
+                              typeName(erkannt), typeName(beleg.second))));
         }
     }
 
