@@ -4,9 +4,87 @@
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QSqlRecord>
+#include <QSqlError>
+#include <QDebug>
 #include <QTemporaryDir>
+#include <QDateTime>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 
 #include "../../app/core/Database.h"
+#include "../../app/core/DepotNumberNormalizer.h"
+
+#include <utility>   // std::as_const
+
+namespace {
+
+// ── Hilfen für die Depotnummer-Migration (18.09.2026) ─────────────────────────
+
+/// Legt ein Portfolio an und befüllt es mit Werten im alten C#-Format
+/// "<Nummer> - <Bank>" sowie mit Gegenproben, die unverändert bleiben müssen.
+/// Schliesst die Datenbank danach — das nächste open() ist der Prüfgegenstand.
+///
+/// Muss eine DATEI sein, kein :memory: (gleiche Begründung wie bei den
+/// Spaltenmigrationen unten): der Altzustand muss das Schliessen überleben.
+bool seedLegacyDepotNumbers(const QString& dbPath)
+{
+    if (!Database::instance().open(dbPath))
+        return false;
+
+    const QStringList statements = {
+        "INSERT INTO shares (guid, wkn, name) VALUES ('dep-share', 'DEP001', 'Depot AG')",
+
+        // Zwei Käufe im alten Format, zwei Depots — wie in Nessies ShareList.xml.
+        "INSERT INTO buys (guid, share_guid, depot_number, order_number, datetime, volume, price) "
+        "VALUES ('b-ing', 'dep-share', '8006189848 - ING diba', 'O-1', '2024-01-10T00:00:00', 10, 100)",
+        "INSERT INTO buys (guid, share_guid, depot_number, order_number, datetime, volume, price) "
+        "VALUES ('b-dkb', 'dep-share', '501403950 - DKB', 'O-2', '2024-02-10T00:00:00', 5, 100)",
+
+        // Gegenproben: schon im neuen Format bzw. kein Ziffernblock vor " - ".
+        "INSERT INTO buys (guid, share_guid, depot_number, order_number, datetime, volume, price) "
+        "VALUES ('b-new', 'dep-share', '8006189848', 'O-3', '2024-03-10T00:00:00', 1, 100)",
+        "INSERT INTO buys (guid, share_guid, depot_number, order_number, datetime, volume, price) "
+        "VALUES ('b-odd', 'dep-share', 'ING - diba', 'O-4', '2024-04-10T00:00:00', 1, 100)",
+
+        "INSERT INTO sales (guid, share_guid, depot_number, order_number, datetime, volume, sale_price) "
+        "VALUES ('s-ing', 'dep-share', '8006189848 - ING diba', 'O-S1', '2024-05-10T00:00:00', 2, 120)",
+
+        "INSERT INTO dividends (guid, share_guid, datetime, rate, volume, depot_number) "
+        "VALUES ('d-ing', 'dep-share', '2024-06-10T00:00:00', 1.5, 8, '8006189848 - ING diba')",
+    };
+
+    QSqlQuery q(QSqlDatabase::database("spm_main"));
+    for (const QString& sql : statements) {
+        if (!q.exec(sql)) {
+            qWarning() << "seedLegacyDepotNumbers:" << q.lastError().text() << sql;
+            Database::instance().close();
+            return false;
+        }
+    }
+    Database::instance().close();
+    return true;
+}
+
+/// depot_number einer Zeile der offenen Hauptverbindung.
+QString depotNumberOf(const QString& table, const QString& guid)
+{
+    QSqlQuery q(QSqlDatabase::database("spm_main"));
+    q.prepare(QStringLiteral("SELECT depot_number FROM %1 WHERE guid = :guid").arg(table));
+    q.bindValue(QStringLiteral(":guid"), guid);
+    if (!q.exec() || !q.next())
+        return QStringLiteral("<nicht gefunden>");
+    return q.value(0).toString();
+}
+
+/// Alle Sicherungen der Depotnummer-Migration im Ordner @p dir.
+QStringList migrationBackupsIn(const QString& dir)
+{
+    return QDir(dir).entryList({ QStringLiteral("*_vor_Depotnummer_Migration_*") },
+                               QDir::Files);
+}
+
+} // namespace
 
 class TestDatabase : public QObject
 {
@@ -479,6 +557,261 @@ private slots:
 
         Database::instance().close();
         QVERIFY(Database::instance().open(":memory:")); // Ausgangszustand wiederherstellen
+    }
+
+    // ── DepotNumberNormalizer (Bugfix 18.09.2026) ─────────────────────────
+    //
+    // Die Regel selbst, ohne Datenbank. Sie ist die einzige Stelle, die über
+    // die Umstellung entscheidet — Database::migrateDepotNumbers() und
+    // PortfolioImporter rufen beide nur sie auf.
+
+    void test_depotNormalizer_data()
+    {
+        QTest::addColumn<QString>("input");
+        QTest::addColumn<QString>("expected");
+
+        // Das Feldformat aus Nessies ShareList.xml.
+        QTest::newRow("ING")            << QStringLiteral("8006189848 - ING diba")   << QStringLiteral("8006189848");
+        QTest::newRow("DKB")            << QStringLiteral("501403950 - DKB")         << QStringLiteral("501403950");
+        // Führende Null bleibt — die Nummer ist Text, keine Zahl (Consors).
+        QTest::newRow("leadingZero")    << QStringLiteral("0878031421 - Consors")    << QStringLiteral("0878031421");
+        // Umgebende Leerzeichen gehören nicht zur Nummer.
+        QTest::newRow("outerSpaces")    << QStringLiteral("  8006189848 - ING diba") << QStringLiteral("8006189848");
+        // Bankname mit eigenem " - ": geschnitten wird am ERSTEN Vorkommen.
+        QTest::newRow("dashInBankName") << QStringLiteral("8006189848 - ING - diba") << QStringLiteral("8006189848");
+
+        // Gegenproben: alles, was nicht eindeutig das alte Format ist, bleibt.
+        QTest::newRow("alreadyClean")   << QStringLiteral("8006189848")              << QStringLiteral("8006189848");
+        QTest::newRow("empty")          << QStringLiteral("")                        << QStringLiteral("");
+        QTest::newRow("nonNumeric")     << QStringLiteral("ING - diba")              << QStringLiteral("ING - diba");
+        QTest::newRow("mixedPrefix")    << QStringLiteral("DE8006 - ING")            << QStringLiteral("DE8006 - ING");
+        QTest::newRow("noNumber")       << QStringLiteral(" - DKB")                  << QStringLiteral(" - DKB");
+        QTest::newRow("noSpaces")       << QStringLiteral("8006189848-ING")          << QStringLiteral("8006189848-ING");
+    }
+
+    void test_depotNormalizer()
+    {
+        QFETCH(QString, input);
+        QFETCH(QString, expected);
+        QCOMPARE(DepotNumberNormalizer::normalize(input), expected);
+        QCOMPARE(DepotNumberNormalizer::needsNormalization(input), input != expected);
+    }
+
+    // ── Depotnummer-Migration (Bugfix 18.09.2026) ─────────────────────────
+    //
+    // Nessies Bugreport: der Dividenden-Dialog meldete "Bestand 0,0000 Stk."
+    // bei 25 gehaltenen Anteilen. Die importierten Käufe trugen
+    // "8006189848 - ING diba", der Dialog vergleicht gegen "8006189848".
+    // Siehe ARCHITECTURE.md, "Depotnummern im alten Format (Nummer - Bank)".
+
+    void test_depotMigration_memoryDatabase_nothingToReport()
+    {
+        // Die In-Memory-Datenbank aus initTestCase() ist frisch: kein Wert im
+        // alten Format, also kein Bericht.
+        QVERIFY(!Database::instance().depotNumberMigrationReport().attempted);
+    }
+
+    void test_depotMigration_normalizesBuysSalesAndDividends()
+    {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString dbPath = tempDir.path() + QStringLiteral("/ShareList.db");
+        QVERIFY(seedLegacyDepotNumbers(dbPath));
+
+        QVERIFY(Database::instance().open(dbPath));
+
+        QCOMPARE(depotNumberOf("buys",      "b-ing"), QStringLiteral("8006189848"));
+        QCOMPARE(depotNumberOf("buys",      "b-dkb"), QStringLiteral("501403950"));
+        QCOMPARE(depotNumberOf("sales",     "s-ing"), QStringLiteral("8006189848"));
+        QCOMPARE(depotNumberOf("dividends", "d-ing"), QStringLiteral("8006189848"));
+
+        // Gegenproben bleiben, wie sie waren.
+        QCOMPARE(depotNumberOf("buys", "b-new"), QStringLiteral("8006189848"));
+        QCOMPARE(depotNumberOf("buys", "b-odd"), QStringLiteral("ING - diba"));
+
+        Database::instance().close();
+        QVERIFY(Database::instance().open(":memory:")); // Ausgangszustand wiederherstellen
+    }
+
+    void test_depotMigration_reportNamesCountsAndReplacements()
+    {
+        // Der Bericht ist die Grundlage des Hinweisdialogs in MainWindow — er
+        // muss WAS (Anzahl je Tabelle) und WIE (alter → neuer Wert) enthalten.
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString dbPath = tempDir.path() + QStringLiteral("/ShareList.db");
+        QVERIFY(seedLegacyDepotNumbers(dbPath));
+
+        QVERIFY(Database::instance().open(dbPath));
+        const DepotNumberMigrationReport report = Database::instance().depotNumberMigrationReport();
+
+        QVERIFY(report.attempted);
+        QVERIFY(report.succeeded);
+        QVERIFY(report.errorText.isEmpty());
+        QCOMPARE(report.buys,      2);   // b-new und b-odd zählen NICHT mit
+        QCOMPARE(report.sales,     1);
+        QCOMPARE(report.dividends, 1);
+        QCOMPARE(report.total(),   4);
+
+        QCOMPARE(report.replacements.size(), 2);
+        QCOMPARE(report.replacements.value(QStringLiteral("8006189848 - ING diba")),
+                 QStringLiteral("8006189848"));
+        QCOMPARE(report.replacements.value(QStringLiteral("501403950 - DKB")),
+                 QStringLiteral("501403950"));
+
+        Database::instance().close();
+        QVERIFY(Database::instance().open(":memory:"));
+    }
+
+    void test_depotMigration_backupHoldsPreviousState()
+    {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString dbPath = tempDir.path() + QStringLiteral("/ShareList.db");
+        QVERIFY(seedLegacyDepotNumbers(dbPath));
+
+        QVERIFY(Database::instance().open(dbPath));
+        const QString backupPath = Database::instance().depotNumberMigrationReport().backupPath;
+        Database::instance().close();
+
+        QVERIFY(!backupPath.isEmpty());
+        QVERIFY(QFileInfo::exists(backupPath));
+        QCOMPARE(QFileInfo(backupPath).absolutePath(), QFileInfo(dbPath).absolutePath());
+
+        // Die Backup-Rotation in MainWindow::createBackup() filtert nach
+        // "*_ShareList_*.db". Enthielte der Name "_ShareList_", würde die
+        // Sicherung beim nächsten Start mit wegrotiert.
+        const QString fileName = QFileInfo(backupPath).fileName();
+        QVERIFY(fileName.startsWith(QStringLiteral("ShareList_vor_Depotnummer_Migration_")));
+        QVERIFY2(!fileName.contains(QStringLiteral("_ShareList_")),
+                 qPrintable(fileName));
+
+        // Inhalt: der Stand VOR der Umstellung. Eigene Verbindung, damit die
+        // Hauptverbindung unberührt bleibt; eigener Gültigkeitsbereich, damit
+        // removeDatabase() keine offene Referenz mehr vorfindet.
+        const QString connection = QStringLiteral("depot_backup_check");
+        {
+            QSqlDatabase backup = QSqlDatabase::addDatabase("QSQLITE", connection);
+            backup.setDatabaseName(backupPath);
+            QVERIFY(backup.open());
+
+            QSqlQuery q(backup);
+            QVERIFY(q.exec("SELECT depot_number FROM buys WHERE guid = 'b-ing'"));
+            QVERIFY(q.next());
+            QCOMPARE(q.value(0).toString(), QStringLiteral("8006189848 - ING diba"));
+
+            QVERIFY(q.exec("SELECT depot_number FROM sales WHERE guid = 's-ing'"));
+            QVERIFY(q.next());
+            QCOMPARE(q.value(0).toString(), QStringLiteral("8006189848 - ING diba"));
+
+            q.finish();
+            backup.close();
+        }
+        QSqlDatabase::removeDatabase(connection);
+
+        QVERIFY(Database::instance().open(":memory:"));
+    }
+
+    void test_depotMigration_isIdempotent()
+    {
+        // Ab dem zweiten Öffnen gibt es nichts mehr umzustellen: kein
+        // Bericht (also kein erneuter Hinweis beim Start) und vor allem
+        // keine weitere Sicherung.
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString dbPath = tempDir.path() + QStringLiteral("/ShareList.db");
+        QVERIFY(seedLegacyDepotNumbers(dbPath));
+
+        QVERIFY(Database::instance().open(dbPath));   // migriert
+        QVERIFY(Database::instance().depotNumberMigrationReport().attempted);
+        Database::instance().close();
+
+        QVERIFY(Database::instance().open(dbPath));   // nichts mehr zu tun
+        QVERIFY(!Database::instance().depotNumberMigrationReport().attempted);
+        QCOMPARE(depotNumberOf("buys", "b-ing"), QStringLiteral("8006189848"));
+        Database::instance().close();
+
+        QCOMPARE(migrationBackupsIn(tempDir.path()).size(), 1);
+
+        QVERIFY(Database::instance().open(":memory:"));
+    }
+
+    void test_depotMigration_nothingToDo_noBackup()
+    {
+        // Ein Portfolio ganz ohne Altwerte bekommt weder Bericht noch
+        // Sicherung — der Schritt darf im Normalfall keine Spuren hinterlassen.
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString dbPath = tempDir.path() + QStringLiteral("/Clean.db");
+
+        QVERIFY(Database::instance().open(dbPath));
+        {
+            QSqlQuery q(QSqlDatabase::database("spm_main"));
+            QVERIFY(q.exec("INSERT INTO shares (guid, wkn, name) VALUES ('c-share', 'CLN001', 'Clean AG')"));
+            QVERIFY(q.exec("INSERT INTO buys (guid, share_guid, depot_number, order_number, datetime, volume, price) "
+                           "VALUES ('c-buy', 'c-share', '8006189848', 'C-1', '2024-01-10T00:00:00', 10, 100)"));
+        }
+        Database::instance().close();
+
+        QVERIFY(Database::instance().open(dbPath));
+        QVERIFY(!Database::instance().depotNumberMigrationReport().attempted);
+        Database::instance().close();
+
+        QVERIFY(migrationBackupsIn(tempDir.path()).isEmpty());
+
+        QVERIFY(Database::instance().open(":memory:"));
+    }
+
+    void test_depotMigration_backupFails_dataUnchanged_retriedOnNextOpen()
+    {
+        // Zusage: ohne Sicherung keine Umstellung. Herbeigeführt, indem die
+        // Sicherungspfade der nächsten Sekunden vorab belegt werden —
+        // migrationBackupPath() ist dafür mit ausdrücklichem Zeitpunkt
+        // öffentlich. Zehn Sekunden Puffer, damit ein langsamer CI-Runner
+        // zwischen Belegen und open() nicht aus dem Fenster läuft.
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        const QString dbPath = tempDir.path() + QStringLiteral("/ShareList.db");
+        QVERIFY(seedLegacyDepotNumbers(dbPath));
+
+        const QDateTime now = QDateTime::currentDateTime();
+        QStringList blocked;
+        for (int s = 0; s <= 10; ++s) {
+            const QString path = Database::migrationBackupPath(dbPath, now.addSecs(s));
+            QFile f(path);
+            QVERIFY(f.open(QIODevice::WriteOnly));
+            f.write("belegt");
+            blocked.append(path);
+        }
+
+        QVERIFY(Database::instance().open(dbPath));   // open() selbst scheitert NICHT
+        const DepotNumberMigrationReport failed = Database::instance().depotNumberMigrationReport();
+        QVERIFY(failed.attempted);
+        QVERIFY(!failed.succeeded);
+        QVERIFY(!failed.errorText.isEmpty());
+        QVERIFY(failed.backupPath.isEmpty());
+        QCOMPARE(failed.total(), 4);                 // der Bericht nennt trotzdem den Umfang
+
+        // Nichts umgestellt, und die fremde Datei am Sicherungspfad ist
+        // unangetastet — sie wurde weder überschrieben noch gelöscht.
+        QCOMPARE(depotNumberOf("buys", "b-ing"), QStringLiteral("8006189848 - ING diba"));
+        for (const QString& path : std::as_const(blocked)) {
+            QFile f(path);
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            QCOMPARE(f.readAll(), QByteArray("belegt"));
+        }
+        Database::instance().close();
+
+        // Nächstes Öffnen: Weg frei, Umstellung wird nachgeholt.
+        for (const QString& path : std::as_const(blocked))
+            QVERIFY(QFile::remove(path));
+
+        QVERIFY(Database::instance().open(dbPath));
+        QVERIFY(Database::instance().depotNumberMigrationReport().succeeded);
+        QCOMPARE(depotNumberOf("buys", "b-ing"), QStringLiteral("8006189848"));
+        Database::instance().close();
+
+        QVERIFY(Database::instance().open(":memory:"));
     }
 
     void test_dividends_columnOrder_matchesBetweenFreshAndMigratedSchema()

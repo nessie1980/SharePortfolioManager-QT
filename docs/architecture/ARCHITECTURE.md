@@ -2681,6 +2681,14 @@ der UI-Thread bleibt während des gesamten Kopiervorgangs reaktionsfähig.
 Der Benutzer sieht einen `%BackupProgressDialog` mit Fortschrittsbalken und Abbrechen-Button.
 Bei Abbruch wird die unfertige Backup-Datei gelöscht.
 
+@note Die Kopie ist eine Dateikopie der `.db`. Das ist nur deshalb
+konsistent, weil zum Zeitpunkt von `createBackup()` seit dem Öffnen noch
+nichts geschrieben wurde: im WAL-Modus lägen frische Änderungen zunächst in
+der `-wal`-Datei, die nicht mitkopiert wird. Wer künftig vor dem Backup
+schreibt, muss das berücksichtigen. Die Depotnummer-Migration schreibt genau
+dort und legt deshalb ihre eigene Sicherung per `VACUUM INTO` an (siehe
+"Depotnummern im alten Format (Nummer - Bank)" unter "Datenbankschema").
+
 ---
 
 ### BackupProgressForm-Details
@@ -2878,6 +2886,83 @@ Ersatztabellen-Variante ist deutlich fehleranfälliger und will einzeln
 durchdacht sein. Ebenfalls von SQLite vorgegeben: `ADD COLUMN` darf weder
 `PRIMARY KEY` noch `UNIQUE` enthalten und bei `NOT NULL` keinen Default
 vermissen lassen.
+
+### Depotnummern im alten Format (Nummer - Bank) (Bugfix 18.09.2026)
+
+Nessies Bugreport: der Dividenden-Dialog blockierte das Speichern mit
+"Bestand am 10.08.26: 0,0000 Stk." und "Berücksichtigt wurden 0 Käufe und 0
+Verkäufe", obwohl im Depot 25 Stück lagen. `DividendVolumeChecker` rechnete
+richtig; die Daten passten nicht. Die alte C#-Anwendung hatte die
+Depotnummer als "8006189848 - ING diba" abgelegt, `PortfolioImporter`
+übernahm das 1:1 (in Nessies `ShareList.xml`: 491-mal ING, 15-mal DKB). Die
+heutigen Formulare speichern dagegen nur die Nummer aus `Documents.xml` —
+seit der Klarstellung vom 25.08.2026 der eindeutige Schlüssel eines Depots,
+der Bankname ist reiner Anzeigetext. Jeder Vergleich über die Depotnummer
+ging an den importierten Datensätzen vorbei: die Bestandsprüfung am Ex-Tag
+genauso wie die FIFO-Zuteilung eines neuen Verkaufs
+(`loadAvailableBuysForDepot()`), die dort nur nicht mit einer Meldung
+auffällt, sondern mit fehlenden Lots.
+
+Die Regel steht in `app/core/DepotNumberNormalizer.h` (header-only, bei der
+Database-Bibliothek, weil der Importer sie ohnehin einbindet): aus
+`<Ziffern> - <Text>` wird `<Ziffern>`. Alles andere bleibt unverändert — ein
+Wert ohne " - ", ein Wert mit Buchstaben vor " - ", ein Bindestrich ohne
+Leerzeichen. Führende Nullen bleiben erhalten, die Nummer ist Text. Zwei
+Aufrufer, keine Kopie der Regel: die Migration hier und `PortfolioImporter`
+(siehe "XML-Import-Tool", Fall 5 unter "Bekannte Datenqualitätsprobleme").
+
+Die Migration ist eine Daten-, keine Spaltenmigration und hängt deshalb nicht
+in der Tabelle `migrations[]`, sondern als eigener Schritt
+`migrateDepotNumbers()` am Ende von `migrateSchema()`:
+
+1. Kandidaten aus `buys`, `sales` und `dividends` sammeln. SQL filtert nur grob
+   vor (`LIKE '% - %'`), entschieden wird in `normalize()`. Ohne Kandidaten
+   endet der Schritt sofort — kein Bericht, keine Sicherung. Damit ist er
+   idempotent, ohne einen Versionszähler zu brauchen (gleiche Begründung wie
+   bei `ensureColumn()` oben).
+2. Sicherung per `VACUUM INTO` neben die Portfolio-Datei. Schlägt sie fehl,
+   wird nicht umgestellt.
+3. Umstellung in einer Transaktion, bei jedem Fehler vollständiger Rollback.
+
+Ein Fehlschlag lässt `open()` bewusst nicht scheitern: das Portfolio bleibt
+benutzbar wie vor dem Bugfix, und beim nächsten Öffnen wird es erneut
+versucht.
+
+Warum eine eigene Sicherung statt des Start-Backups aus
+`MainWindow::createBackup()`: jenes läuft erst nach `Database::open()` und
+hätte damit schon den umgestellten Stand gesichert. Es ist ausserdem eine
+Dateikopie der `.db`; im WAL-Modus liegen frisch geschriebene Änderungen aber
+zunächst in der `-wal`-Datei daneben. `VACUUM INTO` schreibt dagegen über die
+offene Verbindung einen konsistenten Schnappschuss, WAL-Inhalt eingeschlossen,
+und zwar genau dort, wo er gebraucht wird: unmittelbar vor dem `UPDATE`. Die
+Sicherung entsteht unabhängig von den Backup-Einstellungen, weil sie die
+einzige Rückfallebene für eine nicht umkehrbare Änderung ist (Nessies
+Entscheidung 18.09.2026).
+
+Dateiname: `<Name>_vor_Depotnummer_Migration_<yyyy_MM_dd_HH_mm_ss>.<Endung>`,
+z. B. `ShareList_vor_Depotnummer_Migration_2026_09_18_14_30_00.db`. Er beginnt
+bewusst mit dem Portfolionamen und enthält damit kein `_ShareList_` — die
+Rotation in `createBackup()` filtert nach `*_<Name>_*.<Endung>` und würde die
+Sicherung sonst beim nächsten Start mit wegrotieren. Das Backup-Verzeichnis
+aus den Einstellungen gilt hier nicht: die Database-Bibliothek kennt
+`AppSettings` nicht und soll es auch nicht.
+
+Die Bibliothek hat keine Oberfläche. Sie hält das Ergebnis als
+`DepotNumberMigrationReport` fest (Anzahl je Tabelle, vorkommende
+Ersetzungen, Sicherungspfad, Fehlertext), abrufbar über
+`Database::depotNumberMigrationReport()` und bei jedem `open()`
+zurückgesetzt. `MainWindow::reportDepotNumberMigration()` liest ihn nach dem
+Programmstart und nach `onOpenPortfolio()`: immer eine Zeile im
+Meldungsbereich, bei freigeschalteten Start-Dialogen zusätzlich ein Hinweis,
+dessen Text `buildDepotNumberMigrationMessage()` baut. Der Text nennt was
+(Anzahl), warum (Bankname im Schlüssel, Bestandsprüfung und FIFO finden die
+Einträge nicht), wie (Nummer vor dem Bindestrich, mit den tatsächlichen
+Ersetzungen) und wo die Sicherung liegt — Nessies Vorgabe, der Benutzer solle
+"vor allem warum und wie" erfahren.
+
+@note Belegwerte (Stückzahl, Kurs, Datum) bleiben unberührt; die
+Depotnummer ist ein Zuordnungsschlüssel, kein Wert von der Abrechnung. Die
+Beleg-Wahrheit ist davon nicht betroffen.
 
 ---
 
@@ -4496,6 +4581,22 @@ nach einem Reset unbelegt ist.
 ---
 
 ## Offene Punkte
+
+### Unbekannte Depotnummern fallen beim Laden nicht auf (offen, 18.09.2026)
+
+Nachbefund zum Bugfix "Depotnummern im alten Format (Nummer - Bank)".
+`ViewBuyEdit::loadBuy()` hängt einen Depotwert, der nicht in `Documents.xml`
+steht, still als zusätzlichen Eintrag an die Combobox und wählt ihn aus. Der
+Kauf sah dadurch völlig normal aus — der wesentliche Grund, warum
+"8006189848 - ING diba" monatelang niemandem auffiel. Beim Einlesen eines
+Belegs (`setFieldOk()`) ist ein unbekannter Wert seit 27.08.2026 ein Fehler;
+beim Laden eines gespeicherten Datensatzes noch nicht.
+
+Ebenfalls offen: die Meldung der Dividenden-Mengenprüfung sagt bei "0 Käufe"
+nicht, warum. Liegen Käufe vor, die sämtlich an einer anderen Depotnummer
+hängen, sollte sie diese nennen.
+
+Vereinbart (Nessie, 18.09.2026) als eigener Commit nach dem Bugfix.
 
 ### Node-20-Abkündigung betrifft msvc-dev-cmd (offen, 12.09.2026)
 
@@ -6814,6 +6915,12 @@ im Alltag weh tun kann. Ein Ausweg wäre ein bewusst gesetzter Haken
 "Bestandsprüfung für diese Dividende übergehen"; bislang bewusst NICHT
 eingebaut, weil er die Blockade wieder zur Warnung machen würde.
 
+@note Bis 18.09.2026 traf genau diese Blockade jede Aktie, deren Käufe aus
+der alten C#-Anwendung importiert waren: sie trugen die Depotnummer als
+`<Nummer> - <Bank>` und zählten für kein Depot mit. Behoben durch eine
+Datenmigration beim Öffnen, siehe "Depotnummern im alten Format (Nummer -
+Bank)" unter "Datenbankschema".
+
 **Anbindung.** `PresenterDividendEdit` lädt Käufe und Verkäufe einmalig im
 Konstruktor (`m_buys`/`m_sales`), aus demselben Grund wie `m_splits`: beide
 sind aus dem Dividenden-Dialog heraus nicht erreichbar und ändern sich
@@ -9030,8 +9137,8 @@ den kompletten Mapping-/Prüflauf aus, schreibt aber nichts in die Datenbank.
 | `<DetailsWebSite>` / `<MarketValue WebSite>` / `<DailyValues WebSite>` | `shares.details_website` / `market_value_url` / `daily_values_url` | Doppelt-XML-escapte Ampersands (`&amp;amp;` in der Quelle → literales `&amp;` nach dem Parsen) werden von `XmlPortfolioParser::normalizeWebSiteUrl()` zu `&` korrigiert und als `INFO` protokolliert. Ein Element `<MarketValues>` (Plural) statt `<MarketValue>` wird dagegen NICHT akzeptiert, sondern als struktureller Datenfehler erkannt und blockiert seit 05.07.2026 über `PortfolioValidator` den kompletten Import — siehe Abschnitte "URL-Normalisierung" und "Validierung vor dem Import" unten |
 | `<MarketValue Parsing>` / `<DailyValues Parsing>` | `*_parsing_type` | "ApiYahoo"/"ApiOnVista"/"ApiOnvista" (case-insensitive) → `ShareParsingType`, sonst `Regex` |
 | `<Culture>` | — | keine Entsprechung im aktuellen Schema, wird geloggt und ignoriert |
-| `<Buy>` | `buys` | GUID aus XML wird direkt übernommen |
-| `<Sale><UsedBuys><UsedBuy>` | `sales` + `sale_buy_details` | `UsedBuy` → `SaleBuyDetail` (FIFO-Zuteilung) |
+| `<Buy>` | `buys` | GUID aus XML wird direkt übernommen. `DepotNumber` im alten Format `<Nummer> - <Bank>` wird auf die Nummer gekürzt (seit 18.09.2026, siehe Fall 5 unten) |
+| `<Sale><UsedBuys><UsedBuy>` | `sales` + `sale_buy_details` | `UsedBuy` → `SaleBuyDetail` (FIFO-Zuteilung). `DepotNumber` wie bei `<Buy>` |
 | `<Brokerage BuyPart/SalePart/GuidBuySale>` | `brokerage` | `GuidBuySale` wird gegen `buys`/`sales` verifiziert (nicht `BuyPart`/`SalePart` blind übernommen) — siehe Abschnitt "Brokerage-Zuordnung" unten |
 | `<Dividend><ForeignCurrency>` | `dividends` | `Flag="Checked"` → `enable_fc=true`, sonst FX-Felder auf Default (1.0 / "EUR") |
 | `<DailyValues><Entry D/C/O/T/B/V>` | `daily_values` | `INSERT OR REPLACE` über `(share_guid, date)` — Re-Import aktualisiert vorhandene Tage |
@@ -9257,9 +9364,9 @@ ausgegeben (siehe oben) — `writeSummary()` läuft in diesem Fall trotzdem noch
 
 ### Bekannte Datenqualitätsprobleme in der Quell-XML
 
-Beim Import realer Depotdaten wurden vier Klassen von Fehlern in der alten
-C#-Quelle gefunden. Fall 2 und 3 werden automatisch korrigiert, weil dort eine
-eindeutig sichere Korrektur möglich ist. Fall 1 und 4 kann der Importer nicht
+Beim Import realer Depotdaten wurden fünf Klassen von Fehlern in der alten
+C#-Quelle gefunden. Fall 2, 3 und 5 werden automatisch korrigiert, weil dort
+eine eindeutig sichere Korrektur möglich ist. Fall 1 und 4 kann der Importer nicht
 selbst reparieren — seit 05.07.2026 verhindern sie zusätzlich den kompletten
 Import (siehe "Validierung vor dem Import" oben), statt nur den betroffenen
 Datensatz zu überspringen:
@@ -9286,6 +9393,17 @@ Datensatz zu überspringen:
    Quelle + Re-Import behebbar, oder manuelles Nachtragen über
    `ShareEditForm` (nach einem ansonsten erfolgreichen Import der übrigen
    Aktien, sobald diese eine WKN-Kollision nicht mehr betrifft).
+5. Depotnummer mit Bankname — `DepotNumber="8006189848 - ING diba"` statt
+   `"8006189848"` (in Nessies `ShareList.xml` alle 506 Vorkommen, zwei
+   Depots). Genau genommen kein Fehler der Quelle, sondern ihr damaliges
+   Format; heute ist die reine Nummer der Schlüssel des Depots. Seit
+   18.09.2026 kürzen `importBuys()`/`importSales()` den Wert über
+   `DepotNumberNormalizer` und protokollieren das als eine `INFO`-Zeile je
+   Aktie und Datensatzart ("Depotnummer bei n Kauf/Käufe auf die reine Nummer
+   umgestellt"), nicht je Datensatz — betroffen ist praktisch jeder.
+   Bereits importierte Portfolios stellt `Database::open()` beim nächsten
+   Öffnen um, siehe "Depotnummern im alten Format (Nummer - Bank)" unter
+   "Datenbankschema".
 
 Bei jedem neuen Import lohnt sich ein Blick in die Log-Zusammenfassung auf
 `ERROR`-Zeilen (Fall 1 und 4, führen zum Komplettabbruch — nur an der Quelle
@@ -9299,7 +9417,7 @@ Häufigkeit dieser Datenfehler in der Quelle.
 | Executable | Prüft |
 | ------ | ------ |
 | `tst_xmlportfolioparser` | Reiner XML → Struct-Parser, ohne DB. Attribut-Mapping für Share/Buy/Sale/Brokerage/Dividend/DailyValues, Fremdwährungs-Dividenden, mehrere Aktien, Fehlerfälle (fehlendes Wurzelelement, Datei nicht gefunden, kaputtes XML). |
-| `tst_portfolioimporter` | Integrationstests gegen In-Memory-SQLite (`:memory:`), analog zu `tests/repositories/`. Deckt ab: Share-Neuanlage/-Wiederverwendung per WKN, GUID-basierte Idempotenz bei erneutem Lauf, OrderNumber-Kollision (Fehler geloggt, Import läuft weiter), Dry-Run (keine Schreibzugriffe), Tageswerte-Upsert. **Regressionstests für den Brokerage-Zuordnungs-Fix vom 02.07.2026:** falsches `BuyPart`, falsches `SalePart`, korrekte Flags (Kontrollfall), `GuidBuySale` in keiner Tabelle gefunden. |
+| `tst_portfolioimporter` | Integrationstests gegen In-Memory-SQLite (`:memory:`), analog zu `tests/repositories/`. Deckt ab: Share-Neuanlage/-Wiederverwendung per WKN, GUID-basierte Idempotenz bei erneutem Lauf, OrderNumber-Kollision (Fehler geloggt, Import läuft weiter), Dry-Run (keine Schreibzugriffe), Tageswerte-Upsert. **Regressionstests für den Brokerage-Zuordnungs-Fix vom 02.07.2026:** falsches `BuyPart`, falsches `SalePart`, korrekte Flags (Kontrollfall), `GuidBuySale` in keiner Tabelle gefunden. Seit 18.09.2026 zusätzlich: Depotnummer im alten Format wird auf die Nummer gekürzt, protokolliert als eine INFO-Zeile je Aktie und Datensatzart. |
 
 Beide folgen dem etablierten Muster: Models/Repositories werden als Quelldateien
 direkt mitkompiliert (kein separates Backend-Interface nötig), `initTestCase()`

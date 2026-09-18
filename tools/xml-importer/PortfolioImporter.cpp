@@ -16,6 +16,8 @@
 #include "../../app/repositories/DividendRepository.h"
 #include "../../app/repositories/DailyValuesRepository.h"
 
+#include "../../app/core/DepotNumberNormalizer.h"
+
 #include <QUuid>
 #include <QDateTime>
 #include <QMap>
@@ -259,6 +261,12 @@ void PortfolioImporter::importShare(const RawShare& share)
 void PortfolioImporter::importBuys(const RawShare& share, const QString& shareGuid)
 {
     BuyRepository buyRepo;
+
+    // Depotnummern im alten C#-Format "<Nummer> - <Bank>" (Bugfix 18.09.2026),
+    // gesammelt für EINE Info-Zeile je Aktie statt einer je Kauf.
+    int                    normalizedCount = 0;
+    QMap<QString, QString> normalizedValues;
+
     for (const RawBuy& b : share.buys) {
         if (b.guid.trimmed().isEmpty()) {
             m_logger.log(QStringLiteral("Buy"), b.orderNumber, ImportLogger::Action::Error,
@@ -271,10 +279,20 @@ void PortfolioImporter::importBuys(const RawShare& share, const QString& shareGu
             continue;
         }
 
+        // Die alte Anwendung speicherte "8006189848 - ING diba"; heute ist
+        // die reine Nummer der Schlüssel des Depots. Ohne diese Umstellung
+        // findet weder die Bestandsprüfung der Dividenden noch die
+        // FIFO-Zuteilung beim Verkauf den Kauf. Siehe DepotNumberNormalizer.
+        const QString depotNumber = DepotNumberNormalizer::normalize(b.depotNumber);
+        if (depotNumber != b.depotNumber) {
+            ++normalizedCount;
+            normalizedValues.insert(b.depotNumber, depotNumber);
+        }
+
         const BuyObject buy(
             b.guid,
             shareGuid,
-            b.depotNumber,
+            depotNumber,
             b.orderNumber,
             toIsoDateTime(b.date),
             toDouble(b.volume),
@@ -296,6 +314,9 @@ void PortfolioImporter::importBuys(const RawShare& share, const QString& shareGu
                              : buyRepo.lastError().text());
         }
     }
+
+    logDepotNumberNormalization(share, QStringLiteral("Kauf/Käufe"),
+                                normalizedCount, normalizedValues);
 }
 
 // ── Sales ────────────────────────────────────────────────────────────────────
@@ -303,6 +324,11 @@ void PortfolioImporter::importBuys(const RawShare& share, const QString& shareGu
 void PortfolioImporter::importSales(const RawShare& share, const QString& shareGuid)
 {
     SaleRepository saleRepo;
+
+    // Siehe importBuys().
+    int                    normalizedCount = 0;
+    QMap<QString, QString> normalizedValues;
+
     for (const RawSale& s : share.sales) {
         if (s.guid.trimmed().isEmpty()) {
             m_logger.log(QStringLiteral("Sale"), s.orderNumber, ImportLogger::Action::Error,
@@ -326,10 +352,18 @@ void PortfolioImporter::importSales(const RawShare& share, const QString& shareG
                 toDouble(u.brokerage)));
         }
 
+        // Siehe importBuys() — Verkäufe filtern ihre FIFO-Kandidaten über
+        // dieselbe Depotnummer.
+        const QString depotNumber = DepotNumberNormalizer::normalize(s.depotNumber);
+        if (depotNumber != s.depotNumber) {
+            ++normalizedCount;
+            normalizedValues.insert(s.depotNumber, depotNumber);
+        }
+
         const SaleObject sale(
             s.guid,
             shareGuid,
-            s.depotNumber,
+            depotNumber,
             s.orderNumber,
             toIsoDateTime(s.date),
             toDouble(s.volume),
@@ -358,6 +392,30 @@ void PortfolioImporter::importSales(const RawShare& share, const QString& shareG
                              : saleRepo.lastError().text());
         }
     }
+
+    logDepotNumberNormalization(share, QStringLiteral("Verkauf/Verkäufe"),
+                                normalizedCount, normalizedValues);
+}
+
+// ── Depotnummer-Normalisierung: Protokoll ────────────────────────────────────
+
+void PortfolioImporter::logDepotNumberNormalization(const RawShare& share,
+                                                    const QString& entity,
+                                                    int count,
+                                                    const QMap<QString, QString>& values)
+{
+    if (count == 0)
+        return;
+
+    QStringList pairs;
+    for (auto it = values.cbegin(); it != values.cend(); ++it)
+        pairs.append(QStringLiteral("\"%1\" -> \"%2\"").arg(it.key(), it.value()));
+
+    m_logger.info(QStringLiteral("Share %1: Depotnummer bei %2 %3 auf die reine Nummer "
+                                 "umgestellt (%4).")
+                      .arg(share.wkn)
+                      .arg(count)
+                      .arg(entity, pairs.join(QStringLiteral(", "))));
 }
 
 // ── Brokerages ───────────────────────────────────────────────────────────────

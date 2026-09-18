@@ -31,6 +31,7 @@
 #include "../../utils/ShareUpdateRules.h"
 #include "../../utils/PdfTextExtractor.h"
 #include "../../utils/SplitAudit.h"
+#include "../../core/Database.h"          // DepotNumberMigrationReport
 
 #include <QList>
 #include <QQueue>
@@ -291,6 +292,28 @@ public:
      */
     static QString buildSplitAuditWarningMessage(
         const QList<SplitAuditWarning>& warnings);
+
+    /**
+     * @brief Baut den Text des Hinweises zur Depotnummer-Migration.
+     *
+     * Bugfix 18.09.2026 (Nessies Vorgabe: "der User sollte informiert
+     * werden, dass seine DB-Werte angepasst werden — vor allem warum und
+     * wie"). Als `public static` herausgezogen, gleiche Begründung wie bei
+     * buildDailyValuesWarningMessage() oben: der Meldungstext bleibt ohne
+     * MainWindow und ohne modalen Dialog prüfbar.
+     *
+     * Der Text nennt WAS (Anzahl je Tabelle), WARUM (Bankname im Schlüssel
+     * verhindert Bestandsprüfung und FIFO-Zuordnung), WIE (Nummer vor dem
+     * Bindestrich, mit den tatsächlich vorkommenden Ersetzungen) und wo die
+     * Sicherung des vorherigen Stands liegt. Bei einem Fehlschlag sagt er
+     * stattdessen, dass das Portfolio unverändert ist und der nächste Start
+     * es erneut versucht.
+     *
+     * @param report  Bericht aus Database::depotNumberMigrationReport().
+     * @return Fertiger Meldungstext, oder ein leerer String, wenn nichts
+     *         umzustellen war (`report.attempted == false`).
+     */
+    static QString buildDepotNumberMigrationMessage(const DepotNumberMigrationReport& report);
 
     /**
      * @brief Schreibt einen Umrechnungsfaktor als Verhältnis, z. B. "20:1".
@@ -837,6 +860,22 @@ private:
      * @see m_splitAuditWarnings
      */
     void warnAboutSplitAuditFindings();
+
+    /**
+     * @brief Meldet das Ergebnis der Depotnummer-Migration des gerade
+     * geöffneten Portfolios (Bugfix 18.09.2026).
+     *
+     * Liest Database::depotNumberMigrationReport(). War nichts umzustellen,
+     * passiert nichts. Sonst immer eine Zeile im Meldungsbereich und — nur
+     * bei freigeschalteten Start-Dialogen (m_showStartupWarnings) — ein
+     * modaler Hinweis mit dem Text aus buildDepotNumberMigrationMessage(),
+     * verzögert per singleShot(0) wie die übrigen Start-Hinweise.
+     *
+     * Aufgerufen nach dem Laden beim Programmstart und in onOpenPortfolio().
+     * Nicht in onNewPortfolio() (ein neues Portfolio hat nichts umzustellen)
+     * und nicht in onSaveAsPortfolio() (die Kopie ist bereits umgestellt).
+     */
+    void reportDepotNumberMigration();
 
     /**
      * @brief Refresh the summary footer rows for both portfolio tabs.

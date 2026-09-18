@@ -510,6 +510,93 @@ private slots:
 
         QFile::remove(logPath);
     }
+
+    // ── Depotnummer im alten C#-Format (Bugfix 18.09.2026) ──────────────────
+    //
+    // Die Quell-XML trägt DepotNumber="8006189848 - ING diba". Abgelegt wird
+    // nur die Nummer — sonst finden weder die Bestandsprüfung der Dividenden
+    // noch die FIFO-Zuteilung beim Verkauf die importierten Datensätze.
+    // Die Regel selbst prüft tst_database (test_depotNormalizer); hier geht es
+    // darum, dass der Importer sie an beiden Stellen anwendet.
+
+    void test_importBuyAndSale_legacyDepotNumber_storesNumberOnly()
+    {
+        RawShare share = makeShare(QStringLiteral("TEST15"));
+        const QString buyGuid   = newGuid();
+        const QString cleanGuid = newGuid();
+        const QString saleGuid  = newGuid();
+
+        RawBuy legacyBuy = makeBuy(buyGuid, QStringLiteral("ORD-DEP1"));
+        legacyBuy.depotNumber = QStringLiteral("8006189848 - ING diba");
+        share.buys.append(legacyBuy);
+
+        // Gegenprobe: ein Wert ohne das alte Format bleibt, wie er ist.
+        share.buys.append(makeBuy(cleanGuid, QStringLiteral("ORD-DEP2")));   // "D1"
+
+        RawSale legacySale = makeSale(saleGuid, QStringLiteral("ORD-DEP3"), buyGuid);
+        legacySale.depotNumber = QStringLiteral("8006189848 - ING diba");
+        share.sales.append(legacySale);
+
+        RawPortfolio portfolio;
+        portfolio.shares.append(share);
+        ImportLogger logger = makeLogger();
+        QVERIFY(PortfolioImporter(logger, false).importPortfolio(portfolio));
+
+        QSqlQuery qb = query(QStringLiteral("SELECT depot_number FROM buys WHERE guid='%1'").arg(buyGuid));
+        QVERIFY(qb.next());
+        QCOMPARE(qb.value(0).toString(), QStringLiteral("8006189848"));
+
+        QSqlQuery qc = query(QStringLiteral("SELECT depot_number FROM buys WHERE guid='%1'").arg(cleanGuid));
+        QVERIFY(qc.next());
+        QCOMPARE(qc.value(0).toString(), QStringLiteral("D1"));
+
+        QSqlQuery qs = query(QStringLiteral("SELECT depot_number FROM sales WHERE guid='%1'").arg(saleGuid));
+        QVERIFY(qs.next());
+        QCOMPARE(qs.value(0).toString(), QStringLiteral("8006189848"));
+    }
+
+    void test_importLegacyDepotNumber_logsOneInfoLinePerShareAndRecordType()
+    {
+        // In Nessies ShareList.xml trägt praktisch jeder Kauf das alte Format.
+        // Eine INFO-Zeile je Datensatz würde das Protokoll fluten — erwartet
+        // ist genau eine je Aktie und Datensatzart, mit Anzahl und Ersetzung.
+        const QString logPath = QDir::temp().filePath("tst_portfolioimporter_depot.log");
+        QFile::remove(logPath);
+
+        RawShare share = makeShare(QStringLiteral("TEST16"));
+        const QString buy1 = newGuid();
+        const QString buy2 = newGuid();
+
+        RawBuy b1 = makeBuy(buy1, QStringLiteral("ORD-DEP4"));
+        b1.depotNumber = QStringLiteral("8006189848 - ING diba");
+        RawBuy b2 = makeBuy(buy2, QStringLiteral("ORD-DEP5"));
+        b2.depotNumber = QStringLiteral("8006189848 - ING diba");
+        share.buys.append(b1);
+        share.buys.append(b2);
+
+        RawSale sale = makeSale(newGuid(), QStringLiteral("ORD-DEP6"), buy1);
+        sale.depotNumber = QStringLiteral("8006189848 - ING diba");
+        share.sales.append(sale);
+
+        {
+            ImportLogger logger(logPath);
+            RawPortfolio portfolio;
+            portfolio.shares.append(share);
+            QVERIFY(PortfolioImporter(logger, false).importPortfolio(portfolio));
+        }
+
+        QFile logFile(logPath);
+        QVERIFY(logFile.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QString logContent = QString::fromUtf8(logFile.readAll());
+        logFile.close();
+
+        QVERIFY(logContent.contains(QStringLiteral("Depotnummer bei 2 Kauf/Käufe")));
+        QVERIFY(logContent.contains(QStringLiteral("Depotnummer bei 1 Verkauf/Verkäufe")));
+        QVERIFY(logContent.contains(QStringLiteral("\"8006189848 - ING diba\" -> \"8006189848\"")));
+        QCOMPARE(logContent.count(QStringLiteral("auf die reine Nummer umgestellt")), 2);
+
+        QFile::remove(logPath);
+    }
 };
 
 QTEST_MAIN(TestPortfolioImporter)

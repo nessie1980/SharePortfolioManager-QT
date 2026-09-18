@@ -7,6 +7,7 @@
 #include "ImportLogger.h"
 
 #include <QDate>
+#include <QMap>
 
 /**
  * @brief Imports a parsed RawPortfolio into the spm-qt SQLite database.
@@ -73,6 +74,26 @@ private:
     void importBrokerages(const RawShare& share, const QString& shareGuid);
     void importDividends(const RawShare& share, const QString& shareGuid);
     void importDailyValues(const RawShare& share, const QString& shareGuid);
+
+    /**
+     * @brief Eine Info-Zeile je Aktie über umgestellte Depotnummern.
+     *
+     * Bugfix 18.09.2026: die Quell-XML trägt die Depotnummer im alten
+     * C#-Format `<Nummer> - <Bank>`; importBuys()/importSales() legen nur
+     * die Nummer ab (DepotNumberNormalizer). Wie bei den übrigen
+     * automatischen Korrekturen (BuyPart/SalePart, URL-Ampersands) wird das
+     * als INFO protokolliert — hier aber zusammengefasst, weil es praktisch
+     * jeden Kauf betrifft.
+     *
+     * @param share   Aktie, zu der die Datensätze gehören (für die WKN).
+     * @param entity  Bezeichnung der Datensätze, z. B. "Kauf/Käufe".
+     * @param count   Anzahl umgestellter Datensätze; bei 0 keine Ausgabe.
+     * @param values  Vorkommende Ersetzungen, alter Wert → neuer Wert.
+     */
+    void logDepotNumberNormalization(const RawShare& share,
+                                     const QString& entity,
+                                     int count,
+                                     const QMap<QString, QString>& values);
 
     /// Logs every issue from a failed validate() call as a structured,
     /// per-share report (grouped so every problem for a given share is

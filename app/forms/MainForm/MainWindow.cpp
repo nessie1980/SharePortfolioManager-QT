@@ -195,6 +195,12 @@ void MainWindow::initialize()
         updateStatusBarPortfolio(portfolioPath);
         populatePortfolioTables();
 
+        // Depotnummern im alten Format (18.09.2026): Database::open() hat
+        // bereits in AppStartup umgestellt, hier wird nur noch berichtet.
+        // Vor den übrigen Start-Hinweisen, damit dieser Dialog als erster
+        // erscheint — er erklärt eine Änderung an den Daten selbst.
+        reportDepotNumberMigration();
+
         // Auffällige Splits: Bereinigungs-Zustand und Verhältnis (siehe
         // ARCHITECTURE.md, "Plausibilitätsprüfung des Split-Verhältnisses").
         // Bewusst ein eigener Durchlauf statt Teil von
@@ -1201,6 +1207,9 @@ void MainWindow::onOpenPortfolio()
                      MessageType::Success);
     populatePortfolioTables();
 
+    // Depotnummern im alten Format (18.09.2026), siehe initialize().
+    reportDepotNumberMigration();
+
     qInfo() << "[MainWindow] Portfolio opened:" << filePath;
 }
 
@@ -1571,6 +1580,97 @@ QString MainWindow::buildDailyValuesWarningMessage(
               "mehr Historie liefert die Quelle rückwirkend nicht mehr — die "
               "fehlenden Tage sind dann dauerhaft verloren.")
         .arg(lines.join(QStringLiteral("\n")));
+}
+
+// ── buildDepotNumberMigrationMessage ──────────────────────────────────────────
+
+QString MainWindow::buildDepotNumberMigrationMessage(const DepotNumberMigrationReport& report)
+{
+    if (!report.attempted)
+        return QString();
+
+    const QString counts =
+        tr("%1 Käufe, %2 Verkäufe, %3 Dividenden")
+            .arg(report.buys).arg(report.sales).arg(report.dividends);
+
+    QStringList examples;
+    for (auto it = report.replacements.cbegin(); it != report.replacements.cend(); ++it)
+        examples.append(QStringLiteral("    „%1“  →  „%2“").arg(it.key(), it.value()));
+
+    if (!report.succeeded) {
+        QString text = tr(
+            "Im Portfolio wurden Depotnummern im alten Format gefunden "
+            "(%1), die nicht umgestellt werden konnten.\n\n"
+            "Fehler: %2\n\n"
+            "Das Portfolio ist unverändert. Solange die Umstellung aussteht, "
+            "finden die Bestandsprüfung bei Dividenden und die Zuordnung von "
+            "Käufen beim Verkauf diese Einträge nicht. Beim nächsten Öffnen "
+            "des Portfolios wird die Umstellung erneut versucht.")
+            .arg(counts, report.errorText);
+        if (!report.backupPath.isEmpty())
+            text += tr("\n\nEine Sicherung wurde bereits angelegt:\n%1").arg(report.backupPath);
+        return text;
+    }
+
+    QString text = tr(
+        "Beim Öffnen des Portfolios wurden Depotnummern vereinheitlicht.\n\n"
+        "Betroffen: %1.\n\n"
+        "Warum:\n"
+        "Ältere Einträge, vor allem aus dem Import der früheren Anwendung, "
+        "enthielten neben der Depotnummer auch den Namen der Bank. Die "
+        "Depotnummer ist aber der eindeutige Schlüssel eines Depots. Die "
+        "Bestandsprüfung bei Dividenden und die Zuordnung von Käufen beim "
+        "Verkauf (FIFO) haben diese Einträge deshalb nicht gefunden.\n\n"
+        "Wie:\n"
+        "Übernommen wurde nur die Nummer vor dem Bindestrich:\n%2\n\n"
+        "Stückzahlen, Kurse, Daten und alle übrigen Belegwerte sind "
+        "unverändert.")
+        .arg(counts, examples.join(QLatin1Char('\n')));
+
+    if (!report.backupPath.isEmpty())
+        text += tr("\n\nDer vorherige Stand wurde gesichert unter:\n%1").arg(report.backupPath);
+
+    return text;
+}
+
+// ── reportDepotNumberMigration ────────────────────────────────────────────────
+
+void MainWindow::reportDepotNumberMigration()
+{
+    const DepotNumberMigrationReport report = Database::instance().depotNumberMigrationReport();
+    if (!report.attempted)
+        return;
+
+    // Immer in den Meldungsbereich — auch ohne Start-Dialoge und auch
+    // nachdem der Dialog geschlossen wurde, bleibt so sichtbar, was mit den
+    // Daten passiert ist.
+    if (report.succeeded) {
+        addStatusMessage(tr("Depotnummern vereinheitlicht: %n Datensatz/Datensätze umgestellt.",
+                            nullptr, report.total()),
+                         MessageType::Info);
+    } else {
+        addStatusMessage(tr("Depotnummern konnten nicht vereinheitlicht werden: %1")
+                             .arg(report.errorText),
+                         MessageType::Warning);
+    }
+    if (!report.backupPath.isEmpty()) {
+        addStatusMessage(tr("Sicherung vor der Umstellung: %1").arg(report.backupPath),
+                         MessageType::Info);
+    }
+
+    if (!m_showStartupWarnings)
+        return;
+
+    // Verzögert, gleiche Begründung wie bei den übrigen Start-Hinweisen in
+    // initialize(): erst das fertig gezeichnete Hauptfenster, dann der Dialog.
+    const QString message = buildDepotNumberMigrationMessage(report);
+    const bool    ok      = report.succeeded;
+    QTimer::singleShot(0, this, [this, message, ok]() {
+        if (ok)
+            OwnMessageBox::information(this, tr("Depotnummern vereinheitlicht"), message);
+        else
+            OwnMessageBox::critical(this, tr("Depotnummern nicht umgestellt"), message);
+    });
 }
 
 // ── warnAboutSharesWithoutDailyValues ─────────────────────────────────────────

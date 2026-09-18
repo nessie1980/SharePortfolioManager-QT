@@ -8,6 +8,40 @@ ARCHITECTURE.md, Abschnitt "Versionierung".
 Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.0] - 2026-09-18
+
+### Behoben
+
+- Depotnummern im alten Format `<Nummer> - <Bank>` (z. B.
+  "8006189848 - ING diba"), wie sie die frühere C#-Anwendung speicherte und
+  der XML-Import übernahm, werden beim Öffnen eines Portfolios in `buys`,
+  `sales` und `dividends` auf die reine Nummer umgestellt. Die Nummer ist der
+  eindeutige Schlüssel eines Depots; mit angehängtem Banknamen fanden weder
+  die Bestandsprüfung der Dividenden noch die FIFO-Zuteilung von Verkäufen
+  die betroffenen Datensätze. Siehe CHANGELOG.md der Anwendung, `[1.21.11]`,
+  sowie `docs/architecture/ARCHITECTURE.md`, "Depotnummern im alten Format
+  (Nummer - Bank)".
+
+  Neuer Datenschritt `migrateDepotNumbers()` am Ende von `migrateSchema()`.
+  Gibt es nichts umzustellen, endet er ohne Spuren (idempotent, ohne
+  Versionszähler). Sonst legt er zuerst per `VACUUM INTO` eine Sicherung neben
+  der Portfolio-Datei an (`<Name>_vor_Depotnummer_Migration_<Zeitstempel>.<Endung>`)
+  und stellt dann in einer Transaktion um. Ohne Sicherung keine Umstellung;
+  ein Fehlschlag lässt `open()` nicht scheitern, das nächste Öffnen versucht
+  es erneut.
+
+### Hinzugefügt
+
+- `DepotNumberNormalizer.h` (header-only): die Umstellungsregel an einer
+  Stelle, genutzt von der Migration und vom XML-Import. Aus
+  `<Ziffern> - <Text>` wird `<Ziffern>`, alles andere bleibt unverändert.
+- `DepotNumberMigrationReport` und `Database::depotNumberMigrationReport()`:
+  Ergebnis der Umstellung beim letzten `open()` (Anzahl je Tabelle,
+  Ersetzungen, Sicherungspfad, Fehlertext), damit die Anwendung den Benutzer
+  informieren kann. Wird bei jedem `open()` zurückgesetzt.
+- `Database::migrationBackupPath(portfolioPath, when)`: öffentlich, damit der
+  Fehlschlag der Sicherung im Test herbeigeführt werden kann.
+
 ## [1.3.1] - 2026-09-12
 
 ### Behoben

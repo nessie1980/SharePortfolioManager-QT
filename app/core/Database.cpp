@@ -1,9 +1,17 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "Database.h"
+#include "DepotNumberNormalizer.h"
 
-#include <QSqlQuery>
+#include <QDateTime>
 #include <QDebug>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QList>
+#include <QSqlQuery>
+
+#include <utility>   // std::as_const
 
 // ── Singleton ────────────────────────────────────────────────────────────────
 Database& Database::instance()
@@ -33,6 +41,11 @@ Database::~Database()
 // ── Public API ────────────────────────────────────────────────────────────────
 bool Database::open(const QString& path)
 {
+    // Der Bericht gehört immer zum ZULETZT geöffneten Portfolio — ein Rest
+    // aus einem vorherigen open() würde MainWindow einen Hinweis zu einer
+    // Datei zeigen lassen, die gar nicht mehr offen ist.
+    m_depotNumberMigrationReport = DepotNumberMigrationReport();
+
     // If a connection with this name still exists (e.g. from a previous open/close
     // cycle), remove it first so Qt doesn't warn about a duplicate connection name.
     if (QSqlDatabase::contains(k_connectionName))
@@ -63,7 +76,7 @@ bool Database::open(const QString& path)
     // Bestehende Portfolios auf den aktuellen Stand bringen (08.08.2026).
     // createSchema() legt fehlende TABELLEN an, aber keine fehlenden SPALTEN
     // in bereits vorhandenen Tabellen — siehe migrateSchema().
-    if (!migrateSchema()) {
+    if (!migrateSchema(path)) {
         qCritical() << "[Database] Schema migration failed";
         return false;
     }
@@ -297,7 +310,7 @@ bool Database::createSchema()
 
 // ── Migration ─────────────────────────────────────────────────────────────────
 
-bool Database::migrateSchema()
+bool Database::migrateSchema(const QString& path)
 {
     // Eine Zeile je nachgerüsteter Spalte. Reihenfolge ist unerheblich, jeder
     // Eintrag ist für sich idempotent.
@@ -339,7 +352,176 @@ bool Database::migrateSchema()
             return false;
         }
     }
+
+    // 18.09.2026 — Daten- statt Spaltenmigration: Depotnummern im alten
+    // Format "<Nummer> - <Bank>". Läuft NACH den Spalten, weil
+    // dividends.depot_number erst durch den Eintrag oben sicher existiert.
+    // Kein Rückgabewert: ein Fehlschlag darf open() nicht scheitern lassen,
+    // siehe migrateDepotNumbers().
+    migrateDepotNumbers(path);
+
     return true;
+}
+
+// ── Depotnummer-Migration (Bugfix 18.09.2026) ─────────────────────────────────
+
+QString Database::migrationBackupPath(const QString& portfolioPath, const QDateTime& when)
+{
+    const QFileInfo fi(portfolioPath);
+    const QString suffix = fi.suffix().isEmpty() ? QStringLiteral("db") : fi.suffix();
+
+    // Beginnt mit dem Portfolionamen und enthält daher kein "_<Name>_" —
+    // die Backup-Rotation in MainWindow::createBackup() lässt die Datei
+    // damit in Ruhe. Siehe Deklaration in Database.h.
+    const QString fileName = QStringLiteral("%1_vor_Depotnummer_Migration_%2.%3")
+        .arg(fi.completeBaseName(),
+             when.toString(QStringLiteral("yyyy_MM_dd_HH_mm_ss")),
+             suffix);
+
+    return fi.absoluteDir().filePath(fileName);
+}
+
+void Database::migrateDepotNumbers(const QString& path)
+{
+    struct Candidate {
+        QString table;
+        QString guid;
+        QString newValue;
+    };
+
+    // Alle drei Tabellen mit Depotnummer. dividends.depot_number gibt es erst
+    // seit 21.08.2026 und wurde nie importiert — dort ist ein Treffer nicht
+    // zu erwarten, die Prüfung kostet aber nichts und hält die Regel an
+    // einer Stelle vollständig.
+    static const char* const tables[] = { "buys", "sales", "dividends" };
+
+    DepotNumberMigrationReport report;
+    QList<Candidate> candidates;
+
+    for (const char* table : tables) {
+        const QString tableName = QString::fromLatin1(table);
+
+        // Grober Vorfilter in SQL, nur damit nicht jede Zeile geladen wird.
+        // Entschieden wird ausschliesslich in DepotNumberNormalizer::normalize()
+        // — dieselbe Regel, die der PortfolioImporter benutzt.
+        QSqlQuery q(connection());
+        if (!q.exec(QStringLiteral("SELECT guid, depot_number FROM %1 "
+                                   "WHERE depot_number LIKE '% - %'").arg(tableName))) {
+            report.attempted = true;
+            report.errorText = QStringLiteral("Die Tabelle \"%1\" konnte nicht gelesen werden: %2")
+                                   .arg(tableName, q.lastError().text());
+            qWarning() << "[Database] Depot number migration:" << report.errorText;
+            m_depotNumberMigrationReport = report;
+            return;
+        }
+
+        while (q.next()) {
+            const QString oldValue = q.value(1).toString();
+            const QString newValue = DepotNumberNormalizer::normalize(oldValue);
+            if (newValue == oldValue)
+                continue;
+
+            candidates.append(Candidate{ tableName, q.value(0).toString(), newValue });
+            report.replacements.insert(oldValue, newValue);
+
+            if (tableName == QLatin1String("buys"))       ++report.buys;
+            else if (tableName == QLatin1String("sales")) ++report.sales;
+            else                                           ++report.dividends;
+        }
+    }
+
+    // Nichts im alten Format: der Normalfall ab dem zweiten Öffnen. Keine
+    // Sicherung, kein Bericht — genau das macht den Schritt idempotent.
+    if (candidates.isEmpty())
+        return;
+
+    report.attempted = true;
+
+    // ── 1. Sicherung ──────────────────────────────────────────────────────
+    // VACUUM INTO statt Dateikopie: SQLite schreibt über die offene
+    // Verbindung einen konsistenten Schnappschuss, einschliesslich dessen,
+    // was im WAL-Modus noch in der "-wal"-Datei liegt. Eine Kopie der
+    // .db-Datei allein wäre das nicht zuverlässig. Eine In-Memory-Datenbank
+    // hat keine Datei, die zu sichern wäre.
+    const bool isFile = !path.isEmpty() && path != QLatin1String(":memory:");
+    if (isFile) {
+        const QString backupPath = migrationBackupPath(path, QDateTime::currentDateTime());
+
+        if (QFile::exists(backupPath)) {
+            // VACUUM INTO bricht bei vorhandener Zieldatei ohnehin ab — hier
+            // mit einer verständlichen Meldung statt einer SQLite-Fehlerzeile.
+            report.errorText = QStringLiteral("Die Sicherungsdatei existiert bereits: %1")
+                                   .arg(backupPath);
+            qWarning() << "[Database] Depot number migration:" << report.errorText;
+            m_depotNumberMigrationReport = report;
+            return;
+        }
+
+        // Dateinamen lassen sich in VACUUM INTO nicht binden; einfache
+        // Anführungszeichen im Pfad werden deshalb SQL-üblich verdoppelt.
+        QString quoted = backupPath;
+        quoted.replace(QLatin1Char('\''), QStringLiteral("''"));
+
+        QSqlQuery backup(connection());
+        if (!backup.exec(QStringLiteral("VACUUM INTO '%1'").arg(quoted))) {
+            report.errorText = QStringLiteral("Die Sicherung konnte nicht angelegt werden: %1")
+                                   .arg(backup.lastError().text());
+            qWarning() << "[Database] Depot number migration:" << report.errorText;
+            // Eine halb geschriebene Datei wäre schlimmer als keine: sie sähe
+            // wie eine gültige Sicherung aus.
+            QFile::remove(backupPath);
+            m_depotNumberMigrationReport = report;
+            return;
+        }
+
+        report.backupPath = backupPath;
+        qInfo() << "[Database] Backup before depot number migration:" << backupPath;
+    }
+
+    // ── 2. Umstellung ─────────────────────────────────────────────────────
+    if (!beginTransaction()) {
+        report.errorText = QStringLiteral("Die Transaktion konnte nicht gestartet werden: %1")
+                               .arg(lastError().text());
+        qWarning() << "[Database] Depot number migration:" << report.errorText;
+        m_depotNumberMigrationReport = report;
+        return;
+    }
+
+    for (const Candidate& c : std::as_const(candidates)) {
+        QSqlQuery update(connection());
+        // Tabellenname aus der fest einkompilierten Liste oben, nie aus Daten.
+        update.prepare(QStringLiteral("UPDATE %1 SET depot_number = :value WHERE guid = :guid")
+                           .arg(c.table));
+        update.bindValue(QStringLiteral(":value"), c.newValue);
+        update.bindValue(QStringLiteral(":guid"),  c.guid);
+
+        if (!update.exec()) {
+            report.errorText = QStringLiteral("Tabelle \"%1\", Datensatz %2: %3")
+                                   .arg(c.table, c.guid, update.lastError().text());
+            qWarning() << "[Database] Depot number migration:" << report.errorText;
+            rollbackTransaction();
+            m_depotNumberMigrationReport = report;
+            return;
+        }
+    }
+
+    if (!commitTransaction()) {
+        report.errorText = QStringLiteral("Die Änderungen konnten nicht gespeichert werden: %1")
+                               .arg(lastError().text());
+        qWarning() << "[Database] Depot number migration:" << report.errorText;
+        rollbackTransaction();
+        m_depotNumberMigrationReport = report;
+        return;
+    }
+
+    report.succeeded = true;
+    qInfo() << "[Database] Migrated depot numbers:"
+            << report.buys << "buys," << report.sales << "sales,"
+            << report.dividends << "dividends";
+    for (auto it = report.replacements.cbegin(); it != report.replacements.cend(); ++it)
+        qInfo() << "[Database]   " << it.key() << "->" << it.value();
+
+    m_depotNumberMigrationReport = report;
 }
 
 bool Database::ensureColumn(const QString& table,

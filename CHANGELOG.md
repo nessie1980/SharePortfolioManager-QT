@@ -10,6 +10,30 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.21.11] - 2026-09-18
+
+### Fixed
+
+- **Dividenden liessen sich bei importierten Aktien nicht speichern.** Die
+  Bestandspruefung am Ex-Tag meldete "Bestand 0,0000 Stk." und "0 Kaeufe",
+  obwohl Kaeufe vorhanden waren. Die alte C#-Anwendung hatte die Depotnummer
+  als "8006189848 - ING diba" gespeichert, der XML-Import uebernahm das
+  unveraendert; heute ist die reine Nummer der Schluessel eines Depots. Jeder
+  Vergleich ueber die Depotnummer ging deshalb an diesen Datensaetzen vorbei
+  -- neben der Dividendenpruefung auch die FIFO-Zuordnung neuer Verkaeufe.
+
+  Beim naechsten Oeffnen eines Portfolios werden solche Werte in Kaeufen,
+  Verkaeufen und Dividenden auf die Nummer vor dem Bindestrich umgestellt
+  (Database-Bibliothek 1.4.0, siehe `app/core/CHANGELOG.md`). Vorher legt die
+  Anwendung neben der Portfolio-Datei eine Sicherung des alten Stands an,
+  unabhaengig von den Backup-Einstellungen; ohne Sicherung wird nicht
+  umgestellt. Ein Hinweis nennt Anzahl, Grund, die vorgenommenen Ersetzungen
+  und den Pfad der Sicherung. Stueckzahlen, Kurse und Daten bleiben
+  unveraendert.
+
+  Der XML-Import kuerzt die Depotnummer kuenftig schon beim Einlesen und
+  protokolliert das als INFO.
+
 ## [1.21.10] - 2026-09-11
 
 ### Removed

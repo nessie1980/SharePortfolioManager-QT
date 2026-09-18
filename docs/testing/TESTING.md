@@ -304,7 +304,8 @@ Felder mit dem, was gerade im Speicher liegt.
 
 ### tests/database/ — Database Unit-Tests
 
-Tabellen-Existenz, Indizes, Foreign Keys, Default-Werte, WAL-Modus und Transaktionen.
+Tabellen-Existenz, Indizes, Foreign Keys, Default-Werte, WAL-Modus, Transaktionen,
+Schema- und Datenmigration.
 
 Schema-Migration (ergänzt 08.08.2026, siehe ARCHITECTURE.md,
 "Schema-Migration bestehender Portfolios"):
@@ -330,6 +331,31 @@ häufigsten eintritt: jedes weitere Öffnen eines bereits migrierten Portfolios.
 Ein zweites `ALTER TABLE` mit demselben Spaltennamen wäre ein SQL-Fehler und
 liesse `open()` scheitern — die Anwendung würde also ab dem zweiten Start nicht
 mehr hochkommen.
+
+Depotnummer-Migration (ergänzt 18.09.2026, siehe ARCHITECTURE.md,
+"Depotnummern im alten Format (Nummer - Bank)"):
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_depotNormalizer` (datengetrieben, 11 Zeilen) | Die Regel von `DepotNumberNormalizer` ohne Datenbank: ING/DKB-Format, führende Null, umgebende Leerzeichen, zweites " - " im Banknamen; Gegenproben (schon bereinigt, leer, Buchstaben vor " - ", kein Ziffernblock, Bindestrich ohne Leerzeichen) bleiben unverändert |
+| `test_depotMigration_memoryDatabase_nothingToReport` | Frische Datenbank ohne Altwerte → kein Bericht |
+| `test_depotMigration_normalizesBuysSalesAndDividends` | Altwerte in allen drei Tabellen werden umgestellt, Gegenproben bleiben |
+| `test_depotMigration_reportNamesCountsAndReplacements` | Bericht nennt Anzahl je Tabelle (ohne Gegenproben) und die vorkommenden Ersetzungen — Grundlage des Hinweisdialogs |
+| `test_depotMigration_backupHoldsPreviousState` | Sicherung liegt neben dem Portfolio, enthält den Stand VOR der Umstellung, und ihr Name enthält kein `_<Name>_` (sonst griffe die Backup-Rotation) |
+| `test_depotMigration_isIdempotent` | Zweites Öffnen: kein Bericht, keine zweite Sicherung |
+| `test_depotMigration_nothingToDo_noBackup` | Portfolio ohne Altwerte: weder Bericht noch Sicherungsdatei |
+| `test_depotMigration_backupFails_dataUnchanged_retriedOnNextOpen` | Belegter Sicherungspfad → `open()` gelingt trotzdem, nichts umgestellt, fremde Datei unangetastet; nach Freigabe holt das nächste `open()` die Umstellung nach |
+
+@note Die Migrationstests arbeiten mit Datei-Datenbanken, gleiche Begründung
+wie oben. Der Fehlschlag der Sicherung wird herbeigeführt, indem der Test die
+Sicherungspfade der nächsten zehn Sekunden vorab mit eigenen Dateien belegt;
+dafür ist `Database::migrationBackupPath()` öffentlich und nimmt den
+Zeitpunkt als Parameter. Ohne diesen Weg bliebe die Zusage "ohne Sicherung
+keine Umstellung" ungeprüft.
+
+@note Der Hinweisdialog selbst (`MainWindow::buildDepotNumberMigrationMessage()`)
+ist hier nicht abgedeckt; startbezogene Dialoge sind in allen Testzielen
+abgeschaltet, geprüft wird der Bericht, auf dem sein Text aufbaut.
 
 ---
 
@@ -4789,6 +4815,8 @@ explizit per `QVERIFY`/`QVERIFY(!...)`.
 | `test_dryRun_writesNothing` | Import mit `dryRun=true` | Alle Zieltabellen bleiben leer, `importPortfolio()` liefert trotzdem `true` (Validierung läuft unabhängig von `dryRun` und findet hier nichts) |
 | `test_dailyValues_upsertReplacesExistingValueOnRerun` | Gleicher Tag zweimal mit unterschiedlichem Schlusskurs importiert | Keine Dublette, Wert wurde aktualisiert (`INSERT OR REPLACE`) |
 | `test_importDailyValues_logsInsertedUpdatedUnchangedBreakdown` | Zweiter Import mit einem unveränderten, einem geänderten und einem neuen Tageswert-Eintrag (ergänzt 05.07.2026) | Log enthält "3 Tageswert(e) geholt (Eingefügt: 1 / Aktualisiert: 1 / Unverändert: 1)" |
+| `test_importBuyAndSale_legacyDepotNumber_storesNumberOnly` | Kauf und Verkauf mit `DepotNumber="8006189848 - ING diba"`, dazu ein Kauf mit `"D1"` als Gegenprobe (ergänzt 18.09.2026) | In `buys` und `sales` steht nur `8006189848`; `D1` bleibt unverändert |
+| `test_importLegacyDepotNumber_logsOneInfoLinePerShareAndRecordType` | Zwei Käufe und ein Verkauf im alten Format (ergänzt 18.09.2026) | Genau zwei INFO-Zeilen ("bei 2 Kauf/Käufe", "bei 1 Verkauf/Verkäufe") mit der Ersetzung, nicht eine je Datensatz |
 
 #### tst_portfoliovalidator (neu, 05.07.2026)
 
