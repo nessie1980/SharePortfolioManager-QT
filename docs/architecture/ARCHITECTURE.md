@@ -4943,6 +4943,23 @@ Visual-Studio-Generator war damit nicht nötig.
 @note `package.yml` läuft nur über `workflow_dispatch`; der Wechsel dort ist
 erst mit einem manuellen Lauf geprüft, nicht schon mit dem Push.
 
+Nachtrag 18.09.2026, nach dem ersten Lauf mit `vs-shell`: die Warnung zu
+`msvc-dev-cmd` ist in beiden Windows-Jobs verschwunden. Der manuelle Lauf von
+`package.yml` zeigte aber in beiden Jobs eine weitere Node-20-Warnung, diesmal
+für `actions/upload-artifact@v4`. Die Bestandsaufnahme vom 12.09.2026 hatte
+nur `build.yml` im Blick; `upload-artifact` kommt ausschliesslich in
+`package.yml` vor und war deshalb übersehen worden. Behoben durch den Sprung
+auf `actions/upload-artifact@v6`, die erste Fassung, die von sich aus auf
+Node 24 läuft. v5 hatte Node 24 nur vorbereitet und lief standardmässig noch
+unter Node 20. Die genutzten Eingaben (`name`, `path`,
+`if-no-files-found`) sind unverändert.
+
+@note Der Hinweis "The ubuntu-latest label will migrate to Ubuntu 26" im
+Job "Linux (Ubuntu, GCC)" von `build.yml` ist gewollt und keine offene
+Warnung: `build-linux` bleibt absichtlich auf `ubuntu-latest` (siehe
+"AppImage-Build auf feste Ubuntu-Version gesetzt"). Dass er im AppImage-Job
+nicht mehr erscheint, bestätigt die feste Version dort.
+
 ### AppImage-Build auf feste Ubuntu-Version gesetzt (18.09.2026, erledigt 18.09.2026)
 
 GitHub stellt das Runner-Label `ubuntu-latest` ab 19.10.2026 von Ubuntu

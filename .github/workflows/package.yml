@@ -78,8 +78,12 @@ jobs:
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           & $iscc "packaging\windows\installer.iss"
 
+      # v6 statt v4 (18.09.2026): v4 zielt auf Node 20 und lief nach dessen
+      # Entfernung nur noch mit Warnung unter erzwungenem Node 24. v6 ist die
+      # erste Fassung, die von sich aus auf Node 24 laeuft; die hier genutzten
+      # Eingaben (name, path, if-no-files-found) sind unveraendert.
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: SharePortfolioManager-Windows-Installer
           path: packaging\windows\Output\*.exe
@@ -172,8 +176,9 @@ jobs:
             --plugin qt \
             --output appimage
 
+      # v6 statt v4, siehe package-windows.
       - name: Upload AppImage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: SharePortfolioManager-Linux-AppImage
           path: '*.AppImage'
