@@ -72,8 +72,15 @@ jobs:
           arch: 'win64_msvc2019_64'
           modules: 'qtcharts qtmultimedia qtpdf'
 
+      # vs-shell statt ilammy/msvc-dev-cmd@v1 (18.09.2026): msvc-dev-cmd
+      # zielt auch in der neuesten Fassung auf Node 20 und lief nach dessen
+      # Entfernung von den Runnern (16.09.2026) nur noch mit Warnung weiter.
+      # vs-shell ist eine Composite-Action aus PowerShell und braucht gar
+      # kein Node. Setzt wie zuvor die MSVC-Umgebung (vcvars) fuer die
+      # folgenden Schritte - Voraussetzung fuer den Ninja-Generator.
+      # Siehe ARCHITECTURE.md, "Node-20-Abkuendigung betrifft msvc-dev-cmd".
       - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: egor-tensin/vs-shell@v2
         with:
           arch: x64
 

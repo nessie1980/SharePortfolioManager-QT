@@ -4582,32 +4582,6 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### Node-20-Abkündigung betrifft msvc-dev-cmd (offen, 12.09.2026)
-
-GitHub entfernt Node 20 am 16.09.2026 von den Runnern. Actions, die darauf
-zielen, liefen zuletzt nur noch unter erzwungenem Node 24 und haben danach
-keine Laufzeit mehr. `actions/checkout` ist am 12.09.2026 auf v5 gehoben
-worden und damit erledigt; offen bleibt `ilammy/msvc-dev-cmd@v1`, das die
-MSVC-Entwicklungsumgebung für den Ninja-Generator im Windows-Job setzt.
-
-Ein Versionssprung hilft dort nicht: die neueste Fassung v1.13.0 setzt selbst
-auf Node 20. Vorbereiteter Ersatz ist `egor-tensin/vs-shell@v2`, das ohne
-Node auskommt und in der Node-20-Diskussion des Projekts genau dafür
-vorgeschlagen wird -- hier aber nie erprobt wurde. Als größerer Umbau bliebe,
-Ninja aufzugeben und CMake den Visual-Studio-Generator nehmen zu lassen,
-womit die Entwicklungsumgebung ganz entfiele.
-
-Entschieden ist: abwarten. Der erste Windows-Lauf nach dem 16.09.2026 zeigt,
-ob die Action noch funktioniert. Fällt sie aus, ist der Fehlschlag sichtbar
-und der Ersatz eine Zeile. Der Log-Schritt ist seit dem 12.09.2026
-abgesichert und zeigt in diesem Fall die echte Ursache statt eines
-Pfadfehlers.
-
-@note Betrifft nur den Windows-Job. Der Linux-Job hatte mit
-`actions/checkout` seine einzige Node-20-Action und ist seit dem Sprung auf
-v5 warnungsfrei.
-
-
 ### Breite Belegkennungen gewinnen gegen den Dialog-Fallback (offen, 02.09.2026)
 
 Aufgefallen beim Zuschnitt der Feldschlüssel-Gegenprüfung, beim Nachgehen
@@ -4920,6 +4894,54 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Node-20-Abkündigung betrifft msvc-dev-cmd (12.09.2026, erledigt 18.09.2026)
+
+GitHub entfernt Node 20 am 16.09.2026 von den Runnern. Actions, die darauf
+zielen, liefen zuletzt nur noch unter erzwungenem Node 24 und haben danach
+keine Laufzeit mehr. `actions/checkout` ist am 12.09.2026 auf v5 gehoben
+worden und damit erledigt; offen bleibt `ilammy/msvc-dev-cmd@v1`, das die
+MSVC-Entwicklungsumgebung für den Ninja-Generator im Windows-Job setzt.
+
+Ein Versionssprung hilft dort nicht: die neueste Fassung v1.13.0 setzt selbst
+auf Node 20. Vorbereiteter Ersatz ist `egor-tensin/vs-shell@v2`, das ohne
+Node auskommt und in der Node-20-Diskussion des Projekts genau dafür
+vorgeschlagen wird -- hier aber nie erprobt wurde. Als größerer Umbau bliebe,
+Ninja aufzugeben und CMake den Visual-Studio-Generator nehmen zu lassen,
+womit die Entwicklungsumgebung ganz entfiele.
+
+Entschieden ist: abwarten. Der erste Windows-Lauf nach dem 16.09.2026 zeigt,
+ob die Action noch funktioniert. Fällt sie aus, ist der Fehlschlag sichtbar
+und der Ersatz eine Zeile. Der Log-Schritt ist seit dem 12.09.2026
+abgesichert und zeigt in diesem Fall die echte Ursache statt eines
+Pfadfehlers.
+
+@note Betrifft nur den Windows-Job. Der Linux-Job hatte mit
+`actions/checkout` seine einzige Node-20-Action und ist seit dem Sprung auf
+v5 warnungsfrei.
+
+Stand 18.09.2026: die Befürchtung "keine Laufzeit mehr" ist nicht
+eingetreten. Der erste Windows-Lauf nach dem 16.09.2026 war grün, Build,
+Tests und Installer inklusive; `msvc-dev-cmd@v1` läuft weiter, meldet aber
+unverändert die Node-20-Warnung. Das Abbruchkriterium der Entscheidung
+("fällt sie aus") war damit nicht erfüllt.
+
+Trotzdem jetzt gewechselt (Nessies Entscheidung 18.09.2026): eine
+dauerhafte Warnung, die man sich zu übersehen angewöhnt, verdeckt echte neue
+Warnungen — dasselbe Muster wie unter "Aktien ohne verfügbare
+Tageswert-Quelle dauerhaft ausnehmen". Und ein Wechsel, solange beide
+Pipelines grün sind, lässt sich sauber zuordnen; ein erzwungener, wenn
+GitHub den Betrieb unter Node 24 beendet, nicht.
+
+`build-windows` (`build.yml`) und `package-windows` (`package.yml`) nutzen
+jetzt `egor-tensin/vs-shell@v2` mit `arch: x64`. Die Action ist eine
+Composite-Action aus PowerShell, braucht also kein Node, und reicht die
+Umgebungsvariablen von `vcvars*.bat` an die folgenden Schritte weiter — genau
+das, was der Ninja-Generator braucht. Der grössere Umbau auf den
+Visual-Studio-Generator war damit nicht nötig.
+
+@note `package.yml` läuft nur über `workflow_dispatch`; der Wechsel dort ist
+erst mit einem manuellen Lauf geprüft, nicht schon mit dem Push.
 
 ### AppImage-Build auf feste Ubuntu-Version gesetzt (18.09.2026, erledigt 18.09.2026)
 
