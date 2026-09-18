@@ -4582,32 +4582,6 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### AppImage-Build auf feste Ubuntu-Version setzen (TODO, vor 19.10.2026)
-
-GitHub stellt das Runner-Label `ubuntu-latest` ab 19.10.2026 von Ubuntu
-24.04 auf Ubuntu 26 um (Hinweis im Job "Linux AppImage", 18.09.2026; siehe
-github.com/actions/runner-images, Issue 14748). Für `package-linux` in
-`.github/workflows/package.yml` ist das relevant: Qt kommt zwar fertig über
-`install-qt-action`, die Anwendung selbst wird aber mit Compiler und glibc
-des Runners gebaut. Ein AppImage läuft nur auf Systemen mit mindestens
-dieser glibc-Version. Nach der Umstellung würde es voraussichtlich auf
-Systemen mit Ubuntu-24.04-Basis, darunter Linux Mint 22, nicht mehr
-starten ("GLIBC_2.xx not found").
-
-Vorgesehen:
-
-1. `package-linux`: `runs-on` fest auf die älteste zu unterstützende
-   Ubuntu-Basis setzen, mit Kommentar zur glibc-Begründung.
-2. `build-linux` in `build.yml` bleibt auf `ubuntu-latest` — dort geht es nur
-   um Bauen und Testen, ein neuerer Compiler ist eine willkommene
-   Frühwarnung.
-3. Die Begründung hier festhalten, damit die feste Version später nicht als
-   Versehen zurückgedreht wird.
-
-Offene Entscheidung: welche Basis mindestens unterstützt werden soll —
-`ubuntu-24.04` (Mint 22) oder `ubuntu-22.04` (auch Mint 21). Eigener Commit
-ohne App-Versionssprung; dafür wird `package.yml` vollständig benötigt.
-
 ### Node-20-Abkündigung betrifft msvc-dev-cmd (offen, 12.09.2026)
 
 GitHub entfernt Node 20 am 16.09.2026 von den Runnern. Actions, die darauf
@@ -4946,6 +4920,41 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### AppImage-Build auf feste Ubuntu-Version gesetzt (18.09.2026, erledigt 18.09.2026)
+
+GitHub stellt das Runner-Label `ubuntu-latest` ab 19.10.2026 von Ubuntu
+24.04 auf Ubuntu 26 um (Hinweis im Job "Linux AppImage", 18.09.2026; siehe
+github.com/actions/runner-images, Issue 14748). Für `package-linux` in
+`.github/workflows/package.yml` ist das relevant: Qt kommt zwar fertig über
+`install-qt-action`, die Anwendung selbst wird aber mit Compiler und glibc
+des Runners gebaut. Ein AppImage läuft nur auf Systemen mit mindestens
+dieser glibc-Version; nach der Umstellung hätte es auf Systemen mit
+Ubuntu-24.04-Basis, darunter Linux Mint 22, voraussichtlich nicht mehr
+gestartet ("GLIBC_2.xx not found").
+
+Umgesetzt:
+
+- `package-linux` läuft fest auf `ubuntu-22.04`. Das ist die Basis von
+  Linux Mint 21, der ältesten unterstützten Version (Nessies Entscheidung
+  18.09.2026). Ein damit gebautes AppImage läuft auf Mint 21 und allem
+  Neueren. Die Begründung steht auch als Kommentar im Workflow, damit die
+  feste Version nicht als Versehen auf `ubuntu-latest` zurückgedreht wird.
+- `build-linux` in `build.yml` bleibt auf `ubuntu-latest`. Dort geht es nur
+  um Bauen und Testen; ein neuerer Compiler ist eine willkommene
+  Frühwarnung, ähnlich wie der englische CI-Runner schon mehrere
+  Locale-Fehler gefunden hat.
+
+@note Auf 22.04 bauen GCC 11 und CMake 3.22 statt der neueren Versionen von
+24.04. CMake erfüllt das `cmake_minimum_required(VERSION 3.21)`. GCC 11
+kennt den grössten Teil von C++20, aber nicht alles (z. B. `<format>` erst
+ab GCC 13). Nutzt der Code künftig ein Sprachmittel, das GCC 11 fehlt,
+scheitert zuerst dieser Job — `build-linux` auf `ubuntu-latest` bemerkt es
+nicht.
+
+@note Auch `ubuntu-22.04` wird GitHub irgendwann als Runner einstellen;
+ein Termin war am 18.09.2026 nicht bekannt. Dann ist neu zu entscheiden,
+welche Mint-Version die Untergrenze bildet.
 
 ### Unbekannte Depotnummern fallen beim Laden nicht auf (18.09.2026, behoben 18.09.2026)
 

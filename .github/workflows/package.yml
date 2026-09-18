@@ -80,7 +80,17 @@ jobs:
 
   package-linux:
     name: Linux AppImage
-    runs-on: ubuntu-latest
+    # Bewusst FEST auf 22.04 statt ubuntu-latest (18.09.2026). Die Anwendung
+    # wird mit Compiler und glibc des Runners gebaut, und ein AppImage laeuft
+    # nur auf Systemen mit mindestens dieser glibc-Version. ubuntu-latest
+    # wechselt ab 19.10.2026 auf Ubuntu 26 - das Ergebnis wuerde dann auf
+    # aelteren Systemen nicht mehr starten ("GLIBC_2.xx not found").
+    # 22.04 ist die Basis von Linux Mint 21, der aeltesten unterstuetzten
+    # Version (Nessies Entscheidung 18.09.2026). NICHT auf ubuntu-latest
+    # "aufraeumen" - Begruendung in ARCHITECTURE.md, "AppImage-Build auf
+    # feste Ubuntu-Version gesetzt". build-linux in build.yml bleibt dagegen
+    # absichtlich auf ubuntu-latest.
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
