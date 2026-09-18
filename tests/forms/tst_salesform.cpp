@@ -54,6 +54,7 @@
 #include "../../app/models/ShareSplitObject.h"
 #include "../../app/utils/ShareSplitHint.h"
 #include "../../app/utils/SaleFifoAllocator.h"
+#include "../../app/utils/DepotComboSelection.h"
 #include "../../app/widgets/OverviewTabWidget.h"
 
 #include "../../app/forms/SalesForm/SaleBuyDetailRow.h"
@@ -340,6 +341,53 @@ static SaleObject makeSale(const QString& guid,
 // ─────────────────────────────────────────────────────────────────────────────
 // SalesForm tests — in a separate QObject so initTestCase/openMemoryDb work
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Depot-Auswahl beim Laden (18.09.2026) ─────────────────────────────────────
+//
+// Siehe DepotComboSelection und ARCHITECTURE.md, "Unbekannte Depotnummern
+// fallen beim Laden nicht auf". Welche Combobox die Depot-Auswahl ist, wird
+// wie in den Tests vom 27.08.2026 nicht geraten: der Test-Eintrag wandert
+// reihum, und depotNumber() sagt, wann die richtige getroffen ist.
+
+/// Legt @p number als gültiges Depot an und stellt die Auswahl zurück auf
+/// den Platzhalter. Liefert die Depot-Combobox, oder nullptr.
+template <typename Dialog>
+static QComboBox* addTestDepot(Dialog& dlg, const QString& number)
+{
+    for (auto* combo : dlg.template findChildren<QComboBox*>()) {
+        const int before = combo->currentIndex();
+        combo->addItem(QStringLiteral("Testdepot"), number);
+        combo->setCurrentIndex(combo->count() - 1);
+        if (dlg.depotNumber() == number) {
+            combo->setCurrentIndex(0);
+            return combo;
+        }
+        combo->removeItem(combo->count() - 1);
+        combo->setCurrentIndex(before);
+    }
+    return nullptr;
+}
+
+/// Die Combobox, deren aktueller Eintrag eine unbekannte Depotnummer zeigt.
+template <typename Dialog>
+static QComboBox* depotComboShowingUnknown(Dialog& dlg)
+{
+    for (auto* combo : dlg.template findChildren<QComboBox*>()) {
+        if (combo->currentText().contains(QStringLiteral("nicht in Documents.xml")))
+            return combo;
+    }
+    return nullptr;
+}
+
+/// Anzahl der Hinweis-Einträge für unbekannte Depotnummern in @p combo.
+static int unknownDepotEntries(const QComboBox* combo)
+{
+    int n = 0;
+    for (int i = 0; i < combo->count(); ++i)
+        if (combo->itemData(i, DepotComboSelection::UnknownValueRole).toBool())
+            ++n;
+    return n;
+}
+
 class TestSalesForm : public QObject
 {
     Q_OBJECT
@@ -2048,6 +2096,66 @@ private slots:
 
         QCOMPARE(dlg.volume(), 3200.0);
         QCOMPARE(dlg.salePrice(), 1250.75);
+    }
+
+    // ── Unbekannte Depotnummer beim Laden (18.09.2026) ─────────────────────
+
+    void test_viewSaleEdit_loadSale_unknownDepot_visibleButBlocksSave()
+    {
+        // Siehe test_viewBuyEdit_loadBuy_unknownDepot_visibleButBlocksSave.
+        // Beim Verkauf wog es schwerer: die FIFO-Zuteilung filtert über die
+        // Depotnummer, und die unbekannte Nummer ging ungehindert in die DB.
+        openMemoryDb();
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        dlg.loadSale(makeSale(QStringLiteral("s-unk"), QStringLiteral("share-guid"), 2024,
+                              10.0, 150.0, QStringLiteral("8006189848 - ING diba")));
+
+        QComboBox* combo = depotComboShowingUnknown(dlg);
+        QVERIFY2(combo, "Die gespeicherte Nummer muss sichtbar bleiben");
+        QCOMPARE(DepotComboSelection::selectedUnknownValue(combo),
+                 QStringLiteral("8006189848 - ING diba"));
+
+        QCOMPARE(dlg.depotNumber(), QString());
+        QStringList missing;
+        QVERIFY(dlg.hasMissingRequiredFields(missing));
+        QVERIFY(!missing.isEmpty());
+    }
+
+    void test_viewSaleEdit_loadSale_unknownDepot_noAccumulation_clearedByClearForm()
+    {
+        openMemoryDb();
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        dlg.loadSale(makeSale(QStringLiteral("s1"), QStringLiteral("share-guid"), 2023));
+        QComboBox* combo = depotComboShowingUnknown(dlg);
+        QVERIFY(combo);
+        const int countWithHint = combo->count();
+
+        dlg.loadSale(makeSale(QStringLiteral("s2"), QStringLiteral("share-guid"), 2024,
+                              10.0, 150.0, QStringLiteral("depot2")));
+        QCOMPARE(combo->count(), countWithHint);
+        QCOMPARE(unknownDepotEntries(combo), 1);
+
+        dlg.clearForm();
+        QCOMPARE(unknownDepotEntries(combo), 0);
+        QCOMPARE(combo->currentIndex(), 0);
+    }
+
+    void test_viewSaleEdit_loadSale_knownDepot_afterUnknown_selectsAndRemovesHint()
+    {
+        openMemoryDb();
+        ViewSaleEdit dlg(QStringLiteral("share-guid"), nullptr);
+        QComboBox* combo = addTestDepot(dlg, QStringLiteral("8006189848"));
+        QVERIFY(combo);
+
+        dlg.loadSale(makeSale(QStringLiteral("s-unk"), QStringLiteral("share-guid"), 2023));
+        QCOMPARE(unknownDepotEntries(combo), 1);
+
+        dlg.loadSale(makeSale(QStringLiteral("s-ok"), QStringLiteral("share-guid"), 2024,
+                              10.0, 150.0, QStringLiteral("8006189848")));
+        QCOMPARE(dlg.depotNumber(), QStringLiteral("8006189848"));
+        QCOMPARE(unknownDepotEntries(combo), 0);
     }
 
     void test_viewSaleEdit_canBeConstructed()

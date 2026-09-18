@@ -9,6 +9,7 @@
 #include "../../utils/ValueFormatter.h"
 #include "../../utils/NumberParser.h"
 #include "../../utils/DocumentFieldValue.h"
+#include "../../utils/DepotComboSelection.h"
 #include "ModelSaleEdit.h"
 #include "../../IconProvider.h"
 #include "../../config/AppSettings.h"
@@ -589,22 +590,10 @@ void ViewSaleEdit::loadSale(const SaleObject& sale)
     m_date->setDate(dt.isValid() ? dt.date() : QDate::currentDate());
     m_time->setTime(dt.isValid() ? dt.time() : QTime::currentTime());
 
-    const QString depotNr = sale.depotNumber().trimmed();
-    {
-        QSignalBlocker block(m_depotNumber);
-        bool matched = false;
-        for (int i = 0; i < m_depotNumber->count(); ++i) {
-            if (m_depotNumber->itemData(i).toString().trimmed() == depotNr) {
-                m_depotNumber->setCurrentIndex(i);
-                matched = true;
-                break;
-            }
-        }
-        if (!matched && !depotNr.isEmpty()) {
-            m_depotNumber->addItem(depotNr, depotNr);
-            m_depotNumber->setCurrentIndex(m_depotNumber->count() - 1);
-        }
-    }
+    // Depotnummer — siehe ViewBuyEdit::loadBuy() und DepotComboSelection
+    // (18.09.2026): eine unbekannte Nummer bleibt sichtbar, trägt aber keine
+    // item data und sperrt damit das Speichern.
+    DepotComboSelection::select(m_depotNumber, sale.depotNumber());
 
     m_orderNumber->setText(sale.orderNumber());
     // Editierbare Zahlenfelder werden seit 08.09.2026 OHNE
@@ -631,6 +620,9 @@ void ViewSaleEdit::clearForm()
 {
     m_date->setDate(QDate::currentDate());
     m_time->setTime(QTime::currentTime());
+    // Hinweis-Eintrag einer unbekannten Depotnummer mit entfernen
+    // (18.09.2026) — er gehört zum zuletzt geladenen Datensatz.
+    DepotComboSelection::removeUnknownEntries(m_depotNumber);
     {
         QSignalBlocker block(m_depotNumber);
         m_depotNumber->setCurrentIndex(0);
@@ -913,9 +905,19 @@ void ViewSaleEdit::setFieldError(const QString& field,
     // Umstellung auf "uebernommen statt gefunden" nicht mehr beantwortet:
     // hat die Regel gar nicht gegriffen, oder hat sie etwas Unbrauchbares
     // gefangen? Leer bei den Aufrufen aus der Live-Validierung.
-    lbl->setToolTip(rawValue.isEmpty()
-                        ? tr("Ungültige oder fehlende Eingabe")
-                        : tr("Nicht verwertbar: „%1“").arg(rawValue));
+    // Depot-Auswahl mit einer gespeicherten, aber in Documents.xml nicht
+    // hinterlegten Nummer (18.09.2026): der allgemeine Text "Ungültige oder
+    // fehlende Eingabe" wäre hier irreführend — es ist ja etwas gespeichert.
+    const QString unknownDepot =
+        (field == QLatin1String("depotNumber") && rawValue.isEmpty())
+            ? DepotComboSelection::selectedUnknownValue(m_depotNumber)
+            : QString();
+    if (!unknownDepot.isEmpty())
+        lbl->setToolTip(DepotComboSelection::unknownTooltip(unknownDepot));
+    else
+        lbl->setToolTip(rawValue.isEmpty()
+                            ? tr("Ungültige oder fehlende Eingabe")
+                            : tr("Nicht verwertbar: „%1“").arg(rawValue));
     lbl->setVisible(true);
 }
 

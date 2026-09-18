@@ -336,6 +336,70 @@ private slots:
         QVERIFY(!r.matches);
         QCOMPARE(r.expectedVolume, 0.0);
     }
+
+    // ── check(): Diagnose für "0 Käufe berücksichtigt" (18.09.2026) ───────
+    //
+    // otherDepotNumbers/buysOnOrAfterExDate ändern nichts am Prüfergebnis,
+    // sie liefern dem Aufrufer nur die Gründe, warum Käufe NICHT zählten.
+
+    void test_check_otherDepotNumbers_distinctSortedTrimmedWithoutSelected()
+    {
+        const QList<BuyObject> buys = {
+            makeBuy("b1", kDepot,                         "2024-01-10", 10.0),
+            makeBuy("b2", QStringLiteral("DE333"),        "2024-01-10", 10.0),
+            makeBuy("b3", kOther,                         "2024-01-10", 10.0),
+            makeBuy("b4", QStringLiteral("  DE222  "),    "2024-01-10", 10.0),  // Dublette nach Trim
+            makeBuy("b5", QStringLiteral(" DE111 "),      "2024-01-10", 10.0),  // gewähltes Depot
+        };
+        const auto r = DividendVolumeChecker::check(
+            20.0, QDate(2024, 5, 15), kDepot, buys, {}, {});
+        QCOMPARE(r.otherDepotNumbers,
+                 QStringList({ QStringLiteral("DE222"), QStringLiteral("DE333") }));
+    }
+
+    void test_check_otherDepotNumbers_legacyFormatAndEmptyAreListed()
+    {
+        // Genau der Fall aus Nessies Bugreport: gewählt ist die reine Nummer,
+        // die Käufe tragen das Altformat — dazu ein Kauf ohne Depotnummer.
+        const QList<BuyObject> buys = {
+            makeBuy("b1", QStringLiteral("8006189848 - ING diba"), "2024-01-10", 25.0),
+            makeBuy("b2", QString(),                                 "2024-01-10", 5.0),
+        };
+        const auto r = DividendVolumeChecker::check(
+            25.0, QDate(2024, 5, 15), QStringLiteral("8006189848"), buys, {}, {});
+        QVERIFY(r.checkable);
+        QVERIFY(!r.matches);
+        QCOMPARE(r.consideredBuys, 0);
+        QCOMPARE(r.otherDepotNumbers,
+                 QStringList({ QString(), QStringLiteral("8006189848 - ING diba") }));
+    }
+
+    void test_check_buysOnOrAfterExDate_countsOnlySelectedDepot()
+    {
+        const QList<BuyObject> buys = {
+            makeBuy("b1", kDepot, "2024-01-10", 100.0),   // zählt mit
+            makeBuy("b2", kDepot, "2024-05-15", 10.0),    // am Ex-Tag
+            makeBuy("b3", kDepot, "2024-06-01", 10.0),    // nach dem Ex-Tag
+            makeBuy("b4", kOther, "2024-06-01", 10.0),    // anderes Depot — nicht hier
+        };
+        const auto r = DividendVolumeChecker::check(
+            100.0, QDate(2024, 5, 15), kDepot, buys, {}, {});
+        QCOMPARE(r.buysOnOrAfterExDate, 2);
+        QCOMPARE(r.consideredBuys, 1);
+        QVERIFY(r.matches);                           // Diagnose ändert das Ergebnis nicht
+    }
+
+    void test_check_notCheckable_diagnosisStaysEmpty()
+    {
+        // Ohne Depotnummer wird gar nicht geprüft — dann gibt es auch nichts
+        // zu erklären.
+        const QList<BuyObject> buys = { makeBuy("b1", kOther, "2024-06-01", 100.0) };
+        const auto r = DividendVolumeChecker::check(
+            100.0, QDate(2024, 5, 15), QString(), buys, {}, {});
+        QVERIFY(!r.checkable);
+        QVERIFY(r.otherDepotNumbers.isEmpty());
+        QCOMPARE(r.buysOnOrAfterExDate, 0);
+    }
 };
 
 QTEST_MAIN(TestDividendVolumeChecker)

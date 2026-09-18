@@ -808,6 +808,31 @@ QString PresenterDividendEdit::validateInput() const
 
     if (volumeCheck.checkable && !volumeCheck.matches) {
         m_view->setFieldError(QStringLiteral("volume"));
+
+        // Diagnose (18.09.2026): wurde kein einziger Kauf berücksichtigt,
+        // obwohl Käufe erfasst sind, sagt die Meldung, woran es lag. Beim
+        // Bugfix "Depotnummern im alten Format (Nummer - Bank)" stand hier
+        // nur "0 Käufe", und die Ursache musste per SQL gesucht werden.
+        QString diagnosis;
+        if (volumeCheck.consideredBuys == 0) {
+            if (!volumeCheck.otherDepotNumbers.isEmpty()) {
+                QStringList quoted;
+                for (const QString& other : volumeCheck.otherDepotNumbers)
+                    quoted.append(other.isEmpty()
+                                      ? QObject::tr("(ohne Depotnummer)")
+                                      : QStringLiteral("\"%1\"").arg(other));
+                diagnosis += QObject::tr("\n\nKäufe dieser Aktie liegen in anderen "
+                                         "Depots: %1.")
+                                 .arg(quoted.join(QStringLiteral(", ")));
+            }
+            if (volumeCheck.buysOnOrAfterExDate > 0) {
+                diagnosis += QObject::tr("\n\n%n Kauf/Käufe dieses Depots liegen am "
+                                         "oder nach dem Ex-Tag und zählen deshalb "
+                                         "nicht mit.",
+                                         nullptr, volumeCheck.buysOnOrAfterExDate);
+            }
+        }
+
         return QObject::tr(
             "Die eingetragenen Anteile passen nicht zum Bestand des gewählten "
             "Depots am Ex-Tag.\n\n"
@@ -822,7 +847,8 @@ QString PresenterDividendEdit::validateInput() const
                  QLocale().toString(volumeCheck.expectedVolume, 'f', 4),
                  QString::number(volumeCheck.consideredBuys),
                  QString::number(volumeCheck.consideredSales),
-                 m_view->depotNumber().trimmed());
+                 m_view->depotNumber().trimmed())
+            + diagnosis;
     }
 
     const QString doc = m_view->documentPath().trimmed();

@@ -9,6 +9,7 @@
 #include <QDate>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 /**
  * @brief Ergebnis der Stückzahl-Plausibilitätsprüfung einer Dividende.
@@ -40,6 +41,23 @@ struct DividendVolumeCheckResult
     /// Anzahl der in die Rechnung eingegangenen Käufe bzw. Verkäufe.
     int    consideredBuys  = 0;
     int    consideredSales = 0;
+
+    /**
+     * @brief Depotnummern, unter denen Käufe dieser Aktie liegen, die NICHT
+     * das gewählte Depot sind — getrimmt, ohne Dubletten, sortiert.
+     *
+     * Diagnose seit 18.09.2026: bei "0 Käufe berücksichtigt" sagte die
+     * Meldung bisher nicht, warum. Genau das war beim Bugfix "Depotnummern im
+     * alten Format (Nummer - Bank)" der Fall — die Käufe lagen alle unter
+     * "8006189848 - ING diba", gewählt war "8006189848". Eine leere
+     * Depotnummer erscheint als leerer String. Nur gefüllt, wenn
+     * `checkable == true`.
+     */
+    QStringList otherDepotNumbers;
+
+    /// Käufe des GEWÄHLTEN Depots mit Datum am oder nach dem Ex-Tag — sie
+    /// zählen nach der Stichtagsregel nicht mit (Diagnose seit 18.09.2026).
+    int    buysOnOrAfterExDate = 0;
 
     /// enteredVolume − expectedVolume (positiv = es wurde zu viel eingetragen).
     double deviation() const { return enteredVolume - expectedVolume; }

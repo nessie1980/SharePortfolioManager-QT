@@ -3,7 +3,10 @@
 #include "DividendVolumeChecker.h"
 #include "ShareSplitAdjuster.h"
 
+#include <QSet>
 #include <QtGlobal>
+
+#include <algorithm>
 
 // ── holdingsAtExDate ──────────────────────────────────────────────────────────
 
@@ -86,5 +89,25 @@ DividendVolumeCheckResult DividendVolumeChecker::check(
                                              &result.consideredBuys,
                                              &result.consideredSales);
     result.matches = qAbs(result.deviation()) <= kVolumeTolerance;
+
+    // ── Diagnose (18.09.2026) ─────────────────────────────────────────────
+    // Ändert nichts am Ergebnis der Prüfung, sondern liefert dem Aufrufer
+    // die Gründe, warum Käufe NICHT mitgezählt wurden — damit eine Meldung
+    // "0 Käufe berücksichtigt" sich selbst erklären kann.
+    const QString depot = depotNumber.trimmed();
+    QSet<QString> others;
+    for (const BuyObject& b : buys) {
+        const QString buyDepot = b.depotNumber().trimmed();
+        if (buyDepot != depot) {
+            others.insert(buyDepot);
+            continue;
+        }
+        const QDate d = b.date();
+        if (d.isValid() && d >= exDate)
+            ++result.buysOnOrAfterExDate;
+    }
+    result.otherDepotNumbers = QStringList(others.cbegin(), others.cend());
+    std::sort(result.otherDepotNumbers.begin(), result.otherDepotNumbers.end());
+
     return result;
 }

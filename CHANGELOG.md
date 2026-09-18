@@ -10,6 +10,29 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.22.0] - 2026-09-18
+
+### Changed
+
+- **Unbekannte Depotnummern beim Laden sind jetzt ein Fehler.** Kauf-,
+  Verkaufs- und Dividendendialog uebernahmen eine gespeicherte Depotnummer,
+  die nicht in `Documents.xml` steht, bisher still als zusaetzlichen Eintrag
+  der Auswahl; der Datensatz sah normal aus und liess sich unveraendert
+  wieder speichern. Genau so blieb das Altformat "Nummer - Bank" lange
+  unbemerkt. Jetzt bleibt der Wert sichtbar, markiert als "(nicht in
+  Documents.xml)", das Feld wird rot, und gespeichert werden kann erst nach
+  Wahl eines gueltigen Depots. Beim Durchblaettern sammeln sich keine
+  Eintraege mehr an. Eine leere Depotnummer zeigt jetzt in allen drei
+  Dialogen "bitte waehlen", statt das Depot des zuvor angesehenen Eintrags
+  stehen zu lassen.
+
+### Added
+
+- **Die Stueckzahl-Pruefung bei Dividenden erklaert "0 Kaeufe".** Wurde kein
+  einziger Kauf beruecksichtigt, nennt die Meldung jetzt die Depots, unter
+  denen die Kaeufe der Aktie tatsaechlich liegen, und wie viele Kaeufe des
+  gewaehlten Depots erst am oder nach dem Ex-Tag erfolgt sind.
+
 ## [1.21.11] - 2026-09-18
 
 ### Fixed

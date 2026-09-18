@@ -43,6 +43,7 @@
 #include "../../app/models/ShareSplitObject.h"
 #include "../../app/models/DailyValuesObject.h"
 #include "../../app/utils/ShareSplitHint.h"
+#include "../../app/utils/DepotComboSelection.h"
 #include "../../app/widgets/OverviewTabWidget.h"
 
 #include "../../app/forms/DividendForm/IViewDividendEdit.h"
@@ -301,6 +302,53 @@ public:
 // ─────────────────────────────────────────────────────────────────────────────
 // TestDividendForm
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Depot-Auswahl beim Laden (18.09.2026) ─────────────────────────────────────
+//
+// Siehe DepotComboSelection und ARCHITECTURE.md, "Unbekannte Depotnummern
+// fallen beim Laden nicht auf". Welche Combobox die Depot-Auswahl ist, wird
+// wie in den Tests vom 27.08.2026 nicht geraten: der Test-Eintrag wandert
+// reihum, und depotNumber() sagt, wann die richtige getroffen ist.
+
+/// Legt @p number als gültiges Depot an und stellt die Auswahl zurück auf
+/// den Platzhalter. Liefert die Depot-Combobox, oder nullptr.
+template <typename Dialog>
+static QComboBox* addTestDepot(Dialog& dlg, const QString& number)
+{
+    for (auto* combo : dlg.template findChildren<QComboBox*>()) {
+        const int before = combo->currentIndex();
+        combo->addItem(QStringLiteral("Testdepot"), number);
+        combo->setCurrentIndex(combo->count() - 1);
+        if (dlg.depotNumber() == number) {
+            combo->setCurrentIndex(0);
+            return combo;
+        }
+        combo->removeItem(combo->count() - 1);
+        combo->setCurrentIndex(before);
+    }
+    return nullptr;
+}
+
+/// Die Combobox, deren aktueller Eintrag eine unbekannte Depotnummer zeigt.
+template <typename Dialog>
+static QComboBox* depotComboShowingUnknown(Dialog& dlg)
+{
+    for (auto* combo : dlg.template findChildren<QComboBox*>()) {
+        if (combo->currentText().contains(QStringLiteral("nicht in Documents.xml")))
+            return combo;
+    }
+    return nullptr;
+}
+
+/// Anzahl der Hinweis-Einträge für unbekannte Depotnummern in @p combo.
+static int unknownDepotEntries(const QComboBox* combo)
+{
+    int n = 0;
+    for (int i = 0; i < combo->count(); ++i)
+        if (combo->itemData(i, DepotComboSelection::UnknownValueRole).toBool())
+            ++n;
+    return n;
+}
+
 class TestDividendForm : public QObject
 {
     Q_OBJECT
@@ -1812,6 +1860,68 @@ private slots:
         QVERIFY(!view.lastError.isEmpty());
     }
 
+    // ── Diagnose bei "0 Käufe berücksichtigt" (18.09.2026) ───────────────
+
+    void test_presenterDividendEdit_onSave_noBuyConsidered_messageNamesOtherDepots()
+    {
+        // Genau der Fall aus Nessies Bugreport: Käufe vorhanden, aber unter
+        // einer anderen Depotnummer. Die Meldung nennt jetzt, welche.
+        StubViewDividendEdit view;
+        view.m_volume      = 25.0;
+        view.m_depotNumber = QStringLiteral("DE123456789");
+        StubModelDividendEdit model;
+        model.buys << makeDepotBuy(QStringLiteral("b1"), 25.0,
+                                   QStringLiteral("2024-01-10"),
+                                   QStringLiteral("DE123456789 - Testbank"));
+        model.buys << makeDepotBuy(QStringLiteral("b2"), 5.0,
+                                   QStringLiteral("2024-01-11"), QString());
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onSave();
+
+        QVERIFY(!model.addDividendCalled);
+        QVERIFY(view.lastError.contains(QStringLiteral("anderen Depots")));
+        QVERIFY(view.lastError.contains(QStringLiteral("\"DE123456789 - Testbank\"")));
+        QVERIFY(view.lastError.contains(QStringLiteral("(ohne Depotnummer)")));
+    }
+
+    void test_presenterDividendEdit_onSave_noBuyConsidered_messageNamesBuysAfterExDate()
+    {
+        // Einziger Kauf des Depots liegt nach dem Ex-Tag (13.06.2024).
+        StubViewDividendEdit view;
+        view.m_volume = 10.0;
+        StubModelDividendEdit model;
+        model.buys << makeDepotBuy(QStringLiteral("b1"), 10.0, QStringLiteral("2024-06-13"));
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onSave();
+
+        QVERIFY(!model.addDividendCalled);
+        QVERIFY(view.lastError.contains(QStringLiteral("am oder nach dem Ex-Tag")));
+        QVERIFY(!view.lastError.contains(QStringLiteral("anderen Depots")));
+    }
+
+    void test_presenterDividendEdit_onSave_someBuysConsidered_noDiagnosis()
+    {
+        // Die Diagnose gilt nur für "0 Käufe". Ist mindestens einer
+        // mitgezählt, liegt die Ursache woanders — ein Hinweis auf andere
+        // Depots würde dann eher in die Irre führen.
+        StubViewDividendEdit view;
+        view.m_volume = 150.0;              // Bestand ist aber 100
+        StubModelDividendEdit model;
+        model.buys << makeDepotBuy(QStringLiteral("b1"), 100.0);
+        model.buys << makeDepotBuy(QStringLiteral("b2"), 50.0,
+                                   QStringLiteral("2024-01-10"),
+                                   QStringLiteral("DE999999999"));
+        PresenterDividendEdit p(&view, &model, makeShareGuid(), nullptr);
+
+        p.onSave();
+
+        QVERIFY(!model.addDividendCalled);
+        QVERIFY(!view.lastError.isEmpty());
+        QVERIFY(!view.lastError.contains(QStringLiteral("anderen Depots")));
+    }
+
     void test_presenterDividendEdit_onSave_splitBetweenBuyAndExDate_saves()
     {
         // Kauf 100 Stk., danach Split 2:1 → am Ex-Tag 200 Stk., und genau 200
@@ -1931,8 +2041,12 @@ private slots:
 
     void test_viewDividendEdit_loadDividend_withExDateAndDepotNumber_populatesFields()
     {
+        // Seit 18.09.2026 muss das Depot in der Auswahl stehen — eine
+        // unbekannte Nummer liefert depotNumber() nicht mehr zurück (siehe
+        // test_viewDividendEdit_loadDividend_unknownDepot_visibleButBlocksSave).
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        QVERIFY(addTestDepot(dlg, QStringLiteral("DE123456789")));
         DividendObject d(QStringLiteral("div-1"), makeShareGuid(),
                          QStringLiteral("2024-06-15T00:00:00"),
                          1.50, 100.0, 0.0, 0.0, 0.0, 45.0,
@@ -2226,6 +2340,53 @@ private slots:
         dlg.clearForm();
         QCOMPARE(dlg.exDate(), QStringLiteral("2000-01-01"));
         QVERIFY(dlg.depotNumber().isEmpty());
+    }
+
+    // ── Unbekannte Depotnummer beim Laden (18.09.2026) ─────────────────────
+
+    void test_viewDividendEdit_loadDividend_unknownDepot_visibleButBlocksSave()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);   // leere Auswahlliste
+        DividendObject d(QStringLiteral("div-unk"), makeShareGuid(),
+                         QStringLiteral("2024-06-15T00:00:00"),
+                         1.50, 100.0, 0.0, 0.0, 0.0, 45.0,
+                         false, 1.0, QStringLiteral("EUR"), QString(),
+                         QStringLiteral("2024-06-13"), QStringLiteral("501403950"));
+        dlg.loadDividend(d);
+
+        QComboBox* combo = depotComboShowingUnknown(dlg);
+        QVERIFY2(combo, "Die gespeicherte Nummer muss sichtbar bleiben");
+        QCOMPARE(DepotComboSelection::selectedUnknownValue(combo), QStringLiteral("501403950"));
+
+        QCOMPARE(dlg.depotNumber(), QString());
+        QStringList missing;
+        QVERIFY(dlg.hasMissingRequiredFields(missing));
+        QVERIFY(missing.contains(QObject::tr("Depotnummer")));
+
+        // clearForm() räumt den Hinweis weg.
+        dlg.clearForm();
+        QCOMPARE(unknownDepotEntries(combo), 0);
+        QCOMPARE(combo->currentIndex(), 0);
+    }
+
+    void test_viewDividendEdit_loadDividend_unknownDepot_noAccumulation()
+    {
+        openMemoryDb();
+        ViewDividendEdit dlg(makeShareGuid(), nullptr);
+        for (const QString& depot : { QStringLiteral("111"), QStringLiteral("222"),
+                                      QStringLiteral("333") }) {
+            DividendObject d(QStringLiteral("div-") + depot, makeShareGuid(),
+                             QStringLiteral("2024-06-15T00:00:00"),
+                             1.50, 100.0, 0.0, 0.0, 0.0, 45.0,
+                             false, 1.0, QStringLiteral("EUR"), QString(),
+                             QStringLiteral("2024-06-13"), depot);
+            dlg.loadDividend(d);
+        }
+        QComboBox* combo = depotComboShowingUnknown(dlg);
+        QVERIFY(combo);
+        QCOMPARE(unknownDepotEntries(combo), 1);
+        QVERIFY(combo->currentText().contains(QStringLiteral("333")));
     }
 
 

@@ -44,6 +44,7 @@
 #include "../../app/forms/BuysForm/PresenterBuyEdit.h"
 #include "../../app/models/ShareSplitObject.h"
 #include "../../app/utils/ShareSplitHint.h"
+#include "../../app/utils/DepotComboSelection.h"
 
 #include "../../app/forms/UiConstants.h"
 
@@ -230,6 +231,53 @@ public:
 
 };
 // ─────────────────────────────────────────────────────────────────────────────
+// ── Depot-Auswahl beim Laden (18.09.2026) ─────────────────────────────────────
+//
+// Siehe DepotComboSelection und ARCHITECTURE.md, "Unbekannte Depotnummern
+// fallen beim Laden nicht auf". Welche Combobox die Depot-Auswahl ist, wird
+// wie in den Tests vom 27.08.2026 nicht geraten: der Test-Eintrag wandert
+// reihum, und depotNumber() sagt, wann die richtige getroffen ist.
+
+/// Legt @p number als gültiges Depot an und stellt die Auswahl zurück auf
+/// den Platzhalter. Liefert die Depot-Combobox, oder nullptr.
+template <typename Dialog>
+static QComboBox* addTestDepot(Dialog& dlg, const QString& number)
+{
+    for (auto* combo : dlg.template findChildren<QComboBox*>()) {
+        const int before = combo->currentIndex();
+        combo->addItem(QStringLiteral("Testdepot"), number);
+        combo->setCurrentIndex(combo->count() - 1);
+        if (dlg.depotNumber() == number) {
+            combo->setCurrentIndex(0);
+            return combo;
+        }
+        combo->removeItem(combo->count() - 1);
+        combo->setCurrentIndex(before);
+    }
+    return nullptr;
+}
+
+/// Die Combobox, deren aktueller Eintrag eine unbekannte Depotnummer zeigt.
+template <typename Dialog>
+static QComboBox* depotComboShowingUnknown(Dialog& dlg)
+{
+    for (auto* combo : dlg.template findChildren<QComboBox*>()) {
+        if (combo->currentText().contains(QStringLiteral("nicht in Documents.xml")))
+            return combo;
+    }
+    return nullptr;
+}
+
+/// Anzahl der Hinweis-Einträge für unbekannte Depotnummern in @p combo.
+static int unknownDepotEntries(const QComboBox* combo)
+{
+    int n = 0;
+    for (int i = 0; i < combo->count(); ++i)
+        if (combo->itemData(i, DepotComboSelection::UnknownValueRole).toBool())
+            ++n;
+    return n;
+}
+
 class TestBuysForm : public QObject
 {
     Q_OBJECT
@@ -2307,6 +2355,100 @@ private slots:
         QCOMPARE(dlg.volume(),    2500.0);
         QCOMPARE(dlg.price(),     1003.50);
         QCOMPARE(dlg.provision(), 1234.56);
+    }
+
+    // ── Unbekannte Depotnummer beim Laden (18.09.2026) ─────────────────────
+
+    void test_viewBuyEdit_loadBuy_unknownDepot_visibleButBlocksSave()
+    {
+        // Bis 18.09.2026 wurde die unbekannte Nummer still als Eintrag MIT
+        // item data übernommen: depotNumber() lieferte sie zurück, und der
+        // Kauf liess sich unverändert wieder speichern. So blieb
+        // "8006189848 - ING diba" monatelang unbemerkt.
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);   // leere Auswahlliste
+
+        dlg.loadBuy(makeBuy(QStringLiteral("buy-unk"), QStringLiteral("share-guid"), 2024),
+                    makeBrokerage(QStringLiteral("buy-unk"), QStringLiteral("share-guid")));
+
+        QComboBox* combo = depotComboShowingUnknown(dlg);
+        QVERIFY2(combo, "Die gespeicherte Nummer muss sichtbar bleiben");
+        QVERIFY(combo->currentText().contains(QStringLiteral("depot1")));
+        QCOMPARE(DepotComboSelection::selectedUnknownValue(combo), QStringLiteral("depot1"));
+
+        QCOMPARE(dlg.depotNumber(), QString());
+        QStringList missing;
+        QVERIFY(dlg.hasMissingRequiredFields(missing));
+        QVERIFY(missing.contains(QObject::tr("Depotnummer")));
+    }
+
+    void test_viewBuyEdit_loadBuy_unknownDepot_noAccumulation_clearedByClearForm()
+    {
+        // Beim Durchblättern mehrerer Käufe darf sich je Laden kein weiterer
+        // Eintrag ansammeln; clearForm() räumt den Hinweis weg.
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+
+        dlg.loadBuy(makeBuy(QStringLiteral("b1"), QStringLiteral("share-guid"), 2023),
+                    makeBrokerage(QStringLiteral("b1"), QStringLiteral("share-guid")));
+        QComboBox* combo = depotComboShowingUnknown(dlg);
+        QVERIFY(combo);
+        const int countWithHint = combo->count();
+
+        dlg.loadBuy(BuyObject(QStringLiteral("b2"), QStringLiteral("share-guid"),
+                              QStringLiteral("depot2"), QStringLiteral("ord-b2"),
+                              QStringLiteral("2024-06-15T10:00:00"), 10.0, 0.0, 100.0),
+                    makeBrokerage(QStringLiteral("b2"), QStringLiteral("share-guid")));
+        QCOMPARE(combo->count(), countWithHint);
+        QCOMPARE(unknownDepotEntries(combo), 1);
+        QVERIFY(combo->currentText().contains(QStringLiteral("depot2")));
+
+        dlg.clearForm();
+        QCOMPARE(unknownDepotEntries(combo), 0);
+        QCOMPARE(combo->count(), countWithHint - 1);
+        QCOMPARE(combo->currentIndex(), 0);
+    }
+
+    void test_viewBuyEdit_loadBuy_knownDepot_afterUnknown_selectsAndRemovesHint()
+    {
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+        QComboBox* combo = addTestDepot(dlg, QStringLiteral("DE123456789"));
+        QVERIFY(combo);
+
+        dlg.loadBuy(makeBuy(QStringLiteral("b-unk"), QStringLiteral("share-guid"), 2023),
+                    makeBrokerage(QStringLiteral("b-unk"), QStringLiteral("share-guid")));
+        QCOMPARE(unknownDepotEntries(combo), 1);
+
+        dlg.loadBuy(BuyObject(QStringLiteral("b-ok"), QStringLiteral("share-guid"),
+                              QStringLiteral("DE123456789"), QStringLiteral("ord-ok"),
+                              QStringLiteral("2024-06-15T10:00:00"), 10.0, 0.0, 100.0),
+                    makeBrokerage(QStringLiteral("b-ok"), QStringLiteral("share-guid")));
+        QCOMPARE(dlg.depotNumber(), QStringLiteral("DE123456789"));
+        QCOMPARE(unknownDepotEntries(combo), 0);
+    }
+
+    void test_viewBuyEdit_loadBuy_emptyDepot_selectsPlaceholder()
+    {
+        // Vorher blieb bei leerer Depotnummer die Auswahl des zuvor geladenen
+        // Kaufs stehen — ein fremdes Depot sah dann aus wie das eigene.
+        openMemoryDb();
+        ViewBuyEdit dlg(QStringLiteral("share-guid"), nullptr);
+        QComboBox* combo = addTestDepot(dlg, QStringLiteral("DE123456789"));
+        QVERIFY(combo);
+
+        dlg.loadBuy(BuyObject(QStringLiteral("b-ok"), QStringLiteral("share-guid"),
+                              QStringLiteral("DE123456789"), QStringLiteral("ord-ok"),
+                              QStringLiteral("2024-06-15T10:00:00"), 10.0, 0.0, 100.0),
+                    makeBrokerage(QStringLiteral("b-ok"), QStringLiteral("share-guid")));
+        QCOMPARE(dlg.depotNumber(), QStringLiteral("DE123456789"));
+
+        dlg.loadBuy(BuyObject(QStringLiteral("b-empty"), QStringLiteral("share-guid"),
+                              QString(), QStringLiteral("ord-empty"),
+                              QStringLiteral("2024-07-15T10:00:00"), 10.0, 0.0, 100.0),
+                    makeBrokerage(QStringLiteral("b-empty"), QStringLiteral("share-guid")));
+        QCOMPARE(combo->currentIndex(), 0);
+        QCOMPARE(dlg.depotNumber(), QString());
     }
 
     void test_viewBuyEdit_numericValidators_useStandardNotation()

@@ -3956,6 +3956,10 @@ Zwei Regeln tragen die Klasse und stehen deshalb im Mittelpunkt der Tests:
 | `test_check_justOutsideTolerance_doesNotMatch` | Knapp ausserhalb der Toleranz → Abweichung |
 | `test_check_splitBetweenBuyAndExDate_matchesSplitAdjustedVolume` | Praxisfall: Abrechnung nennt 200, Kauf war 100 vor 2:1-Split → Treffer |
 | `test_check_fullySoldBeforeExDate_expectsZero` | Vor dem Ex-Tag komplett verkauft → Bestand 0 |
+| `test_check_otherDepotNumbers_distinctSortedTrimmedWithoutSelected` | Diagnose (18.09.2026): andere Depots getrimmt, ohne Dubletten, sortiert, ohne das gewählte |
+| `test_check_otherDepotNumbers_legacyFormatAndEmptyAreListed` | Altformat "Nummer - Bank" und leere Depotnummer erscheinen in der Liste — Nessies Bugreport-Fall |
+| `test_check_buysOnOrAfterExDate_countsOnlySelectedDepot` | Käufe am und nach dem Ex-Tag werden nur im gewählten Depot gezählt; das Prüfergebnis bleibt unverändert |
+| `test_check_notCheckable_diagnosisStaysEmpty` | Nicht prüfbar (keine Depotnummer) → Diagnosefelder bleiben leer |
 
 @note `test_check_noBuysAtAll_notCheckable` ist die bewusste Notbremse der
 Blockade: eine Aktie, deren Kaufhistorie nicht erfasst ist, bliebe sonst
@@ -4678,6 +4682,42 @@ passt.
 Depotnummer aus `itemData()` der Combobox holen — etwa
 `test_viewBuyEdit_setFieldOk_depotNumber_matchesByItemData` — waren nicht
 betroffen: sie verwenden von vornherein einen konfigurierten Wert.
+
+---
+
+### Unbekannte Depotnummer beim Laden (18.09.2026)
+
+Gegenstück zum Abschnitt oben: dort ging es um `setFieldOk()` beim Einlesen
+eines Belegs, hier um `loadBuy()`/`loadSale()`/`loadDividend()` beim Laden
+eines gespeicherten Datensatzes (siehe ARCHITECTURE.md, "Unbekannte
+Depotnummern fallen beim Laden nicht auf"). Die drei Testdateien teilen sich
+dafür drei kleine Hilfen vor der Testklasse: `addTestDepot()` legt ein
+gültiges Depot nach dem Reihum-Muster oben an, `depotComboShowingUnknown()`
+findet die Combobox am Hinweistext, `unknownDepotEntries()` zählt
+Hinweis-Einträge über `DepotComboSelection::UnknownValueRole`.
+
+Die Tests im Einzelnen:
+
+| Test | Prüft |
+| ---- | ----- |
+| `test_viewBuyEdit_loadBuy_unknownDepot_visibleButBlocksSave` | Unbekannte Nummer bleibt sichtbar, `depotNumber()` ist leer, Pflichtfeld fehlt |
+| `test_viewBuyEdit_loadBuy_unknownDepot_noAccumulation_clearedByClearForm` | Mehrfaches Laden hinterlässt genau einen Hinweis-Eintrag; `clearForm()` entfernt ihn |
+| `test_viewBuyEdit_loadBuy_knownDepot_afterUnknown_selectsAndRemovesHint` | Laden eines bekannten Depots wählt es aus und entfernt den Hinweis |
+| `test_viewBuyEdit_loadBuy_emptyDepot_selectsPlaceholder` | Leere Nummer wählt den Platzhalter, statt die vorige Auswahl stehen zu lassen |
+| `test_viewSaleEdit_loadSale_unknownDepot_visibleButBlocksSave` | Wie beim Kauf, mit dem Altformat "8006189848 - ING diba" als Wert |
+| `test_viewSaleEdit_loadSale_unknownDepot_noAccumulation_clearedByClearForm` | Wie beim Kauf |
+| `test_viewSaleEdit_loadSale_knownDepot_afterUnknown_selectsAndRemovesHint` | Wie beim Kauf |
+| `test_viewDividendEdit_loadDividend_unknownDepot_visibleButBlocksSave` | Wie beim Kauf, zusätzlich `clearForm()` |
+| `test_viewDividendEdit_loadDividend_unknownDepot_noAccumulation` | Drei unbekannte Depots nacheinander: ein Hinweis-Eintrag, der letzte Wert |
+| `test_presenterDividendEdit_onSave_noBuyConsidered_messageNamesOtherDepots` | Meldung nennt die Depots, unter denen die Käufe liegen, auch "(ohne Depotnummer)" |
+| `test_presenterDividendEdit_onSave_noBuyConsidered_messageNamesBuysAfterExDate` | Meldung nennt Käufe am oder nach dem Ex-Tag |
+| `test_presenterDividendEdit_onSave_someBuysConsidered_noDiagnosis` | Mindestens ein Kauf mitgezählt: kein Hinweis auf andere Depots |
+
+@note `test_viewDividendEdit_loadDividend_withExDateAndDepotNumber_populatesFields`
+hat das alte Verhalten stillschweigend vorausgesetzt: der Dialog lief mit
+`nullptr` statt `DocumentsConfig`, die Nummer "DE123456789" wurde beim Laden
+einfach übernommen. Der Test legt das Depot jetzt vorher über
+`addTestDepot()` an — dieselbe Sorte Anpassung wie am 27.08.2026.
 
 ---
 

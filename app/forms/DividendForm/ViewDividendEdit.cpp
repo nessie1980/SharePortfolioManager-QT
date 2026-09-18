@@ -6,6 +6,7 @@
 #include "../../utils/ValueFormatter.h"
 #include "../../utils/NumberParser.h"
 #include "../../utils/DocumentFieldValue.h"
+#include "../../utils/DepotComboSelection.h"
 #include "PresenterDividendEdit.h"
 #include "ModelDividendEdit.h"
 #include "../../IconProvider.h"
@@ -688,30 +689,11 @@ void ViewDividendEdit::loadDividend(const DividendObject& d)
     // onRowSelected() im Anschluss onExDateEdited() aufruft.
     m_exDate->setDate(d.hasExDate() ? d.exDateAsDate() : QDate(2000, 1, 1));
 
-    // Depotnummer — Abgleich per item data (getrimmt), wie ViewBuyEdit::loadBuy().
-    {
-        const QString depotNr = d.depotNumber().trimmed();
-        QSignalBlocker block(m_depotNumber);
-        bool matched = false;
-        for (int i = 0; i < m_depotNumber->count(); ++i) {
-            if (m_depotNumber->itemData(i).toString().trimmed() == depotNr) {
-                m_depotNumber->setCurrentIndex(i);
-                matched = true;
-                break;
-            }
-        }
-        if (!matched && !depotNr.isEmpty()) {
-            m_depotNumber->addItem(depotNr, depotNr);
-            m_depotNumber->setCurrentIndex(m_depotNumber->count() - 1);
-        } else if (!matched) {
-            // Alte Dividende ohne Depotnummer: explizit auf "— bitte
-            // wählen —" zurücksetzen statt die Auswahl der zuvor geladenen
-            // Zeile stehen zu lassen (anders als ViewBuyEdit::loadBuy(), wo
-            // eine leere Depotnummer praktisch nicht vorkommt, weil das Feld
-            // dort schon länger Pflicht ist).
-            m_depotNumber->setCurrentIndex(0);
-        }
-    }
+    // Depotnummer — siehe ViewBuyEdit::loadBuy() und DepotComboSelection
+    // (18.09.2026). Eine Alt-Dividende ohne Depotnummer landet wie bisher
+    // auf "— bitte wählen —"; eine unbekannte Nummer bleibt sichtbar, trägt
+    // aber keine item data und sperrt damit das Speichern.
+    DepotComboSelection::select(m_depotNumber, d.depotNumber());
 }
 
 void ViewDividendEdit::clearForm()
@@ -736,6 +718,9 @@ void ViewDividendEdit::clearForm()
     m_priceAtPayday->setText(QStringLiteral("0,0000"));
     m_documentPath->clear();
     m_exDate->setDate(QDate(2000, 1, 1));
+    // Hinweis-Eintrag einer unbekannten Depotnummer mit entfernen
+    // (18.09.2026) — er gehört zum zuletzt geladenen Datensatz.
+    DepotComboSelection::removeUnknownEntries(m_depotNumber);
     {
         QSignalBlocker block(m_depotNumber);
         m_depotNumber->setCurrentIndex(0);
@@ -1027,9 +1012,19 @@ void ViewDividendEdit::setFieldError(const QString& field,
     // Umstellung auf "uebernommen statt gefunden" nicht mehr beantwortet:
     // hat die Regel gar nicht gegriffen, oder hat sie etwas Unbrauchbares
     // gefangen? Leer bei den Aufrufen aus der Live-Validierung.
-    lbl->setToolTip(rawValue.isEmpty()
-                        ? tr("Ungültige oder fehlende Eingabe")
-                        : tr("Nicht verwertbar: „%1“").arg(rawValue));
+    // Depot-Auswahl mit einer gespeicherten, aber in Documents.xml nicht
+    // hinterlegten Nummer (18.09.2026): der allgemeine Text "Ungültige oder
+    // fehlende Eingabe" wäre hier irreführend — es ist ja etwas gespeichert.
+    const QString unknownDepot =
+        (field == QLatin1String("depotNumber") && rawValue.isEmpty())
+            ? DepotComboSelection::selectedUnknownValue(m_depotNumber)
+            : QString();
+    if (!unknownDepot.isEmpty())
+        lbl->setToolTip(DepotComboSelection::unknownTooltip(unknownDepot));
+    else
+        lbl->setToolTip(rawValue.isEmpty()
+                            ? tr("Ungültige oder fehlende Eingabe")
+                            : tr("Nicht verwertbar: „%1“").arg(rawValue));
     lbl->setVisible(true);
 }
 

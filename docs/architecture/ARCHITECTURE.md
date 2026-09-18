@@ -4582,21 +4582,31 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### Unbekannte Depotnummern fallen beim Laden nicht auf (offen, 18.09.2026)
+### AppImage-Build auf feste Ubuntu-Version setzen (TODO, vor 19.10.2026)
 
-Nachbefund zum Bugfix "Depotnummern im alten Format (Nummer - Bank)".
-`ViewBuyEdit::loadBuy()` hängt einen Depotwert, der nicht in `Documents.xml`
-steht, still als zusätzlichen Eintrag an die Combobox und wählt ihn aus. Der
-Kauf sah dadurch völlig normal aus — der wesentliche Grund, warum
-"8006189848 - ING diba" monatelang niemandem auffiel. Beim Einlesen eines
-Belegs (`setFieldOk()`) ist ein unbekannter Wert seit 27.08.2026 ein Fehler;
-beim Laden eines gespeicherten Datensatzes noch nicht.
+GitHub stellt das Runner-Label `ubuntu-latest` ab 19.10.2026 von Ubuntu
+24.04 auf Ubuntu 26 um (Hinweis im Job "Linux AppImage", 18.09.2026; siehe
+github.com/actions/runner-images, Issue 14748). Für `package-linux` in
+`.github/workflows/package.yml` ist das relevant: Qt kommt zwar fertig über
+`install-qt-action`, die Anwendung selbst wird aber mit Compiler und glibc
+des Runners gebaut. Ein AppImage läuft nur auf Systemen mit mindestens
+dieser glibc-Version. Nach der Umstellung würde es voraussichtlich auf
+Systemen mit Ubuntu-24.04-Basis, darunter Linux Mint 22, nicht mehr
+starten ("GLIBC_2.xx not found").
 
-Ebenfalls offen: die Meldung der Dividenden-Mengenprüfung sagt bei "0 Käufe"
-nicht, warum. Liegen Käufe vor, die sämtlich an einer anderen Depotnummer
-hängen, sollte sie diese nennen.
+Vorgesehen:
 
-Vereinbart (Nessie, 18.09.2026) als eigener Commit nach dem Bugfix.
+1. `package-linux`: `runs-on` fest auf die älteste zu unterstützende
+   Ubuntu-Basis setzen, mit Kommentar zur glibc-Begründung.
+2. `build-linux` in `build.yml` bleibt auf `ubuntu-latest` — dort geht es nur
+   um Bauen und Testen, ein neuerer Compiler ist eine willkommene
+   Frühwarnung.
+3. Die Begründung hier festhalten, damit die feste Version später nicht als
+   Versehen zurückgedreht wird.
+
+Offene Entscheidung: welche Basis mindestens unterstützt werden soll —
+`ubuntu-24.04` (Mint 22) oder `ubuntu-22.04` (auch Mint 21). Eigener Commit
+ohne App-Versionssprung; dafür wird `package.yml` vollständig benötigt.
 
 ### Node-20-Abkündigung betrifft msvc-dev-cmd (offen, 12.09.2026)
 
@@ -4936,6 +4946,52 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Unbekannte Depotnummern fallen beim Laden nicht auf (18.09.2026, behoben 18.09.2026)
+
+Nachbefund zum Bugfix "Depotnummern im alten Format (Nummer - Bank)" unter
+"Datenbankschema". `loadBuy()`, `loadSale()` und `loadDividend()` hängten
+einen Depotwert, der nicht in `Documents.xml` steht, still als zusätzlichen
+Eintrag an die Auswahl — mit dem Wert als item data — und wählten ihn aus.
+`depotNumber()` lieferte ihn zurück, die Pflichtfeldprüfung war zufrieden,
+der Datensatz liess sich unverändert wieder speichern. Der wesentliche
+Grund, warum "8006189848 - ING diba" monatelang niemandem auffiel. Beim
+Einlesen eines Belegs (`setFieldOk()`) war ein unbekannter Wert dagegen schon
+seit 27.08.2026 ein Fehler (siehe "Unbekannte Depotnummer ist ein Fehler").
+
+Behoben über `app/utils/DepotComboSelection.h` (header-only), das den bis
+dahin dreimal nahezu zeichengleichen Ladecode ersetzt:
+
+- Eine unbekannte Nummer bleibt sichtbar, als Eintrag
+  `<Wert> (nicht in Documents.xml)`, trägt aber keine item data.
+  `depotNumber()` liefert damit einen leeren String, und die bestehende
+  Prüfung übernimmt den Rest: `onDepotNumberEdited()` setzt im Anschluss an
+  das Laden das rote Symbol, `hasMissingRequiredFields()` sperrt das
+  Speichern. Eine neue Prüfregel war nicht nötig.
+- Das Symbol bekommt in `setFieldError()` einen eigenen Tooltip ("ist in
+  Documents.xml nicht hinterlegt"), weil "Ungültige oder fehlende Eingabe"
+  bei einem gespeicherten Wert in die Irre führt.
+- Der Eintrag ist deaktiviert und lässt sich nach Wahl eines gültigen Depots
+  nicht wieder anwählen. Vor jedem Laden und in `clearForm()` wird er
+  entfernt, damit sich beim Durchblättern nichts ansammelt.
+- Eine leere Depotnummer wählt jetzt in allen drei Views den Platzhalter.
+  Kauf und Verkauf liessen bis dahin die Auswahl des zuvor geladenen
+  Datensatzes stehen — ein fremdes Depot sah dann aus wie das eigene.
+
+Zweiter Teil: die Meldung der Dividenden-Mengenprüfung erklärt "0 Käufe".
+`DividendVolumeCheckResult` trägt dafür `otherDepotNumbers` (Depots, unter
+denen Käufe der Aktie liegen, ohne das gewählte) und `buysOnOrAfterExDate`
+(Käufe des gewählten Depots, die nach der Stichtagsregel nicht zählen).
+`PresenterDividendEdit::validateInput()` hängt beides an die Meldung an,
+aber nur, wenn kein einziger Kauf berücksichtigt wurde — ist mindestens
+einer mitgezählt, liegt die Ursache woanders, und ein Hinweis auf andere
+Depots würde eher in die Irre führen.
+
+@note Nach der Depotnummer-Migration kommt der ursprüngliche Fall nicht mehr
+vor. Beides bleibt als Absicherung für andere Wege zum selben Zustand: ein
+Depot, das aus `Documents.xml` entfernt oder dort umnummeriert wird, oder
+ein Kauf, der im falschen Depot erfasst wurde (Nessies Entscheidung
+18.09.2026: "mit umsetzen").
 
 ### QSqlDatabase-Warnung am Ende jedes Testlaufs (27.08.2026, behoben 12.09.2026)
 
@@ -6228,6 +6284,9 @@ Benutzer in `Documents.xml` beheben muss.
 Belege mit unbekannter Depotnummer ließen sich bisher speichern. Bereits
 gespeicherte Datensätze bleiben unberührt — `loadSale()`/`loadDividend()`
 nehmen einen anderen Weg als `setFieldOk()`.
+Seit 18.09.2026 zeigen auch sie eine unbekannte Nummer als Fehler an und
+sperren das Speichern, siehe "Unbekannte Depotnummern fallen beim Laden
+nicht auf" unter "Erledigt / Archiv".
 
 @note Der Feldschlüssel `document` hat absichtlich kein Eingabefeld: der Pfad
 kommt über `setDocumentPath()`, `setFieldOk("document", QString())` setzt nur
