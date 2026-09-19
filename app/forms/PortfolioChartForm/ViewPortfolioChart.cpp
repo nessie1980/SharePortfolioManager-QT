@@ -3,6 +3,7 @@
 #include "ViewPortfolioChart.h"
 
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
+#include "../../utils/ChartPointSearch.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -423,21 +424,11 @@ void ViewPortfolioChart::onSeriesHovered(const QPointF& point, bool state)
     // ergab bei gleichem Datum je nach Zeigerhöhe unterschiedliche Werte, und
     // die Suche nach dem Prozentwert über die exakte X-Koordinate schlug
     // praktisch immer fehl. Deshalb wird auf den nächstgelegenen echten
-    // Datenpunkt eingerastet.
-    const qint64 x = static_cast<qint64>(point.x());
-
-    auto upper = std::lower_bound(m_pointsX.cbegin(), m_pointsX.cend(), x);
-    int index = static_cast<int>(std::distance(m_pointsX.cbegin(), upper));
-
-    if (index >= m_pointsX.size()) {
-        index = m_pointsX.size() - 1;
-    } else if (index > 0) {
-        // Der linke Nachbar kann näher liegen als der gefundene rechte.
-        const qint64 distanceRight = m_pointsX.at(index)     - x;
-        const qint64 distanceLeft  = x - m_pointsX.at(index - 1);
-        if (distanceLeft < distanceRight)
-            --index;
-    }
+    // Datenpunkt eingerastet — seit 19.09.2026 über die mit ViewChart
+    // geteilte Suche (ChartPointSearch), vorher eine eigene Kopie hier.
+    const qsizetype index = ChartPointSearch::nearestIndex(m_pointsX, point.x());
+    if (index < 0)
+        return;
 
     const PortfolioChartPoint& nearest = m_points.at(index);
 

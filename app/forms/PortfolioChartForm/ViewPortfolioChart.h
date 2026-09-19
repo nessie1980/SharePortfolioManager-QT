@@ -99,7 +99,10 @@ private slots:
      * QMetaObject::invokeMethod() prüfen können, ohne ein Maus-Hover über die
      * im Offscreen-Testlauf nicht verlässlich vermessbare Zeichenfläche zu
      * simulieren — gleiche Begründung wie bei ViewChart::onSeriesHovered().
-     * @param point  Nächstgelegener Datenpunkt in Achsenkoordinaten.
+     * @param point  Cursorposition in Achsenkoordinaten, wie sie
+     *               QLineSeries::hovered() liefert — NICHT der Datenpunkt.
+     *               Der Slot rastet selbst über
+     *               ChartPointSearch::nearestIndex() auf m_pointsX ein.
      * @param state  true beim Betreten, false beim Verlassen.
      */
     void onSeriesHovered(const QPointF& point, bool state);
@@ -138,6 +141,9 @@ private:
      * Der Tooltip rastet deshalb auf den nächstgelegenen echten Datenpunkt
      * ein, statt die Mausposition anzuzeigen — sonst änderte sich der Wert
      * bei gleichem Datum, je nachdem wie hoch der Zeiger steht.
+     *
+     * Die Suche selbst liegt seit 19.09.2026 zentral in ChartPointSearch
+     * (gemeinsam mit ViewChart).
      *
      * Die interpolierten Nulldurchgänge stehen bewusst nicht darin: sie sind
      * keine Datenpunkte und haben keinen eigenen Prozentwert.

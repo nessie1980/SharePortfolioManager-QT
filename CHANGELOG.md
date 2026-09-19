@@ -10,6 +10,17 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.22.2] - 2026-09-19
+
+### Changed
+
+- Interne Zusammenfuehrung: Aktien-Chart und Depotwert-Chart suchen den
+  naechstgelegenen Datenpunkt fuer den Hover-Tooltip jetzt ueber denselben
+  Helfer `ChartPointSearch` statt ueber zwei getrennte Kopien. Die
+  Doppelung hatte den in 1.22.1 behobenen Fehler erst ermoeglicht, weil der
+  Fix im Depotwert-Chart nicht auf den Aktien-Chart uebertragen worden war.
+  Keine sichtbare Verhaltensaenderung.
+
 ## [1.22.1] - 2026-09-19
 
 ### Fixed

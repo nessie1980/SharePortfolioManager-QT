@@ -397,3 +397,23 @@ target_link_libraries(tst_documentfieldvalue
 )
 
 add_test(NAME tst_documentfieldvalue COMMAND tst_documentfieldvalue)
+
+# ── ChartPointSearch ──────────────────────────────────────────────────────────
+# Gemeinsame Naechster-Datenpunkt-Suche fuer die Chart-Tooltips (19.09.2026,
+# siehe ARCHITECTURE.md, "Naechster-Datenpunkt-Suche liegt in beiden Charts
+# doppelt vor" unter "Erledigt / Archiv"). Fuehrt die bis dahin getrennten
+# Umsetzungen aus ViewChart und ViewPortfolioChart zusammen. Header-only und
+# zustandslos, deshalb keine .cpp aus app/ im Ziel.
+qt_add_executable(tst_chartpointsearch tst_chartpointsearch.cpp)
+
+target_include_directories(tst_chartpointsearch
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+)
+
+set_target_properties(tst_chartpointsearch PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_chartpointsearch
+    PRIVATE Qt6::Test
+)
+
+add_test(NAME tst_chartpointsearch COMMAND tst_chartpointsearch)

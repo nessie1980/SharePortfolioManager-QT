@@ -97,34 +97,6 @@ public:
     QString rangeInfo() const { return m_lastRangeInfo; }
 
     /**
-     * @brief Rastet eine Hover-Position auf den nächstgelegenen echten
-     * Datenpunkt einer Serie ein (Bugfix 19.09.2026).
-     *
-     * QXYSeries::hovered() liefert laut Qt-Doku die Position des
-     * Mauszeigers in Achsen-Koordinaten, NICHT den nächstgelegenen
-     * Datenpunkt. Da das Hover-Signal mit einer Toleranz von einigen Pixeln
-     * um die Linie auslöst, zeigte der Tooltip dadurch leicht verschobene,
-     * interpolierte Werte — z. B. "191,0226€" an einer Spitze, deren echter
-     * Schluss-Kurs 190,90€ ist, also höher als der Max-Wert in der
-     * Legende (Nessies Rückmeldung 19.09.2026).
-     *
-     * Maßgeblich ist allein der X-Abstand (Datum), da jede Serie genau einen
-     * Wert pro Datum hat. Binäre Suche, da setChartData() die Punkte nach
-     * Datum aufsteigend anhängt. Bei exakt gleichem Abstand zu beiden
-     * Nachbarn gewinnt der spätere Punkt.
-     *
-     * Als public static deklariert, damit tst_mainwindow.cpp die
-     * Grenzfälle direkt mit festen Eingaben prüfen kann (gleiche Konvention
-     * wie XmlPortfolioParser::normalizeWebSiteUrl()).
-     *
-     * @param points  Datenpunkte der Serie, nach x aufsteigend sortiert.
-     * @param hover   Hover-Position aus QXYSeries::hovered().
-     * @return Der nächstgelegene Datenpunkt; bei leerer Liste unverändert
-     *         @p hover.
-     */
-    static QPointF nearestDataPoint(const QList<QPointF>& points, const QPointF& hover);
-
-    /**
      * @brief Routes Mausrad-Events auf m_countSpin (unabhängig vom Fokus-
      * Status, siehe applyWheelStep()) und auf m_chartView->viewport() (nur
      * wenn die Maus direkt über der Chart-Zeichenfläche steht, nicht über
@@ -182,11 +154,11 @@ private slots:
      * @param kind   Which series was hovered (for the label + unit).
      * @param point  Data point to show, in axis coordinates
      *               (x = msecsSinceEpoch, y = the plotted value). The
-     *               connecting lambda in setChartData() passes the raw
-     *               hover position through nearestDataPoint() first
-     *               (Bugfix 19.09.2026), so this is always an actual data
-     *               point of the series, never an interpolated cursor
-     *               position.
+     *               connecting lambda in setChartData() snaps the raw
+     *               hover position to the nearest actual data point first
+     *               (Bugfix 19.09.2026, via ChartPointSearch::nearestIndex()
+     *               since the consolidation on the same day), so this is
+     *               never an interpolated cursor position.
      * @param state  true = entering hover, false = leaving it.
      */
     void onSeriesHovered(SeriesKind kind, const QPointF& point, bool state);

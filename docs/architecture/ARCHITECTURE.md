@@ -1680,8 +1680,9 @@ Serie getroffen wurde, daher ein Connect pro Serie statt eines gemeinsamen.
 `point.x()` ist `msecsSinceEpoch` (gleiche Kodierung wie beim Befüllen der
 Serie). Qt Charts liefert dabei die Mausposition in Achsenkoordinaten, nicht
 den Datenpunkt — die Verbindungs-Lambda rastet den Punkt deshalb seit dem
-19.09.2026 per `ViewChart::nearestDataPoint()` auf den nächstgelegenen echten
-Datenpunkt ein, bevor `onSeriesHovered()` ihn formatiert (siehe Bugfix-Hinweis
+19.09.2026 per `ChartPointSearch::nearestIndex()` (gemeinsam mit
+`ViewPortfolioChart`, siehe `app/utils/ChartPointSearch.h`) auf den
+nächstgelegenen echten Datenpunkt ein, bevor `onSeriesHovered()` ihn formatiert (siehe Bugfix-Hinweis
 unten; die ursprüngliche Annahme "Qt liefert immer den nächsten Datenpunkt"
 war falsch). Preis-Serien werden mit "€" und 2 Nachkommastellen formatiert,
 die beiden Stück-Serien (`HeldVolume`/`TradedVolume`) mit 4 Nachkommastellen
@@ -1804,9 +1805,13 @@ festen Eingaben) und `test_seriesHovered_offsetAbovePeak_tooltipShowsActualClosi
 (End-to-End über das echte `QLineSeries::hovered()`-Signal), beide
 `tst_mainwindow.cpp`.
 
-@note `ViewPortfolioChart` hat für denselben Zweck eine eigene binäre Suche
-über seine vorgehaltenen Punkte. Eine Zusammenführung in einen gemeinsamen
-Helfer ist nicht Teil dieses Bugfixes.
+@note Noch am selben Tag (v1.22.2) wurde die Suche mit der eigenen Kopie aus
+`ViewPortfolioChart` in `ChartPointSearch` zusammengeführt (siehe
+"Nächster-Datenpunkt-Suche liegt in beiden Charts doppelt vor" unter
+"Erledigt / Archiv"). `ViewChart::nearestDataPoint()` ist dabei entfallen,
+die Lambda ruft jetzt `ChartPointSearch::nearestIndex()` auf;
+`test_nearestDataPoint_boundaryCases` ist in `tests/utils/tst_chartpointsearch.cpp`
+aufgegangen. Das Verhalten ist unverändert.
 
 Bewusste Vereinfachungen dieser ersten Iteration (auf Wunsch bei
 Bedarf später verfeinerbar):
@@ -3650,6 +3655,11 @@ nächstgelegenen echten Datenpunkt ein. Die interpolierten Nulldurchgänge
 stehen bewusst nicht in dieser Liste — sie sind keine Datenpunkte und haben
 keinen eigenen Prozentwert.
 
+@note Die binäre Suche selbst liegt seit v1.22.2 (19.09.2026) zentral in
+`ChartPointSearch::nearestIndex()` und wird mit `ViewChart` geteilt; vorher
+stand hier eine eigene Kopie. Siehe "Nächster-Datenpunkt-Suche liegt in
+beiden Charts doppelt vor" unter "Erledigt / Archiv".
+
 ### Prozentwert
 
 Der Nenner ist der kumulierte Kaufwert ALLER Käufe bis zum Stichtag, nicht
@@ -4927,6 +4937,45 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Nächster-Datenpunkt-Suche liegt in beiden Charts doppelt vor (19.09.2026, erledigt 19.09.2026)
+
+Aufgefallen beim Bugfix "Hover-Tooltip zeigte interpolierte Werte" (siehe
+"ChartForm-Details"). Beide Charts müssen die Mausposition aus
+`QLineSeries::hovered()` auf den nächstgelegenen echten Datenpunkt
+einrasten, weil Qt die Cursorposition in Achsenkoordinaten liefert und nicht
+den Datenpunkt. Das war zweimal unabhängig umgesetzt: in
+`ViewPortfolioChart` seit 06.08.2026 (siehe "Tooltip rastet auf Datenpunkte
+ein" unter "PortfolioChartForm-Details") und in `ViewChart` über
+`ViewChart::nearestDataPoint()` seit 19.09.2026. Gerade diese Doppelung hat
+den Fehler im Aktien-Chart erst ermöglicht: der Fix im Depotwert-Chart wurde
+nicht übertragen, weil es keine gemeinsame Stelle gab — dasselbe Muster wie
+bei den früheren `parseDouble()`-, `formatMoney()`/`formatVolume()`- und
+Validator-Kopien.
+
+Umsetzung (v1.22.2): neuer header-only Helfer `app/utils/ChartPointSearch.h`
+(zustandslos, analog `ValueFormatter`/`NumberParser`) mit
+`ChartPointSearch::nearestIndex()`.
+
+- Liefert einen Index statt eines Punkts, weil `ViewPortfolioChart` den
+  zugehörigen `PortfolioChartPoint` samt Prozentwert braucht, nicht nur die
+  Koordinaten. -1 bei leerer Liste.
+- Eine Vorlage mit X-Projektion (`nearestIndex(list, x, xOf)`) plus zwei
+  Überladungen: `QList<QPointF>` für `ViewChart` (Serienpunkte aus
+  `line->points()`) und `QList<qint64>` für `ViewPortfolioChart`
+  (`m_pointsX`, Millisekunden).
+- Semantik identisch zu beiden bisherigen Umsetzungen: binäre Suche,
+  nur der X-Abstand zählt, bei exakt gleichem Abstand gewinnt der spätere
+  Punkt. Die Portfolio-Variante verglich vorher in `qint64` mit
+  abgeschnittener Mausposition, jetzt in `double` — bei Tagesabständen
+  von 86.400.000 ms ohne praktischen Unterschied.
+
+`ViewChart::nearestDataPoint()` ist entfallen; die Grenzfall-Tests liegen
+jetzt in `tests/utils/tst_chartpointsearch.cpp`. Neu hinzugekommen ist
+`test_portfolioChartHovered_offsetBetweenDays_tooltipShowsNearestPoint` in
+`tst_mainwindow.cpp` — der Einrast-Fix im Depotwert-Chart war auf
+View-Ebene bis dahin ungetestet, weil `tst_portfoliochartform.cpp` nur den
+Presenter prüft.
 
 ### Node-20-Abkündigung betrifft msvc-dev-cmd (12.09.2026, erledigt 18.09.2026)
 

@@ -38,6 +38,7 @@
 #include "../../app/forms/ShareDetailsForm/ViewShareDetails.h"
 #include "../../app/forms/ChartForm/ChartPopup.h"
 #include "../../app/forms/ChartForm/ViewChart.h"
+#include "../../app/forms/PortfolioChartForm/ViewPortfolioChart.h"
 #include "../../app/utils/ValueFormatter.h"
 #include <QLineSeries>
 #include "../../app/config/AppSettings.h"
@@ -3155,36 +3156,12 @@ private slots:
     // Ursache: QXYSeries::hovered() liefert die Mausposition in Achsen-
     // Koordinaten, nicht den nächstgelegenen Datenpunkt — mit einigen Pixeln
     // Hover-Toleranz um die Linie also leicht verschobene, interpolierte
-    // Werte. Fix: ViewChart::nearestDataPoint() in der hovered()-Lambda von
-    // setChartData() (siehe ViewChart.h).
+    // Werte. Fix: Einrasten auf den nächstgelegenen Datenpunkt in der
+    // hovered()-Lambda von setChartData(). Die Suche selbst liegt seit der
+    // Zusammenführung (ebenfalls 19.09.2026) in ChartPointSearch; deren
+    // Grenzfälle prüft tests/utils/tst_chartpointsearch.cpp, hier geht es
+    // nur um die Verdrahtung in den beiden Chart-Views.
     // ─────────────────────────────────────────────────────────────────────
-
-    void test_nearestDataPoint_boundaryCases()
-    {
-        const QList<QPointF> pts { {100.0, 1.0}, {200.0, 2.0}, {300.0, 3.0} };
-
-        // Leere Liste → Hover-Position unverändert zurück.
-        QCOMPARE(ViewChart::nearestDataPoint({}, QPointF(150.0, 9.0)), QPointF(150.0, 9.0));
-
-        // Vor dem ersten / nach dem letzten Punkt → Randpunkt.
-        QCOMPARE(ViewChart::nearestDataPoint(pts, QPointF(50.0, 9.0)),  QPointF(100.0, 1.0));
-        QCOMPARE(ViewChart::nearestDataPoint(pts, QPointF(350.0, 9.0)), QPointF(300.0, 3.0));
-
-        // Exakter Treffer → genau dieser Punkt, y aus der Serie statt vom Hover.
-        QCOMPARE(ViewChart::nearestDataPoint(pts, QPointF(200.0, 9.0)), QPointF(200.0, 2.0));
-
-        // Näher am Vorgänger bzw. am Nachfolger.
-        QCOMPARE(ViewChart::nearestDataPoint(pts, QPointF(240.0, 9.0)), QPointF(200.0, 2.0));
-        QCOMPARE(ViewChart::nearestDataPoint(pts, QPointF(260.0, 9.0)), QPointF(300.0, 3.0));
-
-        // Exakt in der Mitte → der spätere Punkt gewinnt (dokumentiert in ViewChart.h).
-        QCOMPARE(ViewChart::nearestDataPoint(pts, QPointF(250.0, 9.0)), QPointF(300.0, 3.0));
-
-        // Einzelner Punkt → immer dieser, egal auf welcher Seite.
-        const QList<QPointF> single { {100.0, 1.0} };
-        QCOMPARE(ViewChart::nearestDataPoint(single, QPointF(10.0, 9.0)),  QPointF(100.0, 1.0));
-        QCOMPARE(ViewChart::nearestDataPoint(single, QPointF(900.0, 9.0)), QPointF(100.0, 1.0));
-    }
 
     void test_seriesHovered_offsetAbovePeak_tooltipShowsActualClosingPrice()
     {
@@ -3240,6 +3217,52 @@ private slots:
                             .arg(QToolTip::text())));
 
         emit closing->hovered(hover, false);
+    }
+
+    void test_portfolioChartHovered_offsetBetweenDays_tooltipShowsNearestPoint()
+    {
+        // Depotwert-Chart: der Einrast-Fix vom 06.08.2026 war bis zur
+        // Zusammenführung in ChartPointSearch (19.09.2026) auf View-Ebene
+        // ungetestet — tst_portfoliochartform.cpp prüft nur den Presenter.
+        // Die Daten werden direkt über den öffentlichen Setter
+        // setChartData() gesetzt (IViewPortfolioChart), der Slot per
+        // invokeMethod() aufgerufen — gleiches Muster wie oben. Das deckt
+        // hier auch die Einrast-Logik ab, weil ViewPortfolioChart sie im
+        // Slot selbst ausführt, nicht in der Verbindungs-Lambda.
+        openMemoryDb();
+        ViewPortfolioChart view;
+
+        const QDate d1(2026, 8, 26);
+        const QDate d2(2026, 8, 27);
+        const QDate d3(2026, 8, 28);
+        PortfolioChartData data;
+        data.points = {
+            { d1, 100.00, 1.00 },
+            { d2, 250.50, 2.50 },
+            { d3, 180.00, 1.80 }
+        };
+        view.setChartData(data);
+
+        // Maus 5 Stunden nach d2 und deutlich über der Kurve.
+        const double x = static_cast<double>(QDateTime(d2, QTime(5, 0)).toMSecsSinceEpoch());
+        const QPointF hover(x, 999.99);
+
+        QMetaObject::invokeMethod(&view, "onSeriesHovered", Qt::DirectConnection,
+                                   Q_ARG(QPointF, hover), Q_ARG(bool, true));
+
+        const QString text = QToolTip::text();
+        const QString expectedDate  = d2.toString(QStringLiteral("dd.MM.yyyy"));
+        const QString expectedValue = QLocale().toString(250.50, 'f', 2) + QStringLiteral(" €");
+        const QString expectedPct   = QLocale().toString(2.50, 'f', 2) + QStringLiteral(" %");
+        QVERIFY2(text.contains(expectedDate) && text.contains(expectedValue)
+                     && text.contains(expectedPct),
+                 qPrintable(QStringLiteral("Tooltip-Text: '%1', erwartet: '%2', '%3', '%4'")
+                            .arg(text, expectedDate, expectedValue, expectedPct)));
+        QVERIFY2(!text.contains(QLocale().toString(999.99, 'f', 2)),
+                 qPrintable(QStringLiteral("Tooltip zeigt die Mausposition: '%1'").arg(text)));
+
+        QMetaObject::invokeMethod(&view, "onSeriesHovered", Qt::DirectConnection,
+                                   Q_ARG(QPointF, hover), Q_ARG(bool, false));
     }
 
     // Regressionstest für Nessies Rückmeldungen (31.07.2026): das Popup soll
