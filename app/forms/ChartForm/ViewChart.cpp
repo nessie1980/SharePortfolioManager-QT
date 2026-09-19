@@ -20,6 +20,7 @@
 #include <QWheelEvent>
 
 #include <algorithm>
+#include <iterator>
 #include <limits>
 #include <cmath>
 
@@ -375,10 +376,16 @@ void ViewChart::setChartData(const QList<ChartSeriesData>& series)
             line->attachAxis(yAxis);
 
         // Hover-Tooltip (Datum + Wert) — ported from the C# reference.
+        // Bugfix 19.09.2026: hovered() liefert die Mausposition, nicht den
+        // Datenpunkt — daher erst per nearestDataPoint() einrasten, sonst
+        // zeigt der Tooltip interpolierte Werte (siehe ViewChart.h).
+        // `line` als Sender der Verbindung lebt garantiert mindestens so
+        // lange wie die Lambda (Qt trennt die Verbindung beim Löschen der
+        // Serie in removeAllSeries()).
         const SeriesKind kind = s.kind;
         connect(line, &QLineSeries::hovered, this,
-                [this, kind](const QPointF& point, bool state) {
-                    onSeriesHovered(kind, point, state);
+                [this, kind, line](const QPointF& point, bool state) {
+                    onSeriesHovered(kind, nearestDataPoint(line->points(), point), state);
                 });
     }
 }
@@ -585,6 +592,28 @@ void ViewChart::rebuildAxes(const QList<ChartSeriesData>& series)
         m_yAxisVolume->setRange(volumeMin, volumeMax);
         m_chart->addAxis(m_yAxisVolume, Qt::AlignRight);
     }
+}
+
+// ── nearestDataPoint ───────────────────────────────────────────────────────────
+
+QPointF ViewChart::nearestDataPoint(const QList<QPointF>& points, const QPointF& hover)
+{
+    if (points.isEmpty())
+        return hover;
+
+    // Erster Punkt mit x >= hover.x() — Punkte sind nach x aufsteigend
+    // sortiert (setChartData() hängt sie in Datumsreihenfolge an).
+    const auto it = std::lower_bound(points.cbegin(), points.cend(), hover.x(),
+        [](const QPointF& p, qreal x) { return p.x() < x; });
+
+    if (it == points.cend())
+        return points.last();
+    if (it == points.cbegin())
+        return *it;
+
+    const auto prev = std::prev(it);
+    // Strikt kleiner: bei exakt gleichem Abstand gewinnt der spätere Punkt.
+    return (hover.x() - prev->x() < it->x() - hover.x()) ? *prev : *it;
 }
 
 // ── onSeriesHovered ────────────────────────────────────────────────────────────

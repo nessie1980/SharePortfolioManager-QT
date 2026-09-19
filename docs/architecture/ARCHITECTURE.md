@@ -1678,9 +1678,12 @@ Hover-Tooltip (ergänzt 12.07.2026): Portiert vom C#-Referenz-Verhalten
 Charts hat kein chart-weites Hover-Signal, das zusätzlich verrät, welche
 Serie getroffen wurde, daher ein Connect pro Serie statt eines gemeinsamen.
 `point.x()` ist `msecsSinceEpoch` (gleiche Kodierung wie beim Befüllen der
-Serie), `point.y()` der Wert am nächstgelegenen Datenpunkt — Qt Charts liefert
-hier immer den nächsten tatsächlichen Datenpunkt, keine interpolierte
-Mausposition. Preis-Serien werden mit "€" und 2 Nachkommastellen formatiert,
+Serie). Qt Charts liefert dabei die Mausposition in Achsenkoordinaten, nicht
+den Datenpunkt — die Verbindungs-Lambda rastet den Punkt deshalb seit dem
+19.09.2026 per `ViewChart::nearestDataPoint()` auf den nächstgelegenen echten
+Datenpunkt ein, bevor `onSeriesHovered()` ihn formatiert (siehe Bugfix-Hinweis
+unten; die ursprüngliche Annahme "Qt liefert immer den nächsten Datenpunkt"
+war falsch). Preis-Serien werden mit "€" und 2 Nachkommastellen formatiert,
 die beiden Stück-Serien (`HeldVolume`/`TradedVolume`) mit 4 Nachkommastellen
 (bis 02.08.2026 ohne Nachkommastellen, siehe Bugfix-Hinweis unten) —
 `QToolTip::showText(QCursor::pos(), ...)` bei `state == true`,
@@ -1774,6 +1777,36 @@ zu simulieren. Regressionstests:
 `test_onSeriesHovered_heldVolumeSeries_fractionalValue_showsFourDecimals`
 (beide `tst_mainwindow.cpp`, über eine direkt konstruierte `ChartPopup`-
 Instanz).
+
+@note **Bugfix Hover-Tooltip zeigte interpolierte Werte (ergänzt 19.09.2026,
+Nessies Rückmeldung anhand eines Screenshots):** An einer Kursspitze zeigte
+der Tooltip "191,0226€", die Legende aber "Max: 190,90" — der Tooltip-Wert
+lag also über dem höchsten Schluss-Kurs im Zeitraum. Ursache:
+`QXYSeries::hovered()` liefert die Mausposition in Achsenkoordinaten, nicht
+den Datenpunkt unter dem Zeiger. Da das Signal mit einigen Pixeln Toleranz um
+die Linie auslöst, erschienen leicht verschobene, interpolierte Werte mit
+"krummen" Nachkommastellen; das Datum fiel nicht auf, weil es ohnehin auf den
+Tag formatiert wird. Derselbe Effekt war am 06.08.2026 bereits im
+Depotwert-Chart behoben worden (siehe "Tooltip rastet auf Datenpunkte ein"
+unter "PortfolioChartForm-Details"), aber nicht auf `ViewChart` übertragen —
+hier stand stattdessen die falsche Annahme in der Doku, Qt liefere immer den
+nächsten Datenpunkt.
+
+Fix: neue `public static` Hilfsfunktion `ViewChart::nearestDataPoint(points,
+hover)` — binäre Suche (`std::lower_bound`) über die nach Datum aufsteigend
+sortierten Serienpunkte, maßgeblich ist nur der X-Abstand, bei exakt gleichem
+Abstand gewinnt der spätere Punkt, bei leerer Liste kommt die Hover-Position
+unverändert zurück. Die `hovered()`-Lambda in `setChartData()` ruft sie mit
+`line->points()` auf und reicht den eingerasteten Punkt an `onSeriesHovered()`
+weiter; der Slot selbst ist unverändert. Die Legende war nie betroffen.
+Regressionstests: `test_nearestDataPoint_boundaryCases` (Grenzfälle mit
+festen Eingaben) und `test_seriesHovered_offsetAbovePeak_tooltipShowsActualClosingPrice`
+(End-to-End über das echte `QLineSeries::hovered()`-Signal), beide
+`tst_mainwindow.cpp`.
+
+@note `ViewPortfolioChart` hat für denselben Zweck eine eigene binäre Suche
+über seine vorgehaltenen Punkte. Eine Zusammenführung in einen gemeinsamen
+Helfer ist nicht Teil dieses Bugfixes.
 
 Bewusste Vereinfachungen dieser ersten Iteration (auf Wunsch bei
 Bedarf später verfeinerbar):

@@ -10,6 +10,17 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.22.1] - 2026-09-19
+
+### Fixed
+
+- Aktien-Chart (Details-Dialog und Rechtsklick-Popup): der Hover-Tooltip
+  zeigte die Cursorposition statt des Datenpunkts, weil
+  `QLineSeries::hovered()` Achsenkoordinaten liefert. An Kursspitzen lag der
+  angezeigte Wert dadurch ueber dem Max-Wert der Legende (z. B. 191,0226 EUR
+  statt 190,90 EUR). Der Tooltip rastet jetzt wie schon im Depotwert-Chart
+  auf den naechstgelegenen Datenpunkt ein.
+
 ## [1.22.0] - 2026-09-18
 
 ### Changed

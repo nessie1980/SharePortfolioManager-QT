@@ -2004,6 +2004,8 @@ eine echte Emission mit korrekt gesetztem `sender()` auslöst.
 | `test_onPortfolioRowRightClicked_validGuid_popupCenteredAndNarrowerThanMainWindow` (ergänzt 31.07.2026, überarbeitet nach mehreren Rückmeldungen — zuletzt "horizontal zentriert ... Hauptfensterbreite − 50px, also auf jeder Seite 25px schmäler"; **Bugfix 02.08.2026**, siehe ARCHITECTURE.md) | Echter Rechtsklick (`customContextMenuRequested`) auf eine gültige Zeile — `MainWindow` wird dafür bewusst relativ zur verfügbaren Bildschirmgeometrie dimensioniert/positioniert (`QGuiApplication::primaryScreen()->availableGeometry()`), nicht fest auf 900×600. Das reicht auf einem schmalen Bildschirm (< Fenster-Mindestbreite 900px + 50px, z. B. der 800px breite CI-Offscreen-Runner) aber nicht aus: `MainWindow` kann wegen `setMinimumSize(900, 600)` nicht darunter schrumpfen, das Popup (`window.width() − 50`) wird dadurch breiter als der verfügbare Bildschirm — eine exakte Zentrierung ist dann unmöglich. Der Test berechnet deshalb dieselbe `avail`-Geometrie wie `ChartPopup::showAt()` und unterscheidet explizit beide Fälle, statt die komplette Klemm-Formel zu duplizieren | `ChartPopup` wird über `QApplication::topLevelWidgets()` gefunden (kein Kind-Widget von `MainWindow`, da ownerlos erzeugt); `width() == window.width() - 50`; passt das Popup auf den verfügbaren Bildschirm (`popup->width() <= avail.width()`, jeder reale Desktop): Popup-Mittelpunkt (`x() + width()/2`) == Hauptfenster-Mittelpunkt in globalen Koordinaten; passt es nicht (z. B. schmaler CI-Runner): `popup->x() == avail.left()` (Linksklemmung) — Regressionstest für `MainWindow::onPortfolioRowRightClicked()`'s Breiten-/Positionsberechnung vor `showAt()` |
 | `test_onReferenceLineHovered_fractionalVolume_showsFourDecimals` (**Bugfix 02.08.2026**, siehe ARCHITECTURE.md) | `ChartPopup` direkt konstruiert, `ViewChart`-Kindwidget per `findChild()` geholt, `onReferenceLineHovered()` (seit diesem Bugfix `private slots:`) per `QMetaObject::invokeMethod()` direkt mit einer `ChartReferenceLine` aufgerufen (`volume = 1.5`, bewusst eine Bruchstückzahl — genau der Fall aus Nessies Screenshot) | `QToolTip::text()` enthält `"1,5000 Stk."`, nicht mehr `"1 Stk."` (0 Nachkommastellen) |
 | `test_onSeriesHovered_heldVolumeSeries_fractionalValue_showsFourDecimals` (**Bugfix 02.08.2026**, siehe ARCHITECTURE.md) | Gleiches Vorgehen, `onSeriesHovered()` mit `SeriesKind::HeldVolume` und `QPointF(0.0, 12.3456)` aufgerufen | `QToolTip::text()` enthält `"12,3456"` |
+| `test_nearestDataPoint_boundaryCases` (**Bugfix 19.09.2026**, siehe ARCHITECTURE.md) | `ViewChart::nearestDataPoint()` direkt mit festen Punktlisten aufgerufen: leere Liste, Hover vor dem ersten/nach dem letzten Punkt, exakter Treffer, näher am Vorgänger/Nachfolger, exakt mittig, einzelner Punkt | Leere Liste liefert die Hover-Position unverändert; sonst immer ein echter Datenpunkt (Y-Wert aus der Serie, nicht vom Hover); Randpunkte an den Enden; bei Gleichstand der spätere Punkt |
+| `test_seriesHovered_offsetAbovePeak_tooltipShowsActualClosingPrice` (**Bugfix 19.09.2026**, siehe ARCHITECTURE.md) | Drei Tageswerte (Spitze 190,90 in der Mitte, alle vier Kursfelder gleich) auf die letzten drei Tage vor heute geseedet, `ChartPopup` konstruiert, Schluss-Kurs-Serie über `chartView->chart()->series()` geholt und `hovered()` direkt emittiert — drei Stunden nach dem Spitzendatum, Y = 191,0226 (Nessies Screenshot-Fall) | `QToolTip::text()` enthält Spitzendatum und `formatPrice(190.90)`, nicht aber `formatPrice(191.0226)` — deckt anders als die Tests darüber auch die Verbindungs-Lambda in `setChartData()` ab |
 
 @note **Warum diese beiden Tests in `tst_mainwindow.cpp` statt in
 `tst_chartform.cpp` (ergänzt 02.08.2026):** `tst_chartform.cpp` testet
@@ -2175,11 +2177,13 @@ ein zufälliges Zusammenspiel mit View-Verhalten.
 | `test_refresh_corruptEarliestDate_maxIntervalCountClampedByAbsoluteSafetyCeiling` | Korruptes/unplausibles Datum (Jahr -1000) als ältester Wert — `daysTo(rangeEnd)` läge bei ~1,1 Mio. Tagen | `lastMaxIntervalCount == 1000000` (exakt `kAbsoluteSafetyCeiling`, nicht die volle Tagesspanne) — belegt, dass die absolute Notbremse tatsächlich greift, nicht nur die dynamische Grenze |
 
 Bewusst weiterhin **nicht** getestet: `ViewChart` selbst (QtCharts-Rendering,
-Achsen-Rebuild, Legende-Layout, Hover-Tooltip via `onSeriesHovered()`,
-Rendering der Kauf-/Verkauf-Markerlinien via `setReferenceLines()`) —
-analog zur bestehenden Konvention, dass reine Qt-Widgets-Views ohne eigene
-Logik nicht isoliert unit-getestet werden, solange der Presenter (der die
-eigentliche Logik trägt) abgedeckt ist.
+Achsen-Rebuild, Legende-Layout, Rendering der Kauf-/Verkauf-Markerlinien via
+`setReferenceLines()`) — analog zur bestehenden Konvention, dass reine
+Qt-Widgets-Views ohne eigene Logik nicht isoliert unit-getestet werden,
+solange der Presenter (der die eigentliche Logik trägt) abgedeckt ist. Der
+Hover-Tooltip ist die Ausnahme: Formatierung und Einrasten auf den
+Datenpunkt (`ViewChart::nearestDataPoint()`, Bugfix 19.09.2026) sind in
+`tst_mainwindow.cpp` abgedeckt, siehe dort.
 
 ---
 

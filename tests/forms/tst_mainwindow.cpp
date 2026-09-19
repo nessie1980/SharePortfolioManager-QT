@@ -38,6 +38,8 @@
 #include "../../app/forms/ShareDetailsForm/ViewShareDetails.h"
 #include "../../app/forms/ChartForm/ChartPopup.h"
 #include "../../app/forms/ChartForm/ViewChart.h"
+#include "../../app/utils/ValueFormatter.h"
+#include <QLineSeries>
 #include "../../app/config/AppSettings.h"
 #include "../../app/core/Database.h"
 #include "../../app/repositories/ShareRepository.h"
@@ -3144,6 +3146,100 @@ private slots:
         QMetaObject::invokeMethod(chart, "onSeriesHovered", Qt::DirectConnection,
                                    Q_ARG(SeriesKind, SeriesKind::HeldVolume),
                                    Q_ARG(QPointF, point), Q_ARG(bool, false));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ViewChart — Hover-Tooltip rastet auf echten Datenpunkt ein (Bugfix
+    // 19.09.2026, Nessies Rückmeldung anhand eines Screenshots: Tooltip
+    // zeigte "191,0226€" an einer Spitze, die Legende aber "Max: 190,90").
+    // Ursache: QXYSeries::hovered() liefert die Mausposition in Achsen-
+    // Koordinaten, nicht den nächstgelegenen Datenpunkt — mit einigen Pixeln
+    // Hover-Toleranz um die Linie also leicht verschobene, interpolierte
+    // Werte. Fix: ViewChart::nearestDataPoint() in der hovered()-Lambda von
+    // setChartData() (siehe ViewChart.h).
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_nearestDataPoint_boundaryCases()
+    {
+        const QList<QPointF> pts { {100.0, 1.0}, {200.0, 2.0}, {300.0, 3.0} };
+
+        // Leere Liste → Hover-Position unverändert zurück.
+        QCOMPARE(ViewChart::nearestDataPoint({}, QPointF(150.0, 9.0)), QPointF(150.0, 9.0));
+
+        // Vor dem ersten / nach dem letzten Punkt → Randpunkt.
+        QCOMPARE(ViewChart::nearestDataPoint(pts, QPointF(50.0, 9.0)),  QPointF(100.0, 1.0));
+        QCOMPARE(ViewChart::nearestDataPoint(pts, QPointF(350.0, 9.0)), QPointF(300.0, 3.0));
+
+        // Exakter Treffer → genau dieser Punkt, y aus der Serie statt vom Hover.
+        QCOMPARE(ViewChart::nearestDataPoint(pts, QPointF(200.0, 9.0)), QPointF(200.0, 2.0));
+
+        // Näher am Vorgänger bzw. am Nachfolger.
+        QCOMPARE(ViewChart::nearestDataPoint(pts, QPointF(240.0, 9.0)), QPointF(200.0, 2.0));
+        QCOMPARE(ViewChart::nearestDataPoint(pts, QPointF(260.0, 9.0)), QPointF(300.0, 3.0));
+
+        // Exakt in der Mitte → der spätere Punkt gewinnt (dokumentiert in ViewChart.h).
+        QCOMPARE(ViewChart::nearestDataPoint(pts, QPointF(250.0, 9.0)), QPointF(300.0, 3.0));
+
+        // Einzelner Punkt → immer dieser, egal auf welcher Seite.
+        const QList<QPointF> single { {100.0, 1.0} };
+        QCOMPARE(ViewChart::nearestDataPoint(single, QPointF(10.0, 9.0)),  QPointF(100.0, 1.0));
+        QCOMPARE(ViewChart::nearestDataPoint(single, QPointF(900.0, 9.0)), QPointF(100.0, 1.0));
+    }
+
+    void test_seriesHovered_offsetAbovePeak_tooltipShowsActualClosingPrice()
+    {
+        // End-to-End über das echte QLineSeries::hovered()-Signal (statt
+        // direktem Slot-Aufruf wie in den Tests oben), da der Fix genau in
+        // der Lambda-Verbindung aus setChartData() sitzt. Die Serie ist
+        // privat in ViewChart, aber über chartView->chart()->series()
+        // erreichbar; Signale sind in Qt6 public und können direkt emittiert
+        // werden.
+        const QString shareGuid = insertTestShare();
+
+        // Drei Tageswerte mit Spitze in der Mitte — alle vier Kursfelder
+        // gleich, damit der Schluss-Kurs unabhängig von der Parameter-
+        // reihenfolge des DailyValuesObject-Konstruktors feststeht.
+        const QDate d1 = QDate::currentDate().addDays(-3);
+        const QDate d2 = QDate::currentDate().addDays(-2);
+        const QDate d3 = QDate::currentDate().addDays(-1);
+        DailyValuesRepository dvRepo;
+        dvRepo.upsert(DailyValuesObject(shareGuid, d1, 180.00, 180.00, 180.00, 180.00, 1000.0));
+        dvRepo.upsert(DailyValuesObject(shareGuid, d2, 190.90, 190.90, 190.90, 190.90, 1000.0));
+        dvRepo.upsert(DailyValuesObject(shareGuid, d3, 185.00, 185.00, 185.00, 185.00, 1000.0));
+
+        ChartPopup popup(shareGuid, QStringLiteral("Test AG"));
+
+        auto* chartView = popup.findChild<QChartView*>(QStringLiteral("chartView"));
+        if (!chartView) QFAIL("chartView nicht gefunden");
+
+        // Keine Käufe/Verkäufe → keine Markerlinien; die einzige Serie mit
+        // drei Punkten ist die Schluss-Kurs-Serie (Compact-Modus-Default).
+        QLineSeries* closing = nullptr;
+        const auto allSeries = chartView->chart()->series();
+        for (QAbstractSeries* s : allSeries) {
+            auto* ls = qobject_cast<QLineSeries*>(s);
+            if (ls && ls->count() == 3) { closing = ls; break; }
+        }
+        if (!closing) QFAIL("Schluss-Kurs-Serie mit den drei Tageswerten nicht gefunden");
+
+        // Hover knapp neben und oberhalb der Spitze — genau Nessies Fall:
+        // Mausposition ein paar Stunden nach d2 und ~0,12€ über dem Kurs.
+        const double xPeak = static_cast<double>(QDateTime(d2, QTime(0, 0)).toMSecsSinceEpoch());
+        const QPointF hover(xPeak + 3.0 * 3600.0 * 1000.0, 191.0226);
+
+        emit closing->hovered(hover, true);
+
+        const QString expected = d2.toString(QStringLiteral("dd.MM.yyyy")) + QStringLiteral(": ")
+                               + ValueFormatter::formatPrice(190.90) + QStringLiteral("€");
+        const QString wrong    = ValueFormatter::formatPrice(191.0226);
+        QVERIFY2(QToolTip::text().contains(expected),
+                 qPrintable(QStringLiteral("Tooltip-Text: '%1', erwartet enthält: '%2'")
+                            .arg(QToolTip::text(), expected)));
+        QVERIFY2(!QToolTip::text().contains(wrong),
+                 qPrintable(QStringLiteral("Tooltip zeigt interpolierten Hover-Wert: '%1'")
+                            .arg(QToolTip::text())));
+
+        emit closing->hovered(hover, false);
     }
 
     // Regressionstest für Nessies Rückmeldungen (31.07.2026): das Popup soll
