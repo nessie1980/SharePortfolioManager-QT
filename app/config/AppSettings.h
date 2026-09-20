@@ -271,6 +271,30 @@ public:
      */
     void setTrayOnMinimizeEnabled(bool value);
 
+    // ── Debug ────────────────────────────────────────────────────────────
+    /**
+     * @brief Returns whether diagnostic functions are shown in the UI
+     * (INI key "Debug/ShowDiagnostics", ergänzt 19.09.2026).
+     *
+     * Currently controls only the "Diagnose speichern…" button in the
+     * Depotwert-Chart (ViewPortfolioChart). Deliberately named generically
+     * so that later diagnostic functions can share the same switch instead
+     * of each getting its own key (Nessies Vorgabe 19.09.2026).
+     *
+     * Default is false: the button stays hidden in normal operation and has
+     * to be enabled actively. There is no UI switch — the value is changed
+     * directly in settings.ini. Consumers read it once on construction, so a
+     * change takes effect after restarting the application.
+     * @return true if diagnostic functions should be shown.
+     */
+    bool showDiagnostics() const { return m_showDiagnostics; }
+
+    /**
+     * @brief Enable or disable diagnostic functions in the UI and save.
+     * @param value  true to show diagnostic functions.
+     */
+    void setShowDiagnostics(bool value);
+
 private:
     explicit AppSettings(QObject* parent = nullptr);
 
@@ -348,4 +372,7 @@ private:
 
     // Tray
     bool m_trayOnMinimizeEnabled = false; // opt-in, siehe trayOnMinimizeEnabled()
+
+    // Debug
+    bool m_showDiagnostics = false; // opt-in, siehe showDiagnostics()
 };

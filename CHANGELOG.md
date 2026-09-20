@@ -10,6 +10,16 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.23.0] - 2026-09-19
+
+### Changed
+
+- Depotwert-Chart: der Knopf "Diagnose speichern..." ist standardmaessig
+  ausgeblendet. Er erscheint nur, wenn in `settings.ini` der neue Schluessel
+  `Debug/ShowDiagnostics=true` gesetzt ist; die Aenderung greift nach einem
+  Neustart. Der Schalter ist bewusst allgemein benannt, damit spaetere
+  Diagnose-Funktionen ihn mitnutzen koennen.
+
 ## [1.22.2] - 2026-09-19
 
 ### Changed

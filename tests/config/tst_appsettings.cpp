@@ -10,6 +10,9 @@
 // MainWindow-Tests, obwohl sie mit MainWindow nichts zu tun haben; deshalb
 // tests/config/ statt tests/forms/.
 //
+// Seit 19.09.2026 drei weitere Tests fuer den Schalter
+// "Debug/ShowDiagnostics" (Default, Schreiben in die INI, Lesen aus der INI).
+//
 // @note Die Tests setzen den geaenderten Wert am Ende jeweils wieder auf den
 // Ausgangswert zurueck - das Muster stammt aus tst_mainwindow.cpp und bleibt
 // erhalten, weil AppSettings ein prozessweiter Singleton ist.
@@ -25,6 +28,7 @@
 #include <QDir>
 #include <QColor>
 #include <QLocale>
+#include <QSettings>
 
 #include "../../app/config/AppSettings.h"
 #include "../../app/core/Database.h"
@@ -61,6 +65,46 @@ private slots:
         loadSandboxedSettings();
         if (Database::instance().isOpen())
             Database::instance().close();
+    }
+
+    // ── Debug/ShowDiagnostics (ergänzt 19.09.2026) ───────────────────────
+    // Der Default-Test muss VOR den beiden anderen laufen (QtTest arbeitet
+    // die Slots in Deklarationsreihenfolge ab): load() übernimmt fehlende
+    // Schlüssel aus dem aktuellen Member, ein einmal gesetztes true ließe
+    // sich per load() also nicht mehr "wegladen".
+
+    void test_debugSettings_showDiagnosticsDefaultsToFalse()
+    {
+        QVERIFY(!AppSettings::instance().showDiagnostics());
+    }
+
+    void test_debugSettings_setShowDiagnosticsIsWrittenToIni()
+    {
+        AppSettings::instance().setShowDiagnostics(true);
+        QVERIFY(AppSettings::instance().showDiagnostics());
+
+        // Direkt aus der Datei gelesen — prüft den INI-Schlüsselnamen, den
+        // Nessie von Hand setzt, nicht nur den Member.
+        QSettings ini(AppSettings::instance().settingsPath(), QSettings::IniFormat);
+        QCOMPARE(ini.value(QStringLiteral("Debug/ShowDiagnostics")).toBool(), true);
+
+        AppSettings::instance().setShowDiagnostics(false);
+        QSettings iniAfter(AppSettings::instance().settingsPath(), QSettings::IniFormat);
+        QCOMPARE(iniAfter.value(QStringLiteral("Debug/ShowDiagnostics")).toBool(), false);
+    }
+
+    void test_debugSettings_showDiagnosticsIsReadFromIni()
+    {
+        // Genau der Weg aus der Praxis: Wert von Hand in der INI setzen,
+        // dann laden (entspricht dem Neustart).
+        {
+            QSettings ini(AppSettings::instance().settingsPath(), QSettings::IniFormat);
+            ini.setValue(QStringLiteral("Debug/ShowDiagnostics"), true);
+        } // QSettings schreibt spätestens im Destruktor
+        loadSandboxedSettings();
+        QVERIFY(AppSettings::instance().showDiagnostics());
+
+        AppSettings::instance().setShowDiagnostics(false);
     }
 
     void test_newPortfolio_settingsPathUpdated()

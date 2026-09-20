@@ -3634,6 +3634,11 @@ Der Text entsteht in `PresenterPortfolioChart::buildDiagnosticsCsv()`, die
 View fragt nur den Zielpfad ab und schreibt — Formatierung bleibt beim
 Presenter.
 
+@note Seit v1.23.0 (19.09.2026) ist der Knopf nur sichtbar, wenn in
+`settings.ini` der Schlüssel `Debug/ShowDiagnostics=true` gesetzt ist
+(Standard: aus, wirksam nach Neustart). Siehe "Diagnose-Knopf hinter einen
+Debug-Modus legen" unter "Erledigt / Archiv".
+
 @note Bei einer auffälligen Stelle im Kurvenverlauf lohnt es sich, den
 Zeitraum vorher eng um das fragliche Datum zu legen (etwa Interval "Tag",
 Anzahl 5) — dann bleibt der dritte Block überschaubar und die betroffene
@@ -4778,13 +4783,6 @@ beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
 
-### Diagnose-Knopf hinter einen Debug-Modus legen (06.08.2026)
-
-Der Knopf "Diagnose speichern…" im Depotwert-Chart bleibt vorerst dauerhaft
-sichtbar, da sich der Export als nützlich erwiesen hat. Später sollte er über
-eine Einstellung ein- und ausblendbar sein, damit er im Normalbetrieb nicht
-im Weg steht.
-
 ### Zeitraum-Einstellungen des Charts persistieren (05.08.2026)
 
 Start-Datum, Interval und Anzahl des Depotwert-Charts werden bei jedem Start
@@ -4937,6 +4935,33 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Diagnose-Knopf hinter einen Debug-Modus legen (06.08.2026, erledigt 19.09.2026)
+
+Der Knopf "Diagnose speichern…" im Depotwert-Chart war seit dem 06.08.2026
+dauerhaft sichtbar, weil sich der Export bei der Fehlersuche als nützlich
+erwiesen hatte. Er sollte über eine Einstellung ein- und ausblendbar werden,
+damit er im Normalbetrieb nicht im Weg steht.
+
+Umsetzung (v1.23.0), nach Nessies Vorgaben vom 19.09.2026:
+
+- Neuer Schalter `AppSettings::showDiagnostics()` / `setShowDiagnostics()`,
+  INI-Schlüssel `Debug/ShowDiagnostics`. Bewusst allgemein benannt und in
+  einem eigenen Abschnitt `Debug`, damit spätere Diagnose-Funktionen
+  denselben Schalter nutzen können, statt je einen eigenen Schlüssel zu
+  bekommen.
+- Standard ist `false`: der Knopf ist nach dem Update ausgeblendet und muss
+  aktiv eingeschaltet werden.
+- Kein Schalter in der Oberfläche; der Wert wird direkt in `settings.ini`
+  gesetzt. `ViewPortfolioChart` liest ihn einmalig beim Anlegen, eine
+  Änderung greift also nach einem Neustart.
+- Der Knopf wird weiterhin immer angelegt und nur per `setVisible()`
+  ausgeblendet. `onExportDiagnostics()` und dessen Testbarkeit bleiben
+  dadurch unverändert.
+
+Tests: drei neue Fälle in `tst_appsettings.cpp` (Default, Schreiben in die
+INI, Lesen aus der INI) und zwei in `tst_mainwindow.cpp` (Knopf standardmäßig
+ausgeblendet, bei gesetztem Schalter sichtbar).
 
 ### Nächster-Datenpunkt-Suche liegt in beiden Charts doppelt vor (19.09.2026, erledigt 19.09.2026)
 

@@ -157,5 +157,6 @@ private:
     QDateEdit* m_startDateEdit = nullptr;
     QComboBox* m_intervalCombo = nullptr;
     QSpinBox*  m_countSpin     = nullptr;
-    QPushButton* m_exportButton = nullptr; ///< siehe onExportDiagnostics()
+    QPushButton* m_exportButton = nullptr; ///< siehe onExportDiagnostics(); nur sichtbar
+                                           ///< bei AppSettings::showDiagnostics() (19.09.2026)
 };

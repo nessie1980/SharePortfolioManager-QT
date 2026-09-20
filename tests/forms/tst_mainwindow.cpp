@@ -3219,6 +3219,44 @@ private slots:
         emit closing->hovered(hover, false);
     }
 
+    // ─────────────────────────────────────────────────────────────────────
+    // ViewPortfolioChart — Diagnose-Knopf nur bei "Debug/ShowDiagnostics"
+    // (ergänzt 19.09.2026, Standard: aus). isHidden() statt isVisible(),
+    // weil die View im Test nie angezeigt wird — isVisible() wäre dann für
+    // jedes Kind false, unabhängig von setVisible().
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_portfolioChart_diagnosticsButton_hiddenByDefault()
+    {
+        openMemoryDb();
+        QVERIFY(!AppSettings::instance().showDiagnostics());
+
+        ViewPortfolioChart view;
+        auto* button = view.findChild<QPushButton*>(QStringLiteral("portfolioChartExportButton"));
+        if (!button) QFAIL("portfolioChartExportButton nicht gefunden");
+
+        QVERIFY(button->isHidden());
+    }
+
+    void test_portfolioChart_diagnosticsButton_visibleWhenEnabled()
+    {
+        openMemoryDb();
+        AppSettings::instance().setShowDiagnostics(true);
+
+        ViewPortfolioChart view;
+        auto* button = view.findChild<QPushButton*>(QStringLiteral("portfolioChartExportButton"));
+        const bool found  = (button != nullptr);
+        const bool hidden = found && button->isHidden();
+
+        // Vor jeder Prüfung zurücksetzen — AppSettings ist ein prozessweiter
+        // Singleton, und init() lädt die Sandbox-INI nur neu, setzt den Wert
+        // aber nicht auf den Default zurück.
+        AppSettings::instance().setShowDiagnostics(false);
+
+        QVERIFY2(found, "portfolioChartExportButton nicht gefunden");
+        QVERIFY(!hidden);
+    }
+
     void test_portfolioChartHovered_offsetBetweenDays_tooltipShowsNearestPoint()
     {
         // Depotwert-Chart: der Einrast-Fix vom 06.08.2026 war bis zur

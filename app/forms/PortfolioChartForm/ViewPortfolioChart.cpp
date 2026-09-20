@@ -4,6 +4,7 @@
 
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
 #include "../../utils/ChartPointSearch.h"
+#include "../../config/AppSettings.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -246,6 +247,13 @@ QGroupBox* ViewPortfolioChart::setupZeitraumBox()
     connect(m_exportButton, &QPushButton::clicked,
             this, &ViewPortfolioChart::onExportDiagnostics);
     form->addRow(m_exportButton);
+
+    // Nur sichtbar, wenn "Debug/ShowDiagnostics" in settings.ini gesetzt ist
+    // (ergänzt 19.09.2026, Standard: aus). Der Knopf wird trotzdem immer
+    // angelegt und nur ausgeblendet — Slot und Tests bleiben dadurch
+    // unverändert. Gelesen wird einmalig hier; eine Änderung in der INI
+    // greift nach einem Neustart.
+    m_exportButton->setVisible(AppSettings::instance().showDiagnostics());
 
     return box;
 }

@@ -425,9 +425,16 @@ ARCHITECTURE.md für Details.
 
 Laden und Parsen von `WebSites.xml` und `Documents.xml` — `tst_websitesconfig` und `tst_documentsconfig`.
 
-Seit dem 26.08.2026 liegt hier ausserdem `tst_appsettings` (10 Tests): Setzen
-und Zuruecklesen von Logger-Farben, -Leveln und -Komponenten, der
-Sound-Optionen, des Yahoo-API-Schluessels und des Portfolio-Pfades. Die Faelle
+Seit dem 26.08.2026 liegt hier ausserdem `tst_appsettings` (seit 19.09.2026
+13 Tests): Setzen und Zuruecklesen von Logger-Farben, -Leveln und
+-Komponenten, der Sound-Optionen, des Yahoo-API-Schluessels, des
+Portfolio-Pfades und des Schalters `Debug/ShowDiagnostics`. Fuer letzteren
+prueft `test_debugSettings_showDiagnosticsDefaultsToFalse` den Standardwert,
+`test_debugSettings_setShowDiagnosticsIsWrittenToIni` den INI-Schluesselnamen
+direkt in der Datei und `test_debugSettings_showDiagnosticsIsReadFromIni` den
+Praxisweg (Wert von Hand in die INI, dann laden). Der Default-Test steht
+bewusst zuerst, weil `load()` fehlende Schluessel aus dem aktuellen Member
+uebernimmt und ein einmal gesetztes `true` sonst nicht mehr wegzuladen waere. Die Faelle
 standen bis dahin in `tst_mainwindow.cpp` zwischen den MainWindow-Tests,
 obwohl sie weder Dialog noch MainWindow beruehren. Das Ziel laeuft mit einer
 `QCoreApplication` statt `QApplication` und braucht damit auch in der CI
@@ -2006,6 +2013,8 @@ eine echte Emission mit korrekt gesetztem `sender()` auslöst.
 | `test_onReferenceLineHovered_fractionalVolume_showsFourDecimals` (**Bugfix 02.08.2026**, siehe ARCHITECTURE.md) | `ChartPopup` direkt konstruiert, `ViewChart`-Kindwidget per `findChild()` geholt, `onReferenceLineHovered()` (seit diesem Bugfix `private slots:`) per `QMetaObject::invokeMethod()` direkt mit einer `ChartReferenceLine` aufgerufen (`volume = 1.5`, bewusst eine Bruchstückzahl — genau der Fall aus Nessies Screenshot) | `QToolTip::text()` enthält `"1,5000 Stk."`, nicht mehr `"1 Stk."` (0 Nachkommastellen) |
 | `test_onSeriesHovered_heldVolumeSeries_fractionalValue_showsFourDecimals` (**Bugfix 02.08.2026**, siehe ARCHITECTURE.md) | Gleiches Vorgehen, `onSeriesHovered()` mit `SeriesKind::HeldVolume` und `QPointF(0.0, 12.3456)` aufgerufen | `QToolTip::text()` enthält `"12,3456"` |
 | `test_portfolioChartHovered_offsetBetweenDays_tooltipShowsNearestPoint` (**19.09.2026**, Zusammenführung in `ChartPointSearch`, siehe ARCHITECTURE.md) | `ViewPortfolioChart` direkt konstruiert (In-Memory-DB), drei Punkte über den öffentlichen Setter `setChartData()` gesetzt (Mitte: 250,50 € / 2,50 %), `onSeriesHovered()` per `QMetaObject::invokeMethod()` mit einer Mausposition 5 Stunden nach dem mittleren Tag und Y = 999,99 aufgerufen | `QToolTip::text()` enthält Datum, Eurobetrag und Prozentwert des mittleren Punkts, nicht aber 999,99 — der Einrast-Fix vom 06.08.2026 war auf View-Ebene bis dahin ungetestet |
+| `test_portfolioChart_diagnosticsButton_hiddenByDefault` (**19.09.2026**, Diagnose-Knopf hinter `Debug/ShowDiagnostics`, siehe ARCHITECTURE.md) | `ViewPortfolioChart` direkt konstruiert, Schalter auf Standard (`false`) | `portfolioChartExportButton` existiert und ist `isHidden()` — `isHidden()` statt `isVisible()`, weil die View im Test nie angezeigt wird |
+| `test_portfolioChart_diagnosticsButton_visibleWhenEnabled` (**19.09.2026**) | `setShowDiagnostics(true)`, dann `ViewPortfolioChart` konstruiert; Schalter vor den Prüfungen wieder auf `false` zurückgesetzt (prozessweiter Singleton) | Knopf existiert und ist nicht ausgeblendet |
 | `test_seriesHovered_offsetAbovePeak_tooltipShowsActualClosingPrice` (**Bugfix 19.09.2026**, siehe ARCHITECTURE.md) | Drei Tageswerte (Spitze 190,90 in der Mitte, alle vier Kursfelder gleich) auf die letzten drei Tage vor heute geseedet, `ChartPopup` konstruiert, Schluss-Kurs-Serie über `chartView->chart()->series()` geholt und `hovered()` direkt emittiert — drei Stunden nach dem Spitzendatum, Y = 191,0226 (Nessies Screenshot-Fall) | `QToolTip::text()` enthält Spitzendatum und `formatPrice(190.90)`, nicht aber `formatPrice(191.0226)` — deckt anders als die Tests darüber auch die Verbindungs-Lambda in `setChartData()` ab |
 
 @note **Warum diese beiden Tests in `tst_mainwindow.cpp` statt in

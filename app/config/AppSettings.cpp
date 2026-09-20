@@ -102,6 +102,9 @@ void AppSettings::load(const QString& path)
 
     // ── Tray ─────────────────────────────────────────────────────────────
     m_trayOnMinimizeEnabled = settings.value(QStringLiteral("Tray/OnMinimizeEnabled"), m_trayOnMinimizeEnabled).toBool();
+
+    // ── Debug ────────────────────────────────────────────────────────────
+    m_showDiagnostics = settings.value(QStringLiteral("Debug/ShowDiagnostics"), m_showDiagnostics).toBool();
 }
 
 void AppSettings::save()
@@ -157,6 +160,9 @@ void AppSettings::save()
 
     // ── Tray ─────────────────────────────────────────────────────────────
     settings.setValue(QStringLiteral("Tray/OnMinimizeEnabled"), m_trayOnMinimizeEnabled);
+
+    // ── Debug ────────────────────────────────────────────────────────────
+    settings.setValue(QStringLiteral("Debug/ShowDiagnostics"), m_showDiagnostics);
 }
 
 // ── Setters ───────────────────────────────────────────────────────────────────
@@ -300,6 +306,12 @@ void AppSettings::setDocumentsRootPath(const QString& value)
 void AppSettings::setTrayOnMinimizeEnabled(bool value)
 {
     m_trayOnMinimizeEnabled = value;
+    save();
+}
+
+void AppSettings::setShowDiagnostics(bool value)
+{
+    m_showDiagnostics = value;
     save();
 }
 
