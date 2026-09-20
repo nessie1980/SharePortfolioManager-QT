@@ -5,6 +5,7 @@
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
 #include "../../utils/ValueFormatter.h"
 #include "../../utils/ChartPointSearch.h"
+#include "../../config/AppSettings.h"
 
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -59,6 +60,20 @@ ViewChart::ViewChart(const QString& shareGuid, bool compact, QWidget* parent)
     setObjectName(QStringLiteral("ViewChart"));
     setupUi();
     m_presenter.loadAndDisplay();
+}
+
+// ── Destructor ──────────────────────────────────────────────────────────────
+
+ViewChart::~ViewChart()
+{
+    // Zeitraum-Einstellung beim Schließen speichern (ergänzt 20.09.2026,
+    // Nessies Vorgabe: nur beim Schließen, nicht bei jeder Änderung). Der
+    // Destruktor deckt Details-Dialog und Rechtsklick-Popup gleichermaßen
+    // ab, ohne dass die umgebenden Fenster etwas davon wissen müssen.
+    // Gespeichert wird die gewünschte Anzahl, nicht die angezeigte — siehe
+    // setMaxIntervalCount().
+    AppSettings::instance().setShareChartInterval(intervalUnitToKey(intervalUnit()),
+                                                  m_desiredCount);
 }
 
 // ── eventFilter ──────────────────────────────────────────────────────────────
@@ -266,7 +281,12 @@ QGroupBox* ViewChart::setupSelektionBox()
     m_intervalCombo->addItem(tr("Woche"), static_cast<int>(IntervalUnit::Week));
     m_intervalCombo->addItem(tr("Monat"), static_cast<int>(IntervalUnit::Month));
     m_intervalCombo->addItem(tr("Jahr"),  static_cast<int>(IntervalUnit::Year));
-    m_intervalCombo->setCurrentIndex(2); // "Monat" — Default wie C#-Referenz-Screenshot
+    // Gespeicherte Einheit aus settings.ini (ergänzt 20.09.2026); ohne
+    // Eintrag "Monat" — Default wie C#-Referenz-Screenshot.
+    const IntervalUnit savedUnit = intervalUnitFromKey(
+        AppSettings::instance().shareChartIntervalUnit(), IntervalUnit::Month);
+    m_intervalCombo->setCurrentIndex(
+        std::max(0, m_intervalCombo->findData(static_cast<int>(savedUnit))));
     // "activated" statt "currentIndexChanged" (siehe ARCHITECTURE.md,
     // "Qt6 variadic arg()"-Nachbarabschnitt zu QComboBox-Interaktionssignalen) —
     // nur echte Nutzerauswahl soll einen Refresh auslösen, kein programmatisches setCurrentIndex().
@@ -285,9 +305,18 @@ QGroupBox* ViewChart::setupSelektionBox()
     // Notbremse). Der hier gesetzte Wert 999 ist daher reiner Ausgangspunkt,
     // kein mit PresenterChart geteiltes Limit mehr.
     m_countSpin->setRange(1, 999);
-    m_countSpin->setValue(1);
+    // Gespeicherte Anzahl (ergänzt 20.09.2026). Der Startbereich 1..999 kann
+    // sie noch kürzen; das erste setMaxIntervalCount() stellt sie wieder her,
+    // soweit die Kurshistorie reicht.
+    m_desiredCount = AppSettings::instance().shareChartIntervalCount();
+    m_countSpin->setValue(m_desiredCount);
     connect(m_countSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, [this](int) { m_presenter.onControlsChanged(); });
+            this, [this](int value) {
+                // Nur echte Benutzeränderungen (Eingabe, Pfeile, Mausrad)
+                // kommen hier an — setMaxIntervalCount() blockt die Signale.
+                m_desiredCount = value;
+                m_presenter.onControlsChanged();
+            });
     form->addRow(tr("Anzahl:"), m_countSpin);
 
     layout->addLayout(form);
@@ -337,7 +366,17 @@ void ViewChart::setMaxIntervalCount(int maxCount)
     // angezeigte Wert wird trotzdem korrekt geklemmt — QSpinBox hält seinen
     // internen Wert unabhängig vom Signal immer innerhalb [minimum, maximum].
     const QSignalBlocker blocker(m_countSpin);
-    m_countSpin->setMaximum(std::max(1, maxCount));
+    const int maximum = std::max(1, maxCount);
+    m_countSpin->setMaximum(maximum);
+
+    // Gewünschte Anzahl wiederherstellen, soweit die Historie reicht
+    // (ergänzt 20.09.2026, Nessies Vorgabe): eine Kürzung nur wegen zu
+    // kurzer Kurshistorie soll den gewählten Wert nicht überschreiben. Ohne
+    // diese Zeile bliebe die Spinbox nach einer Kürzung (z. B. beim Wechsel
+    // auf "Jahr") dauerhaft auf dem kleineren Wert, auch wenn die Grenze
+    // wieder steigt. PresenterChart::refresh() liest die Anzahl erst nach
+    // diesem Aufruf und bekommt so den passenden Wert.
+    m_countSpin->setValue(std::min(m_desiredCount, maximum));
 }
 
 void ViewChart::setChartData(const QList<ChartSeriesData>& series)

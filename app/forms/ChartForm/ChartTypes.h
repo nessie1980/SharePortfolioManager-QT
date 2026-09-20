@@ -57,6 +57,44 @@ enum class ChartAxis { Price, Volume };
 enum class IntervalUnit { Day, Week, Month, Year };
 
 /**
+ * @brief Schlüssel einer IntervalUnit für die settings.ini ("Day", "Week",
+ * "Month", "Year") — ergänzt 20.09.2026 für die gespeicherten
+ * Zeitraum-Einstellungen der Charts (siehe AppSettings, Abschnitt "Charts").
+ *
+ * Bewusst Text statt der Enum-Zahl: der Eintrag bleibt in der INI lesbar
+ * und von Hand änderbar, und eine spätere Umsortierung des Enums verschiebt
+ * keine gespeicherten Werte.
+ */
+inline QString intervalUnitToKey(IntervalUnit unit)
+{
+    switch (unit) {
+    case IntervalUnit::Day:   return QStringLiteral("Day");
+    case IntervalUnit::Week:  return QStringLiteral("Week");
+    case IntervalUnit::Month: return QStringLiteral("Month");
+    case IntervalUnit::Year:  return QStringLiteral("Year");
+    }
+    return QStringLiteral("Month");
+}
+
+/**
+ * @brief Gegenstück zu intervalUnitToKey().
+ *
+ * Groß-/Kleinschreibung wird ignoriert, weil der Wert von Hand in der INI
+ * stehen kann. Unbekannte oder leere Schlüssel liefern @p fallback — die
+ * View fällt dann auf ihre bisherige Vorgabe zurück, statt einen Fehler zu
+ * melden.
+ */
+inline IntervalUnit intervalUnitFromKey(const QString& key, IntervalUnit fallback)
+{
+    const QString k = key.trimmed().toLower();
+    if (k == QLatin1String("day"))   return IntervalUnit::Day;
+    if (k == QLatin1String("week"))  return IntervalUnit::Week;
+    if (k == QLatin1String("month")) return IntervalUnit::Month;
+    if (k == QLatin1String("year"))  return IntervalUnit::Year;
+    return fallback;
+}
+
+/**
  * @brief One row of the "Legende" box.
  *
  * @p title / @p line1 / @p line2 are already fully formatted (locale-aware

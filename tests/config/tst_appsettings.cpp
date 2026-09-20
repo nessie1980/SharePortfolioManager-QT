@@ -11,7 +11,8 @@
 // tests/config/ statt tests/forms/.
 //
 // Seit 19.09.2026 drei weitere Tests fuer den Schalter
-// "Debug/ShowDiagnostics" (Default, Schreiben in die INI, Lesen aus der INI).
+// "Debug/ShowDiagnostics" (Default, Schreiben in die INI, Lesen aus der INI),
+// seit 20.09.2026 drei fuer die Zeitraum-Einstellungen der Charts (Charts/*).
 //
 // @note Die Tests setzen den geaenderten Wert am Ende jeweils wieder auf den
 // Ausgangswert zurueck - das Muster stammt aus tst_mainwindow.cpp und bleibt
@@ -105,6 +106,52 @@ private slots:
         QVERIFY(AppSettings::instance().showDiagnostics());
 
         AppSettings::instance().setShowDiagnostics(false);
+    }
+
+    // ── Charts/* — Zeitraum-Einstellungen (ergänzt 20.09.2026) ────────────
+    // Gleiche Reihenfolge-Regel wie oben: der Default-Test zuerst.
+
+    void test_chartSettings_defaultsMatchPreviousViewDefaults()
+    {
+        QCOMPARE(AppSettings::instance().shareChartIntervalUnit(),      QStringLiteral("Month"));
+        QCOMPARE(AppSettings::instance().shareChartIntervalCount(),     1);
+        QCOMPARE(AppSettings::instance().portfolioChartIntervalUnit(),  QStringLiteral("Year"));
+        QCOMPARE(AppSettings::instance().portfolioChartIntervalCount(), 1);
+    }
+
+    void test_chartSettings_settersAreWrittenToIniSeparately()
+    {
+        AppSettings::instance().setShareChartInterval(QStringLiteral("Week"), 6);
+        AppSettings::instance().setPortfolioChartInterval(QStringLiteral("Month"), 24);
+
+        QSettings ini(AppSettings::instance().settingsPath(), QSettings::IniFormat);
+        QCOMPARE(ini.value(QStringLiteral("Charts/ShareIntervalUnit")).toString(),     QStringLiteral("Week"));
+        QCOMPARE(ini.value(QStringLiteral("Charts/ShareIntervalCount")).toInt(),       6);
+        QCOMPARE(ini.value(QStringLiteral("Charts/PortfolioIntervalUnit")).toString(), QStringLiteral("Month"));
+        QCOMPARE(ini.value(QStringLiteral("Charts/PortfolioIntervalCount")).toInt(),   24);
+
+        AppSettings::instance().setShareChartInterval(QStringLiteral("Month"), 1);
+        AppSettings::instance().setPortfolioChartInterval(QStringLiteral("Year"), 1);
+    }
+
+    void test_chartSettings_readFromIniAndCountBelowOneIsRaised()
+    {
+        {
+            QSettings ini(AppSettings::instance().settingsPath(), QSettings::IniFormat);
+            ini.setValue(QStringLiteral("Charts/ShareIntervalUnit"),      QStringLiteral("Day"));
+            ini.setValue(QStringLiteral("Charts/ShareIntervalCount"),     0);   // von Hand verbogen
+            ini.setValue(QStringLiteral("Charts/PortfolioIntervalUnit"),  QStringLiteral("Week"));
+            ini.setValue(QStringLiteral("Charts/PortfolioIntervalCount"), 12);
+        }
+        loadSandboxedSettings();
+
+        QCOMPARE(AppSettings::instance().shareChartIntervalUnit(),      QStringLiteral("Day"));
+        QCOMPARE(AppSettings::instance().shareChartIntervalCount(),     1);
+        QCOMPARE(AppSettings::instance().portfolioChartIntervalUnit(),  QStringLiteral("Week"));
+        QCOMPARE(AppSettings::instance().portfolioChartIntervalCount(), 12);
+
+        AppSettings::instance().setShareChartInterval(QStringLiteral("Month"), 1);
+        AppSettings::instance().setPortfolioChartInterval(QStringLiteral("Year"), 1);
     }
 
     void test_newPortfolio_settingsPathUpdated()

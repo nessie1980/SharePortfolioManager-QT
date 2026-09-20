@@ -73,12 +73,25 @@ void PresenterPortfolioChart::refresh()
     if (!m_hasData)
         return;
 
-    const QDate rangeEnd   = m_view->startDate();
-    const int   count      = std::max(1, m_view->intervalCount());
-    const QDate rangeStart = computeRangeStart(rangeEnd, m_view->intervalUnit(), count);
+    const QDate        rangeEnd = m_view->startDate();
+    const IntervalUnit unit     = m_view->intervalUnit();
 
-    m_view->setMaxIntervalCount(computeMaxIntervalCount(rangeEnd, m_view->intervalUnit(),
-                                                        m_model->earliestRelevantDate()));
+    // Obergrenze ZUERST setzen und die Anzahl erst danach lesen und klemmen
+    // (Bugfix 20.09.2026, gleiche Reihenfolge wie PresenterChart::refresh()).
+    // Vorher wurde der Zeitraum mit der ungeklemmten Anzahl berechnet und die
+    // Spinbox erst danach begrenzt: nach einem Wechsel von "Monat, 24" auf
+    // "Jahr" zeigte die Spinbox z. B. 3, gerechnet und in der Kopfzeile
+    // angezeigt wurden aber 24 Jahre. Mit den gespeicherten
+    // Zeitraum-Einstellungen, die eine grosse Anzahl beim Öffnen mitbringen
+    // können, wäre das beim Start regelmässig aufgetreten. Das std::min()
+    // hält die Rechnung auch dann richtig, wenn eine View (etwa die Fake-View
+    // in den Tests) nicht selbst klemmt.
+    const int maxCount = computeMaxIntervalCount(rangeEnd, unit,
+                                                 m_model->earliestRelevantDate());
+    m_view->setMaxIntervalCount(maxCount);
+
+    const int   count      = std::min(maxCount, std::max(1, m_view->intervalCount()));
+    const QDate rangeStart = computeRangeStart(rangeEnd, unit, count);
 
     // Sichtbare Zwischenanzeige, bevor die Aggregation läuft (Nessies Vorgabe
     // 05.08.2026). Die Berechnung selbst bleibt synchron — sie ist schnell

@@ -4783,12 +4783,6 @@ beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
 
-### Zeitraum-Einstellungen des Charts persistieren (05.08.2026)
-
-Start-Datum, Interval und Anzahl des Depotwert-Charts werden bei jedem Start
-auf die Vorgabe zurückgesetzt (heute / Jahr / 1). Sinnvoll wäre, sie je Chart
-in `AppSettings` zu speichern.
-
 ### Marktwert-Chart (05.08.2026)
 
 Das Gegenstück zum Depotwert-Chart, das nur reine Kursgewinne berücksichtigt
@@ -4935,6 +4929,53 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Zeitraum-Einstellungen des Charts persistieren (05.08.2026, erledigt 20.09.2026)
+
+Start-Datum, Interval und Anzahl des Depotwert-Charts wurden bei jedem Start
+auf die Vorgabe zurückgesetzt (heute / Jahr / 1). Sinnvoll wäre, sie je Chart
+in `AppSettings` zu speichern.
+
+Umsetzung (v1.24.0), nach Nessies Vorgaben vom 20.09.2026:
+
+- Gilt für alle Charts, je Chart-Art getrennt: Aktien-Chart und
+  Depotwert-Chart haben eigene Werte. Details-Dialog und Rechtsklick-Popup
+  teilen sich den Wert des Aktien-Charts, weil beide `ViewChart` verwenden.
+  Je Aktie wird bewusst nicht gespeichert.
+- Gespeichert werden nur Interval und Anzahl. Das Start-Datum bleibt bei
+  der bisherigen Vorgabe der Presenter (Aktien-Chart: letzter vorhandener
+  Tageswert, Depotwert-Chart: heute) und wird nicht gespeichert.
+- INI-Schlüssel im Abschnitt `Charts`: `ShareIntervalUnit`,
+  `ShareIntervalCount`, `PortfolioIntervalUnit`, `PortfolioIntervalCount`.
+  Die Einheit steht als Text (`Day`, `Week`, `Month`, `Year`), damit die INI
+  lesbar bleibt und eine Umsortierung des Enums keine Werte verschiebt; die
+  Umrechnung liegt in `intervalUnitToKey()`/`intervalUnitFromKey()` in
+  `ChartTypes.h`. `AppSettings` kennt `IntervalUnit` bewusst nicht, damit
+  `app/config` nicht von `app/forms` abhängt. Unbekannte Einheiten fallen
+  auf die bisherige Vorgabe zurück, eine Anzahl unter 1 wird als 1 gelesen.
+- Defaults entsprechen den bisherigen festen View-Vorgaben (Aktien-Chart
+  Monat/1, Depotwert-Chart Jahr/1) — ohne Eintrag ändert sich nichts.
+- Gespeichert wird einmal beim Schließen, nicht bei jeder Änderung: im
+  Destruktor von `ViewChart` bzw. `ViewPortfolioChart`. Das deckt
+  Details-Dialog, Popup und Hauptfenster-Tab ab, ohne dass die umgebenden
+  Fenster davon wissen müssen. Beim Depotwert-Chart heißt "Schließen"
+  Programmende. Sind mehrere Aktien-Charts gleichzeitig offen, gewinnt der
+  zuletzt geschlossene.
+- Kürzung nur wegen zu kurzer Historie behält den gewählten Wert: Beide
+  Views führen eine gewünschte Anzahl (`m_desiredCount`), die sich nur bei
+  echten Benutzeränderungen ändert. `setMaxIntervalCount()` setzt die
+  Spinbox auf `min(gewünscht, Obergrenze)`, gespeichert wird der gewünschte
+  Wert. Steigt die Obergrenze wieder (etwa beim Wechsel von "Jahr" zurück
+  auf "Monat"), kehrt auch der gewünschte Wert zurück.
+
+@note Beim Umsetzen aufgefallen und mitbehoben: `PresenterPortfolioChart::refresh()`
+berechnete den Zeitraum mit der ungeklemmten Anzahl und setzte die
+Obergrenze erst danach. Nach einem Wechsel von "Monat, 24" auf "Jahr" zeigte
+die Spinbox zum Beispiel 3, gerechnet und in der Kopfzeile angezeigt wurden
+aber 24 Jahre. Mit gespeicherten Einstellungen, die eine große Anzahl beim
+Öffnen mitbringen, wäre das beim Start regelmäßig aufgetreten. Jetzt gleiche
+Reihenfolge wie `PresenterChart::refresh()`: erst Obergrenze setzen, dann
+Anzahl lesen und per `std::min()` klemmen.
 
 ### Diagnose-Knopf hinter einen Debug-Modus legen (06.08.2026, erledigt 19.09.2026)
 

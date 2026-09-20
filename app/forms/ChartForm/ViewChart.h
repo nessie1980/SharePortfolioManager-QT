@@ -65,7 +65,9 @@ class ViewChart : public QWidget, public IViewChart
 
 public:
     explicit ViewChart(const QString& shareGuid, bool compact = false, QWidget* parent = nullptr);
-    ~ViewChart() override = default;
+    /** Speichert Interval und gewünschte Anzahl in AppSettings (ergänzt
+     *  20.09.2026, siehe AppSettings Abschnitt "Charts"). */
+    ~ViewChart() override;
 
     // ── IViewChart: getters (read by the Presenter) ─────────────────────────
     QDate        startDate() const override;
@@ -211,4 +213,14 @@ private:
     QDateEdit* m_startDateEdit = nullptr;
     QComboBox* m_intervalCombo = nullptr;
     QSpinBox*  m_countSpin     = nullptr;
+
+    /**
+     * Vom Benutzer gewählte Anzahl (ergänzt 20.09.2026). Kann größer sein als
+     * der angezeigte Spinbox-Wert, wenn setMaxIntervalCount() wegen zu kurzer
+     * Kurshistorie kürzen musste — beim Schließen wird dieser Wert
+     * gespeichert, nicht der angezeigte (Nessies Vorgabe: eine Kürzung nur
+     * wegen weniger Historie soll den gewählten Wert erhalten). Geändert nur
+     * durch echte Benutzeränderungen an m_countSpin.
+     */
+    int m_desiredCount = 1;
 };

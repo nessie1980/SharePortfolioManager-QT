@@ -326,6 +326,13 @@ private slots:
     void init()
     {
         loadSandboxedSettings();
+        // Seit 20.09.2026 speichern ViewChart und ViewPortfolioChart ihre
+        // Zeitraum-Einstellung im Destruktor. Ein Test, der die Anzahl per
+        // Mausrad oder Spinbox ändert, würde sie sonst an alle folgenden
+        // Tests weitergeben (prozessweiter Singleton, load() setzt nicht auf
+        // Defaults zurück) — deshalb vor jedem Test auf die Defaults.
+        AppSettings::instance().setShareChartInterval(QStringLiteral("Month"), 1);
+        AppSettings::instance().setPortfolioChartInterval(QStringLiteral("Year"), 1);
         if (Database::instance().isOpen())
             Database::instance().close();
     }
@@ -3217,6 +3224,103 @@ private slots:
                             .arg(QToolTip::text())));
 
         emit closing->hovered(hover, false);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Zeitraum-Einstellungen der Charts (ergänzt 20.09.2026, Nessies
+    // Vorgaben): je Chart-Art getrennt, nur Interval und Anzahl, gespeichert
+    // beim Schließen (Destruktor), gewählte Anzahl bleibt bei Kürzung wegen
+    // zu kurzer Historie erhalten. Die Views werden in eigenen Blöcken
+    // angelegt, damit der Destruktor vor den Prüfungen läuft. Mit leerer
+    // In-Memory-DB setzt PresenterPortfolioChart die Obergrenze auf 1 —
+    // genau der Fall "Historie zu kurz".
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_portfolioChartSettings_savedValuesAreRestoredAndKeptWhenClamped()
+    {
+        openMemoryDb();
+        AppSettings::instance().setPortfolioChartInterval(QStringLiteral("Month"), 24);
+
+        {
+            ViewPortfolioChart view;
+            auto* combo = view.findChild<QComboBox*>(QStringLiteral("portfolioChartIntervalCombo"));
+            auto* spin  = view.findChild<QSpinBox*>(QStringLiteral("portfolioChartCountSpin"));
+            QVERIFY(combo && spin);
+
+            QCOMPARE(combo->currentData().toInt(), static_cast<int>(IntervalUnit::Month));
+            // Ohne Daten ist die Obergrenze 1 — angezeigt wird gekürzt ...
+            QCOMPARE(spin->value(), 1);
+        }
+
+        // ... gespeichert bleibt beim Schließen aber die gewählte 24.
+        QCOMPARE(AppSettings::instance().portfolioChartIntervalUnit(),  QStringLiteral("Month"));
+        QCOMPARE(AppSettings::instance().portfolioChartIntervalCount(), 24);
+    }
+
+    void test_portfolioChartSettings_userChangeIsSavedOnClose()
+    {
+        openMemoryDb();
+
+        {
+            ViewPortfolioChart view;
+            auto* combo = view.findChild<QComboBox*>(QStringLiteral("portfolioChartIntervalCombo"));
+            auto* spin  = view.findChild<QSpinBox*>(QStringLiteral("portfolioChartCountSpin"));
+            QVERIFY(combo && spin);
+
+            // Obergrenze anheben wie ein Presenter mit genug Historie, dann
+            // Benutzeränderung simulieren (setValue feuert valueChanged).
+            view.setMaxIntervalCount(50);
+            spin->setValue(7);
+            combo->setCurrentIndex(combo->findData(static_cast<int>(IntervalUnit::Week)));
+
+            // Noch nichts gespeichert — erst beim Schließen.
+            QCOMPARE(AppSettings::instance().portfolioChartIntervalCount(), 1);
+        }
+
+        QCOMPARE(AppSettings::instance().portfolioChartIntervalUnit(),  QStringLiteral("Week"));
+        QCOMPARE(AppSettings::instance().portfolioChartIntervalCount(), 7);
+    }
+
+    void test_portfolioChartSettings_desiredCountReturnsWhenMaximumGrows()
+    {
+        openMemoryDb();
+
+        ViewPortfolioChart view;
+        auto* spin = view.findChild<QSpinBox*>(QStringLiteral("portfolioChartCountSpin"));
+        QVERIFY(spin);
+
+        view.setMaxIntervalCount(50);
+        spin->setValue(5);            // Benutzer wählt 5
+
+        view.setMaxIntervalCount(2);  // z. B. Wechsel auf "Jahr", kurze Historie
+        QCOMPARE(spin->value(), 2);
+
+        view.setMaxIntervalCount(50); // zurück — die gewählte 5 kommt wieder
+        QCOMPARE(spin->value(), 5);
+    }
+
+    void test_shareChartSettings_savedSeparatelyFromPortfolioChart()
+    {
+        openMemoryDb();
+        AppSettings::instance().setShareChartInterval(QStringLiteral("Week"), 4);
+
+        {
+            // Unbekannte Aktie in leerer DB: PresenterChart findet keine
+            // Tageswerte und zeigt nur den Leerhinweis, ohne refresh().
+            ViewChart view(QStringLiteral("share-without-values"));
+            auto* combo = view.findChild<QComboBox*>(QStringLiteral("intervalCombo"));
+            auto* spin  = view.findChild<QSpinBox*>(QStringLiteral("countSpin"));
+            QVERIFY(combo && spin);
+
+            QCOMPARE(combo->currentData().toInt(), static_cast<int>(IntervalUnit::Week));
+            QCOMPARE(spin->value(), 4);
+        }
+
+        QCOMPARE(AppSettings::instance().shareChartIntervalUnit(),      QStringLiteral("Week"));
+        QCOMPARE(AppSettings::instance().shareChartIntervalCount(),     4);
+        // Der Depotwert-Chart-Wert bleibt davon unberührt.
+        QCOMPARE(AppSettings::instance().portfolioChartIntervalUnit(),  QStringLiteral("Year"));
+        QCOMPARE(AppSettings::instance().portfolioChartIntervalCount(), 1);
     }
 
     // ─────────────────────────────────────────────────────────────────────

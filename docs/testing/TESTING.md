@@ -425,8 +425,8 @@ ARCHITECTURE.md für Details.
 
 Laden und Parsen von `WebSites.xml` und `Documents.xml` — `tst_websitesconfig` und `tst_documentsconfig`.
 
-Seit dem 26.08.2026 liegt hier ausserdem `tst_appsettings` (seit 19.09.2026
-13 Tests): Setzen und Zuruecklesen von Logger-Farben, -Leveln und
+Seit dem 26.08.2026 liegt hier ausserdem `tst_appsettings` (seit 20.09.2026
+16 Tests): Setzen und Zuruecklesen von Logger-Farben, -Leveln und
 -Komponenten, der Sound-Optionen, des Yahoo-API-Schluessels, des
 Portfolio-Pfades und des Schalters `Debug/ShowDiagnostics`. Fuer letzteren
 prueft `test_debugSettings_showDiagnosticsDefaultsToFalse` den Standardwert,
@@ -434,7 +434,12 @@ prueft `test_debugSettings_showDiagnosticsDefaultsToFalse` den Standardwert,
 direkt in der Datei und `test_debugSettings_showDiagnosticsIsReadFromIni` den
 Praxisweg (Wert von Hand in die INI, dann laden). Der Default-Test steht
 bewusst zuerst, weil `load()` fehlende Schluessel aus dem aktuellen Member
-uebernimmt und ein einmal gesetztes `true` sonst nicht mehr wegzuladen waere. Die Faelle
+uebernimmt und ein einmal gesetztes `true` sonst nicht mehr wegzuladen waere.
+Fuer die Zeitraum-Einstellungen der Charts (seit 20.09.2026) pruefen
+`test_chartSettings_defaultsMatchPreviousViewDefaults` die Defaults (Monat/1
+und Jahr/1), `test_chartSettings_settersAreWrittenToIniSeparately` die vier
+Schluessel im Abschnitt `Charts` und `test_chartSettings_readFromIniAndCountBelowOneIsRaised`
+das Lesen aus der INI samt Anhebung einer Anzahl unter 1. Die Faelle
 standen bis dahin in `tst_mainwindow.cpp` zwischen den MainWindow-Tests,
 obwohl sie weder Dialog noch MainWindow beruehren. Das Ziel laeuft mit einer
 `QCoreApplication` statt `QApplication` und braucht damit auch in der CI
@@ -2015,6 +2020,10 @@ eine echte Emission mit korrekt gesetztem `sender()` auslöst.
 | `test_portfolioChartHovered_offsetBetweenDays_tooltipShowsNearestPoint` (**19.09.2026**, Zusammenführung in `ChartPointSearch`, siehe ARCHITECTURE.md) | `ViewPortfolioChart` direkt konstruiert (In-Memory-DB), drei Punkte über den öffentlichen Setter `setChartData()` gesetzt (Mitte: 250,50 € / 2,50 %), `onSeriesHovered()` per `QMetaObject::invokeMethod()` mit einer Mausposition 5 Stunden nach dem mittleren Tag und Y = 999,99 aufgerufen | `QToolTip::text()` enthält Datum, Eurobetrag und Prozentwert des mittleren Punkts, nicht aber 999,99 — der Einrast-Fix vom 06.08.2026 war auf View-Ebene bis dahin ungetestet |
 | `test_portfolioChart_diagnosticsButton_hiddenByDefault` (**19.09.2026**, Diagnose-Knopf hinter `Debug/ShowDiagnostics`, siehe ARCHITECTURE.md) | `ViewPortfolioChart` direkt konstruiert, Schalter auf Standard (`false`) | `portfolioChartExportButton` existiert und ist `isHidden()` — `isHidden()` statt `isVisible()`, weil die View im Test nie angezeigt wird |
 | `test_portfolioChart_diagnosticsButton_visibleWhenEnabled` (**19.09.2026**) | `setShowDiagnostics(true)`, dann `ViewPortfolioChart` konstruiert; Schalter vor den Prüfungen wieder auf `false` zurückgesetzt (prozessweiter Singleton) | Knopf existiert und ist nicht ausgeblendet |
+| `test_portfolioChartSettings_savedValuesAreRestoredAndKeptWhenClamped` (**20.09.2026**, Zeitraum-Einstellungen, siehe ARCHITECTURE.md) | Gespeichert Monat/24, `ViewPortfolioChart` mit leerer DB angelegt (Obergrenze 1) und wieder zerstört | Combo steht auf Monat, Spinbox zeigt gekürzt 1, nach dem Schließen ist weiterhin 24 gespeichert |
+| `test_portfolioChartSettings_userChangeIsSavedOnClose` (**20.09.2026**) | Obergrenze auf 50, Spinbox auf 7, Combo auf Woche | Vor dem Schließen noch nichts gespeichert, danach Woche/7 |
+| `test_portfolioChartSettings_desiredCountReturnsWhenMaximumGrows` (**20.09.2026**) | Gewählt 5, Obergrenze 2, dann wieder 50 | Spinbox 2, danach wieder 5 |
+| `test_shareChartSettings_savedSeparatelyFromPortfolioChart` (**20.09.2026**) | Gespeichert Woche/4 für den Aktien-Chart, `ViewChart` für eine Aktie ohne Tageswerte angelegt und zerstört | Combo Woche, Spinbox 4, danach Woche/4 gespeichert, Depotwert-Chart-Wert unverändert Jahr/1 |
 | `test_seriesHovered_offsetAbovePeak_tooltipShowsActualClosingPrice` (**Bugfix 19.09.2026**, siehe ARCHITECTURE.md) | Drei Tageswerte (Spitze 190,90 in der Mitte, alle vier Kursfelder gleich) auf die letzten drei Tage vor heute geseedet, `ChartPopup` konstruiert, Schluss-Kurs-Serie über `chartView->chart()->series()` geholt und `hovered()` direkt emittiert — drei Stunden nach dem Spitzendatum, Y = 191,0226 (Nessies Screenshot-Fall) | `QToolTip::text()` enthält Spitzendatum und `formatPrice(190.90)`, nicht aber `formatPrice(191.0226)` — deckt anders als die Tests darüber auch die Verbindungs-Lambda in `setChartData()` ab |
 
 @note **Warum diese beiden Tests in `tst_mainwindow.cpp` statt in
@@ -5098,6 +5107,7 @@ Die presenter-seitige Begrenzung muss unabhängig davon greifen.
 | `test_onControlsChanged_recomputesWithNarrowerWindow` | Fenster auf einen Tag | Hinweis statt Chart |
 | `test_reload_readsTheModelAgain` | `reload()` | Model wird ein zweites Mal gelesen |
 | `test_onControlsChanged_doesNotReadTheModelAgain` | Datencache | Model wird genau einmal gelesen |
+| `test_refresh_intervalCountBeyondMax_rangeUsesClampedCount` (**Bugfix 20.09.2026**) | Monat, Anzahl 24, Historie gut drei Monate | Obergrenze gesetzt, Kopfzeile nennt den Zeitraumbeginn zur geklemmten Anzahl statt zu 24, `setMaxIntervalCount()` vor `setRangeInfo()` — Erwartung datumsunabhängig über `computeMaxIntervalCount()`/`computeRangeStart()` berechnet |
 | `test_computeRangeStart_allUnits` | Zeitraumbeginn | Tag/Woche/Monat/Jahr rückwärts vom Start-Datum |
 | `test_computeRangeStart_countBelowOneIsTreatedAsOne` | Anzahl 0 | Wird als 1 behandelt |
 | `test_computeMaxIntervalCount_stopsAtOldestValue` | Obergrenze | 10 bei zehn Tagen Historie |

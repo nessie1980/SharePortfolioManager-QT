@@ -310,6 +310,48 @@ private slots:
         QVERIFY(view.emptyShown);
     }
 
+    void test_refresh_intervalCountBeyondMax_rangeUsesClampedCount()
+    {
+        // Bugfix 20.09.2026: refresh() hat den Zeitraum mit der ungeklemmten
+        // Anzahl berechnet und die Obergrenze erst danach gesetzt. Mit den
+        // gespeicherten Zeitraum-Einstellungen kommt eine grosse Anzahl
+        // (hier 24) beim Öffnen regelmässig vor. Die Fake-View klemmt
+        // bewusst nicht selbst — der Presenter muss es tun.
+        // Datumsunabhängig: Start-Datum ist immer "heute" (loadAndDisplay()),
+        // die Erwartung wird deshalb mit denselben public-static-Funktionen
+        // berechnet, die der Presenter nutzt.
+        const QDate today    = QDate::currentDate();
+        const QDate earliest = today.addMonths(-3).addDays(-10);
+
+        FakeViewPortfolioChart  view;
+        FakeModelPortfolioChart model;
+        model.m_input    = { risingShare() };
+        model.m_earliest = earliest;
+        view.m_intervalUnit  = IntervalUnit::Month;
+        view.m_intervalCount = 24;
+
+        PresenterPortfolioChart presenter(&view, &model);
+        presenter.loadAndDisplay();
+
+        const int expectedMax = PresenterPortfolioChart::computeMaxIntervalCount(
+            today, IntervalUnit::Month, earliest);
+        QVERIFY2(expectedMax < 24, "Testaufbau: Obergrenze muss unter 24 liegen");
+        QCOMPARE(view.lastMaxIntervalCount, expectedMax);
+
+        const QDate expectedStart = PresenterPortfolioChart::computeRangeStart(
+            today, IntervalUnit::Month, expectedMax);
+        const QDate wrongStart    = PresenterPortfolioChart::computeRangeStart(
+            today, IntervalUnit::Month, 24);
+        QVERIFY2(view.lastRangeInfo.contains(expectedStart.toString(QStringLiteral("dd.MM.yyyy"))),
+                 qPrintable(view.lastRangeInfo));
+        QVERIFY2(!view.lastRangeInfo.contains(wrongStart.toString(QStringLiteral("dd.MM.yyyy"))),
+                 qPrintable(view.lastRangeInfo));
+
+        // Die Obergrenze muss vor der Berechnung gesetzt werden.
+        QVERIFY(view.callLog.indexOf(QStringLiteral("setMaxIntervalCount"))
+                < view.callLog.indexOf(QStringLiteral("setRangeInfo")));
+    }
+
     void test_reload_readsTheModelAgain()
     {
         FakeViewPortfolioChart  view;

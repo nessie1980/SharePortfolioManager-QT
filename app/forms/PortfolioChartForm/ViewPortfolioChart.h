@@ -51,7 +51,9 @@ class ViewPortfolioChart : public QWidget, public IViewPortfolioChart
 
 public:
     explicit ViewPortfolioChart(QWidget* parent = nullptr);
-    ~ViewPortfolioChart() override = default;
+    /** Speichert Interval und gewünschte Anzahl in AppSettings (ergänzt
+     *  20.09.2026), gleiche Regeln wie ViewChart::~ViewChart(). */
+    ~ViewPortfolioChart() override;
 
     // ── IViewPortfolioChart: Getter ───────────────────────────────────────
     QDate        startDate() const override;
@@ -159,4 +161,8 @@ private:
     QSpinBox*  m_countSpin     = nullptr;
     QPushButton* m_exportButton = nullptr; ///< siehe onExportDiagnostics(); nur sichtbar
                                            ///< bei AppSettings::showDiagnostics() (19.09.2026)
+
+    /** Vom Benutzer gewählte Anzahl, ggf. größer als der angezeigte Wert —
+     *  siehe ViewChart::m_desiredCount (ergänzt 20.09.2026). */
+    int m_desiredCount = 1;
 };

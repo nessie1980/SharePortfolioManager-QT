@@ -295,6 +295,45 @@ public:
      */
     void setShowDiagnostics(bool value);
 
+    // ── Charts ───────────────────────────────────────────────────────────
+    // Zeitraum-Einstellungen der Charts (ergänzt 20.09.2026, Nessies
+    // Vorgaben): je Chart-Art getrennt — Aktien-Chart (Details-Dialog und
+    // Rechtsklick-Popup teilen sich einen Wert, beide nutzen ViewChart) und
+    // Depotwert-Chart. Gespeichert werden nur Interval und Anzahl; das
+    // Start-Datum wird bewusst nicht gespeichert und bleibt bei der
+    // bisherigen Vorgabe der Presenter.
+    //
+    // Die Einheit steht als Text in der INI ("Day", "Week", "Month",
+    // "Year"), siehe intervalUnitToKey() in ChartTypes.h — AppSettings kennt
+    // IntervalUnit bewusst nicht, damit app/config nicht von app/forms
+    // abhängt.
+    //
+    // Die Anzahl ist die vom Benutzer gewählte, nicht die angezeigte: wird
+    // sie nur wegen zu kurzer Kurshistorie gekürzt, bleibt der gespeicherte
+    // Wert erhalten (siehe ViewChart::setMaxIntervalCount()).
+    //
+    // Geschrieben wird einmal beim Schließen des Charts (Destruktor der
+    // View), nicht bei jeder Änderung.
+
+    QString shareChartIntervalUnit()      const { return m_shareChartIntervalUnit; }      ///< Default "Month"
+    int     shareChartIntervalCount()     const { return m_shareChartIntervalCount; }     ///< Default 1
+    QString portfolioChartIntervalUnit()  const { return m_portfolioChartIntervalUnit; }  ///< Default "Year"
+    int     portfolioChartIntervalCount() const { return m_portfolioChartIntervalCount; } ///< Default 1
+
+    /**
+     * @brief Set Interval and Anzahl of the Aktien-Chart and save.
+     * @param unit   Interval key, see intervalUnitToKey().
+     * @param count  Anzahl as chosen by the user; values below 1 are stored as 1.
+     */
+    void setShareChartInterval(const QString& unit, int count);
+
+    /**
+     * @brief Set Interval and Anzahl of the Depotwert-Chart and save.
+     * @param unit   Interval key, see intervalUnitToKey().
+     * @param count  Anzahl as chosen by the user; values below 1 are stored as 1.
+     */
+    void setPortfolioChartInterval(const QString& unit, int count);
+
 private:
     explicit AppSettings(QObject* parent = nullptr);
 
@@ -375,4 +414,11 @@ private:
 
     // Debug
     bool m_showDiagnostics = false; // opt-in, siehe showDiagnostics()
+
+    // Charts — Defaults entsprechen den bisherigen festen View-Vorgaben
+    // (Aktien-Chart: Monat/1 wie C#-Referenz, Depotwert-Chart: Jahr/1).
+    QString m_shareChartIntervalUnit      = QStringLiteral("Month");
+    int     m_shareChartIntervalCount     = 1;
+    QString m_portfolioChartIntervalUnit  = QStringLiteral("Year");
+    int     m_portfolioChartIntervalCount = 1;
 };

@@ -10,6 +10,27 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.24.0] - 2026-09-20
+
+### Added
+
+- Aktien-Chart und Depotwert-Chart merken sich Interval und Anzahl ueber
+  einen Neustart hinweg, je Chart-Art getrennt. Details-Dialog und
+  Rechtsklick-Popup teilen sich den Wert des Aktien-Charts. Das Start-Datum
+  wird nicht gespeichert. Gespeichert wird beim Schliessen des Charts, beim
+  Depotwert-Chart also beim Programmende. Neue Schluessel im Abschnitt
+  `[Charts]` der `settings.ini`.
+- Wird die Anzahl nur wegen zu kurzer Kurshistorie gekuerzt, bleibt der
+  gewaehlte Wert erhalten und kehrt zurueck, sobald die Historie wieder
+  reicht.
+
+### Fixed
+
+- Depotwert-Chart: nach einem Wechsel des Intervals, bei dem die Anzahl
+  gekuerzt werden musste, wurde der Zeitraum noch mit der alten Anzahl
+  berechnet und in der Kopfzeile angezeigt, waehrend die Spinbox schon den
+  gekuerzten Wert zeigte.
+
 ## [1.23.0] - 2026-09-19
 
 ### Changed

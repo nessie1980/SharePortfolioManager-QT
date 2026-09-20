@@ -8,6 +8,8 @@
 #include <QFileInfo>
 #include <QDir>
 
+#include <algorithm>
+
 // ── Singleton ─────────────────────────────────────────────────────────────────
 
 AppSettings& AppSettings::instance()
@@ -105,6 +107,12 @@ void AppSettings::load(const QString& path)
 
     // ── Debug ────────────────────────────────────────────────────────────
     m_showDiagnostics = settings.value(QStringLiteral("Debug/ShowDiagnostics"), m_showDiagnostics).toBool();
+
+    // ── Charts ───────────────────────────────────────────────────────────
+    m_shareChartIntervalUnit      = settings.value(QStringLiteral("Charts/ShareIntervalUnit"),      m_shareChartIntervalUnit).toString();
+    m_shareChartIntervalCount     = std::max(1, settings.value(QStringLiteral("Charts/ShareIntervalCount"),     m_shareChartIntervalCount).toInt());
+    m_portfolioChartIntervalUnit  = settings.value(QStringLiteral("Charts/PortfolioIntervalUnit"),  m_portfolioChartIntervalUnit).toString();
+    m_portfolioChartIntervalCount = std::max(1, settings.value(QStringLiteral("Charts/PortfolioIntervalCount"), m_portfolioChartIntervalCount).toInt());
 }
 
 void AppSettings::save()
@@ -163,6 +171,12 @@ void AppSettings::save()
 
     // ── Debug ────────────────────────────────────────────────────────────
     settings.setValue(QStringLiteral("Debug/ShowDiagnostics"), m_showDiagnostics);
+
+    // ── Charts ───────────────────────────────────────────────────────────
+    settings.setValue(QStringLiteral("Charts/ShareIntervalUnit"),      m_shareChartIntervalUnit);
+    settings.setValue(QStringLiteral("Charts/ShareIntervalCount"),     m_shareChartIntervalCount);
+    settings.setValue(QStringLiteral("Charts/PortfolioIntervalUnit"),  m_portfolioChartIntervalUnit);
+    settings.setValue(QStringLiteral("Charts/PortfolioIntervalCount"), m_portfolioChartIntervalCount);
 }
 
 // ── Setters ───────────────────────────────────────────────────────────────────
@@ -312,6 +326,20 @@ void AppSettings::setTrayOnMinimizeEnabled(bool value)
 void AppSettings::setShowDiagnostics(bool value)
 {
     m_showDiagnostics = value;
+    save();
+}
+
+void AppSettings::setShareChartInterval(const QString& unit, int count)
+{
+    m_shareChartIntervalUnit  = unit;
+    m_shareChartIntervalCount = std::max(1, count);
+    save();
+}
+
+void AppSettings::setPortfolioChartInterval(const QString& unit, int count)
+{
+    m_portfolioChartIntervalUnit  = unit;
+    m_portfolioChartIntervalCount = std::max(1, count);
     save();
 }
 

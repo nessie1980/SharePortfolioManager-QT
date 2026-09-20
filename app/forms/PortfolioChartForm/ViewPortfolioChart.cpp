@@ -104,6 +104,17 @@ ViewPortfolioChart::ViewPortfolioChart(QWidget* parent)
     m_presenter.loadAndDisplay();
 }
 
+// ── Destructor ──────────────────────────────────────────────────────────────
+
+ViewPortfolioChart::~ViewPortfolioChart()
+{
+    // Zeitraum-Einstellung beim Schließen speichern (ergänzt 20.09.2026) —
+    // gleiche Regeln wie ViewChart::~ViewChart(). Der Depotwert-Chart ist
+    // ein Tab im Hauptfenster; "Schließen" heißt hier also Programmende.
+    AppSettings::instance().setPortfolioChartInterval(intervalUnitToKey(intervalUnit()),
+                                                      m_desiredCount);
+}
+
 // ── eventFilter / applyWheelStep ──────────────────────────────────────────────
 
 bool ViewPortfolioChart::eventFilter(QObject* watched, QEvent* event)
@@ -219,7 +230,12 @@ QGroupBox* ViewPortfolioChart::setupZeitraumBox()
     m_intervalCombo->addItem(tr("Woche"), static_cast<int>(IntervalUnit::Week));
     m_intervalCombo->addItem(tr("Monat"), static_cast<int>(IntervalUnit::Month));
     m_intervalCombo->addItem(tr("Jahr"),  static_cast<int>(IntervalUnit::Year));
-    m_intervalCombo->setCurrentIndex(3); // "Jahr" — Nessies Vorgabe 05.08.2026
+    // Gespeicherte Einheit aus settings.ini (ergänzt 20.09.2026); ohne
+    // Eintrag "Jahr" — Nessies Vorgabe 05.08.2026.
+    const IntervalUnit savedUnit = intervalUnitFromKey(
+        AppSettings::instance().portfolioChartIntervalUnit(), IntervalUnit::Year);
+    m_intervalCombo->setCurrentIndex(
+        std::max(0, m_intervalCombo->findData(static_cast<int>(savedUnit))));
     // "activated" statt "currentIndexChanged": nur echte Nutzerauswahl soll
     // einen Refresh auslösen, kein programmatisches setCurrentIndex().
     connect(m_intervalCombo, QOverload<int>::of(&QComboBox::activated),
@@ -231,9 +247,15 @@ QGroupBox* ViewPortfolioChart::setupZeitraumBox()
     // Platzhalter — der Presenter setzt beim ersten refresh() die tatsächliche
     // Obergrenze über setMaxIntervalCount().
     m_countSpin->setRange(1, 999);
-    m_countSpin->setValue(1);
+    // Gespeicherte Anzahl (ergänzt 20.09.2026) — siehe ViewChart.
+    m_desiredCount = AppSettings::instance().portfolioChartIntervalCount();
+    m_countSpin->setValue(m_desiredCount);
     connect(m_countSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, [this](int) { m_presenter.onControlsChanged(); });
+            this, [this](int value) {
+                // Nur echte Benutzeränderungen — setMaxIntervalCount() blockt.
+                m_desiredCount = value;
+                m_presenter.onControlsChanged();
+            });
     form->addRow(tr("Anzahl:"), m_countSpin);
 
     // Diagnose-Export (ergänzt 06.08.2026) — schreibt die Bestandteile jedes
@@ -290,7 +312,14 @@ void ViewPortfolioChart::setMaxIntervalCount(int maxCount)
     // Blocked so the internal clamp cannot emit valueChanged() and recurse
     // back into onControlsChanged() — same reasoning as ViewChart.
     const QSignalBlocker blocker(m_countSpin);
-    m_countSpin->setMaximum(std::max(1, maxCount));
+    const int maximum = std::max(1, maxCount);
+    m_countSpin->setMaximum(maximum);
+
+    // Gewünschte Anzahl wiederherstellen, soweit die Historie reicht
+    // (ergänzt 20.09.2026) — gleiche Begründung wie
+    // ViewChart::setMaxIntervalCount(). PresenterPortfolioChart::refresh()
+    // liest die Anzahl seitdem erst nach diesem Aufruf.
+    m_countSpin->setValue(std::min(m_desiredCount, maximum));
 }
 
 void ViewPortfolioChart::setChartData(const PortfolioChartData& chartData)
