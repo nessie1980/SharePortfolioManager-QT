@@ -1565,9 +1565,31 @@ Menge der sichtbaren Serien jederzeit ändern kann.
 da sie mehr zeigen muss als reine Serien-Namen: "Letzter Kauf:"/"Letzter
 Verkauf:" (aus `ModelChart::latestBuy()`/`latestSale()` — jeweils der letzte
 Eintrag der nach Datum aufsteigend sortierten `BuyRepository`/
-`SaleRepository`-Listen) mit der Entwicklung relativ zum höchsten Schluss-Kurs
-im aktuell angezeigten Zeitraum. Diese beiden Referenzzeilen erscheinen nur,
-wenn für die Aktie tatsächlich Käufe/Verkäufe existieren.
+`SaleRepository`-Listen) mit der Entwicklung relativ zum aktuellsten
+Schluss-Kurs der Aktie (jüngster Tageswert). Diese beiden Referenzzeilen
+erscheinen nur, wenn für die Aktie tatsächlich Käufe/Verkäufe existieren.
+
+@note Bugfix Bezugskurs der Kauf-/Verkauf-Entwicklung (26.09.2026, Nessies
+Rückmeldung anhand eines Screenshots, Allianz SE): Bis dahin rechnete die
+zweite Zeile von "Letzter Kauf"/"Letzter Verkauf" mit dem höchsten
+Schluss-Kurs im angezeigten Zeitraum (453,50€) statt mit dem aktuellen
+(424,40€ am 25.09.2026). Das war aus der C#-Referenz übernommen, die dort
+ihre "Max"-Zahl der Legende wiederverwendet — fachlich aber falsch, denn die
+Entwicklung seit dem letzten Kauf/Verkauf bemisst sich am aktuellen Kurs.
+Betroffen waren beide Zeilen, da sie durch dieselbe Lambda laufen.
+
+Fix: `PresenterChart::currentClosingPrice()` liefert den Schluss-Kurs zum
+jüngsten Tageswert der Aktie. Dessen Datum merkt sich `loadAndDisplay()` in
+`m_latestDate` (dasselbe Datum, mit dem das Start-Datum vorbelegt wird). Im
+Normalfall endet das Fenster genau dort, der Wert wird dann ohne zweite
+Model-Abfrage aus den bereits geladenen Tageswerten genommen. Hat der Nutzer
+das Start-Datum zurückgesetzt, lädt der Presenter den jüngsten Tag gezielt
+über `IModelChart::loadDailyValues()` nach — der Bezugskurs hängt damit nie
+vom angezeigten Ausschnitt ab. Die Min/Max-Zeile des Schluss-Kurses ist
+unverändert. Regressionstests:
+`test_refresh_legendEntries_referenceUsesLatestNotMaxClosingPrice`,
+`test_refresh_legendEntries_rangeEndBeforeLatest_referenceStillLatestClosingPrice`
+(beide `tst_chartform.cpp`, siehe TESTING.md).
 
 Fenstertitel: `PresenterChart::refresh()` baut die Zeile "Zeitraum: ... -
 ... / Entwicklung: X€ (Y %)" (erster/letzter Schluss-Kurs im Fenster) und

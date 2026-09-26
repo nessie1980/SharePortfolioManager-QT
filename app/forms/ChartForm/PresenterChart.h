@@ -47,6 +47,20 @@ private:
     static QDate computeRangeStart(const QDate& rangeEnd, IntervalUnit unit, int count);
 
     /**
+     * @brief Aktuellster Schluss-Kurs der Aktie — Bezugskurs für die
+     * Entwicklung in "Letzter Kauf"/"Letzter Verkauf" (Bugfix 26.09.2026,
+     * vorher der höchste Schluss-Kurs im angezeigten Zeitraum).
+     *
+     * Liegt der jüngste Tageswert (m_latestDate) in @p rangeValues, wird er
+     * direkt von dort genommen; sonst gezielt über
+     * IModelChart::loadDailyValues() für genau diesen Tag nachgeladen. Der
+     * Bezugskurs hängt damit nie vom angezeigten Zeitraum ab.
+     * @param rangeValues Tageswerte des aktuell angezeigten Fensters (nicht leer).
+     * @return Schluss-Kurs des jüngsten Tageswerts.
+     */
+    double currentClosingPrice(const QList<DailyValuesObject>& rangeValues) const;
+
+    /**
      * @brief Largest "Anzahl" for which the displayed window still reaches
      * back to, but not past, @p earliestDate — ergänzt 12.07.2026 auf
      * Nessies Vorgabe: weiteres Erhöhen soll gestoppt werden, sobald der
@@ -101,4 +115,8 @@ private:
      *  no-ops before that so onControlsChanged() firing during view setup
      *  (e.g. QDateEdit's constructor default) can't run against no data. */
     bool m_hasData = false;
+
+    /** Jüngster Tageswert der Aktie, gemerkt in loadAndDisplay() — Bezugsdatum
+     *  für currentClosingPrice(). */
+    QDate m_latestDate;
 };

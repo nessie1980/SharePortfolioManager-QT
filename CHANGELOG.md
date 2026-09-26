@@ -10,6 +10,18 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.24.1] - 2026-09-26
+
+### Fixed
+
+- Aktien-Chart: die Entwicklung bei "Letzter Kauf" und "Letzter Verkauf"
+  rechnete mit dem hoechsten Schluss-Kurs im angezeigten Zeitraum statt mit
+  dem aktuellen Kurs. Im gemeldeten Fall stand dort 453,50 EUR statt 424,40
+  EUR, Gewinn und Prozentwert fielen entsprechend zu hoch aus. Bezugskurs
+  ist jetzt immer der juengste Tageswert der Aktie, auch wenn das
+  Start-Datum zurueckgesetzt wurde. Die Min/Max-Angabe des Schluss-Kurses
+  bleibt unveraendert.
+
 ## [1.24.0] - 2026-09-20
 
 ### Added

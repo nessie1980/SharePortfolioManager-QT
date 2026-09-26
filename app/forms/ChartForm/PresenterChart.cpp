@@ -103,7 +103,8 @@ void PresenterChart::loadAndDisplay()
         return;
     }
 
-    m_hasData = true;
+    m_hasData    = true;
+    m_latestDate = latest;
     m_view->setDefaultStartDate(latest);
     refresh();
 }
@@ -207,14 +208,14 @@ void PresenterChart::refresh()
     }
 
     // ── "Letzter Kauf" / "Letzter Verkauf" reference rows ────────────────────
-    // Reference price is the highest Schluss-Kurs within the displayed range —
-    // always computed from dailyValues directly (independent of whether the
-    // Schluss-Kurs series itself is currently selected), matching the C#
-    // reference's "Max" figure used for both the Legende's Schluss-Kurs entry
-    // and the Kauf-/Verkauf-Entwicklung.
-    double rangeMaxClose = std::numeric_limits<double>::lowest();
-    for (const auto& dv : dailyValues)
-        rangeMaxClose = std::max(rangeMaxClose, dv.closingPrice());
+    // Bezugskurs ist der aktuellste Schluss-Kurs der Aktie (jüngster
+    // Tageswert), unabhängig davon, ob die Schluss-Kurs-Serie selektiert ist.
+    // Bugfix 26.09.2026 (Nessies Rückmeldung anhand eines Screenshots): bis
+    // dahin stand hier der höchste Schluss-Kurs im angezeigten Zeitraum — aus
+    // der C#-Referenz übernommen, fachlich aber falsch, denn die Entwicklung
+    // seit dem letzten Kauf/Verkauf bemisst sich am aktuellen Kurs, nicht am
+    // Zeitraum-Hoch. Siehe currentClosingPrice().
+    const double currentClose = currentClosingPrice(dailyValues);
 
     auto addReferenceEntry = [&](const QString& title, const ChartReferenceInfo& info, const QColor& color) {
         if (!info.valid)
@@ -224,10 +225,10 @@ void PresenterChart::refresh()
         entry.title = title;
         entry.line1 = tr("%1: %2").arg(info.date.toString(QStringLiteral("dd.MM.yyyy")), formatEuro(info.price));
 
-        const double diff = rangeMaxClose - info.price;
+        const double diff = currentClose - info.price;
         const double pct  = (info.price != 0.0) ? (diff / info.price * 100.0) : 0.0;
         entry.line2 = tr("%1 - %2 = %3 (%4 %)")
-                        .arg(formatEuro(rangeMaxClose), formatEuro(info.price),
+                        .arg(formatEuro(currentClose), formatEuro(info.price),
                              formatEuro(diff), formatPercent(pct));
         legend.append(entry);
     };
@@ -307,6 +308,32 @@ void PresenterChart::refresh()
              dates.constLast().toString(QStringLiteral("dd.MM.yyyy")),
              formatNumber(devAbs, 1), formatPercent(devPct));
     m_view->setRangeInfo(titleInfo);
+}
+
+// ── currentClosingPrice ───────────────────────────────────────────────────────
+
+double PresenterChart::currentClosingPrice(const QList<DailyValuesObject>& rangeValues) const
+{
+    // Normalfall: das Fenster endet am jüngsten Tageswert (Start-Datum ist
+    // mit latestDailyValueDate() vorbelegt) — der Wert liegt dann bereits in
+    // rangeValues, eine zweite Model-Abfrage ist unnötig.
+    for (const auto& dv : rangeValues) {
+        if (dv.date() == m_latestDate)
+            return dv.closingPrice();
+    }
+
+    // Das Fenster endet vor dem jüngsten Tageswert: gezielt nachladen, damit
+    // der Bezugskurs nicht vom angezeigten Ausschnitt abhängt.
+    const auto latestValues = m_model->loadDailyValues(m_shareGuid, m_latestDate, m_latestDate);
+    if (!latestValues.isEmpty())
+        return latestValues.constFirst().closingPrice();
+
+    // Nur bei inkonsistenten Daten erreichbar (latestDailyValueDate() nennt
+    // einen Tag, zu dem loadDailyValues() nichts liefert): jüngster Wert im
+    // Fenster. rangeValues ist beim Aufruf aus refresh() nie leer.
+    const auto newest = std::max_element(rangeValues.cbegin(), rangeValues.cend(),
+        [](const DailyValuesObject& a, const DailyValuesObject& b) { return a.date() < b.date(); });
+    return newest != rangeValues.cend() ? newest->closingPrice() : 0.0;
 }
 
 // ── computeRangeStart ─────────────────────────────────────────────────────────

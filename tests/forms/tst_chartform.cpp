@@ -438,6 +438,75 @@ private slots:
         const auto* saleEntry = view.findLegendEntry(QStringLiteral("Letzter Verkauf"));
         if (!saleEntry) QFAIL("Letzter-Verkauf Legende-Eintrag fehlt");
         QVERIFY(saleEntry->line1.contains(QStringLiteral("27.02.2020")));
+        // Entwicklung: 422,40 - 205,25 = 217,15
+        QVERIFY(saleEntry->line2.contains(QStringLiteral("217,15")));
+    }
+
+    void test_refresh_legendEntries_referenceUsesLatestNotMaxClosingPrice()
+    {
+        // Regressionstest für den Bugfix vom 26.09.2026 (Nessies Rückmeldung
+        // anhand eines Screenshots, Allianz SE): Die Entwicklung bei "Letzter
+        // Kauf"/"Letzter Verkauf" rechnete mit dem höchsten Schluss-Kurs im
+        // Zeitraum (453,50) statt mit dem aktuellen (424,40). Die Fixture
+        // bildet genau diese Lage nach: Hoch in der Mitte, jüngster Wert
+        // deutlich darunter.
+        FakeViewChart view;
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 9, 25);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 8, 25), 450.0, 448.2, 451.0, 447.0, 1000.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 9, 3),  452.0, 453.5, 455.0, 450.0, 1000.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 9, 23), 412.0, 410.9, 415.0, 409.0, 1000.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 9, 25), 420.0, 424.4, 425.0, 419.0, 1000.0));
+        model.m_latestBuy  = ChartReferenceInfo{ true, QDate(2022, 5, 12), 198.36 };
+        model.m_latestSale = ChartReferenceInfo{ true, QDate(2020, 2, 27), 205.25 };
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        const auto* buyEntry = view.findLegendEntry(QStringLiteral("Letzter Kauf"));
+        if (!buyEntry) QFAIL("Letzter-Kauf Legende-Eintrag fehlt");
+        // 424,40 - 198,36 = 226,04 (113,95 %)
+        QCOMPARE(buyEntry->line2, QStringLiteral("424,40€ - 198,36€ = 226,04€ (113,95 %)"));
+
+        const auto* saleEntry = view.findLegendEntry(QStringLiteral("Letzter Verkauf"));
+        if (!saleEntry) QFAIL("Letzter-Verkauf Legende-Eintrag fehlt");
+        // 424,40 - 205,25 = 219,15 (106,77 %)
+        QCOMPARE(saleEntry->line2, QStringLiteral("424,40€ - 205,25€ = 219,15€ (106,77 %)"));
+
+        // Die Min/Max-Zeile des Schluss-Kurses bleibt unverändert beim Hoch.
+        const auto* closeEntry = view.findLegendEntry(QStringLiteral("Schluss-Kurs"));
+        if (!closeEntry) QFAIL("Schluss-Kurs Legende-Eintrag fehlt");
+        QCOMPARE(closeEntry->line1, QStringLiteral("Min: 410,90 / Max: 453,50"));
+    }
+
+    void test_refresh_legendEntries_rangeEndBeforeLatest_referenceStillLatestClosingPrice()
+    {
+        // Endet das angezeigte Fenster vor dem jüngsten Tageswert, darf die
+        // Entwicklung trotzdem nicht auf den letzten Wert im Fenster (und
+        // erst recht nicht auf dessen Maximum) ausweichen — Bezugskurs bleibt
+        // der aktuellste Schluss-Kurs der Aktie, den PresenterChart dafür
+        // gezielt nachlädt (siehe PresenterChart::currentClosingPrice()).
+        FakeViewChart view;
+        FakeModelChart model;
+        model.m_latestDate = QDate(2026, 7, 10);
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 1),  300.0, 300.0, 301.0, 299.0, 100.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 5),  500.0, 500.0, 501.0, 499.0, 100.0));
+        model.m_dailyValues.append(DailyValuesObject(kShareGuid, QDate(2026, 7, 10), 424.0, 424.4, 425.0, 423.0, 100.0));
+        model.m_latestBuy = ChartReferenceInfo{ true, QDate(2022, 5, 12), 198.36 };
+
+        PresenterChart presenter(&view, &model, kShareGuid);
+        presenter.loadAndDisplay();
+
+        view.m_startDate = QDate(2026, 7, 5); // Fenster 05.06.–05.07., ohne den 10.07.
+        presenter.onControlsChanged();
+
+        const auto* closing = view.findSeries(SeriesKind::ClosingPrice);
+        if (!closing) QFAIL("ClosingPrice series missing");
+        QVERIFY(!closing->dates.contains(QDate(2026, 7, 10))); // Vorbedingung: jüngster Wert liegt außerhalb
+
+        const auto* buyEntry = view.findLegendEntry(QStringLiteral("Letzter Kauf"));
+        if (!buyEntry) QFAIL("Letzter-Kauf Legende-Eintrag fehlt");
+        QCOMPARE(buyEntry->line2, QStringLiteral("424,40€ - 198,36€ = 226,04€ (113,95 %)"));
     }
 
     void test_refresh_noReferenceEntries_whenModelReturnsInvalid()
