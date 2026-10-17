@@ -20,6 +20,8 @@
 #include <QFrame>
 #include <QPen>
 #include <QWheelEvent>
+#include <QMouseEvent>
+#include <QGraphicsLineItem>
 
 #include <algorithm>
 #include <limits>
@@ -46,6 +48,22 @@ QString seriesTooltipLabel(SeriesKind kind)
 bool isVolumeSeriesKind(SeriesKind kind)
 {
     return kind == SeriesKind::HeldVolume || kind == SeriesKind::TradedVolume;
+}
+
+/** Farbe der Cursorlinie (Nessies Vorgabe 17.10.2026). Bewusst nicht türkis:
+ *  ältere Käufe sind bereits türkis gestrichelte Markerlinien
+ *  (kOlderBuyColor in PresenterChart.cpp), "Gehandelte Anteile" fast derselbe
+ *  Ton — eine türkise Cursorlinie wäre davon kaum zu unterscheiden. */
+const QColor kCursorLineColor(Qt::magenta);
+
+/** Wert einer Serie für den Tooltip — Kurse mit vier Nachkommastellen und
+ *  "€" (05.09.2026), Stückzahlen mit vier Nachkommastellen (02.08.2026).
+ *  Unverändert aus dem früheren onSeriesHovered() übernommen. */
+QString formatSeriesValue(SeriesKind kind, double value)
+{
+    return isVolumeSeriesKind(kind)
+        ? QLocale().toString(value, 'f', 4)
+        : ValueFormatter::formatPrice(value) + QStringLiteral("€");
 }
 
 } // namespace
@@ -87,6 +105,29 @@ bool ViewChart::eventFilter(QObject* watched, QEvent* event)
                       // Abhängigkeit des Default-Verhaltens, bei chartView
                       // ein Durchreichen an QGraphicsView/dahinterliegende
                       // Widgets.
+    }
+
+    // Cursorlinie (ergänzt 17.10.2026). Nicht konsumiert (return false):
+    // QGraphicsView braucht die Mausbewegung weiterhin für die Hover-Erkennung
+    // der Kauf-/Verkauf-Markerlinien.
+    if (watched == m_chartView->viewport()) {
+        if (event->type() == QEvent::MouseMove) {
+            if (m_dataSeries.isEmpty()) {
+                hideCrosshair();
+                return false;
+            }
+            const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+            const QPointF scenePos = m_chartView->mapToScene(mouseEvent->position().toPoint());
+            const QPointF chartPos = m_chart->mapFromScene(scenePos);
+            if (!m_chart->plotArea().contains(chartPos)) {
+                hideCrosshair();
+                return false;
+            }
+            const QPointF value = m_chart->mapToValue(chartPos, m_dataSeries.constFirst().line);
+            onCrosshairMoved(value.x());
+        } else if (event->type() == QEvent::Leave) {
+            hideCrosshair();
+        }
     }
     return QWidget::eventFilter(watched, event);
 }
@@ -195,6 +236,29 @@ void ViewChart::setupUi()
     // selbst Nessies Vorgabe "nur über der Zeichenfläche" (12.07.2026).
     m_countSpin->installEventFilter(this);
     m_chartView->viewport()->installEventFilter(this);
+
+    // ── Cursorlinie (ergänzt 17.10.2026, Nessies Vorgabe) ────────────────────
+    // Ein Grafik-Item statt einer weiteren QLineSeries: eine Serie bei jeder
+    // Mausbewegung umzubauen flackert und kann die Achsenskalierung
+    // beeinflussen. Kind von m_chart, damit die Koordinaten denen von
+    // plotArea()/mapToPosition() entsprechen. Z-Wert über allen Serien.
+    m_cursorLine = new QGraphicsLineItem(m_chart);
+    QPen cursorPen(kCursorLineColor, 1, Qt::DashLine);
+    cursorPen.setCosmetic(true); // immer 1 Bildschirmpixel, unabhängig von Transformationen
+    m_cursorLine->setPen(cursorPen);
+    m_cursorLine->setZValue(1000.0);
+    m_cursorLine->setData(0, QString::fromLatin1(kCursorLineDataKey));
+    m_cursorLine->setAcceptHoverEvents(false);
+    m_cursorLine->setAcceptedMouseButtons(Qt::NoButton);
+    m_cursorLine->hide();
+
+    // MouseMove auch ohne gedrückte Taste — QGraphicsView aktiviert das für
+    // seine Hover-Erkennung meist schon selbst, hier explizit.
+    m_chartView->viewport()->setMouseTracking(true);
+
+    // Nach einer Größenänderung stimmt die Position der Linie nicht mehr;
+    // die nächste Mausbewegung setzt sie neu.
+    connect(m_chart, &QChart::plotAreaChanged, this, [this](const QRectF&) { hideCrosshair(); });
 }
 
 // ── setupLegendeBox ───────────────────────────────────────────────────────────
@@ -389,6 +453,12 @@ void ViewChart::setChartData(const QList<ChartSeriesData>& series)
     // setReferenceLines() beim nächsten Aufruf auf bereits freigegebenen
     // Speicher.
     m_referenceLineSeries.clear();
+    // Gleiches gilt für die Daten-Serien der Cursorlinie (ergänzt 17.10.2026);
+    // die Linie selbst bleibt als Kind von m_chart erhalten und wird bei der
+    // nächsten Mausbewegung neu gesetzt.
+    m_dataSeries.clear();
+    m_referenceLineHovered = false; // gehoverte Markerlinie wurde mitgelöscht
+    hideCrosshair();
     rebuildAxes(series);
 
     for (const auto& s : series) {
@@ -414,26 +484,17 @@ void ViewChart::setChartData(const QList<ChartSeriesData>& series)
         if (yAxis)
             line->attachAxis(yAxis);
 
-        // Hover-Tooltip (Datum + Wert) — ported from the C# reference.
-        // Bugfix 19.09.2026: hovered() liefert die Mausposition, nicht den
-        // Datenpunkt — daher erst auf den nächstgelegenen echten Datenpunkt
-        // einrasten, sonst zeigt der Tooltip interpolierte Werte. Die Suche
-        // ist mit ViewPortfolioChart geteilt (ChartPointSearch).
-        // `line` als Sender der Verbindung lebt garantiert mindestens so
-        // lange wie die Lambda (Qt trennt die Verbindung beim Löschen der
-        // Serie in removeAllSeries()).
-        const SeriesKind kind = s.kind;
-        connect(line, &QLineSeries::hovered, this,
-                [this, kind, line](const QPointF& point, bool state) {
-                    const QList<QPointF> points = line->points();
-                    const qsizetype index = ChartPointSearch::nearestIndex(points, point.x());
-                    onSeriesHovered(kind, index < 0 ? point : points.at(index), state);
-                });
+        // Tooltip und Einrasten laufen seit 17.10.2026 über die Cursorlinie
+        // (onCrosshairMoved(), ausgelöst im eventFilter()) statt über
+        // QLineSeries::hovered() je Serie — der Tooltip erscheint so überall
+        // in der Zeichenfläche, nicht nur knapp an einer Kurve.
+        m_dataSeries.append({ s.kind, line });
     }
 }
 
 void ViewChart::showEmptyChart(const QString& message)
 {
+    hideCrosshair();
     m_emptyLabel->setText(message);
     m_stack->setCurrentIndex(1);
 }
@@ -495,6 +556,9 @@ void ViewChart::setReferenceLines(const QList<ChartReferenceLine>& lines)
         }
     }
     m_referenceLineSeries.clear();
+    // Eine gerade gehoverte Markerlinie ist damit gelöscht und meldet kein
+    // hovered(false) mehr (ergänzt 17.10.2026, siehe onCrosshairMoved()).
+    m_referenceLineHovered = false;
 
     // Ohne Preis-Achse (z. B. nur "Anteile"/"Gehandelte Anteile" selektiert)
     // gibt es nichts, an dem sich eine vertikale Linie sinnvoll orientieren
@@ -636,34 +700,74 @@ void ViewChart::rebuildAxes(const QList<ChartSeriesData>& series)
     }
 }
 
-// ── onSeriesHovered ────────────────────────────────────────────────────────────
+// ── onCrosshairMoved ───────────────────────────────────────────────────────────
 
-void ViewChart::onSeriesHovered(SeriesKind kind, const QPointF& point, bool state)
+void ViewChart::onCrosshairMoved(double x)
 {
-    if (!state) {
-        QToolTip::hideText();
+    if (m_dataSeries.isEmpty()) {
+        hideCrosshair();
         return;
     }
 
-    const QDate date = QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(point.x())).date();
-    const QString dateStr = date.toString(QStringLiteral("dd.MM.yyyy"));
+    // Einrasten auf den nächstgelegenen Datenpunkt der ersten Serie — alle
+    // Serien teilen sich dieselbe Datumsliste (PresenterChart::refresh()).
+    QLineSeries* anchor = m_dataSeries.constFirst().line;
+    const QList<QPointF> anchorPoints = anchor->points();
+    const qsizetype anchorIndex = ChartPointSearch::nearestIndex(anchorPoints, x);
+    if (anchorIndex < 0) {
+        hideCrosshair();
+        return;
+    }
+    const QPointF snapped = anchorPoints.at(anchorIndex);
 
-    // Nicht-Volumen-Serien sind Kursreihen (05.09.2026): vier Stellen statt
-    // zwei, damit der Tooltip denselben Kurs zeigt wie der Rest der Anwendung.
-    const QString valueStr = isVolumeSeriesKind(kind)
-        ? QLocale().toString(point.y(), 'f', 4)
-        : ValueFormatter::formatPrice(point.y()) + QStringLiteral("€");
+    // ── Linie ─────────────────────────────────────────────────────────────
+    const QRectF plot = m_chart->plotArea();
+    if (plot.isEmpty()) {
+        m_cursorLine->hide();
+    } else {
+        const qreal lineX = m_chart->mapToPosition(snapped, anchor).x();
+        m_cursorLine->setLine(lineX, plot.top(), lineX, plot.bottom());
+        m_cursorLine->show();
+    }
 
-    const QString text = QStringLiteral("%1\n%2: %3")
-        .arg(seriesTooltipLabel(kind), dateStr, valueStr);
+    // ── Tooltip ───────────────────────────────────────────────────────────
+    // Eine Markerlinie unter der Maus behält ihren eigenen Tooltip.
+    if (m_referenceLineHovered)
+        return;
+
+    const QDate date = QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(snapped.x())).date();
+    QString text = date.toString(QStringLiteral("dd.MM.yyyy"));
+
+    for (const auto& ref : m_dataSeries) {
+        // Je Serie eigene Suche statt des Ankerindex — robust, falls eine
+        // Serie doch einmal weniger Punkte hätte. Nur ein exakt gleiches
+        // Datum zählt, sonst würde ein Wert eines anderen Tages angezeigt.
+        const QList<QPointF> points = ref.line->points();
+        const qsizetype index = ChartPointSearch::nearestIndex(points, snapped.x());
+        if (index < 0 || static_cast<qint64>(points.at(index).x()) != static_cast<qint64>(snapped.x()))
+            continue;
+        text += QStringLiteral("\n%1: %2")
+            .arg(seriesTooltipLabel(ref.kind), formatSeriesValue(ref.kind, points.at(index).y()));
+    }
 
     QToolTip::showText(QCursor::pos(), text, m_chartView);
+}
+
+// ── hideCrosshair ──────────────────────────────────────────────────────────────
+
+void ViewChart::hideCrosshair()
+{
+    if (m_cursorLine)
+        m_cursorLine->hide();
+    if (!m_referenceLineHovered)
+        QToolTip::hideText();
 }
 
 // ── onReferenceLineHovered ─────────────────────────────────────────────────────
 
 void ViewChart::onReferenceLineHovered(const ChartReferenceLine& line, bool state)
 {
+    m_referenceLineHovered = state;
     if (!state) {
         QToolTip::hideText();
         return;

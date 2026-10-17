@@ -41,6 +41,8 @@
 #include "../../app/forms/PortfolioChartForm/ViewPortfolioChart.h"
 #include "../../app/utils/ValueFormatter.h"
 #include <QLineSeries>
+#include <QGraphicsLineItem>
+#include <QGraphicsScene>
 #include "../../app/config/AppSettings.h"
 #include "../../app/core/Database.h"
 #include "../../app/repositories/ShareRepository.h"
@@ -284,6 +286,36 @@ private:
         for (auto* a : w.findChildren<QAction*>())
             if (a && a->statusTip() == statusTip)
                 return a;
+        return nullptr;
+    }
+
+    // ── Hilfsfunktionen Cursorlinie (ergänzt 17.10.2026) ──────────────────
+
+    /** Drei Tageswerte mit Spitze in der Mitte (190,90€), alle vier
+     *  Kursfelder gleich. @p middleVolume ist das gehandelte Volumen des
+     *  mittleren Tages. Liefert das mittlere Datum. */
+    QDate insertThreeDailyValuesWithPeak(const QString& shareGuid, double middleVolume)
+    {
+        const QDate d1 = QDate::currentDate().addDays(-3);
+        const QDate d2 = QDate::currentDate().addDays(-2);
+        const QDate d3 = QDate::currentDate().addDays(-1);
+        DailyValuesRepository dvRepo;
+        dvRepo.upsert(DailyValuesObject(shareGuid, d1, 180.00, 180.00, 180.00, 180.00, 1000.0));
+        dvRepo.upsert(DailyValuesObject(shareGuid, d2, 190.90, 190.90, 190.90, 190.90, middleVolume));
+        dvRepo.upsert(DailyValuesObject(shareGuid, d3, 185.00, 185.00, 185.00, 185.00, 1000.0));
+        return d2;
+    }
+
+    /** Die Cursorlinie unter den Szenen-Items (Achsen und Gitter sind
+     *  ebenfalls QGraphicsLineItems), erkannt an ihrer data(0)-Kennung. */
+    static QGraphicsLineItem* findCursorLine(QChartView* chartView)
+    {
+        const auto items = chartView->scene()->items();
+        for (QGraphicsItem* item : items) {
+            auto* line = qgraphicsitem_cast<QGraphicsLineItem*>(item);
+            if (line && line->data(0).toString() == QLatin1String(ViewChart::kCursorLineDataKey))
+                return line;
+        }
         return nullptr;
     }
 
@@ -3090,8 +3122,9 @@ private slots:
     // einer Kauf-Markerlinie zeigte "1 Stk." statt der tatsächlichen
     // Bruchstückzahl, da onReferenceLineHovered()/onSeriesHovered() die
     // Stückzahl mit 0 statt 4 Nachkommastellen formatierten — siehe
-    // ARCHITECTURE.md, "ChartForm-Details"). Beide Handler sind seit diesem
-    // Bugfix `private slots:` (siehe ViewChart.h) — reine Testbarkeits-
+    // ARCHITECTURE.md, "ChartForm-Details"). onSeriesHovered() ist seit
+    // 17.10.2026 durch onCrosshairMoved() ersetzt (Cursorlinie, Tests weiter
+    // unten). Beide Handler sind `private slots:` (siehe ViewChart.h) — reine Testbarkeits-
     // Maßnahme, damit hier per QMetaObject::invokeMethod() direkt geprüft
     // werden kann (gleiches Muster wie bei selectShareRow/onRefreshShare
     // oben), statt ein echtes Maus-Hover über die im headless Testlauf
@@ -3131,99 +3164,157 @@ private slots:
                                    Q_ARG(ChartReferenceLine, line), Q_ARG(bool, false));
     }
 
-    void test_onSeriesHovered_heldVolumeSeries_fractionalValue_showsFourDecimals()
-    {
-        const QString shareGuid = insertTestShare();
-        ChartPopup popup(shareGuid, QStringLiteral("Test AG"));
+    // ─────────────────────────────────────────────────────────────────────
+    // ViewChart — vertikale Cursorlinie (ergänzt 17.10.2026, Nessies
+    // Vorgabe): Die Linie springt von Datenpunkt zu Datenpunkt, der Tooltip
+    // erscheint überall in der Zeichenfläche und zeigt alle sichtbaren
+    // Serien. Ersetzt die bisherigen Tests über onSeriesHovered() bzw. das
+    // QLineSeries::hovered()-Signal der Daten-Serien; deren Prüfungen
+    // (vier Nachkommastellen bei Stückzahlen, Einrasten statt interpolierter
+    // Werte — Bugfixes 02.08.2026 und 19.09.2026) laufen jetzt über
+    // onCrosshairMoved(). Die Suche selbst prüft weiterhin
+    // tests/utils/tst_chartpointsearch.cpp.
+    // ─────────────────────────────────────────────────────────────────────
 
+    void test_onCrosshairMoved_betweenPoints_tooltipShowsActualClosingPrice()
+    {
+        // Nessies Fall vom 19.09.2026: Maus ein paar Stunden nach der Spitze
+        // — der Tooltip muss den echten Schluss-Kurs zeigen, keinen
+        // interpolierten Wert.
+        const QString shareGuid = insertTestShare();
+        const QDate d2 = insertThreeDailyValuesWithPeak(shareGuid, 1000.0);
+
+        ChartPopup popup(shareGuid, QStringLiteral("Test AG"));
         auto* chart = popup.findChild<ViewChart*>(QStringLiteral("ViewChart"));
         if (!chart) QFAIL("ViewChart-Kindwidget nicht gefunden");
 
-        const double fractionalVolume = 12.3456;
-        const QPointF point(0.0, fractionalVolume); // x (Datum) hier irrelevant für diesen Test
+        const double xPeak = static_cast<double>(QDateTime(d2, QTime(0, 0)).toMSecsSinceEpoch());
+        QMetaObject::invokeMethod(chart, "onCrosshairMoved", Qt::DirectConnection,
+                                   Q_ARG(double, xPeak + 3.0 * 3600.0 * 1000.0));
 
-        QMetaObject::invokeMethod(chart, "onSeriesHovered", Qt::DirectConnection,
-                                   Q_ARG(SeriesKind, SeriesKind::HeldVolume),
-                                   Q_ARG(QPointF, point), Q_ARG(bool, true));
+        const QString text = QToolTip::text();
+        const QString expectedDate  = d2.toString(QStringLiteral("dd.MM.yyyy"));
+        const QString expectedValue = QStringLiteral("Schluss-Kurs: ")
+                                    + ValueFormatter::formatPrice(190.90) + QStringLiteral("€");
+        QVERIFY2(text.startsWith(expectedDate) && text.contains(expectedValue),
+                 qPrintable(QStringLiteral("Tooltip-Text: '%1', erwartet: '%2' und '%3'")
+                            .arg(text, expectedDate, expectedValue)));
 
-        const QString expected = QLocale().toString(fractionalVolume, 'f', 4);
-        QVERIFY2(QToolTip::text().contains(expected),
-                 qPrintable(QStringLiteral("Tooltip-Text: '%1', erwartet enthält: '%2'")
-                            .arg(QToolTip::text(), expected)));
-
-        QMetaObject::invokeMethod(chart, "onSeriesHovered", Qt::DirectConnection,
-                                   Q_ARG(SeriesKind, SeriesKind::HeldVolume),
-                                   Q_ARG(QPointF, point), Q_ARG(bool, false));
+        QToolTip::hideText();
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // ViewChart — Hover-Tooltip rastet auf echten Datenpunkt ein (Bugfix
-    // 19.09.2026, Nessies Rückmeldung anhand eines Screenshots: Tooltip
-    // zeigte "191,0226€" an einer Spitze, die Legende aber "Max: 190,90").
-    // Ursache: QXYSeries::hovered() liefert die Mausposition in Achsen-
-    // Koordinaten, nicht den nächstgelegenen Datenpunkt — mit einigen Pixeln
-    // Hover-Toleranz um die Linie also leicht verschobene, interpolierte
-    // Werte. Fix: Einrasten auf den nächstgelegenen Datenpunkt in der
-    // hovered()-Lambda von setChartData(). Die Suche selbst liegt seit der
-    // Zusammenführung (ebenfalls 19.09.2026) in ChartPointSearch; deren
-    // Grenzfälle prüft tests/utils/tst_chartpointsearch.cpp, hier geht es
-    // nur um die Verdrahtung in den beiden Chart-Views.
-    // ─────────────────────────────────────────────────────────────────────
-
-    void test_seriesHovered_offsetAbovePeak_tooltipShowsActualClosingPrice()
+    void test_onCrosshairMoved_tradedVolumeSeries_fractionalValue_showsFourDecimals()
     {
-        // End-to-End über das echte QLineSeries::hovered()-Signal (statt
-        // direktem Slot-Aufruf wie in den Tests oben), da der Fix genau in
-        // der Lambda-Verbindung aus setChartData() sitzt. Die Serie ist
-        // privat in ViewChart, aber über chartView->chart()->series()
-        // erreichbar; Signale sind in Qt6 public und können direkt emittiert
-        // werden.
+        // Nachfolger von test_onSeriesHovered_heldVolumeSeries_... (Bugfix
+        // 02.08.2026): Stückzahlen mit vier Nachkommastellen. Gehandelte
+        // Anteile statt Anteile, weil deren Wert direkt aus den Tageswerten
+        // kommt und keine Käufe braucht.
         const QString shareGuid = insertTestShare();
+        const QDate d2 = insertThreeDailyValuesWithPeak(shareGuid, 12.3456);
 
-        // Drei Tageswerte mit Spitze in der Mitte — alle vier Kursfelder
-        // gleich, damit der Schluss-Kurs unabhängig von der Parameter-
-        // reihenfolge des DailyValuesObject-Konstruktors feststeht.
-        const QDate d1 = QDate::currentDate().addDays(-3);
-        const QDate d2 = QDate::currentDate().addDays(-2);
-        const QDate d3 = QDate::currentDate().addDays(-1);
-        DailyValuesRepository dvRepo;
-        dvRepo.upsert(DailyValuesObject(shareGuid, d1, 180.00, 180.00, 180.00, 180.00, 1000.0));
-        dvRepo.upsert(DailyValuesObject(shareGuid, d2, 190.90, 190.90, 190.90, 190.90, 1000.0));
-        dvRepo.upsert(DailyValuesObject(shareGuid, d3, 185.00, 185.00, 185.00, 185.00, 1000.0));
+        ViewChart view(shareGuid); // nicht kompakt — Selektion verfügbar
+        auto* traded = view.findChild<QCheckBox*>(QStringLiteral("seriesCheckBox_TradedVolume"));
+        QVERIFY(traded);
+        traded->setChecked(true); // löst refresh() aus
 
-        ChartPopup popup(shareGuid, QStringLiteral("Test AG"));
+        const double xPeak = static_cast<double>(QDateTime(d2, QTime(0, 0)).toMSecsSinceEpoch());
+        QMetaObject::invokeMethod(&view, "onCrosshairMoved", Qt::DirectConnection,
+                                   Q_ARG(double, xPeak));
 
-        auto* chartView = popup.findChild<QChartView*>(QStringLiteral("chartView"));
-        if (!chartView) QFAIL("chartView nicht gefunden");
+        const QString text = QToolTip::text();
+        const QString expectedVolume = QStringLiteral("Gehandelte Anteile: ")
+                                     + QLocale().toString(12.3456, 'f', 4);
+        const QString expectedPrice  = QStringLiteral("Schluss-Kurs: ")
+                                     + ValueFormatter::formatPrice(190.90) + QStringLiteral("€");
+        QVERIFY2(text.contains(expectedVolume) && text.contains(expectedPrice),
+                 qPrintable(QStringLiteral("Tooltip-Text: '%1', erwartet: '%2' und '%3'")
+                            .arg(text, expectedVolume, expectedPrice)));
 
-        // Keine Käufe/Verkäufe → keine Markerlinien; die einzige Serie mit
-        // drei Punkten ist die Schluss-Kurs-Serie (Compact-Modus-Default).
+        QToolTip::hideText();
+    }
+
+    void test_onCrosshairMoved_cursorLineSnapsToDataPointAndSpansPlotArea()
+    {
+        // Die Linie selbst braucht eine vermessene Zeichenfläche — daher hier
+        // ausnahmsweise mit show() (Offscreen-Plattform in CI).
+        const QString shareGuid = insertTestShare();
+        const QDate d2 = insertThreeDailyValuesWithPeak(shareGuid, 1000.0);
+
+        ViewChart view(shareGuid);
+        view.resize(900, 500);
+        view.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&view));
+        QCoreApplication::processEvents();
+
+        auto* chartView = view.findChild<QChartView*>(QStringLiteral("chartView"));
+        QVERIFY(chartView);
+        QChart* chart = chartView->chart();
+        const QRectF plot = chart->plotArea();
+        QVERIFY2(!plot.isEmpty(), "Zeichenfläche nach show() nicht vermessen");
+
         QLineSeries* closing = nullptr;
-        const auto allSeries = chartView->chart()->series();
+        const auto allSeries = chart->series();
         for (QAbstractSeries* s : allSeries) {
             auto* ls = qobject_cast<QLineSeries*>(s);
             if (ls && ls->count() == 3) { closing = ls; break; }
         }
-        if (!closing) QFAIL("Schluss-Kurs-Serie mit den drei Tageswerten nicht gefunden");
+        QVERIFY(closing);
 
-        // Hover knapp neben und oberhalb der Spitze — genau Nessies Fall:
-        // Mausposition ein paar Stunden nach d2 und ~0,12€ über dem Kurs.
+        QGraphicsLineItem* cursorLine = findCursorLine(chartView);
+        QVERIFY(cursorLine);
+        QVERIFY(!cursorLine->isVisible());
+
+        // Mausposition fünf Stunden nach d2 — die Linie rastet auf d2 ein.
         const double xPeak = static_cast<double>(QDateTime(d2, QTime(0, 0)).toMSecsSinceEpoch());
-        const QPointF hover(xPeak + 3.0 * 3600.0 * 1000.0, 191.0226);
+        QMetaObject::invokeMethod(&view, "onCrosshairMoved", Qt::DirectConnection,
+                                   Q_ARG(double, xPeak + 5.0 * 3600.0 * 1000.0));
 
-        emit closing->hovered(hover, true);
+        QVERIFY(cursorLine->isVisible());
+        const qreal expectedX = chart->mapToPosition(QPointF(xPeak, 190.90), closing).x();
+        const QLineF line = cursorLine->line();
+        QCOMPARE(line.x1(), expectedX);
+        QCOMPARE(line.x2(), expectedX);
+        QCOMPARE(line.y1(), plot.top());
+        QCOMPARE(line.y2(), plot.bottom());
+        QCOMPARE(cursorLine->pen().color(), QColor(Qt::magenta));
+        QCOMPARE(cursorLine->pen().style(), Qt::DashLine);
 
-        const QString expected = d2.toString(QStringLiteral("dd.MM.yyyy")) + QStringLiteral(": ")
-                               + ValueFormatter::formatPrice(190.90) + QStringLiteral("€");
-        const QString wrong    = ValueFormatter::formatPrice(191.0226);
-        QVERIFY2(QToolTip::text().contains(expected),
-                 qPrintable(QStringLiteral("Tooltip-Text: '%1', erwartet enthält: '%2'")
-                            .arg(QToolTip::text(), expected)));
-        QVERIFY2(!QToolTip::text().contains(wrong),
-                 qPrintable(QStringLiteral("Tooltip zeigt interpolierten Hover-Wert: '%1'")
+        // Verlassen der Zeichenfläche blendet die Linie wieder aus.
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(chartView->viewport(), &leave);
+        QVERIFY(!cursorLine->isVisible());
+    }
+
+    void test_onCrosshairMoved_referenceLineHovered_keepsMarkerTooltip()
+    {
+        // Steht die Maus auf einer Kauf-/Verkauf-Markerlinie, darf die
+        // Cursorlinie deren Tooltip nicht überschreiben.
+        const QString shareGuid = insertTestShare();
+        const QDate d2 = insertThreeDailyValuesWithPeak(shareGuid, 1000.0);
+
+        ChartPopup popup(shareGuid, QStringLiteral("Test AG"));
+        auto* chart = popup.findChild<ViewChart*>(QStringLiteral("ViewChart"));
+        if (!chart) QFAIL("ViewChart-Kindwidget nicht gefunden");
+
+        ChartReferenceLine marker;
+        marker.date   = d2;
+        marker.color  = QColor(Qt::blue);
+        marker.kind   = ChartReferenceLineKind::Buy;
+        marker.price  = 190.90;
+        marker.volume = 2.0;
+
+        QMetaObject::invokeMethod(chart, "onReferenceLineHovered", Qt::DirectConnection,
+                                   Q_ARG(ChartReferenceLine, marker), Q_ARG(bool, true));
+        const double xPeak = static_cast<double>(QDateTime(d2, QTime(0, 0)).toMSecsSinceEpoch());
+        QMetaObject::invokeMethod(chart, "onCrosshairMoved", Qt::DirectConnection,
+                                   Q_ARG(double, xPeak));
+
+        QVERIFY2(QToolTip::text().contains(QStringLiteral(" Stk.")),
+                 qPrintable(QStringLiteral("Markerlinien-Tooltip überschrieben: '%1'")
                             .arg(QToolTip::text())));
 
-        emit closing->hovered(hover, false);
+        QMetaObject::invokeMethod(chart, "onReferenceLineHovered", Qt::DirectConnection,
+                                   Q_ARG(ChartReferenceLine, marker), Q_ARG(bool, false));
     }
 
     // ─────────────────────────────────────────────────────────────────────

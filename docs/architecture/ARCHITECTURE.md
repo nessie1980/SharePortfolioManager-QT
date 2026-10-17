@@ -1693,6 +1693,10 @@ korrekt Schwarz zeigte. Nessie ist das an der Diskrepanz Legende ↔ Graph
 aufgefallen. Behoben durch `line->setColor(s.color)` **nach**
 `m_chart->addSeries(line)` in `ViewChart::setChartData()`.
 
+@note Seit 17.10.2026 (v1.25.0) ersetzt durch Cursorlinie und Tooltip in
+der ganzen Zeichenfläche, siehe "Vertikale Cursorlinie im Aktien-Chart" weiter
+unten. Der folgende Absatz beschreibt den bis dahin gültigen Stand.
+
 Hover-Tooltip (ergänzt 12.07.2026): Portiert vom C#-Referenz-Verhalten
 ("Maus über den Graphen bewegen zeigt Datum + Wert als Tooltip"). Jede
 `QLineSeries` wird in `ViewChart::setChartData()` einzeln mit
@@ -1962,6 +1966,71 @@ Regressionstests: `test_refresh_setsMaxIntervalCount_basedOnEarliestDailyValue`,
 `test_refresh_corruptEarliestDate_maxIntervalCountClampedByAbsoluteSafetyCeiling`
 (alle `tst_chartform.cpp`), sowie `test_earliestDate`
 (`tst_dailyvaluesrepository.cpp`) — siehe TESTING.md.
+
+
+#### Vertikale Cursorlinie im Aktien-Chart (ergänzt 17.10.2026, v1.25.0)
+
+Nessies Wunsch: eine vertikale Linie an der Mausposition, die den zugehörigen
+Datenpunkt markiert. Festgelegt am 17.10.2026:
+
+- nur im Aktien-Chart (`ViewChart`, damit auch im Rechtsklick-Popup
+  `ChartPopup`), nicht im Depotwert-Chart
+- die Linie springt von Datenpunkt zu Datenpunkt, statt frei der Maus zu folgen
+- keine zusätzliche Punktmarkierung, keine horizontale Linie
+- der Tooltip erscheint, sobald die Maus irgendwo in der Zeichenfläche steht,
+  nicht mehr nur knapp an einer Kurve
+- Linie magenta, gestrichelt, 1 px. Türkis war zuerst gewünscht, wurde aber
+  verworfen: die Markerlinien älterer Käufe sind bereits türkis gestrichelt
+  (`kOlderBuyColor`), "Gehandelte Anteile" hat fast denselben Ton
+
+Umsetzung: Die Linie ist ein `QGraphicsLineItem` als Kind von `m_chart`, kein
+weiteres `QLineSeries`. Eine Serie bei jeder Mausbewegung umzubauen würde
+flackern und könnte die Achsenskalierung beeinflussen; als Kind von `m_chart`
+liegen die Koordinaten des Items im selben System wie `plotArea()` und
+`mapToPosition()`. Der Stift ist kosmetisch (immer 1 Bildschirmpixel), der
+Z-Wert liegt über allen Serien. `removeAllSeries()` lässt das Item unberührt.
+
+Ablauf: Der bestehende `eventFilter()` auf `m_chartView->viewport()` (bisher
+nur Mausrad) reagiert zusätzlich auf `MouseMove` und `Leave`. Bei `MouseMove`
+wird die Mausposition über `mapToScene()`/`mapFromScene()` in Chart-
+Koordinaten umgerechnet; außerhalb von `plotArea()` wird ausgeblendet,
+innerhalb ruft der Filter `onCrosshairMoved(x)` mit der X-Koordinate in
+Millisekunden auf. Das Ereignis wird nicht konsumiert, weil `QGraphicsView`
+es weiterhin für die Hover-Erkennung der Kauf-/Verkauf-Markerlinien braucht.
+
+`onCrosshairMoved()` rastet per `ChartPointSearch::nearestIndex()` auf den
+nächsten Datenpunkt der ersten Daten-Serie ein (alle Serien teilen sich
+dieselbe Datumsliste), setzt die Linie über die volle Höhe von `plotArea()`
+an `mapToPosition(...).x()` und zeigt den Tooltip: Datum in der ersten Zeile,
+darunter je sichtbarer Serie "{Serie}: {Wert}". Kurse und Stückzahlen
+behalten ihre bisherige Formatierung (vier Nachkommastellen, Kurse mit "€").
+Je Serie wird mit dem eingerasteten Datum erneut gesucht und nur ein exakter
+Datumstreffer angezeigt, damit nie ein Wert eines anderen Tages erscheint.
+
+Die Daten-Serien merkt sich `ViewChart` jetzt in `m_dataSeries` (Art plus
+Serienzeiger); `setChartData()` leert die Liste zusammen mit
+`removeAllSeries()`. Die bisherigen `QLineSeries::hovered()`-Verbindungen der
+Daten-Serien und der Slot `onSeriesHovered()` sind entfallen.
+
+Zusammenspiel mit den Markerlinien: Deren Tooltip (`onReferenceLineHovered()`)
+bleibt stehen, solange die Maus auf einer Markerlinie ist. Der Slot merkt sich
+das in `m_referenceLineHovered`, `onCrosshairMoved()` bewegt dann nur die
+Linie. `setChartData()` und `setReferenceLines()` setzen das Merkmal zurück,
+weil eine gelöschte Markerlinie kein `hovered(false)` mehr meldet.
+
+Ausgeblendet werden Linie und Tooltip bei `Leave` des Viewports, außerhalb
+der Zeichenfläche, bei neuen Chart-Daten (z. B. nach Mausrad-Änderung der
+Anzahl), beim Leerhinweis und bei `QChart::plotAreaChanged` (Größenänderung).
+Die nächste Mausbewegung setzt sie neu. Ist die Zeichenfläche noch nicht
+vermessen (`plotArea()` leer), erscheint nur der Tooltip.
+
+Regressionstests (alle `tst_mainwindow.cpp`, siehe TESTING.md):
+`test_onCrosshairMoved_betweenPoints_tooltipShowsActualClosingPrice`,
+`test_onCrosshairMoved_tradedVolumeSeries_fractionalValue_showsFourDecimals`,
+`test_onCrosshairMoved_cursorLineSnapsToDataPointAndSpansPlotArea`,
+`test_onCrosshairMoved_referenceLineHovered_keepsMarkerTooltip`. Sie ersetzen
+`test_onSeriesHovered_heldVolumeSeries_fractionalValue_showsFourDecimals` und
+`test_seriesHovered_offsetAbovePeak_tooltipShowsActualClosingPrice`.
 
 ---
 

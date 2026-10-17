@@ -10,6 +10,22 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.25.0] - 2026-10-17
+
+### Added
+
+- Aktien-Chart: vertikale Cursorlinie (magenta, gestrichelt) an der
+  Mausposition. Sie springt von Datenpunkt zu Datenpunkt und markiert so den
+  Tag, dessen Werte gerade angezeigt werden. Gilt auch fuer das
+  Rechtsklick-Popup.
+
+### Changed
+
+- Aktien-Chart: der Tooltip erscheint, sobald die Maus irgendwo in der
+  Zeichenflaeche steht, nicht mehr nur knapp an einer Kurve. Er zeigt das
+  Datum und darunter die Werte aller sichtbaren Serien dieses Tages. Die
+  Tooltips der Kauf-/Verkauf-Markerlinien bleiben unveraendert.
+
 ## [1.24.1] - 2026-09-26
 
 ### Fixed

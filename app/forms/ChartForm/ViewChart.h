@@ -25,6 +25,7 @@
 
 class QLineSeries;
 class QWheelEvent;
+class QGraphicsLineItem;
 
 /**
  * @brief Embeddable "Aktien-Chart" widget — ported from the C# reference's
@@ -108,6 +109,11 @@ public:
      */
     bool eventFilter(QObject* watched, QEvent* event) override;
 
+    /** Kennung der Cursorlinie in QGraphicsItem::data(0) (ergänzt
+     *  17.10.2026) — erlaubt Tests, sie unter den übrigen Linien-Items der
+     *  Szene (Achsen, Gitter) eindeutig zu finden. */
+    static constexpr const char* kCursorLineDataKey = "chartCursorLine";
+
 signals:
     /**
      * @brief Forwards setRangeInfo() to ViewShareDetails so it can restore
@@ -138,43 +144,58 @@ private:
      */
     void applyWheelStep(QWheelEvent* event);
 
+    /** Blendet Cursorlinie und Tooltip aus (ergänzt 17.10.2026) — beim
+     *  Verlassen der Zeichenfläche, bei neuen Chart-Daten, beim Leerhinweis
+     *  und bei geänderter Zeichenfläche (plotAreaChanged). */
+    void hideCrosshair();
+
 private slots:
     /**
-     * @brief Shows/hides a QToolTip with "{Serie}\n{Datum}: {Wert}" when the
-     * mouse hovers a QLineSeries — ported from the C# reference, which shows
-     * the same info via native chart tooltips. Connected once per series in
-     * setChartData() (QLineSeries::hovered), since Qt Charts has no
-     * chart-wide hover signal that also identifies which series was hit.
-     * Als `private slots:` deklariert (ergänzt 02.08.2026, reine
-     * Testbarkeits-Maßnahme, kein Verhaltensunterschied — die Verbindung
-     * selbst läuft weiterhin über eine Lambda in setChartData()): erlaubt
-     * tst_mainwindow.cpp, die Tooltip-Formatierung direkt per
-     * `QMetaObject::invokeMethod()` zu prüfen (gleiches Muster wie bei
-     * `selectShareRow`/`onRefreshShare`), ohne ein echtes Maus-Hover über
-     * die im headless Testlauf nicht verlässlich vermessbare
-     * Chart-Zeichenfläche simulieren zu müssen.
-     * @param kind   Which series was hovered (for the label + unit).
-     * @param point  Data point to show, in axis coordinates
-     *               (x = msecsSinceEpoch, y = the plotted value). The
-     *               connecting lambda in setChartData() snaps the raw
-     *               hover position to the nearest actual data point first
-     *               (Bugfix 19.09.2026, via ChartPointSearch::nearestIndex()
-     *               since the consolidation on the same day), so this is
-     *               never an interpolated cursor position.
-     * @param state  true = entering hover, false = leaving it.
+     * @brief Cursorlinie und Tooltip an den Datenpunkt setzen, der @p x am
+     * nächsten liegt (ergänzt 17.10.2026, Nessies Vorgabe).
+     *
+     * Ersetzt den früheren onSeriesHovered()-Tooltip je Serie: Der Tooltip
+     * erscheint jetzt, sobald die Maus irgendwo in der Zeichenfläche steht,
+     * nicht mehr nur knapp an einer Kurve. Die vertikale, magenta gestrichelte
+     * Cursorlinie springt dabei von Datenpunkt zu Datenpunkt (Einrasten per
+     * ChartPointSearch::nearestIndex() auf der ersten Daten-Serie — alle
+     * Serien teilen sich dieselbe Datumsliste, siehe rebuildAxes()).
+     *
+     * Tooltip-Inhalt: Datum in der ersten Zeile, darunter je sichtbarer
+     * Serie "{Serie}: {Wert}" — Kurse mit vier Nachkommastellen und "€",
+     * Stückzahlen mit vier Nachkommastellen (Formatierung unverändert vom
+     * früheren onSeriesHovered()).
+     *
+     * Steht die Maus auf einer Kauf-/Verkauf-Markerlinie, bleibt deren
+     * eigener Tooltip (onReferenceLineHovered()) stehen; nur die Cursorlinie
+     * wandert weiter.
+     *
+     * Aufgerufen aus eventFilter() bei MouseMove auf dem Viewport. Als
+     * `private slots:` deklariert, damit tst_mainwindow.cpp den Ablauf per
+     * QMetaObject::invokeMethod() prüfen kann, ohne ein echtes Maus-Hover
+     * über die im headless Testlauf nicht verlässlich vermessbare
+     * Zeichenfläche zu simulieren — gleiches Muster wie zuvor bei
+     * onSeriesHovered().
+     *
+     * Ohne Daten-Serie (leerer Chart) wird nur ausgeblendet. Ist die
+     * Zeichenfläche noch nicht vermessen (plotArea() leer, z. B. vor dem
+     * ersten Anzeigen), erscheint nur der Tooltip, keine Linie.
+     *
+     * @param x  X-Koordinate der Maus in Achsenkoordinaten (msecsSinceEpoch).
      */
-    void onSeriesHovered(SeriesKind kind, const QPointF& point, bool state);
+    void onCrosshairMoved(double x);
 
     /**
      * @brief Shows/hides a QToolTip with "{Kauf/Verkauf}\n{Datum}: {Preis}\n
      * {Stückzahl} Stk." when the mouse hovers a Kauf-/Verkauf-Markerlinie —
-     * ergänzt 12.07.2026 auf Nessies Vorgabe, analog zu onSeriesHovered() für
-     * die Daten-Serien. Eigener Handler statt Wiederverwendung von
-     * onSeriesHovered(), da Markerlinien kein SeriesKind haben und Datum/
-     * Preis/Stückzahl bereits in der ChartReferenceLine stecken (keine
-     * Rückrechnung aus den Achsen-Koordinaten nötig). Als `private slots:`
-     * deklariert seit 02.08.2026 — siehe Testbarkeits-Hinweis bei
-     * onSeriesHovered() oben.
+     * ergänzt 12.07.2026 auf Nessies Vorgabe. Eigener Handler, da
+     * Markerlinien kein SeriesKind haben und Datum/Preis/Stückzahl bereits in
+     * der ChartReferenceLine stecken (keine Rückrechnung aus den Achsen-
+     * Koordinaten nötig). Als `private slots:` deklariert seit 02.08.2026 —
+     * siehe Testbarkeits-Hinweis bei onCrosshairMoved() oben.
+     * Merkt sich seit 17.10.2026 in m_referenceLineHovered, ob gerade eine
+     * Markerlinie gehovert wird, damit onCrosshairMoved() deren Tooltip nicht
+     * überschreibt.
      * @param line   Die gehoverte Markerlinie (Wertkopie, siehe setReferenceLines()).
      * @param state  true = entering hover, false = leaving it.
      */
@@ -203,6 +224,26 @@ private:
      *  getrackt, damit setReferenceLines() sie gezielt entfernen kann, ohne
      *  die gerade erst per setChartData() gezeichneten Serien anzufassen. */
     QList<QLineSeries*> m_referenceLineSeries;
+
+    /** Daten-Serie samt Art, in Anzeigereihenfolge (ergänzt 17.10.2026) —
+     *  Grundlage für Einrasten und Tooltip in onCrosshairMoved(). Die
+     *  Serien gehören m_chart; setChartData() leert die Liste zusammen mit
+     *  removeAllSeries(). */
+    struct DataSeriesRef {
+        SeriesKind   kind;
+        QLineSeries* line = nullptr;
+    };
+    QList<DataSeriesRef> m_dataSeries;
+
+    /** Vertikale Cursorlinie (ergänzt 17.10.2026). Kind von m_chart, damit
+     *  ihre Koordinaten den Chart-Koordinaten von plotArea()/mapToPosition()
+     *  entsprechen; überlebt removeAllSeries(). Kennung für Tests per
+     *  data(0) == kCursorLineDataKey. */
+    QGraphicsLineItem* m_cursorLine = nullptr;
+
+    /** true, solange eine Kauf-/Verkauf-Markerlinie gehovert wird — dann
+     *  lässt onCrosshairMoved() den Markerlinien-Tooltip stehen. */
+    bool m_referenceLineHovered = false;
 
     // ── Legende box (rebuilt on every refresh) ───────────────────────────────
     QVBoxLayout* m_legendLayout = nullptr;
