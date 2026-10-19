@@ -14,7 +14,12 @@
 #include <QStringList>
 
 /**
- * @brief Presenter des Depotwert-Charts (MVP).
+ * @brief Presenter des Depotwert- und des Marktwert-Charts (MVP).
+ *
+ * Seit 17.10.2026 bedient derselbe Presenter beide Charts; der
+ * PortfolioChartMode aus dem Konstruktor bestimmt nur die Texte (Kopfzeile,
+ * Diagnose-Überschrift). Die Punkte enthalten immer Entwicklung und
+ * Marktwert, siehe PortfolioChartPoint.
  *
  * Interaktiv wie PresenterChart: jede Änderung an Start-Datum, Interval oder
  * Anzahl liest die aktuellen Werte über die Getter neu aus und baut die Kurve
@@ -37,7 +42,11 @@ class PresenterPortfolioChart : public QObject
 public:
     explicit PresenterPortfolioChart(IViewPortfolioChart* view,
                                      IModelPortfolioChart* model,
+                                     PortfolioChartMode mode = PortfolioChartMode::Development,
                                      QObject* parent = nullptr);
+
+    /** Der beim Anlegen festgelegte Modus. */
+    PortfolioChartMode mode() const { return m_mode; }
 
     /** Lädt die Portfoliodaten, setzt das Vorgabe-Start-Datum und zeichnet. */
     void loadAndDisplay();
@@ -86,13 +95,20 @@ public:
     static QString buildWarningText(const QStringList& shareNames);
 
     /**
-     * @brief "Zeitraum: ... / Entwicklung: X € (Y %)" für die Kopfzeile.
+     * @brief Kopfzeile für den Tab-Tooltip.
+     *
+     * Depotwert-Chart: "Zeitraum: ... / Entwicklung: X € (Y %)".
+     * Marktwert-Chart (ergänzt 17.10.2026): "Zeitraum: ... / Marktwert: X €",
+     * ohne Prozent — der Marktwert hat keine natürliche Bezugsgröße.
+     *
      * @param from    Beginn des Zeitraums.
      * @param to      Ende des Zeitraums.
      * @param points  Berechnete Kurvenpunkte; leer ergibt nur die Zeitraum-Angabe.
+     * @param mode    Welcher Chart, siehe PortfolioChartMode.
      */
     static QString buildRangeInfo(const QDate& from, const QDate& to,
-                                  const QList<PortfolioChartPoint>& points);
+                                  const QList<PortfolioChartPoint>& points,
+                                  PortfolioChartMode mode = PortfolioChartMode::Development);
 
     /**
      * @brief Baut den Diagnose-Export als CSV-Text.
@@ -102,7 +118,8 @@ public:
      * Auffälligkeit verursacht. Der Export enthält zwei Blöcke — je Aktie die
      * Anzahl geladener Käufe, Verkäufe, Dividenden, Kosteneinträge und
      * Tageswerte samt der ungültigen Datumsangaben, und je Stichtag alle
-     * sechs Bestandteile der Formel.
+     * sechs Bestandteile der Formel. Seit 17.10.2026 zusätzlich je Stichtag
+     * und je Aktie den Marktwert; die Überschrift nennt den Chart.
      *
      * Rechnet mit dem aktuell eingestellten Zeitraum. Das Schreiben der Datei
      * übernimmt die View — der Presenter formatiert nur.
@@ -128,6 +145,7 @@ private:
 
     IViewPortfolioChart*  m_view;
     IModelPortfolioChart* m_model;
+    PortfolioChartMode    m_mode = PortfolioChartMode::Development;
 
     /** Zwischengehaltene Portfoliodaten, siehe Klassendoku. */
     QList<PortfolioShareSeriesInput> m_input;

@@ -44,16 +44,42 @@ class QWheelEvent;
  *
  * Reine MVP-View: kein Repository-Zugriff, keine Formatierung, keine
  * Fachlogik. Alle Daten kommen fertig gerechnet über IViewPortfolioChart.
+ *
+ * @note Marktwert-Modus (ergänzt 17.10.2026): Mit
+ * PortfolioChartMode::MarketValue zeigt dieselbe Klasse den Marktwert-Chart
+ * (eigener Tab hinter "Kompletter Marktwert"). Unterschiede zum
+ * Depotwert-Chart: eine einfarbige Linie über PortfolioChartPoint::marketValue
+ * (kPortfolioMarketValueColor), keine Null-Linie und keine Gewinn-/Verlust-
+ * Einfärbung, Y-Achse "Marktwert (€)" ohne erzwungene Null, Tooltip "Datum /
+ * Wert €" ohne Prozent, eigener Dateiname beim Diagnose-Export. Zeitraum-
+ * Einstellung und Diagnose-Schalter teilen sich beide Charts.
  */
 class ViewPortfolioChart : public QWidget, public IViewPortfolioChart
 {
     Q_OBJECT
 
 public:
-    explicit ViewPortfolioChart(QWidget* parent = nullptr);
-    /** Speichert Interval und gewünschte Anzahl in AppSettings (ergänzt
-     *  20.09.2026), gleiche Regeln wie ViewChart::~ViewChart(). */
+    /**
+     * @param mode    Depotwert- oder Marktwert-Chart (ergänzt 17.10.2026),
+     *                danach unveränderlich.
+     * @param parent  Eltern-Widget.
+     */
+    explicit ViewPortfolioChart(PortfolioChartMode mode = PortfolioChartMode::Development,
+                                QWidget* parent = nullptr);
+    /**
+     * @brief Speichert Interval und gewünschte Anzahl in AppSettings (ergänzt
+     * 20.09.2026), gleiche Regeln wie ViewChart::~ViewChart().
+     *
+     * Seit 17.10.2026 nur, wenn sich gegenüber dem beim Öffnen gelesenen
+     * Wert etwas geändert hat: Depotwert- und Marktwert-Chart teilen sich
+     * dieselben Schlüssel und werden beide erst beim Programmende zerstört.
+     * Ohne diese Bedingung überschriebe der zuletzt zerstörte, unveränderte
+     * Chart die Änderung des anderen.
+     */
     ~ViewPortfolioChart() override;
+
+    /** Der beim Anlegen festgelegte Modus. */
+    PortfolioChartMode mode() const { return m_mode; }
 
     // ── IViewPortfolioChart: Getter ───────────────────────────────────────
     QDate        startDate() const override;
@@ -97,7 +123,7 @@ private:
 private slots:
     /**
      * @brief Tooltip "Datum / Entwicklung € / Entwicklung %" beim Hovern der
-     * Kurve. Als private slot deklariert, damit Tests die Formatierung per
+     * Kurve, im Marktwert-Modus "Datum / Wert €" (ergänzt 17.10.2026). Als private slot deklariert, damit Tests die Formatierung per
      * QMetaObject::invokeMethod() prüfen können, ohne ein Maus-Hover über die
      * im Offscreen-Testlauf nicht verlässlich vermessbare Zeichenfläche zu
      * simulieren — gleiche Begründung wie bei ViewChart::onSeriesHovered().
@@ -121,6 +147,9 @@ private slots:
 
 private:
     // ── MVP-Verdrahtung ───────────────────────────────────────────────────
+    /** Vor m_presenter deklariert, damit es in der Initialisierungsliste
+     *  bereits gesetzt ist. */
+    PortfolioChartMode      m_mode = PortfolioChartMode::Development;
     ModelPortfolioChart     m_model;
     PresenterPortfolioChart m_presenter;
 
@@ -165,4 +194,9 @@ private:
     /** Vom Benutzer gewählte Anzahl, ggf. größer als der angezeigte Wert —
      *  siehe ViewChart::m_desiredCount (ergänzt 20.09.2026). */
     int m_desiredCount = 1;
+
+    /** Beim Öffnen aus AppSettings gelesene Werte — der Destruktor speichert
+     *  nur, wenn sie sich geändert haben (ergänzt 17.10.2026). */
+    QString m_loadedIntervalKey;
+    int     m_loadedCount = 1;
 };

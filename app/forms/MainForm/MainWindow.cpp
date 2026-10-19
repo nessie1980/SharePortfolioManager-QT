@@ -538,13 +538,23 @@ void MainWindow::setupCentralWidget()
     chartLayout->setContentsMargins(0, 0, 0, 0);
     chartLayout->setSpacing(0);
 
-    m_portfolioTabs->addTab(finalContainer,             tr("Kompletter Depotwert"));
-    m_portfolioTabs->addTab(m_portfolioChartContainer,  tr("Depotwert-Chart"));
-    m_portfolioTabs->addTab(marketContainer,            tr("Kompletter Marktwert"));
+    // ── Marktwert-Chart-Tab (ergänzt 17.10.2026) ────────────────────────────
+    // Gleiche verzögerte Erzeugung wie beim Depotwert-Chart.
+    m_marketValueChartContainer = new QWidget();
+    auto* marketChartLayout = new QVBoxLayout(m_marketValueChartContainer);
+    marketChartLayout->setContentsMargins(0, 0, 0, 0);
+    marketChartLayout->setSpacing(0);
+
+    m_portfolioTabs->addTab(finalContainer,              tr("Kompletter Depotwert"));
+    m_portfolioTabs->addTab(m_portfolioChartContainer,   tr("Depotwert-Chart"));
+    m_portfolioTabs->addTab(marketContainer,             tr("Kompletter Marktwert"));
+    m_portfolioTabs->addTab(m_marketValueChartContainer, tr("Marktwert-Chart"));
 
     connect(m_portfolioTabs, &QTabWidget::currentChanged, this, [this](int index) {
         if (index == kTabPortfolioChart)
             ensurePortfolioChartUpToDate();
+        else if (index == kTabMarketValueChart)
+            ensureMarketValueChartUpToDate();
     });
 
     // Install two-line delegates
@@ -1571,9 +1581,10 @@ QString MainWindow::buildDailyValuesWarningMessage(
     return tr("Die folgenden Aktien haben Anteile im Bestand, rufen aber keine "
               "Tageswerte ab:\n\n%1\n\n"
               "Ohne Tageswert-Historie fehlt diesen Aktien die Kursvergangenheit. "
-              "Sie werden deshalb vollständig aus dem Depotwert-Chart "
-              "ausgeschlossen — der dort gezeigte Verlauf lässt diese Positionen "
-              "stillschweigend weg und ist damit unvollständig.\n\n"
+              "Sie werden deshalb vollständig aus dem Depotwert-Chart und dem "
+              "Marktwert-Chart ausgeschlossen — der dort gezeigte Verlauf lässt "
+              "diese Positionen stillschweigend weg und ist damit "
+              "unvollständig.\n\n"
               "Bitte den Update-Typ dieser Aktien auf \"Beide\" oder "
               "\"Tages-Werte\" umstellen (Aktie editieren) und anschließend eine "
               "Aktualisierung durchführen. Je länger damit gewartet wird, desto "
@@ -1691,7 +1702,8 @@ void MainWindow::warnAboutSharesWithoutDailyValues()
     // Zusätzlich in den Meldungsbereich, damit der Hinweis nach dem Schließen
     // des Dialogs nicht spurlos verschwindet.
     addStatusMessage(tr("%n Aktie(n) mit Bestand rufen keine Tageswerte ab und fehlen "
-                        "im Depotwert-Chart.", nullptr, m_sharesMissingDailyValues.size()),
+                        "im Depotwert-Chart und im Marktwert-Chart.", nullptr,
+                        m_sharesMissingDailyValues.size()),
                      MessageType::Warning);
 }
 
@@ -3611,38 +3623,61 @@ QTableWidget* MainWindow::activePortfolioTable() const
 
 void MainWindow::invalidatePortfolioChart()
 {
-    m_portfolioChartDirty = true;
+    m_portfolioChartDirty   = true;
+    m_marketValueChartDirty = true;
 
-    // Liegt der Chart-Tab gerade vorn, sofort neu rechnen — sonst zeigte er
+    // Liegt ein Chart-Tab gerade vorn, sofort neu rechnen — sonst zeigte er
     // bis zum nächsten Tabwechsel veraltete Zahlen.
     if (m_portfolioTabs->currentIndex() == kTabPortfolioChart)
         ensurePortfolioChartUpToDate();
+    else if (m_portfolioTabs->currentIndex() == kTabMarketValueChart)
+        ensureMarketValueChartUpToDate();
 }
 
 // ── ensurePortfolioChartUpToDate ──────────────────────────────────────────────
 
 void MainWindow::ensurePortfolioChartUpToDate()
 {
-    if (!m_portfolioChartDirty && m_portfolioChart)
+    ensureChartTabUpToDate(m_portfolioChart, m_portfolioChartContainer,
+                           m_portfolioChartDirty, kTabPortfolioChart,
+                           PortfolioChartMode::Development);
+}
+
+// ── ensureMarketValueChartUpToDate ────────────────────────────────────────────
+
+void MainWindow::ensureMarketValueChartUpToDate()
+{
+    ensureChartTabUpToDate(m_marketValueChart, m_marketValueChartContainer,
+                           m_marketValueChartDirty, kTabMarketValueChart,
+                           PortfolioChartMode::MarketValue);
+}
+
+// ── ensureChartTabUpToDate ────────────────────────────────────────────────────
+
+void MainWindow::ensureChartTabUpToDate(ViewPortfolioChart*& chart, QWidget* container,
+                                        bool& dirty, int tabIndex, PortfolioChartMode mode)
+{
+    if (!dirty && chart)
         return;
 
-    if (!m_portfolioChart) {
+    if (!chart) {
         // Erst hier erzeugen: der Konstruktor liest bereits das gesamte
         // Portfolio (siehe ViewPortfolioChart), was zum Zeitpunkt von
         // setupCentralWidget() noch gar nicht möglich wäre.
-        m_portfolioChart = new ViewPortfolioChart(m_portfolioChartContainer);
-        m_portfolioChartContainer->layout()->addWidget(m_portfolioChart);
+        chart = new ViewPortfolioChart(mode, container);
+        container->layout()->addWidget(chart);
 
-        connect(m_portfolioChart, &ViewPortfolioChart::titleInfoChanged,
-                this, [this](const QString& infoText) {
-                    // Zeitraum und Entwicklung wandern in den Tab-Tooltip —
-                    // der Tab-Text selbst soll seine Breite nicht ändern.
-                    m_portfolioTabs->setTabToolTip(kTabPortfolioChart, infoText);
+        connect(chart, &ViewPortfolioChart::titleInfoChanged,
+                this, [this, tabIndex](const QString& infoText) {
+                    // Zeitraum und Entwicklung bzw. Marktwert wandern in den
+                    // Tab-Tooltip — der Tab-Text selbst soll seine Breite
+                    // nicht ändern.
+                    m_portfolioTabs->setTabToolTip(tabIndex, infoText);
                 });
-        m_portfolioTabs->setTabToolTip(kTabPortfolioChart, m_portfolioChart->rangeInfo());
+        m_portfolioTabs->setTabToolTip(tabIndex, chart->rangeInfo());
     } else {
-        m_portfolioChart->reload();
+        chart->reload();
     }
 
-    m_portfolioChartDirty = false;
+    dirty = false;
 }

@@ -12,6 +12,10 @@
 // two-share example that was worked through with Nessie step by step and whose
 // expected values (-10 / +82 / +114 / +160 / +259) he confirmed. If that test
 // ever fails, the formula changed, not the test.
+//
+// Since 17.10.2026 every point also carries the Marktwert line (value of the
+// held shares, purchase price on the buy day, closing price otherwise — see
+// the class documentation). Its tests are grouped at the end of this file.
 
 #include <QtTest>
 
@@ -489,6 +493,201 @@ private slots:
 
         // The January buy is still fully accounted for in the first point.
         CMP_MONEY(r.points.constFirst().purchaseValueTotal, 2000.0);
+    }
+
+    // ── Marktwert-Linie (ergänzt 17.10.2026, Nessies Definition) ─────────
+    //
+    // 1. Ein Kauf wird mit Stückzahl x Kaufpreis eingebucht.
+    // 2. Danach zählt Stückzahl x aktueller Schlusskurs.
+    // 3. Verkaufte Stücke verschwinden, bei Teilverkauf nur die verkauften.
+    //
+    // A shared single-share helper keeps the scenarios short; dates are in
+    // January 2026 unless stated otherwise.
+
+    static PortfolioShareSeriesInput singleShare(const QList<PortfolioBuyEvent>&   buys,
+                                                 const QList<PortfolioSaleEvent>&  sales,
+                                                 const QList<PortfolioPriceEvent>& prices)
+    {
+        PortfolioShareSeriesInput s;
+        s.shareGuid = QStringLiteral("guid-m");
+        s.name      = QStringLiteral("Aktie M");
+        s.buys      = buys;
+        s.sales     = sales;
+        s.prices    = prices;
+        return s;
+    }
+
+    void test_marketValue_referenceScenario()
+    {
+        // Same fixture as the Depotwert reference. Fees, the dividend and the
+        // sale tax must not move the Marktwert line at all.
+        //   10.01.  A 20 x 50 (buy day, purchase price)            = 1000
+        //   01.02.  A 20 x 55 + B 5 x 200 (buy day, purchase price) = 2100
+        //   10.03.  A 20 x 58 + B 5 x 190                           = 2110
+        //   10.04.  A 12 x 60 (8 sold) + B 5 x 195                  = 1695
+        //   30.04.  A 12 x 62 + B 5 x 210                           = 1794
+        const PortfolioSeriesResult r =
+            PortfolioSeriesCalculator::compute(referenceFixture());
+
+        QCOMPARE(r.points.size(), 5);
+        CMP_MONEY(r.points.at(0).marketValue, 1000.0);
+        CMP_MONEY(r.points.at(1).marketValue, 2100.0);
+        CMP_MONEY(r.points.at(2).marketValue, 2110.0);
+        CMP_MONEY(r.points.at(3).marketValue, 1695.0);
+        CMP_MONEY(r.points.at(4).marketValue, 1794.0);
+    }
+
+    void test_marketValue_buyDayUsesPurchasePriceNotClose()
+    {
+        // Regel 1: on the buy day the close (105) differs from the purchase
+        // price (100) — the purchase price wins. From the next day on the
+        // close counts.
+        const PortfolioShareSeriesInput s = singleShare(
+            { { d(2026, 1, 2), 10.0, 100.0 } },
+            {},
+            { { d(2026, 1, 2), 105.0 },
+              { d(2026, 1, 3), 110.0 } });
+
+        const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute({ s });
+
+        QCOMPARE(r.points.size(), 2);
+        CMP_MONEY(r.points.at(0).marketValue, 1000.0);
+        CMP_MONEY(r.points.at(1).marketValue, 1100.0);
+        // The Depotwert part is untouched: its holdings value uses the close.
+        CMP_MONEY(r.points.at(0).holdingsValue, 1050.0);
+    }
+
+    void test_marketValue_additionalBuyOnlyTodaysLotAtPurchasePrice()
+    {
+        // Existing 10 shares are valued at the close of the day (130), only
+        // the 5 shares bought that day at their purchase price (120).
+        const PortfolioShareSeriesInput s = singleShare(
+            { { d(2026, 1, 1), 10.0, 100.0 },
+              { d(2026, 1, 5),  5.0, 120.0 } },
+            {},
+            { { d(2026, 1, 1), 100.0 },
+              { d(2026, 1, 5), 130.0 },
+              { d(2026, 1, 6), 140.0 } });
+
+        const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute({ s });
+
+        QCOMPARE(r.points.size(), 3);
+        CMP_MONEY(r.points.at(0).marketValue, 1000.0);
+        CMP_MONEY(r.points.at(1).marketValue, 10 * 130.0 + 5 * 120.0); // 1900
+        CMP_MONEY(r.points.at(2).marketValue, 15 * 140.0);             // 2100
+    }
+
+    void test_marketValue_partialSaleRemovesOnlySoldShares()
+    {
+        // Regel 3: of 10 shares, 4 are sold — the remaining 6 keep counting.
+        const PortfolioShareSeriesInput s = singleShare(
+            { { d(2026, 1, 1), 10.0, 100.0 } },
+            { { d(2026, 1, 5),  4.0, 120.0, 12.0 } },
+            { { d(2026, 1, 1), 100.0 },
+              { d(2026, 1, 5), 120.0 },
+              { d(2026, 1, 6), 125.0 } });
+
+        const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute({ s });
+
+        QCOMPARE(r.points.size(), 3);
+        CMP_MONEY(r.points.at(0).marketValue, 1000.0);
+        CMP_MONEY(r.points.at(1).marketValue,  720.0); // 6 x 120
+        CMP_MONEY(r.points.at(2).marketValue,  750.0); // 6 x 125
+    }
+
+    void test_marketValue_completeSaleDropsToZeroAndStays()
+    {
+        const PortfolioShareSeriesInput s = singleShare(
+            { { d(2026, 1, 1), 10.0, 100.0 } },
+            { { d(2026, 2, 1), 10.0, 120.0, 30.0 } },
+            { { d(2026, 1, 1), 100.0 },
+              { d(2026, 2, 1), 120.0 },
+              { d(2026, 3, 1), 150.0 } });
+
+        const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute({ s });
+
+        QCOMPARE(r.points.size(), 3);
+        CMP_MONEY(r.points.at(0).marketValue, 1000.0);
+        CMP_MONEY(r.points.at(1).marketValue,    0.0);
+        CMP_MONEY(r.points.at(2).marketValue,    0.0); // later price rise is irrelevant
+    }
+
+    void test_marketValue_sameDayBuyAndSale_fifoSellsOlderSharesFirst()
+    {
+        // On 05.01. 5 shares are bought at 120 and 10 sold. FIFO sells the
+        // 10 older shares, so the 5 shares left are today's — valued at
+        // their purchase price, not at the close of 130.
+        const PortfolioShareSeriesInput s = singleShare(
+            { { d(2026, 1, 1), 10.0, 100.0 },
+              { d(2026, 1, 5),  5.0, 120.0 } },
+            { { d(2026, 1, 5), 10.0, 130.0, 0.0 } },
+            { { d(2026, 1, 1), 100.0 },
+              { d(2026, 1, 5), 130.0 },
+              { d(2026, 1, 6), 140.0 } });
+
+        const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute({ s });
+
+        QCOMPARE(r.points.size(), 3);
+        CMP_MONEY(r.points.at(1).marketValue, 600.0); // 5 x 120
+        CMP_MONEY(r.points.at(2).marketValue, 700.0); // 5 x 140
+    }
+
+    void test_marketValue_shareWithoutHistoryIsExcluded()
+    {
+        // Same rule as the Depotwert line (Nessies Vorgabe 17.10.2026): a
+        // share without any daily value contributes nothing and is reported.
+        PortfolioShareSeriesInput withHistory = singleShare(
+            { { d(2026, 1, 1), 10.0, 100.0 } },
+            {},
+            { { d(2026, 1, 1), 100.0 },
+              { d(2026, 1, 2), 110.0 } });
+
+        PortfolioShareSeriesInput withoutHistory;
+        withoutHistory.shareGuid = QStringLiteral("guid-x");
+        withoutHistory.name      = QStringLiteral("Aktie X");
+        withoutHistory.buys      = { { d(2026, 1, 1), 50.0, 20.0 } };
+
+        const PortfolioSeriesResult r =
+            PortfolioSeriesCalculator::compute({ withHistory, withoutHistory });
+
+        QCOMPARE(r.sharesWithoutHistory, QStringList{ QStringLiteral("Aktie X") });
+        QCOMPARE(r.points.size(), 2);
+        CMP_MONEY(r.points.at(0).marketValue, 1000.0);
+        CMP_MONEY(r.points.at(1).marketValue, 1100.0);
+    }
+
+    void test_marketValue_nothingBeforeFirstPriceDate()
+    {
+        // Same rule as the Depotwert line: before its first daily value a
+        // share contributes nothing — the purchase-price rule does not apply
+        // on a buy day that lies before the price history starts.
+        const PortfolioShareSeriesInput s = singleShare(
+            { { d(2026, 1, 1), 10.0, 100.0 } },
+            {},
+            { { d(2026, 2, 1), 110.0 } });
+
+        const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute({ s });
+
+        QCOMPARE(r.points.size(), 2); // buy date + first price date
+        CMP_MONEY(r.points.at(0).marketValue,    0.0);
+        CMP_MONEY(r.points.at(1).marketValue, 1100.0);
+    }
+
+    void test_marketValue_perShareDetailSumsToPoint()
+    {
+        // The diagnostics export gets the per-share Marktwert as well; on
+        // 01.02. that is A 20 x 55 = 1100 and B (buy day) 5 x 200 = 1000.
+        const PortfolioSeriesResult r =
+            PortfolioSeriesCalculator::compute(referenceFixture(), QDate(), QDate(),
+                                               /*withPerShareDetail=*/true);
+
+        double sum = 0.0;
+        for (const PortfolioSharePoint& p : r.sharePoints)
+            if (p.date == d(2026, 2, 1))
+                sum += p.marketValue;
+
+        CMP_MONEY(sum, 2100.0);
+        CMP_MONEY(r.points.at(1).marketValue, 2100.0);
     }
 };
 

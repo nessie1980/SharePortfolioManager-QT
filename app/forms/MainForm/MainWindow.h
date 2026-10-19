@@ -47,7 +47,9 @@ class QNetworkAccessManager;
  * - Portfolio label ("Portfolio-Übersicht ( Einträge: X ) / Letzte Aktualisierung: -")
  * - QTabWidget:
  *     - "Kompletter Depotwert"  (final value)
+ *     - "Depotwert-Chart"       (ViewPortfolioChart, Development)
  *     - "Kompletter Marktwert"  (market value)
+ *     - "Marktwert-Chart"       (ViewPortfolioChart, MarketValue — 17.10.2026)
  * - Bottom area (horizontal, via QSplitter):
  *     - Left  (~75%): Status-Meldungen (scrollable log)
  *     - Right (~25%): Direkte Dokumentenerfassung (compact) + Aktualisierungs-Status (2 progress bars)
@@ -921,11 +923,26 @@ private:
      */
     void ensurePortfolioChartUpToDate();
 
+    /** Gegenstück zu ensurePortfolioChartUpToDate() für den Marktwert-Chart
+     *  (ergänzt 17.10.2026), gleiche Regeln. */
+    void ensureMarketValueChartUpToDate();
+
     /**
-     * @brief Markiert die Chart-Daten als veraltet.
+     * @brief Gemeinsamer Ablauf beider ensure…UpToDate()-Funktionen
+     * (ergänzt 17.10.2026): legt den Chart beim ersten Aufruf im Container
+     * an und verdrahtet den Tab-Tooltip, sonst lädt er ihn neu, sofern
+     * @p dirty gesetzt ist.
+     */
+    void ensureChartTabUpToDate(ViewPortfolioChart*& chart, QWidget* container,
+                                bool& dirty, int tabIndex, PortfolioChartMode mode);
+
+    /**
+     * @brief Markiert die Daten beider Portfolio-Charts als veraltet.
      *
      * Aufgerufen nach einer Kursaktualisierung und bei jedem Portfoliowechsel.
-     * Neu gerechnet wird erst beim nächsten Betreten des Tabs.
+     * Neu gerechnet wird erst beim nächsten Betreten des jeweiligen Tabs,
+     * der gerade sichtbare Chart-Tab sofort. Seit 17.10.2026 gilt das für
+     * Depotwert- und Marktwert-Chart gleichermaßen.
      */
     void invalidatePortfolioChart();
 
@@ -1005,11 +1022,12 @@ private:
     QTableWidget* m_finalValueFooter      = nullptr; ///< Summary footer for Depotwert tab
     QTableWidget* m_marketValueFooter     = nullptr; ///< Summary footer for Marktwert tab
 
-    /** Tab-Indizes des Portfolio-Tabwidgets. Der Chart sitzt direkt hinter
-     *  dem Depotwert-Grid (Nessies Vorgabe 05.08.2026). */
-    static constexpr int kTabFinalValue     = 0;
-    static constexpr int kTabPortfolioChart = 1;
-    static constexpr int kTabMarketValue    = 2;
+    /** Tab-Indizes des Portfolio-Tabwidgets. Jeder Chart sitzt direkt hinter
+     *  seinem Grid (Nessies Vorgaben 05.08.2026 und 20.09.2026). */
+    static constexpr int kTabFinalValue       = 0;
+    static constexpr int kTabPortfolioChart   = 1;
+    static constexpr int kTabMarketValue      = 2;
+    static constexpr int kTabMarketValueChart = 3;
 
     /** Aktien mit Bestand > 0, die keine Tageswerte abrufen — bei jedem
      *  populatePortfolioTables() neu gefüllt, ausgewertet von
@@ -1059,6 +1077,10 @@ private:
     QWidget*            m_portfolioChartContainer = nullptr; ///< Platzhalter, siehe ensurePortfolioChartUpToDate()
     ViewPortfolioChart* m_portfolioChart          = nullptr; ///< erst beim ersten Betreten erzeugt
     bool                m_portfolioChartDirty     = true;    ///< siehe invalidatePortfolioChart()
+
+    QWidget*            m_marketValueChartContainer = nullptr; ///< wie m_portfolioChartContainer (17.10.2026)
+    ViewPortfolioChart* m_marketValueChart          = nullptr; ///< Modus MarketValue, erst beim ersten Betreten erzeugt
+    bool                m_marketValueChartDirty     = true;    ///< siehe invalidatePortfolioChart()
 
     // ── Bottom panel — left ───────────────────────────────────────────────
     QGroupBox*    m_statusMessageGroup    = nullptr;

@@ -10,6 +10,28 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.26.0] - 2026-10-17
+
+### Added
+
+- Neuer Tab "Marktwert-Chart" direkt hinter "Kompletter Marktwert". Er zeigt
+  den Wert der Aktien, die gerade im Depot liegen: ein Kauf wird mit
+  Stueckzahl mal Kaufpreis eingebucht, danach zaehlt der Schlusskurs,
+  verkaufte Stuecke fallen heraus (bei Teilverkauf nur die verkauften).
+  Kosten, Steuern, Dividenden und Verkaufserloese fliessen nicht ein.
+- Tooltip des Marktwert-Charts mit Datum und Wert in Euro, Tab-Tooltip mit
+  Zeitraum und aktuellem Marktwert. Aktien ohne Tageswerte fehlen wie im
+  Depotwert-Chart und werden in einer Warnzeile genannt.
+- Diagnose-Export auch im Marktwert-Chart (hinter `Debug/ShowDiagnostics`);
+  beide Exporte enthalten zusaetzlich eine Spalte "Marktwert".
+
+### Changed
+
+- Depotwert- und Marktwert-Chart teilen sich die gespeicherte
+  Zeitraum-Einstellung. Gespeichert wird beim Programmende nur noch, wenn
+  sich Interval oder Anzahl in dem jeweiligen Chart geaendert haben.
+- Die Startwarnung zu Aktien ohne Tageswerte nennt jetzt beide Charts.
+
 ## [1.25.0] - 2026-10-17
 
 ### Added

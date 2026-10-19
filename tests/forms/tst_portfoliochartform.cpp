@@ -479,6 +479,88 @@ private slots:
         QVERIFY(csv.contains(QStringLiteral("Entwicklung %")));
         QVERIFY(csv.contains(QStringLiteral("Aktie A;")));
         QVERIFY(csv.contains(QStringLiteral("Stille Aktie;")));
+        // Überschrift nennt den Chart (seit 17.10.2026 je Modus).
+        QVERIFY(csv.startsWith(QStringLiteral("Depotwert-Chart Diagnose")));
+    }
+
+    // ── Marktwert-Modus (ergänzt 17.10.2026) ─────────────────────────────
+
+    void test_marketMode_chartDataCarriesMarketValue()
+    {
+        // risingShare(): 10 Stück zu 100 am 01.06., Kurs 110 am 01.07. —
+        // Marktwert 1000 am Kauftag (Kaufpreis), danach 1100.
+        FakeViewPortfolioChart  view;
+        FakeModelPortfolioChart model;
+        model.m_input    = { risingShare() };
+        model.m_earliest = d(2026, 6, 1);
+        view.m_intervalCount = 5;
+
+        PresenterPortfolioChart presenter(&view, &model, PortfolioChartMode::MarketValue);
+        presenter.loadAndDisplay();
+
+        QVERIFY(view.chartDataSet);
+        QCOMPARE(view.lastChartData.points.size(), 2);
+        QVERIFY(qAbs(view.lastChartData.points.constFirst().marketValue - 1000.0) < 0.005);
+        QVERIFY(qAbs(view.lastChartData.points.constLast().marketValue  - 1100.0) < 0.005);
+    }
+
+    void test_marketMode_rangeInfoShowsMarketValueWithoutPercent()
+    {
+        FakeViewPortfolioChart  view;
+        FakeModelPortfolioChart model;
+        model.m_input    = { risingShare() };
+        model.m_earliest = d(2026, 6, 1);
+        view.m_intervalCount = 5;
+
+        PresenterPortfolioChart presenter(&view, &model, PortfolioChartMode::MarketValue);
+        presenter.loadAndDisplay();
+
+        QVERIFY(view.lastRangeInfo.contains(QStringLiteral("Zeitraum:")));
+        QVERIFY(view.lastRangeInfo.contains(QStringLiteral("Marktwert: ")
+                                            + QLocale().toString(1100.0, 'f', 2)));
+        QVERIFY(!view.lastRangeInfo.contains(QStringLiteral("Entwicklung:")));
+        QVERIFY(!view.lastRangeInfo.contains(QStringLiteral("%")));
+    }
+
+    void test_defaultMode_isDevelopment()
+    {
+        FakeViewPortfolioChart  view;
+        FakeModelPortfolioChart model;
+        PresenterPortfolioChart presenter(&view, &model);
+        QVERIFY(presenter.mode() == PortfolioChartMode::Development);
+    }
+
+    void test_buildRangeInfo_marketMode_usesMarketValueOfLastPoint()
+    {
+        const QList<PortfolioChartPoint> points = {
+            { d(2026, 6, 1),   0.0,  0.0, 1000.0 },
+            { d(2026, 7, 1), 259.0, 12.95, 2345.67 }
+        };
+
+        const QString text = PresenterPortfolioChart::buildRangeInfo(
+            d(2026, 6, 1), d(2026, 7, 1), points, PortfolioChartMode::MarketValue);
+
+        QVERIFY(text.contains(QStringLiteral("Marktwert: ")
+                              + QLocale().toString(2345.67, 'f', 2) + QStringLiteral(" €")));
+        QVERIFY(!text.contains(QLocale().toString(12.95, 'f', 2)));
+    }
+
+    void test_diagnosticsCsv_marketMode_titleAndMarketValueColumn()
+    {
+        FakeViewPortfolioChart  view;
+        FakeModelPortfolioChart model;
+        model.m_input    = { risingShare() };
+        model.m_earliest = d(2026, 6, 1);
+        view.m_intervalCount = 5;
+
+        PresenterPortfolioChart presenter(&view, &model, PortfolioChartMode::MarketValue);
+        presenter.loadAndDisplay();
+
+        const QString csv = presenter.buildDiagnosticsCsv();
+        QVERIFY(csv.startsWith(QStringLiteral("Marktwert-Chart Diagnose")));
+        QVERIFY(csv.contains(QStringLiteral("Entwicklung %;Marktwert")));
+        QVERIFY(csv.contains(QStringLiteral(";Kosten;Marktwert")));
+        QVERIFY(csv.contains(QLocale().toString(1100.0, 'f', 2)));
     }
 
     void test_buildRangeInfo_usesLastPoint()

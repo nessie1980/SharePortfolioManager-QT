@@ -2024,6 +2024,11 @@ eine echte Emission mit korrekt gesetztem `sender()` auslöst.
 | `test_portfolioChartSettings_userChangeIsSavedOnClose` (**20.09.2026**) | Obergrenze auf 50, Spinbox auf 7, Combo auf Woche | Vor dem Schließen noch nichts gespeichert, danach Woche/7 |
 | `test_portfolioChartSettings_desiredCountReturnsWhenMaximumGrows` (**20.09.2026**) | Gewählt 5, Obergrenze 2, dann wieder 50 | Spinbox 2, danach wieder 5 |
 | `test_shareChartSettings_savedSeparatelyFromPortfolioChart` (**20.09.2026**) | Gespeichert Woche/4 für den Aktien-Chart, `ViewChart` für eine Aktie ohne Tageswerte angelegt und zerstört | Combo Woche, Spinbox 4, danach Woche/4 gespeichert, Depotwert-Chart-Wert unverändert Jahr/1 |
+| `test_marketValueChart_tabSitsDirectlyBehindKompletterMarktwert` (**17.10.2026**, Marktwert-Chart, siehe ARCHITECTURE.md) | `MainWindow` mit In-Memory-DB, Portfolio-Tabwidget über seinen Tab "Kompletter Marktwert" gefunden | Vier Tabs in der Reihenfolge Kompletter Depotwert, Depotwert-Chart, Kompletter Marktwert, Marktwert-Chart |
+| `test_marketValueChart_createdLazilyInMarketValueMode` (**17.10.2026**) | Wechsel auf Tab 3 | Vorher kein `ViewMarketValueChart`, danach vorhanden mit Modus `MarketValue`; der Depotwert-Chart wird nicht mit angelegt |
+| `test_marketValueChart_tooltipShowsDateAndValueWithoutPercent` (**17.10.2026**) | `ViewPortfolioChart(MarketValue)`, zwei Punkte per `setChartData()`, `onSeriesHovered()` per `invokeMethod()` | Tooltip exakt "Datum\nWert €", kein "%" |
+| `test_marketValueChart_readsSharedPortfolioChartSettings` (**17.10.2026**) | Gespeichert Monat/6 | Der Marktwert-Chart liest denselben Schlüssel wie der Depotwert-Chart |
+| `test_portfolioCharts_unchangedChartDoesNotOverwriteSharedSettings` (**17.10.2026**) | Beide Charts angelegt, nur im Depotwert-Chart Anzahl 7 gewählt; der unveränderte Marktwert-Chart wird zuletzt zerstört | Gespeichert bleibt 7 — der Destruktor speichert nur bei einer Änderung |
 | `test_onCrosshairMoved_betweenPoints_tooltipShowsActualClosingPrice` (**17.10.2026**, Cursorlinie, ersetzt `test_seriesHovered_offsetAbovePeak_...` vom 19.09.2026, siehe ARCHITECTURE.md) | Drei Tageswerte (Spitze 190,90 in der Mitte, alle vier Kursfelder gleich) auf die letzten drei Tage vor heute geseedet, `ChartPopup` konstruiert, `onCrosshairMoved()` drei Stunden nach dem Spitzendatum aufgerufen | `QToolTip::text()` beginnt mit dem Spitzendatum und enthält `"Schluss-Kurs: "` plus `formatPrice(190.90)` — eingerasteter Wert statt Mausposition |
 | `test_onCrosshairMoved_cursorLineSnapsToDataPointAndSpansPlotArea` (**17.10.2026**) | Gleiche Tageswerte, `ViewChart` auf 900×500 gesetzt und ausnahmsweise per `show()` angezeigt (`qWaitForWindowExposed`), weil die Linie eine vermessene Zeichenfläche braucht; Cursorlinie über ihre `data(0)`-Kennung `ViewChart::kCursorLineDataKey` unter den Szenen-Items gefunden (Achsen und Gitter sind ebenfalls `QGraphicsLineItem`s); `onCrosshairMoved()` fünf Stunden nach dem Spitzendatum, danach `QEvent::Leave` an den Viewport | Vorher unsichtbar; danach sichtbar, X beider Endpunkte == `mapToPosition()` des Spitzenpunkts, Y von `plotArea().top()` bis `bottom()`, Stift magenta und gestrichelt; nach `Leave` wieder unsichtbar |
 | `test_onCrosshairMoved_referenceLineHovered_keepsMarkerTooltip` (**17.10.2026**) | `ChartPopup` mit Tageswerten, `onReferenceLineHovered(..., true)` für eine Kauf-Markerlinie, danach `onCrosshairMoved()` | `QToolTip::text()` enthält weiterhin `" Stk."` — der Markerlinien-Tooltip wird nicht überschrieben |
@@ -3028,7 +3033,8 @@ TestBackupForm — createBackup via MainWindow:
 
 Executable: `tst_portfolioseriescalculator`
 Klasse unter Test: `PortfolioSeriesCalculator` — der Rechenkern des
-Depotwert-Charts (Feature 05.08.2026).
+Depotwert-Charts (Feature 05.08.2026) und seit 17.10.2026 auch des
+Marktwert-Charts (Tests `test_marketValue_*`).
 
 Anders als `tst_sharecalculator` braucht dieser Test **keine** Datenbank: der
 Rechenkern ist bewusst datenbankfrei, alle Eingangsdaten kommen als einfache
@@ -3063,6 +3069,15 @@ nicht der Test.
 | `test_percentIsZeroWhenNothingWasEverBought` | Kaufwert 0 | Guard greift, 0,00 % statt Division durch null |
 | `test_unsortedInputIsSortedInternally` | Unsortierte Eingangslisten | Werden intern sortiert, FIFO bleibt korrekt |
 | `test_windowLimitsPointsButNotAccumulatedState` | Fenster ab März | Drei Punkte, aufgelaufener Zustand bleibt erhalten |
+| `test_marketValue_referenceScenario` (**17.10.2026**, Marktwert-Linie) | Referenzbeispiel | 1000 / 2100 / 2110 / 1695 / 1794 — Gebühren, Dividende und Verkaufssteuer bewegen die Linie nicht |
+| `test_marketValue_buyDayUsesPurchasePriceNotClose` (**17.10.2026**) | Kauf 10 x 100, Schlusskurs am Kauftag 105 | Kauftag 1000 (Kaufpreis), Folgetag 1100; Bestandswert der Depotwert-Linie am Kauftag weiterhin 1050 |
+| `test_marketValue_additionalBuyOnlyTodaysLotAtPurchasePrice` (**17.10.2026**) | Nachkauf 5 x 120 bei Schlusskurs 130 | Alte 10 Stück zum Schlusskurs, nur die neuen 5 zum Kaufpreis: 1900, Folgetag 2100 |
+| `test_marketValue_partialSaleRemovesOnlySoldShares` (**17.10.2026**) | Von 10 Stück werden 4 verkauft | 1000 / 720 / 750 — die übrigen 6 zählen weiter |
+| `test_marketValue_completeSaleDropsToZeroAndStays` (**17.10.2026**) | Komplettverkauf, danach Kursanstieg | 1000 / 0 / 0 |
+| `test_marketValue_sameDayBuyAndSale_fifoSellsOlderSharesFirst` (**17.10.2026**) | Am selben Tag 5 x 120 gekauft und 10 verkauft | FIFO verkauft die älteren Stücke, die übrigen 5 zählen mit Kaufpreis: 600, Folgetag 700 |
+| `test_marketValue_shareWithoutHistoryIsExcluded` (**17.10.2026**) | Zweite Aktie ohne Tageswerte | Trägt nichts bei, wird in `sharesWithoutHistory` gemeldet |
+| `test_marketValue_nothingBeforeFirstPriceDate` (**17.10.2026**) | Kauf vor dem ersten Tageswert | 0 am Kauftag, 1100 ab dem ersten Tageswert |
+| `test_marketValue_perShareDetailSumsToPoint` (**17.10.2026**) | Diagnose-Daten je Aktie | Summe der Aktien-Marktwerte am 01.02. = Punktwert 2100 |
 
 ---
 
@@ -5123,6 +5138,11 @@ Die presenter-seitige Begrenzung muss unabhängig davon greifen.
 | `test_buildWarningText_joinsNames` | Mehrere Namen | Kommagetrennt |
 | `test_buildRangeInfo_withoutPointsShowsOnlyRange` | Ohne Punkte | Nur Zeitraum, kein Entwicklungsteil |
 | `test_buildRangeInfo_usesLastPoint` | Mit Punkten | Werte des letzten Punkts, lokalisiert formatiert |
+| `test_marketMode_chartDataCarriesMarketValue` (**17.10.2026**, Marktwert-Chart) | Presenter im Modus `MarketValue`, 10 Stück zu 100, Kurs 110 | Punkte tragen Marktwert 1000 (Kauftag, Kaufpreis) und 1100 |
+| `test_marketMode_rangeInfoShowsMarketValueWithoutPercent` (**17.10.2026**) | Kopfzeile im Marktwert-Modus | "Zeitraum:" und "Marktwert: 1.100,00", weder "Entwicklung:" noch "%" |
+| `test_defaultMode_isDevelopment` (**17.10.2026**) | Presenter ohne Modus-Angabe | Modus `Development` — der Depotwert-Chart bleibt unverändert |
+| `test_buildRangeInfo_marketMode_usesMarketValueOfLastPoint` (**17.10.2026**) | Statischer Textaufbau | Marktwert des letzten Punkts mit "€", kein Prozentwert |
+| `test_diagnosticsCsv_marketMode_titleAndMarketValueColumn` (**17.10.2026**) | Diagnose im Marktwert-Modus | Überschrift "Marktwert-Chart Diagnose", Spalte "Marktwert" in Block 2 und 3, Wert 1.100,00 |
 
 ---
 

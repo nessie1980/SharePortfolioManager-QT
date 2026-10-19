@@ -3597,6 +3597,10 @@ realisierte Verkaufsgewinne und Kosten. Ein- und Auszahlungen verschieben sie
 nicht — ein Nachkauf über 5.000 Euro lässt die Linie unverändert, weil
 Einzahlen kein Gewinn ist.
 
+Die Kurve, die bei Käufen steigt und bei Verkäufen fällt, zeigt seit
+17.10.2026 der Marktwert-Chart (siehe Abschnitt "Marktwert-Chart" weiter
+unten).
+
 Die Formel je Stichtag t, jeweils über alle Aktien summiert:
 
 Linie(t) = Bestandswert(t) + realisierter Gewinn(t) + Dividenden(t)
@@ -3809,7 +3813,8 @@ kreuzt.
 
 `MainWindow` ist kein MVP-Tripel, sondern eine einzelne `QMainWindow`-Klasse;
 der Tab wird dort direkt eingehängt. Der Tab-Index ist über die Konstanten
-`kTabFinalValue` / `kTabPortfolioChart` / `kTabMarketValue` benannt, und die
+`kTabFinalValue` / `kTabPortfolioChart` / `kTabMarketValue` benannt (seit
+17.10.2026 zusätzlich `kTabMarketValueChart`, siehe "Marktwert-Chart"), und die
 beiden vorher vorhandenen `currentIndex() == 0`-Abfragen laufen jetzt über
 `activePortfolioTable()`, das auf dem Chart-Tab `nullptr` liefert. Ohne diese
 Umstellung hätte der eingeschobene Tab die Zuordnung Index-zu-Tabelle
@@ -3829,6 +3834,74 @@ der Chart "Berechnung läuft…" (`showCalculating()`, dritte Seite des
 genug, und ein Worker-Thread würde die MVP-Verdrahtung ohne echten Gewinn
 verkomplizieren. Sollte sich das bei sehr grossen Portfolios ändern, ist der
 Rechenkern durch seine Datenbankfreiheit bereits threadfähig.
+
+### Marktwert-Chart (umgesetzt 17.10.2026, v1.26.0)
+
+Ein vierter Portfolio-Tab "Marktwert-Chart" direkt hinter "Kompletter
+Marktwert". Er zeigt zu jedem Stichtag den Wert der Aktien, die gerade im
+Depot liegen. Nessies Definition vom 17.10.2026:
+
+1. Ein Kauf wird mit Stückzahl x Kaufpreis eingebucht.
+2. Ändert sich danach der Kurs, zählt Stückzahl x aktueller Schlusskurs.
+3. Verkaufte Stücke verschwinden aus der Linie. Bei einem Teilverkauf nur
+   die verkauften, die übrigen zählen weiter.
+
+Kosten, Steuern, Dividenden und Verkaufserlöse fliessen nicht ein. Am Kauftag
+zählen die an diesem Tag gekauften Stücke mit ihrem Kaufpreis, ab dem
+nächsten Stichtag mit dem Schlusskurs; bei Interval Woche/Monat/Jahr fällt
+ein Kauftag nur selten genau auf einen Stichtag. Aktien ohne Tageswerte
+fallen heraus und stehen in der Warnzeile, vor ihrem ersten Tageswert trägt
+eine Aktie nichts bei — beides wie im Depotwert-Chart.
+
+Rechenkern: `PortfolioSeriesCalculator` liefert je Punkt zusätzlich
+`marketValue` (siehe dortige Klassendoku "Marktwert-Linie"), ohne
+Modus-Parameter an `compute()` — der Wert fällt beim Durchlauf ohnehin an.
+Die heute gekauften Lots werden am Stichtag über ihren Index in der
+Lot-Liste erkannt: das Datumsraster enthält jedes Kaufdatum, also kann kein
+früherer Kauf mehr ausstehen. Verkauft FIFO am selben Tag, gehen zuerst die
+älteren Stücke; was von den heutigen Käufen übrig bleibt, zählt mit
+Kaufpreis.
+
+Presenter und View: `PortfolioChartMode` (`Development` / `MarketValue`) in
+`PortfolioChartTypes.h`, beim Anlegen festgelegt — gleiche Bauweise wie der
+Depotwert-/Marktwert-Modus von `ViewShareDetails`. `PortfolioChartPoint`
+trägt immer Entwicklung und Marktwert; der Modus entscheidet nur über die
+Darstellung:
+
+| | Depotwert-Chart | Marktwert-Chart |
+| --- | --- | --- |
+| Linie | Entwicklung, grün/rot nach Vorzeichen, Null-Linie | Marktwert, einfarbig blau (kPortfolioMarketValueColor), keine Null-Linie |
+| Y-Achse | "Entwicklung (EUR)", Null immer sichtbar | "Marktwert (EUR)", Null nicht erzwungen, nie unter 0 |
+| Tooltip | Datum / Entwicklung EUR / Entwicklung % | Datum / Wert EUR |
+| Tab-Tooltip | Zeitraum / Entwicklung: X EUR (Y %) | Zeitraum / Marktwert: X EUR |
+| Diagnose | "Depotwert-Chart Diagnose", spm-depotwert-chart-diagnose-*.csv | "Marktwert-Chart Diagnose", spm-marktwert-chart-diagnose-*.csv |
+| objectName | ViewPortfolioChart | ViewMarketValueChart |
+
+Die Y-Achse des Marktwert-Charts erzwingt die Null bewusst nicht: bei einem
+Depot von z. B. 50.000 EUR läge die Kurve sonst als flache Linie am oberen
+Rand. Der Diagnose-Export enthält in beiden Charts zusätzlich die Spalte
+"Marktwert" je Stichtag und je Aktie.
+
+Zeitraum-Einstellung: beide Charts lesen und schreiben dieselben Schlüssel
+`Charts/PortfolioIntervalUnit` und `PortfolioIntervalCount` (Nessie
+20.09.2026: "Weil es hier im Prinzip um das Gleiche geht"). Beide werden erst
+beim Programmende zerstört; ohne Vorkehrung überschriebe der zuletzt
+zerstörte, unveränderte Chart die Änderung des anderen. Der Destruktor
+speichert deshalb nur noch, wenn sich Interval oder gewünschte Anzahl
+gegenüber dem beim Öffnen gelesenen Wert geändert haben. Während einer
+Sitzung laufen die beiden Tabs unabhängig; ändert der Benutzer in beiden,
+gewinnt der zuletzt zerstörte.
+
+MainWindow: `kTabMarketValueChart = 3`, eigener Platzhalter-Container und
+verzögerte Erzeugung wie beim Depotwert-Chart. Beide `ensure…UpToDate()`
+laufen über den gemeinsamen Helfer `ensureChartTabUpToDate()`;
+`invalidatePortfolioChart()` markiert beide Charts als veraltet und rechnet
+den gerade sichtbaren sofort neu. `activePortfolioTable()` liefert auch auf
+dem neuen Tab `nullptr`. Die Startwarnung zu Aktien ohne Tageswerte nennt
+jetzt beide Charts.
+
+Damit erledigt: der frühere offene Punkt "Marktwert-Chart" samt der
+"Vermögenskurve als zweite Darstellung", siehe "Erledigt / Archiv".
 
 ---
 
@@ -4874,23 +4947,6 @@ beim Split ist der Wert dabei NICHT invariant, `ShareSplitAdjuster`s
 Grundannahme (Stückzahl × Preis bleibt gleich) trifft nicht zu. Eigenes
 Feature, falls der Fall in einem realen Depot auftritt.
 
-### Marktwert-Chart (05.08.2026)
-
-Das Gegenstück zum Depotwert-Chart, das nur reine Kursgewinne berücksichtigt
-(keine Dividenden, keine Kosten, keine Steuern). Bewusst zurückgestellt, bis
-der Depotwert-Chart im Alltag steht — die Formel dafür ist noch nicht
-abgestimmt. `ViewPortfolioChart` ist so gebaut, dass ein Modus-Flag analog zu
-`ViewShareDetails` nachgerüstet werden kann.
-
-### Vermögenskurve als zweite Darstellung (05.08.2026)
-
-Der Depotwert-Chart zeigt die reine Wertentwicklung; Ein- und Auszahlungen
-verschieben ihn nicht. Daneben wäre eine echte Vermögenskurve denkbar, die
-bei einem Kauf über 5.000 Euro auch um 5.000 Euro nach oben springt. Die
-Datenbasis ist dieselbe, nur die Aggregation unterscheidet sich —
-sinnvollerweise später als per Checkbox umschaltbare zweite Serie im selben
-Chart.
-
 ### Übersetzung ist vollständig offen (07.08.2026)
 
 Die Oberfläche ist durchgängig deutsch. Alle Benutzertexte stehen zwar
@@ -5020,6 +5076,44 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Marktwert-Chart (05.08.2026, erledigt 17.10.2026)
+
+Ein eigener Tab "Marktwert-Chart" direkt hinter "Kompletter Marktwert", als
+Gegenstück zum Depotwert-Chart. Die Linie zeigt zu jedem Stichtag den Wert
+der Aktien, die gerade im Depot liegen. Nessies Definition vom 17.10.2026:
+
+1. Ein Kauf wird mit Stückzahl x Kaufpreis eingebucht.
+2. Ändert sich danach der Kurs, zählt Stückzahl x aktueller Schlusskurs.
+3. Verkaufte Stücke verschwinden aus der Linie. Bei einem Teilverkauf nur
+   die verkauften, die übrigen zählen weiter.
+
+Kosten, Steuern, Dividenden und Verkaufserlöse fliessen nicht ein. Damit
+erledigen sich zwei frühere Fragen: die am 20.09.2026 offen gebliebene, ob die
+Verkaufssteuer in die Linie gehört, und die am 06.08.2026 abgestimmte
+Entwicklungsformel "Bestandswert + Erlöse brutto - Kaufwert", die durch diese
+Definition ersetzt ist. Die frühere "Vermögenskurve als zweite Darstellung"
+(05.08.2026, Sprung um den Kaufbetrag beim Kauf, Fall um den Auszahlungsbetrag
+beim Verkauf) ist dieselbe Kurve und kein eigener Punkt mehr.
+
+Weitere Festlegungen:
+
+- Am Kauftag zählt der Kaufpreis, ab dem nächsten Stichtag der Schlusskurs.
+  Bei Interval Woche/Monat/Jahr fällt ein Kauftag nur selten genau auf einen
+  Stichtag.
+- Aktien ohne Tageswerte werden weggelassen und in einer Warnzeile genannt,
+  wie im Depotwert-Chart. Vor ihrem ersten Tageswert trägt eine Aktie nichts
+  bei, auch nicht mit Kaufpreis.
+- Tooltip: Datum und Wert in Euro, ohne Prozentangabe. Der Depotwert-Chart
+  zeigt Datum, Entwicklung in Euro und Entwicklung in Prozent.
+- Zeitraum-Einstellung geteilt mit dem Depotwert-Chart (Nessie 20.09.2026:
+  "Weil es hier im Prinzip um das Gleiche geht").
+- Diagnose-Export auch hier, hinter demselben Schalter `Debug/ShowDiagnostics`.
+- Eine Klasse für beide Charts: `ViewPortfolioChart` und
+  `PresenterPortfolioChart` bekommen einen Modus, analog zu `ViewShareDetails`.
+
+Umgesetzt in v1.26.0, Beschreibung unter "PortfolioChartForm-Details",
+Abschnitt "Marktwert-Chart".
 
 ### Zeitraum-Einstellungen des Charts persistieren (05.08.2026, erledigt 20.09.2026)
 

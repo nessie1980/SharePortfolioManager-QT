@@ -10,10 +10,12 @@
 
 PresenterPortfolioChart::PresenterPortfolioChart(IViewPortfolioChart* view,
                                                  IModelPortfolioChart* model,
+                                                 PortfolioChartMode mode,
                                                  QObject* parent)
     : QObject(parent)
     , m_view(view)
     , m_model(model)
+    , m_mode(mode)
 {
 }
 
@@ -106,7 +108,7 @@ void PresenterPortfolioChart::refresh()
 
     if (series.points.isEmpty()) {
         m_view->showEmptyChart(tr("Keine Tageswerte im gewählten Zeitraum."));
-        m_view->setRangeInfo(buildRangeInfo(rangeStart, rangeEnd, {}));
+        m_view->setRangeInfo(buildRangeInfo(rangeStart, rangeEnd, {}, m_mode));
         return;
     }
 
@@ -114,10 +116,11 @@ void PresenterPortfolioChart::refresh()
     data.points.reserve(series.points.size());
     for (const PortfolioSeriesPoint& point : series.points)
         data.points.append(PortfolioChartPoint{ point.date, point.development,
-                                                point.developmentPct });
+                                                point.developmentPct,
+                                                point.marketValue });
 
     m_view->setChartData(data);
-    m_view->setRangeInfo(buildRangeInfo(rangeStart, rangeEnd, data.points));
+    m_view->setRangeInfo(buildRangeInfo(rangeStart, rangeEnd, data.points, m_mode));
 }
 
 // -- computeRangeStart ---------------------------------------------------------
@@ -174,7 +177,8 @@ QString PresenterPortfolioChart::buildWarningText(const QStringList& shareNames)
 // -- buildRangeInfo ------------------------------------------------------------
 
 QString PresenterPortfolioChart::buildRangeInfo(const QDate& from, const QDate& to,
-                                                const QList<PortfolioChartPoint>& points)
+                                                const QList<PortfolioChartPoint>& points,
+                                                PortfolioChartMode mode)
 {
     const QString range = tr("Zeitraum: %1 - %2")
         .arg(from.toString(QStringLiteral("dd.MM.yyyy")),
@@ -184,6 +188,9 @@ QString PresenterPortfolioChart::buildRangeInfo(const QDate& from, const QDate& 
         return range;
 
     const PortfolioChartPoint& last = points.constLast();
+    if (mode == PortfolioChartMode::MarketValue)
+        return range + tr(" / Marktwert: %1").arg(formatEuro(last.marketValue));
+
     return range + tr(" / Entwicklung: %1 (%2)")
         .arg(formatEuro(last.development), formatPercent(last.developmentPct));
 }
@@ -223,7 +230,9 @@ QString PresenterPortfolioChart::buildDiagnosticsCsv() const
     QString csv;
 
     // ── Kopf ──────────────────────────────────────────────────────────────
-    csv += tr("Depotwert-Chart Diagnose") + QLatin1Char('\n');
+    csv += (m_mode == PortfolioChartMode::MarketValue ? tr("Marktwert-Chart Diagnose")
+                                                      : tr("Depotwert-Chart Diagnose"))
+         + QLatin1Char('\n');
     csv += tr("Erstellt") + QLatin1Char(';')
          + QDateTime::currentDateTime().toString(QStringLiteral("dd.MM.yyyy HH:mm:ss"))
          + QLatin1Char('\n');
@@ -264,7 +273,7 @@ QString PresenterPortfolioChart::buildDiagnosticsCsv() const
 
     // ── Block 2: je Stichtag ──────────────────────────────────────────────
     csv += tr("Datum;Bestandswert;Realisierter Gewinn;Dividenden;Kosten;"
-              "Kaufwert gehalten;Kaufwert gesamt;Entwicklung;Entwicklung %")
+              "Kaufwert gehalten;Kaufwert gesamt;Entwicklung;Entwicklung %;Marktwert")
          + QLatin1Char('\n');
 
     for (const PortfolioSeriesPoint& point : series.points) {
@@ -277,7 +286,8 @@ QString PresenterPortfolioChart::buildDiagnosticsCsv() const
             money(point.purchaseValueHeld),
             money(point.purchaseValueTotal),
             money(point.development),
-            money(point.developmentPct)
+            money(point.developmentPct),
+            money(point.marketValue)
         };
         csv += fields.join(QLatin1Char(';')) + QLatin1Char('\n');
     }
@@ -289,7 +299,7 @@ QString PresenterPortfolioChart::buildDiagnosticsCsv() const
     // auffälligen Stelle im Kurvenverlauf lohnt es sich, den Zeitraum vorher
     // eng um das fragliche Datum zu legen (z.B. Interval "Tag", Anzahl 5).
     csv += tr("Datum;Aktie;Stueck;Kurs;Bestandswert;Kaufwert gehalten;"
-              "Realisierter Gewinn;Dividenden;Kosten") + QLatin1Char('\n');
+              "Realisierter Gewinn;Dividenden;Kosten;Marktwert") + QLatin1Char('\n');
 
     for (const PortfolioSharePoint& detail : series.sharePoints) {
         const QStringList fields = {
@@ -301,7 +311,8 @@ QString PresenterPortfolioChart::buildDiagnosticsCsv() const
             money(detail.purchaseValueHeld),
             money(detail.realizedGain),
             money(detail.dividends),
-            money(detail.costs)
+            money(detail.costs),
+            money(detail.marketValue)
         };
         csv += fields.join(QLatin1Char(';')) + QLatin1Char('\n');
     }

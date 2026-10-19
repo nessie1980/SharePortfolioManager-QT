@@ -289,6 +289,20 @@ private:
         return nullptr;
     }
 
+    // ── Hilfsfunktion Marktwert-Chart (ergänzt 17.10.2026) ────────────────
+
+    /** Das Portfolio-Tabwidget des Hauptfensters, erkannt an seinem Tab
+     *  "Kompletter Marktwert" (es hat keinen eigenen objectName). */
+    static QTabWidget* findPortfolioTabs(QWidget& window)
+    {
+        const auto tabWidgets = window.findChildren<QTabWidget*>();
+        for (QTabWidget* tabs : tabWidgets)
+            for (int i = 0; i < tabs->count(); ++i)
+                if (tabs->tabText(i) == QStringLiteral("Kompletter Marktwert"))
+                    return tabs;
+        return nullptr;
+    }
+
     // ── Hilfsfunktionen Cursorlinie (ergänzt 17.10.2026) ──────────────────
 
     /** Drei Tageswerte mit Spitze in der Mitte (190,90€), alle vier
@@ -2668,6 +2682,7 @@ private slots:
         const QString msg = MainWindow::buildDailyValuesWarningMessage({ s });
 
         QVERIFY(msg.contains(QStringLiteral("Depotwert-Chart")));
+        QVERIFY(msg.contains(QStringLiteral("Marktwert-Chart"))); // seit 17.10.2026
         QVERIFY(msg.contains(QStringLiteral("dauerhaft verloren")));
     }
 
@@ -3450,6 +3465,110 @@ private slots:
 
         QVERIFY2(found, "portfolioChartExportButton nicht gefunden");
         QVERIFY(!hidden);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Marktwert-Chart (ergänzt 17.10.2026, Nessies Vorgaben): eigener Tab
+    // direkt hinter "Kompletter Marktwert", dieselbe Klasse ViewPortfolioChart
+    // im Modus MarketValue, Tooltip "Datum / Wert €" ohne Prozent, Zeitraum-
+    // Einstellung geteilt mit dem Depotwert-Chart. Die Linie selbst prüft
+    // tst_portfolioseriescalculator.cpp, den Presenter tst_portfoliochartform.cpp.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_marketValueChart_tabSitsDirectlyBehindKompletterMarktwert()
+    {
+        openMemoryDb();
+        MainWindow window;
+
+        QTabWidget* tabs = findPortfolioTabs(window);
+        QVERIFY(tabs);
+        QCOMPARE(tabs->count(), 4);
+        QCOMPARE(tabs->tabText(0), QStringLiteral("Kompletter Depotwert"));
+        QCOMPARE(tabs->tabText(1), QStringLiteral("Depotwert-Chart"));
+        QCOMPARE(tabs->tabText(2), QStringLiteral("Kompletter Marktwert"));
+        QCOMPARE(tabs->tabText(3), QStringLiteral("Marktwert-Chart"));
+    }
+
+    void test_marketValueChart_createdLazilyInMarketValueMode()
+    {
+        openMemoryDb();
+        MainWindow window;
+
+        QTabWidget* tabs = findPortfolioTabs(window);
+        QVERIFY(tabs);
+
+        // Vor dem ersten Betreten existiert der Chart noch nicht.
+        QVERIFY(!window.findChild<ViewPortfolioChart*>(QStringLiteral("ViewMarketValueChart")));
+
+        tabs->setCurrentIndex(3);
+
+        auto* chart = window.findChild<ViewPortfolioChart*>(QStringLiteral("ViewMarketValueChart"));
+        QVERIFY(chart);
+        QVERIFY(chart->mode() == PortfolioChartMode::MarketValue);
+        // Der Depotwert-Chart wird dabei nicht mit angelegt.
+        QVERIFY(!window.findChild<ViewPortfolioChart*>(QStringLiteral("ViewPortfolioChart")));
+    }
+
+    void test_marketValueChart_tooltipShowsDateAndValueWithoutPercent()
+    {
+        openMemoryDb();
+        ViewPortfolioChart view(PortfolioChartMode::MarketValue);
+
+        const QDate d1(2026, 8, 26);
+        const QDate d2(2026, 8, 27);
+        PortfolioChartData data;
+        data.points = {
+            { d1, 10.00, 1.00, 1000.00 },
+            { d2, 25.50, 2.50, 1234.56 }
+        };
+        view.setChartData(data);
+
+        const double x = static_cast<double>(QDateTime(d2, QTime(0, 0)).toMSecsSinceEpoch());
+        QMetaObject::invokeMethod(&view, "onSeriesHovered", Qt::DirectConnection,
+                                   Q_ARG(QPointF, QPointF(x, 0.0)), Q_ARG(bool, true));
+
+        const QString text = QToolTip::text();
+        const QString expected = d2.toString(QStringLiteral("dd.MM.yyyy")) + QStringLiteral("\n")
+                               + QLocale().toString(1234.56, 'f', 2) + QStringLiteral(" €");
+        QCOMPARE(text, expected);
+        QVERIFY(!text.contains(QStringLiteral("%")));
+
+        QMetaObject::invokeMethod(&view, "onSeriesHovered", Qt::DirectConnection,
+                                   Q_ARG(QPointF, QPointF(x, 0.0)), Q_ARG(bool, false));
+    }
+
+    void test_marketValueChart_readsSharedPortfolioChartSettings()
+    {
+        openMemoryDb();
+        AppSettings::instance().setPortfolioChartInterval(QStringLiteral("Month"), 6);
+
+        ViewPortfolioChart view(PortfolioChartMode::MarketValue);
+        auto* combo = view.findChild<QComboBox*>(QStringLiteral("portfolioChartIntervalCombo"));
+        QVERIFY(combo);
+        QCOMPARE(combo->currentData().toInt(), static_cast<int>(IntervalUnit::Month));
+    }
+
+    void test_portfolioCharts_unchangedChartDoesNotOverwriteSharedSettings()
+    {
+        // Beide Charts teilen sich die Schlüssel und werden beim
+        // Programmende zerstört. Ändert der Benutzer nur den Depotwert-Chart,
+        // darf der danach zerstörte, unveränderte Marktwert-Chart dessen
+        // Wert nicht mit dem alten überschreiben.
+        openMemoryDb();
+        AppSettings::instance().setPortfolioChartInterval(QStringLiteral("Year"), 1);
+
+        {
+            ViewPortfolioChart market(PortfolioChartMode::MarketValue); // zuletzt zerstört
+            ViewPortfolioChart depot;                                   // zuerst zerstört
+
+            auto* spin = depot.findChild<QSpinBox*>(QStringLiteral("portfolioChartCountSpin"));
+            QVERIFY(spin);
+            depot.setMaxIntervalCount(50);
+            spin->setValue(7);
+        }
+
+        QCOMPARE(AppSettings::instance().portfolioChartIntervalUnit(),  QStringLiteral("Year"));
+        QCOMPARE(AppSettings::instance().portfolioChartIntervalCount(), 7);
     }
 
     void test_portfolioChartHovered_offsetBetweenDays_tooltipShowsNearestPoint()

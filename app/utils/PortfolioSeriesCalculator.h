@@ -18,9 +18,8 @@
  * ausschliesslich durch Dinge, die echten Wert schaffen oder vernichten:
  * Kursänderungen, Dividenden, realisierte Verkaufsgewinne und Kosten. Ein
  * Kauf über 5.000 Euro verschiebt die Linie nicht, weil Einzahlen kein Gewinn
- * ist. Nach Nessies Vorgabe (05.08.2026) — die Vermögenskurve mit Sprüngen bei
- * Ein- und Auszahlungen ist als eigenes Feature vorgemerkt, siehe
- * ARCHITECTURE.md, "Offene Punkte".
+ * ist. Nach Nessies Vorgabe (05.08.2026). Die Kurve, die bei Käufen und
+ * Verkäufen springt, ist seit 17.10.2026 die Marktwert-Linie, siehe unten.
  *
  * ### Formel je Stichtag t
  *
@@ -50,6 +49,36 @@
  * aber in completePurchase berücksichtigt. Von Nessie am 05.08.2026 bestätigt:
  * der Chart rechnet korrekt, der Footer-Fix folgt separat, danach stimmen
  * beide automatisch überein. Siehe ARCHITECTURE.md, "Offene Punkte".
+ *
+ * ### Marktwert-Linie (ergänzt 17.10.2026)
+ *
+ * Zusätzlich zur Entwicklungslinie liefert jeder Punkt den Marktwert für den
+ * Marktwert-Chart (PortfolioSeriesPoint::marketValue). Nessies Definition vom
+ * 17.10.2026:
+ *
+ * 1. Ein Kauf wird mit Stückzahl x Kaufpreis eingebucht.
+ * 2. Danach zählt Stückzahl x aktueller Schlusskurs.
+ * 3. Verkaufte Stücke verschwinden aus der Linie; bei einem Teilverkauf nur
+ *    die verkauften, der Rest zählt weiter.
+ *
+ * Kosten, Steuern, Dividenden und Verkaufserlöse kommen darin nicht vor — die
+ * Linie zeigt allein den Wert dessen, was zum Stichtag im Depot liegt.
+ *
+ * Umsetzung von Regel 1: Stücke, die am Stichtag selbst gekauft wurden,
+ * werden an diesem Stichtag mit ihrem Kaufpreis bewertet, alle übrigen mit
+ * dem fortgeschriebenen Schlusskurs. Am nächsten Stichtag gilt auch für sie
+ * der Schlusskurs. Wird am selben Tag gekauft und verkauft, verkauft FIFO
+ * zuerst die älteren Stücke; was von den heutigen Käufen übrig bleibt, zählt
+ * mit Kaufpreis.
+ *
+ * Ausschlussregeln wie bei der Entwicklungslinie (Nessies Vorgabe
+ * 17.10.2026): Aktien ganz ohne Tageswerte fallen heraus und landen in
+ * sharesWithoutHistory, und vor ihrem ersten Kursdatum trägt eine Aktie
+ * nichts bei.
+ *
+ * Bewusst KEIN Modus-Parameter an compute(): der Wert fällt beim Durchlauf
+ * ohnehin an, eine zweite Rechnung wäre nur Aufwand. Welche Linie gezeichnet
+ * wird, entscheidet der Presenter.
  *
  * ### FIFO
  *
@@ -176,6 +205,10 @@ struct PortfolioSeriesPoint
     double purchaseValueTotal = 0.0;    ///< Kaufwert aller Käufe bis zum Stichtag
     double development        = 0.0;    ///< Die dargestellte Linie, in Euro
     double developmentPct     = 0.0;    ///< Dieselbe Linie in Prozent
+    /// Linie des Marktwert-Charts (ergänzt 17.10.2026): Wert der gehaltenen
+    /// Stücke, am Kauftag mit Kaufpreis, sonst mit Schlusskurs — siehe
+    /// Klassendoku "Marktwert-Linie".
+    double marketValue        = 0.0;
 };
 
 /**
@@ -222,6 +255,7 @@ struct PortfolioSharePoint
     double  realizedGain      = 0.0;   ///< Kumulierter realisierter Gewinn
     double  dividends         = 0.0;   ///< Kumulierte Netto-Dividenden
     double  costs             = 0.0;   ///< Kumulierte Kosten
+    double  marketValue       = 0.0;   ///< Marktwert-Linie dieser Aktie (ergänzt 17.10.2026)
 };
 
 /**

@@ -195,6 +195,12 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
         for (int gridIdx = 0; gridIdx < grid.size(); ++gridIdx) {
             const QDate stichtag = grid.at(gridIdx);
 
+            // Lots appended from here on were bought ON this stichtag (the
+            // grid holds every buy date, so no earlier buy can still be
+            // pending). Needed for the Marktwert line, which values them at
+            // their purchase price today (Nessies Regel 1, 17.10.2026).
+            const qsizetype firstLotToday = lots.size();
+
             // -- Buys up to and including the current date -----------------
             while (buyIdx < buys.size() && buys.at(buyIdx).date <= stichtag) {
                 const PortfolioBuyEvent& buy = buys.at(buyIdx);
@@ -270,6 +276,17 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
             if (stichtag < firstPriceDate)
                 continue;
 
+            // -- Marktwert: today's lots at purchase price, the rest at close --
+            double todayVolume = 0.0;
+            double todayValue  = 0.0;
+            for (qsizetype lotIdx = firstLotToday; lotIdx < lots.size(); ++lotIdx) {
+                const Lot& lot = lots.at(lotIdx);
+                todayVolume += lot.remaining;
+                todayValue  += round2(lot.remaining * lot.price);
+            }
+            const double marketValue =
+                round2((heldVolume - todayVolume) * lastPrice) + todayValue;
+
             if (withPerShareDetail) {
                 PortfolioSharePoint detail;
                 detail.date              = stichtag;
@@ -281,6 +298,7 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
                 detail.realizedGain      = realizedGain;
                 detail.dividends         = dividendSum;
                 detail.costs             = costSum;
+                detail.marketValue       = marketValue;
                 result.sharePoints.append(detail);
             }
 
@@ -291,6 +309,7 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
             point.costs              += costSum;
             point.purchaseValueHeld  += purchaseValueHeld;
             point.purchaseValueTotal += purchaseValueTotal;
+            point.marketValue        += marketValue;
         }
     }
 

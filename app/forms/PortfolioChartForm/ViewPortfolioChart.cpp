@@ -95,11 +95,14 @@ QList<CurveSegment> buildSegments(const QList<PortfolioChartPoint>& points)
 
 // ── Constructor ───────────────────────────────────────────────────────────────
 
-ViewPortfolioChart::ViewPortfolioChart(QWidget* parent)
+ViewPortfolioChart::ViewPortfolioChart(PortfolioChartMode mode, QWidget* parent)
     : QWidget(parent)
-    , m_presenter(this, &m_model)
+    , m_mode(mode)
+    , m_presenter(this, &m_model, mode)
 {
-    setObjectName(QStringLiteral("ViewPortfolioChart"));
+    setObjectName(mode == PortfolioChartMode::MarketValue
+                      ? QStringLiteral("ViewMarketValueChart")
+                      : QStringLiteral("ViewPortfolioChart"));
     setupUi();
     m_presenter.loadAndDisplay();
 }
@@ -111,8 +114,10 @@ ViewPortfolioChart::~ViewPortfolioChart()
     // Zeitraum-Einstellung beim Schließen speichern (ergänzt 20.09.2026) —
     // gleiche Regeln wie ViewChart::~ViewChart(). Der Depotwert-Chart ist
     // ein Tab im Hauptfenster; "Schließen" heißt hier also Programmende.
-    AppSettings::instance().setPortfolioChartInterval(intervalUnitToKey(intervalUnit()),
-                                                      m_desiredCount);
+    // Seit 17.10.2026 nur bei einer Änderung, siehe Header.
+    const QString unitKey = intervalUnitToKey(intervalUnit());
+    if (unitKey != m_loadedIntervalKey || m_desiredCount != m_loadedCount)
+        AppSettings::instance().setPortfolioChartInterval(unitKey, m_desiredCount);
 }
 
 // ── eventFilter / applyWheelStep ──────────────────────────────────────────────
@@ -236,6 +241,7 @@ QGroupBox* ViewPortfolioChart::setupZeitraumBox()
         AppSettings::instance().portfolioChartIntervalUnit(), IntervalUnit::Year);
     m_intervalCombo->setCurrentIndex(
         std::max(0, m_intervalCombo->findData(static_cast<int>(savedUnit))));
+    m_loadedIntervalKey = intervalUnitToKey(intervalUnit());
     // "activated" statt "currentIndexChanged": nur echte Nutzerauswahl soll
     // einen Refresh auslösen, kein programmatisches setCurrentIndex().
     connect(m_intervalCombo, QOverload<int>::of(&QComboBox::activated),
@@ -249,6 +255,7 @@ QGroupBox* ViewPortfolioChart::setupZeitraumBox()
     m_countSpin->setRange(1, 999);
     // Gespeicherte Anzahl (ergänzt 20.09.2026) — siehe ViewChart.
     m_desiredCount = AppSettings::instance().portfolioChartIntervalCount();
+    m_loadedCount  = m_desiredCount;
     m_countSpin->setValue(m_desiredCount);
     connect(m_countSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, [this](int value) {
@@ -339,6 +346,24 @@ void ViewPortfolioChart::setChartData(const PortfolioChartData& chartData)
     for (const PortfolioChartPoint& point : m_points)
         m_pointsX.append(toMSecs(point.date));
 
+    // Marktwert-Chart (ergänzt 17.10.2026): eine einfarbige Linie, keine
+    // Null-Linie und keine Einfärbung nach Vorzeichen — der Marktwert ist
+    // nie negativ.
+    if (m_mode == PortfolioChartMode::MarketValue) {
+        auto* line = new QLineSeries();
+        for (const PortfolioChartPoint& point : chartData.points)
+            line->append(static_cast<double>(toMSecs(point.date)), point.marketValue);
+
+        m_chart->addSeries(line);
+        line->setColor(kPortfolioMarketValueColor); // nach addSeries(), siehe unten
+        line->attachAxis(m_xAxis);
+        line->attachAxis(m_yAxis);
+
+        connect(line, &QLineSeries::hovered, this,
+                [this](const QPointF& point, bool state) { onSeriesHovered(point, state); });
+        return;
+    }
+
     // Zero line first so the curve is drawn on top of it.
     auto* zeroLine = new QLineSeries();
     zeroLine->append(static_cast<double>(toMSecs(chartData.points.constFirst().date)), 0.0);
@@ -417,17 +442,26 @@ void ViewPortfolioChart::rebuildAxes(const QList<PortfolioChartPoint>& points)
     m_xAxis->setRange(minDt, maxDt);
     m_chart->addAxis(m_xAxis, Qt::AlignBottom);
 
+    const bool marketMode = (m_mode == PortfolioChartMode::MarketValue);
+    const auto valueOf = [marketMode](const PortfolioChartPoint& point) {
+        return marketMode ? point.marketValue : point.development;
+    };
+
     double lo = std::numeric_limits<double>::max();
     double hi = std::numeric_limits<double>::lowest();
     for (const PortfolioChartPoint& point : points) {
-        lo = std::min(lo, point.development);
-        hi = std::max(hi, point.development);
+        lo = std::min(lo, valueOf(point));
+        hi = std::max(hi, valueOf(point));
     }
 
-    // Zero must always be visible — it is the reference the colouring is
-    // built around, and a curve that never crosses it would otherwise hide it.
-    lo = std::min(lo, 0.0);
-    hi = std::max(hi, 0.0);
+    // Depotwert-Chart: zero must always be visible — it is the reference the
+    // colouring is built around, and a curve that never crosses it would
+    // otherwise hide it. Not for the Marktwert-Chart (17.10.2026): forcing
+    // zero there would squash the curve into a flat line at the top.
+    if (!marketMode) {
+        lo = std::min(lo, 0.0);
+        hi = std::max(hi, 0.0);
+    }
 
     if (qFuzzyCompare(lo + 1.0, hi + 1.0)) {
         lo -= 1.0;
@@ -438,8 +472,13 @@ void ViewPortfolioChart::rebuildAxes(const QList<PortfolioChartPoint>& points)
         hi += margin;
     }
 
+    // A market value is never negative — do not let the margin push the
+    // axis below zero.
+    if (marketMode)
+        lo = std::max(lo, 0.0);
+
     m_yAxis = new QValueAxis();
-    m_yAxis->setTitleText(tr("Entwicklung (€)"));
+    m_yAxis->setTitleText(marketMode ? tr("Marktwert (€)") : tr("Entwicklung (€)"));
     m_yAxis->setRange(lo, hi);
     m_chart->addAxis(m_yAxis, Qt::AlignLeft);
 }
@@ -469,6 +508,15 @@ void ViewPortfolioChart::onSeriesHovered(const QPointF& point, bool state)
 
     const PortfolioChartPoint& nearest = m_points.at(index);
 
+    // Marktwert-Chart (ergänzt 17.10.2026): Datum und Wert, ohne Prozent.
+    if (m_mode == PortfolioChartMode::MarketValue) {
+        const QString text = QStringLiteral("%1\n%2")
+            .arg(nearest.date.toString(QStringLiteral("dd.MM.yyyy")),
+                 QLocale().toString(nearest.marketValue, 'f', 2) + QStringLiteral(" €"));
+        QToolTip::showText(QCursor::pos(), text, m_chartView);
+        return;
+    }
+
     const QString text = QStringLiteral("%1\n%2\n%3")
         .arg(nearest.date.toString(QStringLiteral("dd.MM.yyyy")),
              QLocale().toString(nearest.development, 'f', 2) + QStringLiteral(" €"),
@@ -483,7 +531,9 @@ void ViewPortfolioChart::onExportDiagnostics()
 {
     const QString suggested =
         QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
-        + QStringLiteral("/spm-depotwert-chart-diagnose-")
+        + (m_mode == PortfolioChartMode::MarketValue
+               ? QStringLiteral("/spm-marktwert-chart-diagnose-")
+               : QStringLiteral("/spm-depotwert-chart-diagnose-"))
         + QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"))
         + QStringLiteral(".csv");
 
