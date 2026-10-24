@@ -68,6 +68,8 @@ set(APP_SOURCES
     utils/ShareUpdateRules.h
     utils/PortfolioSeriesCalculator.h
     utils/PortfolioSeriesCalculator.cpp
+    utils/CalculationReport.h
+    utils/CalculationReport.cpp
     utils/ShareSplitAdjuster.h
     utils/ShareSplitAdjuster.cpp
     utils/SaleFifoAllocator.h

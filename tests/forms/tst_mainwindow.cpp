@@ -3468,6 +3468,42 @@ private slots:
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Berechnungsbericht (ergänzt 23.10.2026): Menüeintrag unter "Hilfe",
+    // nur bei "Debug/ShowDiagnostics" sichtbar. Inhalt und Schreiben prüft
+    // tests/utils/tst_calculationreport.cpp; der Dateidialog selbst wird wie
+    // alle exec()-Pfade nicht automatisiert.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_calculationReportAction_hiddenByDefault()
+    {
+        openMemoryDb();
+        MainWindow window;
+        auto* action = window.findChild<QAction*>(QStringLiteral("actionCalculationReport"));
+        QVERIFY(action);
+        QVERIFY(!action->isVisible());
+    }
+
+    void test_calculationReportAction_visibleWhenDiagnosticsEnabled()
+    {
+        openMemoryDb();
+        AppSettings::instance().setShowDiagnostics(true);
+
+        bool found = false, visible = false;
+        {
+            MainWindow window;
+            auto* action = window.findChild<QAction*>(QStringLiteral("actionCalculationReport"));
+            found   = (action != nullptr);
+            visible = found && action->isVisible();
+        }
+
+        // Zurücksetzen vor den Prüfungen, siehe Diagnose-Knopf-Test oben.
+        AppSettings::instance().setShowDiagnostics(false);
+
+        QVERIFY2(found, "actionCalculationReport nicht gefunden");
+        QVERIFY(visible);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Marktwert-Chart (ergänzt 17.10.2026, Nessies Vorgaben): eigener Tab
     // direkt hinter "Kompletter Marktwert", dieselbe Klasse ViewPortfolioChart
     // im Modus MarketValue, Tooltip "Datum / Wert €" ohne Prozent, Zeitraum-

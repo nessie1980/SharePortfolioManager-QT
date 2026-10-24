@@ -10,6 +10,28 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.27.0] - 2026-10-24
+
+### Added
+
+- Berechnungsbericht als Textdatei (Hilfe -> "Berechnungsbericht
+  speichern..."), sichtbar nur mit `Debug/ShowDiagnostics`. Er listet je
+  Aktie, auch fuer vollstaendig verkaufte, alle Transaktionen, den Bestand mit
+  FIFO-Nachrechnung, alle Tabellenwerte mit Rechenweg und die Chartwerte,
+  danach eine Gesamtuebersicht mit beiden Footern, den Chart-Endwerten und
+  allen Abweichungen. Dient der Analyse der Abweichung zwischen dem Tab
+  "Kompletter Marktwert" und dem Marktwert-Chart.
+- Im Bericht stehen Marktwert- und Depotwert-Sicht je Aktie nebeneinander
+  mit Differenzspalte und dem Rechenweg rechts neben jeder Zeile; die Kaeufe-Tabelle zeigt je Kauf die zugeordneten
+  Kosten und den Kaufwert mit Kosten, eine Summenzeile und Einheiten an allen
+  Werten. Verkaeufe, Dividenden (Steuern aufgeschluesselt) und Kosten
+  ebenfalls mit Summenzeile und Einheiten. Lange Tabellen wiederholen alle
+  40 Zeilen ihre Titelleiste.
+- Der Bericht wird zweimal geschrieben: mit Realwerten unter dem gewaehlten
+  Namen und anonymisiert daneben ("-anonymisiert"). Ersetzt werden
+  Aktiennamen, WKN, ISIN, Depotnummern und der Portfolio-Pfad; Betraege,
+  Kurse, Stueckzahlen und Daten bleiben unveraendert.
+
 ## [1.26.0] - 2026-10-17
 
 ### Added

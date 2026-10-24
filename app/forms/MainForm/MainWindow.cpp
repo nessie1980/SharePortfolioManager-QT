@@ -24,6 +24,7 @@
 #include "../../repositories/SaleRepository.h"
 #include "../../models/ShareObject.h"
 #include "../../utils/ShareCalculator.h"
+#include "../../utils/CalculationReport.h"
 #include "../../utils/DocumentClassifier.h"
 #include "../../utils/ShareSplitHint.h"
 #include "../../IconProvider.h"
@@ -61,6 +62,7 @@
 #include <QDropEvent>
 #include <QSystemTrayIcon>
 #include <QTimer>
+#include <QStandardPaths>
 #include <algorithm>
 #include "../OwnMessageBoxForm/OwnMessageBox.h"
 #include "../BackupProgressForm/BackupProgressDialog.h"
@@ -349,6 +351,15 @@ void MainWindow::setupActions()
         AboutForm dialog(this);
         dialog.exec();
     });
+
+    // Berechnungsbericht (ergänzt 23.10.2026). Nur bei "Debug/ShowDiagnostics"
+    // sichtbar, gelesen einmalig beim Start wie der Diagnose-Knopf der Charts;
+    // eine Änderung in der INI greift nach einem Neustart.
+    m_actionCalculationReport = new QAction(tr("&Berechnungsbericht speichern..."), this);
+    m_actionCalculationReport->setObjectName(QStringLiteral("actionCalculationReport"));
+    m_actionCalculationReport->setVisible(AppSettings::instance().showDiagnostics());
+    connect(m_actionCalculationReport, &QAction::triggered,
+            this, &MainWindow::onSaveCalculationReport);
 }
 
 // ── setupMenuBar ──────────────────────────────────────────────────────────────
@@ -375,6 +386,10 @@ void MainWindow::setupMenuBar()
     apiMenu->addAction(m_actionApiKeyYahoo);
 
     QMenu* helpMenu = menuBar()->addMenu(tr("&Hilfe"));
+    helpMenu->addAction(m_actionCalculationReport);
+    // Bei ausgeblendetem Bericht blendet QMenu den dann führenden Trenner
+    // selbst aus (separatorsCollapsible, Standard true).
+    helpMenu->addSeparator();
     helpMenu->addAction(m_actionAbout);
 }
 
@@ -3606,6 +3621,43 @@ void MainWindow::refreshPortfolioFooters()
     }
 
     updatePortfolioFooters(allValues);
+}
+
+// ── onSaveCalculationReport ───────────────────────────────────────────────────
+
+void MainWindow::onSaveCalculationReport()
+{
+    const QString suggested =
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)
+        + QStringLiteral("/spm-berechnungsbericht-")
+        + QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"))
+        + QStringLiteral(".txt");
+
+    const QString path = QFileDialog::getSaveFileName(
+        this, tr("Berechnungsbericht speichern"), suggested, tr("Textdateien (*.txt)"));
+    if (path.isEmpty())
+        return; // vom Benutzer abgebrochen
+
+    const CalculationReportInput input = CalculationReport::collect(
+        QDateTime::currentDateTime(), AppSettings::instance().portfolioPath());
+
+    // Zwei Dateien aus einem Aufruf (Nessies Vorgabe 24.10.2026): Realwerte
+    // unter dem gewählten Namen, die anonymisierte Fassung daneben.
+    const QString anonPath = CalculationReport::anonymizedFilePath(path);
+
+    QString error;
+    if (!CalculationReport::writeToFile(path, CalculationReport::build(input), &error)
+        || !CalculationReport::writeToFile(anonPath,
+                                           CalculationReport::build(CalculationReport::anonymize(input)),
+                                           &error)) {
+        OwnMessageBox::critical(this, tr("Fehler"),
+                                tr("Der Berechnungsbericht konnte nicht geschrieben werden:\n%1")
+                                    .arg(error));
+        return;
+    }
+
+    addStatusMessage(tr("Berechnungsbericht gespeichert: %1 (anonymisiert: %2)").arg(path, anonPath),
+                     MessageType::Success);
 }
 
 // ── activePortfolioTable ──────────────────────────────────────────────────────

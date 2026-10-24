@@ -536,6 +536,22 @@ private slots:
     void onPortfolioRowRightClicked(const QPoint& pos);
 
     /**
+     * @brief Fragt einen Dateinamen ab und schreibt den Berechnungsbericht
+     * (ergänzt 23.10.2026, siehe CalculationReport und ARCHITECTURE.md,
+     * "Berechnungsbericht").
+     *
+     * Erreichbar über Hilfe → "Berechnungsbericht speichern…", nur sichtbar,
+     * wenn "Debug/ShowDiagnostics" in settings.ini gesetzt ist (Nessies
+     * Vorgabe 23.10.2026). Schreibt seit 24.10.2026 zwei Dateien: Realwerte
+     * unter dem gewählten Namen und daneben die anonymisierte Fassung
+     * (CalculationReport::anonymizedFilePath()). Bewusst dünn: Sammeln, Formatieren und Schreiben
+     * stecken vollständig in CalculationReport und sind dort getestet; hier
+     * bleibt nur der Dateidialog, der wie alle exec()-Pfade nicht
+     * automatisiert wird.
+     */
+    void onSaveCalculationReport();
+
+    /**
      * @brief Called when PdfTextExtractor finishes converting a document
      * dropped onto "Direkte Dokumentenerfassung" (Feature 27.07.2026).
      *
@@ -1162,6 +1178,9 @@ private:
 
     // ── Actions — Help ────────────────────────────────────────────────────
     QAction* m_actionAbout                = nullptr;
+    /** "Berechnungsbericht speichern…" (ergänzt 23.10.2026), nur sichtbar bei
+     *  AppSettings::showDiagnostics() — siehe onSaveCalculationReport(). */
+    QAction* m_actionCalculationReport    = nullptr;
 
     // ── Tray (Feature 03.08.2026) ─────────────────────────────────────────
     QSystemTrayIcon* m_trayIcon           = nullptr; ///< nullptr wenn kein Tray verfügbar (isSystemTrayAvailable())

@@ -147,6 +147,8 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/utils/SplitRatioChecker.h
     ../../app/utils/SplitRatioChecker.cpp
     ../../app/utils/PortfolioSeriesCalculator.cpp
+    ../../app/utils/CalculationReport.h
+    ../../app/utils/CalculationReport.cpp
     ../../app/utils/PdfTextExtractor.h
     ../../app/utils/PdfTextExtractor.cpp
     ../../app/utils/DocumentClassifier.h
@@ -1399,6 +1401,8 @@ qt_add_executable(tst_backupform tst_backupform.cpp
     ../../app/utils/SplitRatioChecker.h
     ../../app/utils/SplitRatioChecker.cpp
     ../../app/utils/PortfolioSeriesCalculator.cpp
+    ../../app/utils/CalculationReport.h
+    ../../app/utils/CalculationReport.cpp
     ../../app/utils/PdfTextExtractor.h
     ../../app/utils/PdfTextExtractor.cpp
     ../../app/utils/DocumentClassifier.h

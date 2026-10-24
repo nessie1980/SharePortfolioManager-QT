@@ -3905,6 +3905,105 @@ Damit erledigt: der frühere offene Punkt "Marktwert-Chart" samt der
 
 ---
 
+## Berechnungsbericht (ergänzt 23.10.2026, v1.27.0)
+
+Diagnose-Werkzeug zum offenen Punkt "Depotwert/Marktwert: Tabellen und Charts
+zeigen unterschiedliche Bezugsgrößen". Die Summe im Tab "Kompletter
+Marktwert" passte nicht zum Endwert des Marktwert-Charts; aus der Oberfläche
+liess sich nicht nachvollziehen, welche Aktie und welcher Term das
+verursacht. Der Bericht legt jede Rechnung offen.
+
+Nessies Vorgaben vom 19./23.10.2026:
+
+- Format zunächst nur Text (`.txt`); CSV kann bei Bedarf folgen.
+- Ausführliche, vollständige Auflistung je Aktie.
+- Alle Aktien, auch vollständig verkaufte — ob die Abweichung an ihnen
+  liegt, ist ausdrücklich noch offen.
+- Abgleich mit beiden Charts im Bericht, damit sicher ist, dass Übersicht
+  und Chart zusammenpassen.
+- Aufruf vorerst nur bei `Debug/ShowDiagnostics` über Hilfe →
+  "Berechnungsbericht speichern…"; ein dauerhafter Menüeintrag ist später
+  schnell gemacht.
+- Ein Menüeintrag schreibt zwei Dateien (24.10.2026): Realwerte unter dem
+  gewählten Namen, daneben die anonymisierte Fassung mit dem Zusatz
+  "-anonymisiert". Ersetzt werden Aktienname (Aktie 1, 2, …), WKN und ISIN
+  (WKN-1, ISIN-1, …), Depotnummern (Depot 1, 2, …; gleiche Nummer gleiche
+  Bezeichnung, auch über Aktien hinweg) und der Portfolio-Pfad. Beträge,
+  Kurse, Stückzahlen und Daten bleiben, sie sind der Inhalt der Analyse; der
+  Kopf weist darauf hin, dass eine bekannte Aktie über Kurs und Datum
+  trotzdem erkennbar bleibt. Umgesetzt in `CalculationReport::anonymize()`
+  und `anonymizedFilePath()`.
+
+Aufbau:
+
+- Teil 1, je Aktie: Kopf (WKN, ISIN, Kurs, Bestand, Hinweis "vollständig
+  verkauft"), Splits, Käufe (Stück, Kurs, Kaufwert ohne Kosten, zugeordnete
+  Kosten, Kaufwert mit Kosten, gespeichertes "verkauft" und
+  FIFO-Nachrechnung, bei Splits zusätzlich heutige Skala; Summenzeile und
+  Einheiten an allen Werten, Nessies Wunsch 23.10.2026), Verkäufe,
+  Dividenden (Steuern aufgeschlüsselt in Quellensteuer, Kapitalertragsteuer
+  und Soli) und Kosten (Provision, Makler, Börse, Brutto, Rabatt, Netto) —
+  alle mit Summenzeile und Einheiten —, Bestand
+  (gekauft, verkauft, rechnerisch, FIFO, Tabelle), alle Werte der Tabellen
+  "Kompletter Marktwert" und "Kompletter Depotwert" nebeneinander mit
+  Differenzspalte (Nessies Wunsch 23.10.2026, damit die Unterschiede beider
+  Sichten sofort auffallen) und dem Rechenweg rechts neben jeder Zeile —
+  "beide:" bei gleichem Rechenweg, sonst Marktwert in der Zeile und Depotwert
+  in einer Fortsetzungszeile darunter, Trennlinie nach jedem Punkt
+  (ebenfalls 23.10.2026), die
+  Chart-Werte am letzten Stichtag der Aktie und der Abgleich Tabelle gegen
+  Chart.
+- Teil 2, Gesamtübersicht: je Aktie eine Zeile in Marktwert- und
+  Depotwert-Sicht mit Summenzeile, beide Footer genau so berechnet wie in
+  `MainWindow::updatePortfolioFooters()`, die portfolioweiten Chart-Endwerte
+  und der Abgleich Footer gegen Chart.
+- Teil 3: zuerst die echten Abweichungen, darunter getrennt die Hinweise.
+
+Kursunterschied: Die Tabelle bewertet mit dem aktuellen Kurs der Aktie, der
+Chart mit dem letzten Tageswert. Der Unterschied selbst ist erwartbar und
+wird nur als Hinweis geführt. Er überträgt sich auf Marktwert und
+Entwicklung; der Bericht rechnet deshalb je Aktie den Kurseffekt aus
+(Chart-Bestand × (aktueller Kurs − letzter Tageswert)). Geht eine Differenz
+vollständig darin auf, steht sie als "durch Kurs erklärt" bei den Hinweisen;
+bleibt ein Rest, ist sie eine Abweichung, und der Bericht nennt Kursanteil
+und Rest getrennt. Im Testportfolio während der Entwicklung blieb so genau
+eine Abweichung übrig: der Footer "Aktueller Depotstand" im Marktwert-Tab mit
+einem Rest in Höhe der Summe der realisierten Gewinne.
+
+Umsetzung: `CalculationReport` (`app/utils/CalculationReport.*`), zweiteilig
+wie Presenter und Rechenkern der Charts. `collect()` liest alle Aktien, ruft
+für die Tabellenwerte `ShareCalculator::compute()` mit Kurs und Vortageskurs
+auf (wie MainWindow) und für die Chartwerte `ModelPortfolioChart` plus
+`PortfolioSeriesCalculator` über die gesamte Historie (wie die Charts) — je
+Aktie einzeln für ihren Beitrag und einmal über alle Aktien für die Summe.
+`build()` formatiert datenbankfrei und ist dadurch direkt testbar.
+`replayFifoSold()` spielt alle Verkäufe einer Aktie über
+`SaleFifoAllocator` neu gegen ihre Käufe — je Depot und nur gegen Käufe bis
+zum Verkaufsdatum, wie die Verkaufsmaske — und stellt das Ergebnis dem
+gespeicherten `BuyObject::volumeSold()` gegenüber, aus dem
+`ShareCalculator` den Bestand ableitet. Der Depotwert- und Marktwert-Chart
+rechnen FIFO dagegen ohne Depot-Trennung; auch das macht der Bericht über den
+Bestands- und Kaufwert-Abgleich sichtbar.
+
+Lange Tabellen wiederholen nach je 40 Datenzeilen ihre Titelleiste
+(Überschrift und Linie, `CalculationReport::kHeaderRepeatRows`), damit beim
+Scrollen klar bleibt, welche Spalte was enthält (Nessies Wunsch 23.10.2026).
+Nie am Tabellenende und nie vor einer Summenzeile.
+
+Spaltenbreiten der Texttabellen sind Mindestbreiten: ein längerer Inhalt
+oder eine längere Überschrift verbreitert die Spalte für alle Zeilen
+(Bugfix 23.10.2026 — eine neunstellige Depotnummer verschob vorher die
+Datenzeilen gegenüber Kopf- und Summenzeile um ein Zeichen).
+
+Bewusst reine Diagnose: der Bericht korrigiert nichts. Die Texte laufen nicht
+über `tr()`, weil der Bericht eine Diagnose-Datei ist und keine Oberfläche.
+Geschrieben wird UTF-8 mit BOM, wie beim Diagnose-Export der Charts.
+`MainWindow::onSaveCalculationReport()` enthält nur den Dateidialog und wird
+wie alle exec()-Pfade nicht automatisiert; getestet sind
+`tst_calculationreport` und die Sichtbarkeit der Aktion in `tst_mainwindow`.
+
+---
+
 ## ShareSplitsForm-Details (Phase 3a der Aktiensplit-Behandlung, 08.08.2026)
 
 Erfassungsmaske für Splits, erreichbar über den fünften Stift-Button in
@@ -4793,6 +4892,78 @@ nach einem Reset unbelegt ist.
 ---
 
 ## Offene Punkte
+
+### Depotwert/Marktwert: Tabellen und Charts zeigen unterschiedliche Bezugsgrößen (offen, 19.10.2026)
+
+Aufgefallen bei Nessies Abnahme des Marktwert-Charts (v1.26.0): der Endwert
+des Marktwert-Charts stimmt nicht mit der Summe im Tab "Kompletter
+Marktwert" überein. Nessies Einschätzung: der Chart stimmt, die Summe in der
+Übersicht nicht.
+
+Ursache der Abweichung (geprüft 19.10.2026): Die Footer-Zeile "Aktueller
+Depotstand" im Marktwert-Tab summiert `ShareValues::marketValue`, und das ist
+`curValue + saleProfitLoss` — also Kurswert der gehaltenen Stücke PLUS
+realisierter Gewinn/Verlust (nach Steuer) aller Verkäufe. Die Zeilen darüber
+zeigen dagegen nur `curValue`, und der Marktwert-Chart zeigt nur die
+gehaltenen Stücke. Die Summe passt also weder zu den Zeilen noch zum Chart,
+sobald es Verkäufe gibt. Daneben mischt "Kpl. Marktwert"
+(`completeCurValueMarket`) gehaltene Stücke ohne Gebühren mit verkauften
+Stücken MIT Gebühren und Steuer (siehe `ShareCalculator.cpp`,
+`completeProfitLossMarket`).
+
+Nessies Vorgabe (19.10.2026): Depotwert- und Marktwert-Tab sowie beide Charts
+werden nachgebessert. Bisher zeigt der Depotwert-Chart die Entwicklung über
+alle jemals gehandelten Aktien, der Marktwert-Chart nur die Aktien, die
+gerade im Depot liegen. Künftig:
+
+- Depotwert-Chart: zusätzlich eine zweite Kurve nur für die Aktien, die
+  tatsächlich im Depot liegen.
+- Marktwert-Chart: zusätzlich eine Kurve über alle jemals gehandelten Aktien.
+
+Damit hätten beide Charts dieselben zwei Sichten wie die Tabellen mit ihren
+Spaltengruppen "Aktuell" (gehaltene Stücke) und "Komplett" (alle Käufe und
+Verkäufe), und jede Kurve könnte am rechten Rand auf genau einer
+Footer-Summe enden — derselbe Prüfanker wie heute beim Depotwert-Chart und
+"Komplette Entwicklung".
+
+Zur Analyse gibt es seit 23.10.2026 (v1.27.0) den Berechnungsbericht, siehe
+"Berechnungsbericht". Nessie wertet ihn aus, bevor die Fragen unten
+entschieden werden.
+
+Befund aus Nessies Bericht einer vollständig verkauften Aktie (24.10.2026;
+Kauf 200 × 48,595 mit 30,95 Kosten, Verkauf 200 × 145,00 mit 69,90 Kosten
+und 5.058,76 Steuern, vier Dividenden netto 109,80):
+
+- Der Footer "Aktueller Depotstand" im Marktwert-Tab zeigt 14.222,24 EUR,
+  obwohl das Depot leer ist — der realisierte Gewinn nach Steuer ohne
+  Gebühren. Tabellenzeile und Marktwert-Chart zeigen richtig 0,00.
+- "Kpl. Marktwert" (23.840,39) entspricht keinem tatsächlich geflossenen
+  Betrag: Kpl. Einzahlung ohne Gebühren (9.719,00) plus eine Entwicklung,
+  die Kauf- und Verkaufsgebühren sowie Steuern abzieht (14.121,39). Die
+  Auszahlung war 23.871,34, der Verkaufswert 29.000,00.
+- Depotwert-Tab und Depotwert-Chart stimmen in Euro überein (14.231,19),
+  der Prozentwert aber nicht: Footer 145,96 % (Bezug Kaufwert mit Kosten
+  9.749,95), Chart 146,43 % (Bezug Kaufwert ohne Kosten 9.719,00).
+- Alle übrigen Werte rechnen sich nach, auch Steuern der Dividenden
+  (Quellensteuer 15 %, Kapitalertragsteuer 10 % nach Anrechnung, Soli) und
+  die Verkaufssteuer (25 % plus Soli auf 19.180,15 Gewinn nach Kosten).
+
+Vor der Umsetzung zu klären (Fragen an Nessie, 19.10.2026):
+
+1. Entsprechen die beiden Kurven je Chart den beiden Spaltengruppen der
+   Tabelle ("Aktuell" und "Komplett"), und soll jede Kurve auf der
+   zugehörigen Footer-Summe enden?
+2. Depotwert-Chart, Kurve "im Depot": Entwicklung der gehaltenen Stücke wie
+   die Spalte "Aktuelle Entwicklung" (Kurswert minus Kaufwert inkl.
+   anteiliger Kaufgebühren)? Zählen Dividenden der noch gehaltenen Aktien
+   mit?
+3. Marktwert-Chart, Kurve "gesamt": Was passiert beim Verkauf — bleibt der
+   Verkaufswert in der Kurve stehen (z. B. Stückzahl x Verkaufskurs, brutto),
+   statt wie bei der heutigen Kurve herauszufallen?
+4. Footer "Aktueller Depotstand": soll er künftig die Summe der Marktwerte
+   der gehaltenen Stücke zeigen, also exakt den Endwert des Marktwert-Charts?
+5. "Kpl. Marktwert": soll er durchgängig ohne Gebühren und Steuern rechnen,
+   passend zur Marktwert-Sicht?
 
 ### Breite Belegkennungen gewinnen gegen den Dialog-Fallback (offen, 02.09.2026)
 

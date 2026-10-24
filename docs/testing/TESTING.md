@@ -41,6 +41,7 @@ ctest --output-on-failure
 ./bin/tst_documentclassifier
 ./bin/tst_sharecalculator
 ./bin/tst_portfolioseriescalculator
+./bin/tst_calculationreport
 ./bin/tst_sharesplitadjuster
 ./bin/tst_salefifoallocator
 ./bin/tst_dividendvolumechecker
@@ -2020,6 +2021,8 @@ eine echte Emission mit korrekt gesetztem `sender()` auslöst.
 | `test_portfolioChartHovered_offsetBetweenDays_tooltipShowsNearestPoint` (**19.09.2026**, Zusammenführung in `ChartPointSearch`, siehe ARCHITECTURE.md) | `ViewPortfolioChart` direkt konstruiert (In-Memory-DB), drei Punkte über den öffentlichen Setter `setChartData()` gesetzt (Mitte: 250,50 € / 2,50 %), `onSeriesHovered()` per `QMetaObject::invokeMethod()` mit einer Mausposition 5 Stunden nach dem mittleren Tag und Y = 999,99 aufgerufen | `QToolTip::text()` enthält Datum, Eurobetrag und Prozentwert des mittleren Punkts, nicht aber 999,99 — der Einrast-Fix vom 06.08.2026 war auf View-Ebene bis dahin ungetestet |
 | `test_portfolioChart_diagnosticsButton_hiddenByDefault` (**19.09.2026**, Diagnose-Knopf hinter `Debug/ShowDiagnostics`, siehe ARCHITECTURE.md) | `ViewPortfolioChart` direkt konstruiert, Schalter auf Standard (`false`) | `portfolioChartExportButton` existiert und ist `isHidden()` — `isHidden()` statt `isVisible()`, weil die View im Test nie angezeigt wird |
 | `test_portfolioChart_diagnosticsButton_visibleWhenEnabled` (**19.09.2026**) | `setShowDiagnostics(true)`, dann `ViewPortfolioChart` konstruiert; Schalter vor den Prüfungen wieder auf `false` zurückgesetzt (prozessweiter Singleton) | Knopf existiert und ist nicht ausgeblendet |
+| `test_calculationReportAction_hiddenByDefault` (**23.10.2026**, Berechnungsbericht, siehe ARCHITECTURE.md) | `MainWindow` mit Schalter auf Standard (`false`) | Aktion `actionCalculationReport` existiert und ist unsichtbar |
+| `test_calculationReportAction_visibleWhenDiagnosticsEnabled` (**23.10.2026**) | `setShowDiagnostics(true)`, `MainWindow` angelegt und wieder zerstört, Schalter vor den Prüfungen zurückgesetzt | Aktion existiert und ist sichtbar |
 | `test_portfolioChartSettings_savedValuesAreRestoredAndKeptWhenClamped` (**20.09.2026**, Zeitraum-Einstellungen, siehe ARCHITECTURE.md) | Gespeichert Monat/24, `ViewPortfolioChart` mit leerer DB angelegt (Obergrenze 1) und wieder zerstört | Combo steht auf Monat, Spinbox zeigt gekürzt 1, nach dem Schließen ist weiterhin 24 gespeichert |
 | `test_portfolioChartSettings_userChangeIsSavedOnClose` (**20.09.2026**) | Obergrenze auf 50, Spinbox auf 7, Combo auf Woche | Vor dem Schließen noch nichts gespeichert, danach Woche/7 |
 | `test_portfolioChartSettings_desiredCountReturnsWhenMaximumGrows` (**20.09.2026**) | Gewählt 5, Obergrenze 2, dann wieder 50 | Spinbox 2, danach wieder 5 |
@@ -3078,6 +3081,54 @@ nicht der Test.
 | `test_marketValue_shareWithoutHistoryIsExcluded` (**17.10.2026**) | Zweite Aktie ohne Tageswerte | Trägt nichts bei, wird in `sharesWithoutHistory` gemeldet |
 | `test_marketValue_nothingBeforeFirstPriceDate` (**17.10.2026**) | Kauf vor dem ersten Tageswert | 0 am Kauftag, 1100 ab dem ersten Tageswert |
 | `test_marketValue_perShareDetailSumsToPoint` (**17.10.2026**) | Diagnose-Daten je Aktie | Summe der Aktien-Marktwerte am 01.02. = Punktwert 2100 |
+
+---
+
+### CalculationReport (tests/utils/tst_calculationreport.cpp)
+
+Executable: `tst_calculationreport`
+Klasse unter Test: `CalculationReport` — der Berechnungsbericht (ergänzt
+23.10.2026, siehe ARCHITECTURE.md "Berechnungsbericht").
+
+`build()` und `replayFifoSold()` werden datenbankfrei mit von Hand befüllten
+Eingangsdaten geprüft; `collect()` läuft gegen eine In-Memory-SQLite-Datenbank,
+`writeToFile()` gegen ein `QTemporaryDir`. Geprüft wird nicht der genaue
+Wortlaut des Berichts, sondern dass die Abschnitte vorhanden sind und
+Abweichungen zwischen Tabelle, Footer und Chart erkannt und in Teil 3 gelistet
+werden. `main()` setzt `QLocale::setDefault(German)` wie die Anwendung.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_build_containsAllThreeParts` | Eine Aktie mit stimmigen Werten | Kopf, Teil 1 mit Aktienblock, Teil 2 mit beiden Footern, Teil 3 |
+| `test_build_consistentValues_noFindings` | Tabelle, Footer und Chart passen | Kein "ABWEICHUNG", Teil 3 meldet "Keine" |
+| `test_build_footerWithRealizedGain_flagsDeviationAgainstChart` | Realisierter Gewinn 65,00 im Footer-Beitrag, nicht im Chart (Fall vom 19.10.2026) | Teil 3 nennt Footer "Aktueller Depotstand" mit 65,00; die Zeilensumme bleibt ohne Befund |
+| `test_build_volumeDifference_isReportedPerShare` | Chart-Bestand 10 statt 12 | Teil 3 nennt "Aktie A: Bestand (Stück)" |
+| `test_build_priceDifference_isOnlyAHint` | Letzter Tageswert 61,50 statt aktueller Kurs 62,00 | Als "Hinweis" geführt, nicht als Abweichung |
+| `test_build_priceDifferenceExplainsMarketValueDiff` | Chart bewertet mit 61,00, Tabelle mit 62,00, sonst alles gleich | Differenz 12,00 als "durch Kurs erklärt", keine Abweichung und kein "Rest" in Teil 3 |
+| `test_build_footerDiffBeyondPriceEffect_showsRest` | Kursunterschied 12,00 plus realisierter Gewinn 65,00 im Footer-Beitrag | Footer "Aktueller Depotstand" bleibt Abweichung, Teil 3 nennt "Rest 65,00" |
+| `test_build_buysTableShowsCostsAndSumRow` | Kauf 12 × 50,00 mit zugeordneten Kosten 12,00 − 2,00 Rabatt | Käufe-Tabelle zeigt Kosten 10,00 €, Kaufwert mit Kosten 610,00 €, Kurs mit "€", Summenzeile mit "Stk.", ohne Splits keine Spalte "Stück heute" |
+| `test_build_longDepotNumber_keepsColumnsAligned` (**Bugfix 23.10.2026**) | Neunstellige Depotnummer in der Käufe-Tabelle (Nessies Screenshot) | Kopf-, Daten- und Summenzeile gleich lang — die Spalte wächst mit statt die Zeile zu verschieben |
+| `test_build_salesTableHasSumRow` (**23.10.2026**) | Zwei Verkäufe 4 × 60 und 2 × 70 | Verkäufe-Tabelle mit Summenzeile: 6,0000 Stk., 380,00 € |
+| `test_build_dividendsTableShowsTaxesAndSumRow` (**23.10.2026**) | Dividende 12 Stück × 1,00 mit Quellensteuer 1,00, Kapitalertragsteuer 2,00, Soli 0,11 | Steuerspalten aufgeschlüsselt, Einheiten, Summenzeile mit Steuern 3,11 € und Netto 8,89 € |
+| `test_build_longTable_repeatsHeaderEvery40Rows` (**23.10.2026**) | 85 Käufe | Titelleiste dreimal: am Anfang, direkt nach der 40. und nach der 80. Datenzeile, jeweils mit Linie darunter; vor der Summenzeile nicht |
+| `test_build_shortTable_headerOnlyOnce` (**23.10.2026**) | Ein Kauf | Titelleiste genau einmal |
+| `test_build_calculationWaysStandNextToTheirRow` (**23.10.2026**) | Marktwert-/Depotwert-Tabelle einer Aktie | Keine Liste "Rechenwege:" mehr; Rechenweg Marktwert in der Zeile, Depotwert in der Folgezeile an derselben Spalte; bei gleichem Rechenweg eine Zeile mit "beide:" |
+| `test_build_sideBySideTable_ruleAfterEveryItem` (**23.10.2026**) | Marktwert-/Depotwert-Tabelle einer Aktie | 15 Trennlinien: unter der Überschrift und nach jedem der 14 Punkte |
+| `test_build_foreignCurrencyDividend_rateShowsCurrency` (**Bugfix 24.10.2026**) | Dividende 0,20 USD je Stück (Nessies Bericht) | Satz je Stück mit "USD" statt "€" |
+| `test_build_tinyDifferenceIsNotShownAsNegativeZero` (**Bugfix 24.10.2026**) | Rechendifferenz −1e-9 | Kein "-0,00" im Bericht |
+| `test_anonymize_replacesIdentifiersKeepsValues` (**24.10.2026**) | Zwei Aktien, Depotnummer 501403950 in beiden, 8006189848 in einer | Aktie 1/2, WKN-1, ISIN-2, Pfad "(anonymisiert)", gleiche Depotnummer = gleiches "Depot n" über Aktien hinweg, Kurse und Stückzahlen unverändert |
+| `test_anonymize_reportContainsNoRealIdentifiers` (**24.10.2026**) | Realer und anonymisierter Bericht derselben Daten | Name, WKN, ISIN, Depotnummer und Pfad nur im realen Bericht; Hinweis "ANONYMISIERT" nur im anonymisierten; Beträge gleich |
+| `test_anonymizedFilePath` (**24.10.2026**) | Dateinamen mit, ohne und mit mehrfacher Endung | "-anonymisiert" vor der letzten Endung, ohne Endung ".txt" |
+| `test_build_soldShareIsListedAndMarked` | Bestand 0 nach Verkauf | Aktie erscheint mit "vollständig verkauft" und Verkaufstabelle |
+| `test_build_shareWithoutDailyValues_isNamedInFindings` | Aktie ohne Tageswerte | Teil 3 nennt sie |
+| `test_build_emptyPortfolio` | Keine Aktien | Hinweis "Keine Aktien im Portfolio.", Teil 3 vorhanden |
+| `test_replayFifoSold_oldestBuyFirst` | Zwei Käufe à 10, Verkauf 15 | 10 / 5 |
+| `test_replayFifoSold_ignoresStoredVolumeSold` | Gespeichert 7 verkauft, tatsächlich 4 | Nachrechnung liefert 4 |
+| `test_replayFifoSold_onlyBuysOfTheSameDepot` | Verkauf aus Depot 222 | Nur der Kauf aus Depot 222 wird belastet |
+| `test_replayFifoSold_buyAfterSaleIsNotUsed` | Kauf nach dem Verkaufsdatum | Bleibt unberührt, Rest des Verkaufs offen |
+| `test_collect_tableAndChartValuesForOneShare` | Aktie mit Kauf 10 × 100 und zwei Tageswerten (100, 110) in der Datenbank | Bestand 10, Chart-Stichtag 01.02., Marktwert 1.100 je Aktie und gesamt, Bericht enthält die Aktie |
+| `test_writeToFile_utf8WithBom` | Text mit Umlauten | Datei beginnt mit UTF-8-BOM, Inhalt korrekt |
+| `test_writeToFile_reportsErrorForInvalidPath` | Nicht existierendes Verzeichnis | `false` und Fehlermeldung gesetzt |
 
 ---
 

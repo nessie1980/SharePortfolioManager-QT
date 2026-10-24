@@ -97,6 +97,53 @@ target_link_libraries(tst_portfolioseriescalculator
 
 add_test(NAME tst_portfolioseriescalculator COMMAND tst_portfolioseriescalculator)
 
+# ── CalculationReport tests ────────────────────────────────────────────────────
+# Berechnungsbericht (ergänzt 23.10.2026). build() und replayFifoSold() sind
+# datenbankfrei, collect() liest wie MainWindow und die Charts alle Aktien
+# samt Transaktionen und Tageswerten — daher dieselben Quellen wie
+# tst_portfoliochartform (ModelPortfolioChart, Repositories, Modelle) plus
+# SaleFifoAllocator für die FIFO-Nachrechnung. Der Test arbeitet gegen eine
+# In-Memory-SQLite-Datenbank.
+qt_add_executable(tst_calculationreport tst_calculationreport.cpp
+    ../../app/utils/CalculationReport.h
+    ../../app/utils/CalculationReport.cpp
+    ../../app/utils/SaleFifoAllocator.cpp
+    ../../app/utils/ShareCalculator.cpp
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/PortfolioSeriesCalculator.cpp
+    ../../app/forms/PortfolioChartForm/ModelPortfolioChart.cpp
+    ../../app/models/ShareObject.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/BrokerageObject.cpp
+    ../../app/models/DividendObject.cpp
+    ../../app/models/DailyValuesObject.cpp
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/ShareRepository.cpp
+    ../../app/repositories/BuyRepository.cpp
+    ../../app/repositories/SaleRepository.cpp
+    ../../app/repositories/BrokerageRepository.cpp
+    ../../app/repositories/DividendRepository.cpp
+    ../../app/repositories/DailyValuesRepository.cpp
+    ../../app/repositories/ShareSplitRepository.cpp
+)
+
+target_include_directories(tst_calculationreport
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/core
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/PortfolioChartForm
+)
+
+set_target_properties(tst_calculationreport PROPERTIES AUTOMOC ON)
+
+# Qt6::Gui wegen QColor in PortfolioChartTypes.h (über ModelPortfolioChart),
+# gleiche Begründung wie bei tst_portfoliochartform.
+target_link_libraries(tst_calculationreport
+    PRIVATE Qt6::Test Qt6::Gui Qt6::Sql Database
+)
+
+add_test(NAME tst_calculationreport COMMAND tst_calculationreport)
+
 # ── ShareUpdateRules tests ─────────────────────────────────────────────────────
 # Regelmodul "Tageswert-Historie bei Bestand > 0 erzwingen" (Feature
 # 06.08.2026). ShareUpdateRules.h ist header-only und ohne Zustand — das Ziel
