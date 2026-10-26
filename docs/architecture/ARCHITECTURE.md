@@ -5163,6 +5163,39 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
+### Qt-Version für neuere GCC anheben (TODO, 26.10.2026)
+
+Seit GitHub `ubuntu-latest` am 19.10.2026 auf Ubuntu 26 umgestellt hat,
+scheiterte `build-linux` in `build.yml` beim ersten Push danach (Commit
+"Berechnungsbericht und einheitliche Rechenregeln, v1.27.0") am Linker:
+
+```
+multiple definition of `QtPrivate::IsFloatType_v<_Float16>'
+```
+
+Die Variable stammt aus dem Qt-Header `qcomparehelpers.h` von Qt 6.7.0.
+Dort ist ihre Spezialisierung für den nativen 16-Bit-Gleitkommatyp nicht
+`inline`, also definiert sie jede Quelldatei selbst; der GCC von Ubuntu 26
+lässt das nicht mehr durch. Betroffen ist jedes Testziel mit mehr als einer
+Quelldatei, unser Code ist nicht beteiligt. Windows (MSVC), der
+AppImage-Build (`ubuntu-22.04`, GCC 11) und lokale Builds mit älterem GCC
+laufen weiter.
+
+Sofortmassnahme (Nessies Entscheidung 26.10.2026): `build-linux` läuft fest
+auf `ubuntu-24.04`, mit Begründung als Kommentar im Workflow. Damit fehlt
+vorerst die Frühwarnung durch den neuesten Compiler.
+
+Zu tun: Qt in allen Jobs von `build.yml` und
+`package.yml` auf eine Version heben, die mit dem neuen GCC baut, z. B.
+6.8 LTS, und `build-linux` danach wieder auf `ubuntu-latest` stellen. Ein
+eigener Schritt mit Test auf allen Plattformen, auch für AppImage und
+Windows-Installer. Spätestens fällig, bevor GitHub `ubuntu-24.04` einstellt.
+
+@note Nicht geprüft (26.10.2026): die genaue GCC-Version des neuen Runners
+und ab welcher Qt-Version die Spezialisierung `inline` ist. Beides vor dem
+Upgrade klären — die GCC-Version steht in der CMake-Ausgabe ("The CXX
+compiler identification is GNU ...").
+
 ### Depotwert/Marktwert: zweite Kurve je Chart (offen, 19.10.2026; Rechenregeln entschieden und umgesetzt 25.10.2026)
 
 Aufgefallen bei Nessies Abnahme des Marktwert-Charts (v1.26.0): der Endwert
@@ -5739,10 +5772,12 @@ unter Node 20. Die genutzten Eingaben (`name`, `path`,
 `if-no-files-found`) sind unverändert.
 
 @note Der Hinweis "The ubuntu-latest label will migrate to Ubuntu 26" im
-Job "Linux (Ubuntu, GCC)" von `build.yml` ist gewollt und keine offene
-Warnung: `build-linux` bleibt absichtlich auf `ubuntu-latest` (siehe
+Job "Linux (Ubuntu, GCC)" von `build.yml` war gewollt und keine offene
+Warnung: `build-linux` blieb absichtlich auf `ubuntu-latest` (siehe
 "AppImage-Build auf feste Ubuntu-Version gesetzt"). Dass er im AppImage-Job
-nicht mehr erscheint, bestätigt die feste Version dort.
+nicht mehr erscheint, bestätigt die feste Version dort. Seit 26.10.2026
+läuft auch `build-linux` fest auf `ubuntu-24.04`, siehe "Qt-Version für
+neuere GCC anheben" unter "Offene Punkte".
 
 ### AppImage-Build auf feste Ubuntu-Version gesetzt (18.09.2026, erledigt 18.09.2026)
 
@@ -5766,14 +5801,17 @@ Umgesetzt:
 - `build-linux` in `build.yml` bleibt auf `ubuntu-latest`. Dort geht es nur
   um Bauen und Testen; ein neuerer Compiler ist eine willkommene
   Frühwarnung, ähnlich wie der englische CI-Runner schon mehrere
-  Locale-Fehler gefunden hat.
+  Locale-Fehler gefunden hat. Nachtrag 26.10.2026: Die Frühwarnung hat
+  angeschlagen, Qt 6.7.0 baut mit dem GCC von Ubuntu 26 nicht mehr.
+  `build-linux` steht deshalb vorerst fest auf `ubuntu-24.04`, siehe "Qt-Version
+  für neuere GCC anheben" unter "Offene Punkte".
 
 @note Auf 22.04 bauen GCC 11 und CMake 3.22 statt der neueren Versionen von
 24.04. CMake erfüllt das `cmake_minimum_required(VERSION 3.21)`. GCC 11
 kennt den grössten Teil von C++20, aber nicht alles (z. B. `<format>` erst
 ab GCC 13). Nutzt der Code künftig ein Sprachmittel, das GCC 11 fehlt,
-scheitert zuerst dieser Job — `build-linux` auf `ubuntu-latest` bemerkt es
-nicht.
+scheitert zuerst dieser Job — `build-linux` auf einem neueren Ubuntu bemerkt
+es nicht.
 
 @note Auch `ubuntu-22.04` wird GitHub irgendwann als Runner einstellen;
 ein Termin war am 18.09.2026 nicht bekannt. Dann ist neu zu entscheiden,

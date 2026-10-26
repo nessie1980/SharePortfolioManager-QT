@@ -10,7 +10,14 @@ on:
 jobs:
   build-linux:
     name: Linux (Ubuntu, GCC)
-    runs-on: ubuntu-latest
+    # Fest auf 24.04 statt ubuntu-latest (26.10.2026). Seit der Umstellung
+    # von ubuntu-latest auf Ubuntu 26 (19.10.2026) scheitert der Build mit
+    # Qt 6.7.0 am Linker: "multiple definition of
+    # QtPrivate::IsFloatType_v<_Float16>" aus qcomparehelpers.h - der neue
+    # GCC vertraegt die Header dieser Qt-Version nicht. Unser Code ist nicht
+    # beteiligt. Zurueck auf ubuntu-latest erst mit einer neueren Qt-Version,
+    # siehe ARCHITECTURE.md, "Qt-Version fuer neuere GCC anheben".
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
