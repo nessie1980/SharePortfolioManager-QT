@@ -1202,7 +1202,8 @@ Für die Marktwert-Box (10.07.2026, gegen echten Screenshot abgeglichen —
 Bild "AGIF-Allianz Glo.Eq.Insights") kam ein drittes additives Feld hinzu:
 
 - `ShareValues::salePayoutMarket` — rohe Verkaufserlöse OHNE Brokerage,
-  Marktwert-Pendant zu `salePayoutFinal`.
+  Marktwert-Pendant zu `salePayoutFinal`. Seit 25.10.2026 brutto, also auch
+  ohne Steuern (Verkaufswert Stück x Verkaufskurs).
 
 Wichtig: Für die Marktwert-Box `Gesamt-Bestandsberechnung` werden
 bewusst **nicht** `completeCurValueMarket`/`completeProfitLossMarket`/
@@ -1216,11 +1217,19 @@ completePurchaseMarket`. Die Aktuelle-Box im Marktwert-Modus verwendet dagegen
 `marketValue` (= `curValue + saleProfitLoss`) direkt — dieses Feld war bereits
 vor dieser Iteration vorhanden und mischt keine Brokerage-Anteile ein.
 
+@note Überholt am 25.10.2026 (Bugfix "Rechenregeln Depotwert und Marktwert"):
+`completeCurValueMarket`/`completeProfitLossMarket`/`completeProfitPctMarket`
+rechnen seither selbst rein Kurs, die Gesamt-Box liest sie direkt. Die
+Aktuelle-Box zeigt in beiden Modi nur noch den Bestand (Bestandswert −
+Einzahlungen (Bestand) = Gewinn / Verlust (aktuell), Entwicklung), `marketValue`
+ist entfallen. Das Feld-Mapping unten ist auf dem neuen Stand.
+
 Zwei Zeilen sind reine Presenter-Arithmetik über bereits vorhandene Felder
 (keine Repository-Zugriffe, daher bewusst NICHT in `ShareCalculator`):
 
 - Vortag-Box "Gewinn / Verlust" = `volume × prevDayDiff` (beide Modi)
-- Aktuelle-Box "Summe" (nur Depotwert-Modus) = `curValue + totalDividend + saleProfitLossFinal`
+- bis 25.10.2026 zusätzlich Aktuelle-Box "Summe" (nur Depotwert-Modus) =
+  `curValue + totalDividend + saleProfitLossFinal`; entfallen, siehe Note oben
 
 Beide werden mit einer lokalen, in `PresenterShareDetails.cpp` duplizierten
 `roundAway()`-Funktion gerundet (bewusst **nicht** `ShareCalculator::roundAway()`
@@ -1242,9 +1251,9 @@ Unterschiede zwischen den Modi:
 | Zeile | Depotwert | Marktwert |
 | ------ | ------ | ------ |
 | Tab-Titel | "Komplette Depotbewertung" | "Komplette Marktbewertung" |
-| Gesamt-/Aktuelle-Box "Dividenden" | echter Wert (`totalDividend`) | deaktiviert: Wert `"-"`, Farbe `Qt::gray` (Dividenden sind ein reines Depotwert-Konzept) |
+| Gesamt-Box "Dividenden" | echter Wert (`totalDividend`) | deaktiviert: Wert `"-"`, Farbe `Qt::gray` (Dividenden sind ein reines Depotwert-Konzept) |
 | Vortag-Box | identisch in beiden Modi (keine Brokerage involviert) | identisch |
-| Gewinne/Verluste-Tab | Werte inkl. Brokerage (`payoutBrokerageReduction()`/`profitLossBrokerageReduction()`) | seit 14.07.2026: brokeragefrei (`payout()`/`profitLoss()`), Tab existiert in beiden Modi |
+| Gewinne/Verluste-Tab | Werte inkl. Brokerage (`payoutBrokerageReduction()`/`profitLossBrokerageReduction()`) | seit 14.07.2026 vorhanden; seit 25.10.2026 rein Kurs: `saleValue()` und `saleValue() − buyValue()` (bis dahin `payout()`/`profitLoss()` mit Steuerabzug) |
 | Dividenden-/Kosten-Tab | vorhanden | existiert nicht (reine Depotwert-Konzepte, siehe oben) |
 
 Die deaktivierte Dividenden-Zeile wird über einen kleinen Presenter-Helfer
@@ -1330,17 +1339,17 @@ Vollständiges Feld-Mapping:
 | Gesamt | Anteile / Aktueller Kurswert / Aktueller Bestandswert | `volume` / `curPrice` / `curValue` | (identisch) |
 | Gesamt | + Dividenden | `totalDividend` | deaktiviert ("-") |
 | Gesamt | + Verkäufe | `salePayoutFinal` | `salePayoutMarket` |
-| Gesamt | = Summe | `completeCurValue` | `curValue + salePayoutMarket` (Presenter) |
+| Gesamt | = Summe | `completeCurValue` | `completeCurValueMarket` (= `curValue + salePayoutMarket`) |
 | Gesamt | − Alle Einzahlungen | `completePurchase` | `completePurchaseMarket` |
-| Gesamt | = Gewinn / Verlust (gesamt) | `completeProfitLoss` (grün/rot) | `Summe − completePurchaseMarket` (Presenter, grün/rot) |
-| Gesamt | Entwicklung | `completeProfitPct` (grün/rot) | `Gewinn/Verlust ÷ completePurchaseMarket × 100` (Presenter, grün/rot) |
+| Gesamt | = Gewinn / Verlust (gesamt) | `completeProfitLoss` (grün/rot) | `completeProfitLossMarket` (grün/rot) |
+| Gesamt | Entwicklung | `completeProfitPct` (grün/rot) | `completeProfitPctMarket` (grün/rot) |
 | Vortag | Aktueller Kurswert / Vortages-Kurswert / Kurswert-Entw. | `curPrice` / `prevDayPrice` / `prevDayDiff` (grün/rot) | (identisch) |
 | Vortag | Entwicklung | `prevDayPct` (grün/rot) | (identisch) |
 | Vortag | Anteile × Kurswert-Entw. = Gewinn/Verlust | `volume × prevDayDiff` (Presenter, grün/rot) | (identisch) |
 | Aktuelle | Anteile / Aktueller Kurswert / Aktueller Bestandswert | `volume` / `curPrice` / `curValue` | (identisch) |
-| Aktuelle | + Dividenden | `totalDividend` | deaktiviert ("-") |
-| Aktuelle | + Gewinn / Verlust (Verkäufe) | `saleProfitLossFinal` | `saleProfitLoss` |
-| Aktuelle | = Summe | `curValue + totalDividend + saleProfitLossFinal` (Presenter) | `marketValue` |
+| Aktuelle | − Einzahlungen (Bestand) | `purchaseValueFinal` | `purchaseValue` |
+| Aktuelle | = Gewinn / Verlust (aktuell) | `profitLossFinal` (grün/rot) | `profitLoss` (grün/rot) |
+| Aktuelle | Entwicklung | `profitLossPctFinal` (grün/rot) | `profitLossPct` (grün/rot) |
 
 @note **Label-Korrektur (10.07.2026, gegen echte Datenbank validiert):** Die
 Zeile "− Alle Einzahlungen" (`completePurchase`/`completePurchaseMarket`) hieß im
@@ -2483,24 +2492,24 @@ angezeigte Aggregatzelle. `roundAway` addiert vor dem Runden ein winziges Epsilo
 Betragsrichtung, damit Halb-Cent-Grenzfaelle (z. B. 1,005) identisch zur C#-Referenz
 (`MidpointRounding.AwayFromZero`) gerundet werden.
 
-Marktwert-Tab (ohne Brokerage):
+Marktwert-Tab, rein Kurs (seit 25.10.2026, siehe "Rechenregeln Depotwert und
+Marktwert" mit Rechenbeispielen):
 
-- `purchaseValue` = gehaltene Basis: Summe(round(remVol x price) - reductionPart)
+- `purchaseValue` = gehaltene Basis: Summe(round(remVol x price)), ohne Kosten und Rabatt
 - `curValue` = round(heldVolume x curPrice)
 - `profitLoss` = curValue - purchaseValue
-- `saleProfitLoss` = realisierte G/V ohne Brokerage (mit Rabatt), nur Footer-Aggregat
-- `marketValue` = curValue + saleProfitLoss
-- `completePurchaseMarket` = alle Kaeufe: Summe(round(vol x price) - reduction) (ohne Brokerage)
-- `completeProfitLossMarket` = (curValue - purchaseValue) + realisierte G/V MIT Brokerage
-- `completeCurValueMarket` = completePurchaseMarket + completeProfitLossMarket
+- `salePayoutMarket` = Summe(round(saleVol x salePrice)), brutto ohne Kosten und Steuern
+- `saleProfitLoss` = salePayoutMarket - Kaufwert der verkauften Stuecke, nur informativ
+- `completePurchaseMarket` = alle Kaeufe: Summe(round(vol x price))
+- `completeCurValueMarket` = curValue + salePayoutMarket
+- `completeProfitLossMarket` = completeCurValueMarket - completePurchaseMarket
 
-Die Spalten "Einzahlung/Marktwert" und "Kpl. Einzahlung" sind brokeragefrei (reiner
-Marktwert der gehaltenen Anteile bzw. Einzahlung ohne Brokerage). "Komplette Entwicklung"
-addiert zur unrealisierten Entwicklung der gehaltenen Anteile die **realisierte** G/V
-abgeschlossener Verkaeufe inkl. Verkaufs- und anteiliger Kaufgebuehren (entspricht
-`profitLossBrokerageReduction`), da dies der tatsaechlich erzielte Netto-Gewinn/-Verlust ist.
-"Kpl. Marktwert" = "Kpl. Einzahlung" + "Komplette Entwicklung", womit
-`Kpl. Entwicklung = Kpl. Marktwert - Kpl. Einzahlung` exakt gilt.
+Bis 25.10.2026 addierte "Komplette Entwicklung" im Marktwert zur unrealisierten
+Entwicklung die realisierte G/V MIT Kosten und Steuern, "Kpl. Marktwert" war
+Einzahlung plus diese Entwicklung, und das Feld `marketValue` (= curValue +
+saleProfitLoss) speiste den Footer "Aktueller Depotstand". Das mischte beide
+Sichten und ist mit dem Bugfix vom 25.10.2026 entfallen; `marketValue` und
+`marketValuePct` gibt es nicht mehr.
 
 Die realisierte G/V wird aus Aggregaten gerechnet (Netto-Verkaufserloes minus Kaufkosten der
 verkauften Stuecke = alle Kaeufe minus noch gehaltene Kaeufe), nicht aus den `SaleBuyDetail`-
@@ -3768,6 +3777,14 @@ fällt der gehaltene Kaufwert auf null; mit ihm als Nenner spränge der
 Prozentwert auf 0 %, obwohl die Linie noch den realisierten Gewinn zeigt.
 Guard `> 0.0` vor der Division, gleiches Muster wie in `ShareCalculator`.
 
+Seit 25.10.2026 (Entscheidung 5) gehören auch die kaufgebundenen und die
+freistehenden Kosten zum Nenner (`PortfolioSeriesPoint::investedTotal`), genau
+wie bei "Kpl. Einzahlung" im Depotwert-Footer. Ob ein Kosteneintrag dazu
+zählt, sagt `PortfolioCostEvent::investment`; `ModelPortfolioChart` setzt es
+auf false, wenn der Eintrag an einem Verkauf hängt. Vorher endete die Kurve
+zwar in Euro auf dem Footer, im Prozentwert aber nicht (Alphabet: 146,43 %
+gegen 145,96 %), siehe "Rechenregeln Depotwert und Marktwert".
+
 ### Ehemalige Abweichung vom Depotwert-Footer (behoben 20.08.2026)
 
 Der Kosten-Term umfasst alle Brokerage-Einträge einer Aktie, also auch
@@ -3905,10 +3922,247 @@ Damit erledigt: der frühere offene Punkt "Marktwert-Chart" samt der
 
 ---
 
+## Rechenregeln Depotwert und Marktwert (verbindlich seit 25.10.2026)
+
+Dieser Abschnitt ist die Referenz für alle Rückfragen zu den Werten in den
+Tabellen "Kompletter Depotwert" und "Kompletter Marktwert", ihren Footern,
+der ShareDetailsForm und den beiden Charts. Die Regeln hat Nessie am
+24./25.10.2026 anhand des Berechnungsberichts einer echten Aktie (Alphabet)
+festgelegt; die Rechenbeispiele unten sind diese Aktie mit ihren echten
+Zahlen. Jedes Beispiel ist als Test festgenagelt
+(`tst_sharecalculator`, `test_beispielA_*`, `test_beispielB_*`,
+`test_beispielC_*`). Wer eine Regel ändert, ändert Beispiel und Test
+gemeinsam.
+
+### Die zwei Sichten
+
+Depotwert beantwortet die Frage "was ist auf dem Konto passiert": mit
+Kosten, Steuern und Dividenden, also mit allem, was tatsächlich geflossen
+ist.
+
+Marktwert beantwortet die Frage "was hat der Kurs gemacht": rein Kurs, ohne
+Kosten, ohne Steuern, ohne Dividenden (Nessies Option A vom 25.10.2026).
+
+Beide Sichten haben zwei Spaltengruppen: "Aktuell" betrachtet nur die noch
+gehaltenen Stücke, "Komplett" alle Käufe und Verkäufe der Aktie.
+
+### Regeln Depotwert
+
+| Wert | Rechnung |
+|------|----------|
+| Kpl. Einzahlung | alle Käufe Stück x Kaufkurs + Kaufkosten - Rabatt + freistehende Kosten |
+| Einzahlung (gehalten) | je Kauf: Reststück x Kaufkurs + Kaufkosten x Reststück / Stück - Rabatt anteilig |
+| Aktueller Depotstand | Bestand x aktueller Kurs |
+| Aktuelle Entwicklung | Aktueller Depotstand - Einzahlung (gehalten) |
+| Kpl. Wert (Rückflüsse) | Aktueller Depotstand + Verkäufe nach Kosten und Steuern + Dividenden netto |
+| Komplette Entwicklung | Kpl. Wert - Kpl. Einzahlung |
+| Prozentwerte | Entwicklung / zugehörige Einzahlung x 100 |
+
+Kosten eines Verkaufs gehören immer zum Verkauf: sie mindern den
+Verkaufserlös, nie die Einzahlung.
+
+Die Einzahlung der gehaltenen Stücke folgt FIFO mit den Kosten JE KAUF:
+jeder Kauf behält seine eigenen Kosten, und davon bleibt nur der Anteil
+seiner Reststücke in der Einzahlung (Nessies Hinweis vom 25.10.2026, siehe
+Beispiel c). Eine pauschale Verteilung aller Kaufkosten auf den Bestand wäre
+falsch. `ShareCalculator::compute()` rechnet seit jeher so (über das
+gespeicherte `BuyObject::volumeSold()`), siehe auch "Anteilige
+Kauf-Nebenkosten der FIFO-Zuteilung".
+
+Kpl. Wert ist die Summe der Rückflüsse, NICHT der Gewinn. Der Gewinn ist die
+Komplette Entwicklung.
+
+### Regeln Marktwert
+
+| Wert | Rechnung |
+|------|----------|
+| Kpl. Einzahlung | alle Käufe Stück x Kaufkurs |
+| Einzahlung (gehalten) | je Kauf: Reststück x Kaufkurs |
+| Aktueller Depotstand | Bestand x aktueller Kurs, identisch zum Depotwert |
+| Aktuelle Entwicklung | Aktueller Depotstand - Einzahlung (gehalten) |
+| Kpl. Marktwert (Rückflüsse) | Aktueller Depotstand + alle Verkäufe Stück x Verkaufskurs (brutto) |
+| Komplette Entwicklung | Kpl. Marktwert - Kpl. Einzahlung |
+| Prozentwerte | Entwicklung / zugehörige Einzahlung x 100 |
+
+### Wo welche Regel wirkt
+
+| Stelle | Depotwert | Marktwert |
+|--------|-----------|-----------|
+| Tabelle, Spalten Aktuell | purchaseValueFinal, curValue, profitLossFinal | purchaseValue, curValue, profitLoss |
+| Tabelle, Spalten Komplett | completePurchase, completeCurValue, completeProfitLoss | completePurchaseMarket, completeCurValueMarket, completeProfitLossMarket |
+| Footer Aktueller Depotstand | Summe curValue | Summe curValue |
+| ShareDetails, Box Aktuell | Bestandswert - Einzahlung (gehalten) | Bestandswert - Einzahlung (gehalten) |
+| ShareDetails, Box Gesamt | Kurswert + Dividenden + Verkäufe netto - Kpl. Einzahlung | Kurswert + Verkäufe brutto - Kpl. Einzahlung |
+| ShareDetails, Gewinne/Verluste | Auszahlung und G/V mit Kosten und Steuern | Verkaufswert brutto, G/V = Verkaufswert - Kaufwert |
+| Chart, Prozent-Nenner | Kaufwert aller Käufe + Kauf- und freistehende Kosten | (kein Prozentwert) |
+
+Box Aktuell in der ShareDetailsForm (Entscheidung 3, 25.10.2026, in beiden
+Modi): Anteile x Kurs = Bestandswert, minus Einzahlungen (Bestand), gleich
+Gewinn / Verlust (aktuell) plus Entwicklung in Prozent. Keine Dividenden und
+keine realisierten Gewinne; die stehen nur in der Box Gesamt. Damit zeigt
+die Box exakt die Tabellenspalten "Einzahlung" und "Aktuelle Entwicklung".
+
+Prozentwert des Depotwert-Charts (Entscheidung 5, 25.10.2026): Nenner ist
+das eingesetzte Kapital bis zum Stichtag, also Kaufwert aller Käufe plus
+kaufgebundene und freistehende Kosten (`PortfolioSeriesPoint::investedTotal`,
+gesteuert über `PortfolioCostEvent::investment`). Das ist derselbe Nenner
+wie "Kpl. Einzahlung" im Footer; am rechten Rand stimmen Euro und Prozent
+damit beide überein. Verkaufsgebundene Kosten mindern die Linie, zählen aber
+nicht zum Nenner.
+
+### Beispiel a: vollständig verkauft
+
+Ausgangsdaten (Alphabet, echte Zahlen):
+
+```
+Kauf      200 x 48,595 =  9.719,00   Kosten 30,95
+Verkauf   200 x 145,00 = 29.000,00   Kosten 69,90   Steuern 5.058,76
+Dividenden netto                109,80   (vier Zahlungen)
+Bestand   0
+```
+
+Depotwert:
+
+```
+Kpl. Einzahlung       =  9.719,00 + 30,95                      =  9.749,95
+Einzahlung (gehalten) =  0,00
+Aktueller Depotstand  =  0 x 293,85                            =      0,00
+Aktuelle Entwicklung  =  0,00 - 0,00                           =      0,00
+Verkäufe netto        = 29.000,00 - 69,90 - 5.058,76           = 23.871,34
+Kpl. Wert             =  0,00 + 23.871,34 + 109,80             = 23.981,14
+Komplette Entwicklung = 23.981,14 - 9.749,95                   = 14.231,19
+                      = 14.231,19 / 9.749,95 x 100             =   145,96 %
+```
+
+Marktwert:
+
+```
+Kpl. Einzahlung       = 200 x 48,595                           =  9.719,00
+Einzahlung (gehalten) =  0,00
+Aktueller Depotstand  =  0 x 293,85                            =      0,00
+Aktuelle Entwicklung  =  0,00
+Verkäufe brutto       = 200 x 145,00                           = 29.000,00
+Kpl. Marktwert        =  0,00 + 29.000,00                      = 29.000,00
+Komplette Entwicklung = 29.000,00 - 9.719,00                   = 19.281,00
+                      = 19.281,00 / 9.719,00 x 100             =   198,38 %
+```
+
+Bis 25.10.2026 zeigte der Marktwert-Footer "Aktueller Depotstand" bei leerem
+Depot 14.222,24 (Kurswert plus realisierter Gewinn), die Komplette
+Entwicklung im Marktwert 14.121,39 mit Kpl. Marktwert 23.840,39 (realisierter
+Gewinn MIT Kosten und Steuern auf die Einzahlung OHNE Kosten), und der
+Depotwert-Chart 146,43 % statt 145,96 % (Nenner ohne Kosten). Die Box
+Aktuell zeigte Dividenden und Verkaufsgewinn statt 0.
+
+### Beispiel b: Teilverkauf, 80 Stück gehalten
+
+Dieselbe Aktie, aber nur 120 der 200 Stück verkauft; Kurs 293,85, Steuern
+des Verkaufs 3.027,88:
+
+```
+Kauf      200 x 48,595 =  9.719,00   Kosten 30,95
+Verkauf   120 x 145,00 = 17.400,00   Kosten 69,90   Steuern 3.027,88
+Dividenden netto                109,80
+Bestand   80
+```
+
+Depotwert:
+
+```
+Kpl. Einzahlung       =  9.719,00 + 30,95                      =  9.749,95
+Einzahlung (gehalten) = 80 x 48,595 + 30,95 x 80 / 200
+                      =  3.887,60 + 12,38                      =  3.899,98
+Aktueller Depotstand  = 80 x 293,85                            = 23.508,00
+Aktuelle Entwicklung  = 23.508,00 - 3.899,98                   = 19.608,02
+                      = 19.608,02 / 3.899,98 x 100             =   502,77 %
+Verkäufe netto        = 17.400,00 - 69,90 - 3.027,88           = 14.302,22
+Kpl. Wert             = 23.508,00 + 14.302,22 + 109,80         = 37.920,02
+Komplette Entwicklung = 37.920,02 - 9.749,95                   = 28.170,07
+                      = 28.170,07 / 9.749,95 x 100             =   288,93 %
+```
+
+Gegenprobe Depotwert, die Komplette Entwicklung zerfällt in ihre Teile:
+
+```
+realisiert   = 14.302,22 - (9.749,95 - 3.899,98)               =  8.452,25
+Dividenden                                                     =    109,80
+aktuell                                                        = 19.608,02
+Summe        =  8.452,25 + 109,80 + 19.608,02                  = 28.170,07
+```
+
+Marktwert:
+
+```
+Kpl. Einzahlung       = 200 x 48,595                           =  9.719,00
+Einzahlung (gehalten) =  80 x 48,595                           =  3.887,60
+Aktueller Depotstand  =  80 x 293,85                           = 23.508,00
+Aktuelle Entwicklung  = 23.508,00 - 3.887,60                   = 19.620,40
+                      = 19.620,40 / 3.887,60 x 100             =   504,69 %
+Verkäufe brutto       = 120 x 145,00                           = 17.400,00
+Kpl. Marktwert        = 23.508,00 + 17.400,00                  = 40.908,00
+Komplette Entwicklung = 40.908,00 - 9.719,00                   = 31.189,00
+                      = 31.189,00 / 9.719,00 x 100             =   320,91 %
+```
+
+Gegenprobe Marktwert:
+
+```
+realisiert   = 17.400,00 - (9.719,00 - 3.887,60)               = 11.568,60
+aktuell                                                        = 19.620,40
+Summe        = 11.568,60 + 19.620,40                           = 31.189,00
+```
+
+Der Aktuelle Depotstand ist in beiden Sichten gleich (23.508,00). Der
+Unterschied der Aktuellen Entwicklung (19.608,02 gegen 19.620,40) sind genau
+die 12,38 anteiligen Kaufkosten der gehaltenen Stücke.
+
+### Beispiel c: FIFO mit Kosten je Kauf
+
+Zwei Käufe mit eigenen Kosten, 120 Stück verkauft:
+
+```
+Kauf 1    100 x 40,00  =  4.000,00   Kosten 20,00
+Kauf 2    100 x 57,19  =  5.719,00   Kosten 10,95
+Verkauf   120 Stück
+```
+
+FIFO verbraucht zuerst Kauf 1 vollständig (100 Stück), dann 20 Stück aus
+Kauf 2. Gehalten werden 80 Stück aus Kauf 2:
+
+```
+Einzahlung (gehalten) Marktwert = 80 x 57,19                   =  4.575,20
+Kosten gehalten                 = 10,95 x 80 / 100             =      8,76
+Einzahlung (gehalten) Depotwert =  4.575,20 + 8,76             =  4.583,96
+```
+
+Falsch wäre die pauschale Verteilung aller Kaufkosten über den Bestand:
+
+```
+30,95 x 80 / 200                                               =     12,38
+```
+
+Die 20,00 Kosten von Kauf 1 sind mit dessen letztem Stück vollständig in den
+verkauften Teil gewandert; im Bestand ist von ihnen nichts mehr übrig.
+
+### Entscheidungen im Überblick
+
+| Nr | Frage | Entscheidung (24./25.10.2026) |
+|----|-------|-------------------------------|
+| 1 | Berechnungsbericht mit Realwerten und anonymisiert | ein Menüeintrag, zwei Dateien (v1.27.0) |
+| 2 | Ersetzungsliste der Anonymisierung | ausreichend (v1.27.0) |
+| 3 | Box Aktuell und Footer Aktueller Depotstand | nur Bestand, in beiden Modi und an beiden Stellen |
+| 4 | Rechenweg Marktwert | Option A, rein Kurs |
+| 5 | Prozent-Nenner Depotwert-Chart | Kaufwert mit Kosten, wie Footer |
+
+Offen bleibt nur die zweite Kurve je Chart, siehe "Offene Punkte".
+
+---
+
 ## Berechnungsbericht (ergänzt 23.10.2026, v1.27.0)
 
-Diagnose-Werkzeug zum offenen Punkt "Depotwert/Marktwert: Tabellen und Charts
-zeigen unterschiedliche Bezugsgrößen". Die Summe im Tab "Kompletter
+Diagnose-Werkzeug zum damals offenen Punkt "Depotwert/Marktwert: Tabellen und
+Charts zeigen unterschiedliche Bezugsgrößen" (heute "Depotwert/Marktwert:
+zweite Kurve je Chart", die Rechenfehler sind seit 25.10.2026 behoben). Die Summe im Tab "Kompletter
 Marktwert" passte nicht zum Endwert des Marktwert-Charts; aus der Oberfläche
 liess sich nicht nachvollziehen, welche Aktie und welcher Term das
 verursacht. Der Bericht legt jede Rechnung offen.
@@ -3968,7 +4222,23 @@ vollständig darin auf, steht sie als "durch Kurs erklärt" bei den Hinweisen;
 bleibt ein Rest, ist sie eine Abweichung, und der Bericht nennt Kursanteil
 und Rest getrennt. Im Testportfolio während der Entwicklung blieb so genau
 eine Abweichung übrig: der Footer "Aktueller Depotstand" im Marktwert-Tab mit
-einem Rest in Höhe der Summe der realisierten Gewinne.
+einem Rest in Höhe der Summe der realisierten Gewinne. Behoben am 25.10.2026
+mit den "Rechenregeln Depotwert und Marktwert"; die Zeilen- und Rechenwegtexte
+des Berichts folgen seither diesen Regeln (Zeile 7 Verkäufe brutto
+beziehungsweise netto, Zeile 8 und 9 realisiert je Sicht, Zeile 14 in beiden
+Sichten Kurswert), und Teil 2 nennt zusätzlich das eingesetzte Kapital als
+Prozent-Nenner des Depotwert-Charts.
+
+Aktien ohne Tageswerte (Nebenbefund aus Nessies Testdepot, 26.10.2026): Sie
+zählen in Tabelle und Footer, fehlen aber in beiden Charts. Im Abgleich
+Footer gegen Chart stand ihr Beitrag deshalb als Abweichung in Teil 3, im
+Testdepot die Komplette Entwicklung einer verkauften Aktie mit 1.279,86 EUR.
+Seither gilt ihr Footer-Beitrag (Kurswert beziehungsweise Komplette
+Entwicklung) wie der Kursunterschied als Erklärung: geht die Differenz darin
+auf, steht sie als "durch Aktien o. Tageswerte erklärt" bei den Hinweisen;
+bleibt ein Rest, nennt die Abweichung beide Anteile und den Rest. Der Befund
+"keine Tageswerte, fehlt in beiden Charts" je Aktie bleibt eine Abweichung,
+weil er auf fehlende Daten hinweist.
 
 Umsetzung: `CalculationReport` (`app/utils/CalculationReport.*`), zweiteilig
 wie Presenter und Rechenkern der Charts. `collect()` liest alle Aktien, ruft
@@ -4893,7 +5163,7 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### Depotwert/Marktwert: Tabellen und Charts zeigen unterschiedliche Bezugsgrößen (offen, 19.10.2026)
+### Depotwert/Marktwert: zweite Kurve je Chart (offen, 19.10.2026; Rechenregeln entschieden und umgesetzt 25.10.2026)
 
 Aufgefallen bei Nessies Abnahme des Marktwert-Charts (v1.26.0): der Endwert
 des Marktwert-Charts stimmt nicht mit der Summe im Tab "Kompletter
@@ -4947,6 +5217,16 @@ und 5.058,76 Steuern, vier Dividenden netto 109,80):
 - Alle übrigen Werte rechnen sich nach, auch Steuern der Dividenden
   (Quellensteuer 15 %, Kapitalertragsteuer 10 % nach Anrechnung, Soli) und
   die Verkaufssteuer (25 % plus Soli auf 19.180,15 Gewinn nach Kosten).
+
+Stand 25.10.2026: die Rechenfehler in Tabellen, Footern, ShareDetailsForm und
+Depotwert-Chart-Prozent sind behoben, die verbindlichen Regeln samt
+Rechenbeispielen stehen unter "Rechenregeln Depotwert und Marktwert". Frage 4
+ist damit mit ja beantwortet (Footer = Summe der Kurswerte), Frage 5 ebenfalls
+(Kpl. Marktwert rein Kurs: Kurswert plus Verkäufe brutto). Offen ist nur noch
+die zweite Kurve je Chart (Fragen 1 bis 3): die Depotwert-Kurve "im Depot"
+braucht dafür die Kosten je Lot, die PortfolioSeriesCalculator heute nur als
+kumulierte Summe führt; die Marktwert-Kurve "gesamt" endet nach Option A auf
+"Kpl. Marktwert".
 
 Vor der Umsetzung zu klären (Fragen an Nessie, 19.10.2026):
 

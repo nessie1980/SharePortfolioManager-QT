@@ -3901,6 +3901,11 @@ private slots:
         // den Unterschied messbar: saleValue = 5 × 100,00 € = 500,00 €;
         // Depotwert-Auszahlung = 500,00 € − 10,00 € (Provision) = 490,00 €;
         // Markt-Auszahlung (ohne Brokerage) = 500,00 € unverändert.
+        // Seit 25.10.2026 ("Rechenregeln Depotwert und Marktwert", rein Kurs)
+        // auch ohne Steuern: mit 20,00 € Kapitalertragsteuer bleibt die
+        // Markt-Auszahlung bei 500,00 € (SaleObject::saleValue()), die
+        // Depotwert-Auszahlung sinkt auf 470,00 €. Bis dahin zog payout() die
+        // Steuer auch im Marktwert ab.
         const QString shareGuid = insertTestShare();
         const BuyObject buy = insertTestBuy(shareGuid, QStringLiteral("depot1"),
                                              QStringLiteral("2024-02-10T10:00:00"), 20.0, 100.0);
@@ -3911,14 +3916,14 @@ private slots:
             QStringLiteral("2024-06-05T10:00:00"),
             5.0, 100.0,
             { SaleBuyDetail(buy.guid(), buy.dateTime(), 5.0, buy.price()) },
-            /*taxAtSource=*/0.0, /*capitalGainsTax=*/0.0, /*solidarityTax=*/0.0,
+            /*taxAtSource=*/0.0, /*capitalGainsTax=*/20.0, /*solidarityTax=*/0.0,
             /*brokerageGuid=*/QString(), /*provision=*/10.0);
         ModelSaleEdit modelSaleEdit;
         QVERIFY(modelSaleEdit.addSale(sale));
 
         const QLocale loc;
         const QString expectedMarketPayout = loc.toString(500.0, 'f', 2) + QStringLiteral(" €");
-        const QString expectedDepotPayout  = loc.toString(490.0, 'f', 2) + QStringLiteral(" €");
+        const QString expectedDepotPayout  = loc.toString(470.0, 'f', 2) + QStringLiteral(" €");
 
         // Depotwert-Modus — Auszahlung inkl. Brokerage.
         {

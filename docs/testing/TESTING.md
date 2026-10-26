@@ -1893,11 +1893,12 @@ PresenterShareDetails — Split-Übergabe (Phase 3c, 11.08.2026):
 | `test_loadAndDisplay_gesamtBox_negativeProfitLoss_setsRedColor` | `completeProfitLoss < 0` | Farbe = `Qt::red` |
 | `test_loadAndDisplay_vortagBox_computesProfitLossFromVolumeTimesDiff` | `volume=40`, `prevDayDiff=41,90` | "Gewinn / Verlust" = 1676,00€ (40×41,90, exakt wie Screenshot), Farbe grün |
 | `test_loadAndDisplay_vortagBox_negativeDiff_setsRedColor` | `prevDayDiff < 0` | Farbe = `Qt::red`, Produkt korrekt negativ |
-| `test_loadAndDisplay_aktuelleBox_sumAddsCurValueDividendAndSaleProfitLoss` | `curValue=19376`, `totalDividend=0`, `saleProfitLossFinal=-252,20` | "Summe" = 19123,80€ (Presenter-Arithmetik, kein `ShareCalculator`-Feld) |
+| `test_loadAndDisplay_aktuelleBox_depotMode_showsHeldPositionOnly` (ersetzt 25.10.2026 `..._sumAddsCurValueDividendAndSaleProfitLoss`) | Rechenbeispiel b aus ARCHITECTURE.md, 80 Stück gehalten, dazu Dividenden und Verkaufsgewinn | 6 Zeilen; "Einzahlungen (Bestand)" = `purchaseValueFinal` (3.899,98), "Gewinn / Verlust (aktuell)" = `profitLossFinal` (19.608,02, grün), "Entwicklung" 502,77 %; keine Zeilen "Dividenden", "Gewinn / Verlust (Verkäufe)", "Summe" (Entscheidung 3) |
+| `test_loadAndDisplay_aktuelleBox_fullySold_showsZero` | Rechenbeispiel a, vollständig verkauft, beide Modi | Bestandswert und "Gewinn / Verlust (aktuell)" je 0,00, egal wie hoch Verkaufsgewinn und Dividenden sind |
 | `test_loadAndDisplay_marketMode_setsTabTitle` | `marketValueMode = true` | Tab-Titel = "Komplette Marktbewertung" |
 | `test_loadAndDisplay_depotwertMode_setsTabTitle` | `marketValueMode = false` (Default) — Regression | Tab-Titel = "Komplette Depotbewertung" |
-| `test_loadAndDisplay_marketMode_gesamtBox_matchesScreenshotValues` | `ShareValues` mit den echten Marktwert-Screenshot-Werten (AGIF-Allianz, 168,50796 Stk.) | "Verkäufe"/"Summe"/"Alle Einzahlungen"/"Gewinn / Verlust (gesamt)"/"Entwicklung" exakt wie im Screenshot; "Dividenden" = "-", Farbe `Qt::gray` |
-| `test_loadAndDisplay_marketMode_aktuelleBox_matchesScreenshotValues` | Gleiche Fixture | "Gewinn / Verlust (Verkäufe)" = `saleProfitLoss`, "Summe" = `marketValue`, beide exakt wie im Screenshot; "Dividenden" deaktiviert |
+| `test_loadAndDisplay_marketMode_gesamtBox_matchesScreenshotValues` | `ShareValues` mit den echten Marktwert-Screenshot-Werten (AGIF-Allianz, 168,50796 Stk.) | "Verkäufe"/"Summe"/"Alle Einzahlungen"/"Gewinn / Verlust (gesamt)"/"Entwicklung" exakt wie im Screenshot; "Dividenden" = "-", Farbe `Qt::gray`. Seit 25.10.2026 liest die Box `completeCurValueMarket`/`completeProfitLossMarket`/`completeProfitPctMarket` direkt, die Fixture setzt sie |
+| `test_loadAndDisplay_marketMode_aktuelleBox_showsHeldPositionOnly` (ersetzt 25.10.2026 `..._matchesScreenshotValues`) | Rechenbeispiel b, Marktwert-Sicht | "Einzahlungen (Bestand)" = `purchaseValue` (3.887,60), "Gewinn / Verlust (aktuell)" = `profitLoss` (19.620,40), "Entwicklung" 504,69 %; keine Dividenden-, Verkaufs- und Summenzeile |
 | `test_loadAndDisplay_marketMode_vortagBox_unaffectedByMode` | Gleiche Fixture, Marktwert-Modus | "Gewinn / Verlust" = 53,59€ (168,50796×0,318, exakt wie im Screenshot) — bestätigt, dass die Vortag-Box modus-unabhängig ist |
 | `test_loadAndDisplay_marketMode_populatesOnlyGewinneVerluste` (ergänzt 14.07.2026, ersetzt `..._doesNotPopulateNewTabs`) | `marketValueMode = true`, Model liefert 2 Sales/1 Dividend/3 Brokerages | `gewinneVerlusteCalled = true`, `saleRows.size() == 2`; `dividendenCalled`/`kostenCalled` bleiben `false`, `dividendRows`/`brokerageRows` bleiben leer — Gewinne/Verluste existiert seit 14.07.2026 in beiden Modi, Dividenden/Kosten bleiben Depotwert-only (siehe ARCHITECTURE.md, "Marktwert- vs. Depotwert-Modus") |
 | `test_loadAndDisplay_depotwertMode_populatesGewinneVerlusteDividendenKosten` | `marketValueMode = false` (Default), gleiche Fixture | Alle drei `*Called`-Flags `true`, `saleRows.size() == 2`/`dividendRows.size() == 1`/`brokerageRows.size() == 3` — reines Durchreichen der Model-Listen, keine Presenter-Logik |
@@ -1962,7 +1963,7 @@ direkt in `tst_mainwindow.cpp` (Suchbegriff `onPortfolioRowDoubleClicked`/
 | `test_shareDetailsGewinneVerluste_tabChange_backToUebersicht_clearsSelection` (ergänzt 19.07.2026) | Kosten-`OverviewTabWidget`: Jahres-Tab ausgewählt (Zeile automatisch selektiert), dann zurück zur Übersicht (`setCurrentIndex(0)`) | Jahres-Tab-Selektion ist danach leer (`tbl->selectedItems().isEmpty()`) |
 | `test_marketMode_hasOnlyGewinneVerlusteOverviewTab` (ergänzt 14.07.2026) | `ViewShareDetails` im Marktwert-Modus konstruiert | Äußerer Tab-Titel "Gewinne/Verluste" vorhanden, "Dividenden"/"Kosten" nicht; genau eine `OverviewTabWidget`-Instanz statt drei |
 | `test_depotwertMode_hasAllThreeOverviewTabs` (ergänzt 14.07.2026, Regression) | `ViewShareDetails` im Depotwert-Modus (Default) konstruiert | Alle drei äußeren Tab-Titel vorhanden, genau drei `OverviewTabWidget`-Instanzen |
-| `test_marketMode_gewinneVerlusteTab_usesBrokerageFreeValues` (ergänzt 14.07.2026, deckte am 15.07.2026 einen unabhängigen `ModelSaleEdit::addSale()`-Bug auf, s.u.) | Ein Verkauf (5 Stk. à 100,00 €) mit eigener Provision (10,00 €), über `ModelSaleEdit::addSale()` real in die DB eingefügt; Gewinne/Verluste-`OverviewTabWidget` per `overviewTabByGroupTitle()`-Helfer (QGroupBox-Titel statt Index) gefunden | Depotwert-Modus zeigt "Auszahlung" = 490,00 € (500,00 € − 10,00 € Provision, über `payoutBrokerageReduction()`); Marktwert-Modus zeigt 500,00 € (brokeragefrei, über `payout()`) — für **dieselben** DB-Daten, direkter Beleg für die `market ? ... : ...`-Umschaltung in `ViewShareDetails::populateGewinneVerluste()` |
+| `test_marketMode_gewinneVerlusteTab_usesBrokerageFreeValues` (ergänzt 14.07.2026, deckte am 15.07.2026 einen unabhängigen `ModelSaleEdit::addSale()`-Bug auf, s.u.) | Ein Verkauf (5 Stk. à 100,00 €) mit eigener Provision (10,00 €) und seit 25.10.2026 20,00 € Kapitalertragsteuer, über `ModelSaleEdit::addSale()` real in die DB eingefügt; Gewinne/Verluste-`OverviewTabWidget` per `overviewTabByGroupTitle()`-Helfer (QGroupBox-Titel statt Index) gefunden | Depotwert-Modus zeigt "Auszahlung" = 470,00 € (500,00 € − 10,00 € Provision − 20,00 € Steuer, über `payoutBrokerageReduction()`); Marktwert-Modus zeigt 500,00 € (rein Kurs, seit 25.10.2026 über `saleValue()`, vorher `payout()` ohne Steuerfall) — für **dieselben** DB-Daten, direkter Beleg für die `market ? ... : ...`-Umschaltung in `ViewShareDetails::populateGewinneVerluste()` |
 | `test_modelSaleEdit_addSale_success` (erweitert 15.07.2026) | Verkauf mit Provision 9,90 € über `addSale()` gespeichert | Zusätzlich zu `orderNumber()`: `loaded.first().provision() == 9.90` nach `loadSales()` — Regression für den Brokerage-Vorwärts-Link-Bugfix (s.u.) |
 | `test_modelSaleEdit_addSale_linksBrokerageForwardReference` (ergänzt 15.07.2026) | Verkauf ohne Kauf-Anteil, Provision 10,00 € | `payoutBrokerageReduction()` nach `loadSales()` = 490,00 € (nicht 500,00 €, wie vor dem Fix); `loadBrokerage()` (Rückwärts-Link) weiterhin unverändert korrekt |
 | `test_modelSaleEdit_updateSale_createsBrokerageIfMissing` (erweitert 15.07.2026) | Provision 15,00 € beim `updateSale()`-Aufruf, der einen fehlenden Brokerage-Eintrag neu anlegt | Zusätzlich zu `loadBrokerage().provision() == 15.0`: `loadSales()` liefert dieselbe Provision — Regression für denselben Bugfix im `updateSale()`-"Brokerage neu anlegen"-Zweig |
@@ -3062,14 +3063,15 @@ nicht der Test.
 | `test_forwardFill_gapDayDoesNotDentThePortfolioSum` | Aktie ohne Eintrag am Stichtag | Summe bricht nicht ein (150,00) |
 | `test_referenceScenario_twoSharesWithPartialSale` | Referenzbeispiel | -10 / +82 / +114 / +160 / +259 |
 | `test_referenceScenario_componentsOfLastPoint` | Bestandteile des letzten Punkts | Bestandswert 1794, realis. 65, Div 22, Kosten 22, gehalten 1600, gesamt 2000 |
-| `test_referenceScenario_percentUsesTotalPurchaseValue` | Prozent-Nenner | 259 / 2000 = 12,95 % |
+| `test_referenceScenario_percentUsesInvestedCapital` (umbenannt 25.10.2026, vorher `..._percentUsesTotalPurchaseValue`) | Prozent-Nenner = eingesetztes Kapital (Entscheidung 5) | 259 / 2018 = 12,83 % (Kaufwert 2000 + Kaufkosten 10 + 8, die Verkaufskosten 4 zählen nicht; bis 25.10.2026 259 / 2000 = 12,95 %) |
 | `test_buyDoesNotMoveTheLine` | Nachkauf über 5.000 Euro | Linie unverändert (+100,00 nur aus dem Kursgewinn) |
-| `test_completeSale_lineStaysFlatAfterwards` | Komplettverkauf | -10 / +90 / +105 / +205 / +170 / +170; gehalten 0, gesamt 1000, 17,00 % |
+| `test_completeSale_lineStaysFlatAfterwards` | Komplettverkauf | -10 / +90 / +105 / +205 / +170 / +170; gehalten 0, gesamt 1000, eingesetzt 1010, 170 / 1010 = 16,83 % (bis 25.10.2026 17,00 %) |
 | `test_fifo_usesOldestLotFirst` | Zwei Lots zu 100 und 200 | Realis. 200,00 (FIFO), nicht 100,00 und kein Mittelwert |
 | `test_shareWithoutHistory_isExcludedAndReported` | Aktie ohne Tageswerte | Vollständig ausgeschlossen, Name gemeldet, ihre Kosten fliessen nicht ein |
 | `test_shareContributesNothingBeforeItsFirstPriceDate` | Kauf vor Historienbeginn | Kein Phantom-Verlust am linken Rand |
 | `test_emptyInput_yieldsEmptyResult` | Leeres Portfolio | Keine Punkte, keine Meldung |
-| `test_percentIsZeroWhenNothingWasEverBought` | Kaufwert 0 | Guard greift, 0,00 % statt Division durch null |
+| `test_percentIsZeroWhenNothingWasEverInvested` (umbenannt 25.10.2026) | Kaufwert 0, nur verkaufsgebundene Kosten | `investedTotal` 0, Guard greift, 0,00 % statt Division durch null |
+| `test_percent_freestandingCostCountsAsInvested` (ergänzt 25.10.2026) | freistehender Kosteneintrag | zählt zum Nenner wie im Depotwert-Footer: `investedTotal` 1010, 100 / 1010 |
 | `test_unsortedInputIsSortedInternally` | Unsortierte Eingangslisten | Werden intern sortiert, FIFO bleibt korrekt |
 | `test_windowLimitsPointsButNotAccumulatedState` | Fenster ab März | Drei Punkte, aufgelaufener Zustand bleibt erhalten |
 | `test_marketValue_referenceScenario` (**17.10.2026**, Marktwert-Linie) | Referenzbeispiel | 1000 / 2100 / 2110 / 1695 / 1794 — Gebühren, Dividende und Verkaufssteuer bewegen die Linie nicht |
@@ -3101,11 +3103,11 @@ werden. `main()` setzt `QLocale::setDefault(German)` wie die Anwendung.
 |------|--------------|-------|
 | `test_build_containsAllThreeParts` | Eine Aktie mit stimmigen Werten | Kopf, Teil 1 mit Aktienblock, Teil 2 mit beiden Footern, Teil 3 |
 | `test_build_consistentValues_noFindings` | Tabelle, Footer und Chart passen | Kein "ABWEICHUNG", Teil 3 meldet "Keine" |
-| `test_build_footerWithRealizedGain_flagsDeviationAgainstChart` | Realisierter Gewinn 65,00 im Footer-Beitrag, nicht im Chart (Fall vom 19.10.2026) | Teil 3 nennt Footer "Aktueller Depotstand" mit 65,00; die Zeilensumme bleibt ohne Befund |
+| `test_build_realizedGain_doesNotMoveFooterDepotstand` (ersetzt 25.10.2026 `..._footerWithRealizedGain_flagsDeviationAgainstChart`) | Realisierter Gewinn 65,00 (Fall vom 19.10.2026) | seit dem Bugfix keine Abweichung mehr: Footer "Aktueller Depotstand" = Σ Kurswert 744,00, nicht 809,00 |
 | `test_build_volumeDifference_isReportedPerShare` | Chart-Bestand 10 statt 12 | Teil 3 nennt "Aktie A: Bestand (Stück)" |
 | `test_build_priceDifference_isOnlyAHint` | Letzter Tageswert 61,50 statt aktueller Kurs 62,00 | Als "Hinweis" geführt, nicht als Abweichung |
 | `test_build_priceDifferenceExplainsMarketValueDiff` | Chart bewertet mit 61,00, Tabelle mit 62,00, sonst alles gleich | Differenz 12,00 als "durch Kurs erklärt", keine Abweichung und kein "Rest" in Teil 3 |
-| `test_build_footerDiffBeyondPriceEffect_showsRest` | Kursunterschied 12,00 plus realisierter Gewinn 65,00 im Footer-Beitrag | Footer "Aktueller Depotstand" bleibt Abweichung, Teil 3 nennt "Rest 65,00" |
+| `test_build_marketDiffBeyondPriceEffect_showsRest` (ersetzt 25.10.2026 `..._footerDiffBeyondPriceEffect_showsRest`) | Kursunterschied 12,00, Marktwert-Chart 44,00 unter der Tabelle | bleibt Abweichung, Teil 3 nennt "Rest 32,00" |
 | `test_build_buysTableShowsCostsAndSumRow` | Kauf 12 × 50,00 mit zugeordneten Kosten 12,00 − 2,00 Rabatt | Käufe-Tabelle zeigt Kosten 10,00 €, Kaufwert mit Kosten 610,00 €, Kurs mit "€", Summenzeile mit "Stk.", ohne Splits keine Spalte "Stück heute" |
 | `test_build_longDepotNumber_keepsColumnsAligned` (**Bugfix 23.10.2026**) | Neunstellige Depotnummer in der Käufe-Tabelle (Nessies Screenshot) | Kopf-, Daten- und Summenzeile gleich lang — die Spalte wächst mit statt die Zeile zu verschieben |
 | `test_build_salesTableHasSumRow` (**23.10.2026**) | Zwei Verkäufe 4 × 60 und 2 × 70 | Verkäufe-Tabelle mit Summenzeile: 6,0000 Stk., 380,00 € |
@@ -3121,6 +3123,8 @@ werden. `main()` setzt `QLocale::setDefault(German)` wie die Anwendung.
 | `test_anonymizedFilePath` (**24.10.2026**) | Dateinamen mit, ohne und mit mehrfacher Endung | "-anonymisiert" vor der letzten Endung, ohne Endung ".txt" |
 | `test_build_soldShareIsListedAndMarked` | Bestand 0 nach Verkauf | Aktie erscheint mit "vollständig verkauft" und Verkaufstabelle |
 | `test_build_shareWithoutDailyValues_isNamedInFindings` | Aktie ohne Tageswerte | Teil 3 nennt sie |
+| `test_build_excludedShare_explainsFooterDifference` (ergänzt 26.10.2026) | Verkaufte Aktie ohne Tageswerte mit Kompletter Entwicklung 1.279,86 (Nebenbefund aus Nessies Testdepot) | Footer-Differenz steht als "(Hinweis, durch Aktien o. Tageswerte erklärt)", nicht unter Abweichungen; "keine Tageswerte" bleibt Abweichung |
+| `test_build_excludedShare_restBeyondItStaysDeviation` (ergänzt 26.10.2026) | Wie oben, Chart zusätzlich 10,00 darunter | Abweichung nennt "durch Aktien ohne Tageswerte 1.279,86" und "Rest 10,00" |
 | `test_build_emptyPortfolio` | Keine Aktien | Hinweis "Keine Aktien im Portfolio.", Teil 3 vorhanden |
 | `test_replayFifoSold_oldestBuyFirst` | Zwei Käufe à 10, Verkauf 15 | 10 / 5 |
 | `test_replayFifoSold_ignoresStoredVolumeSold` | Gespeichert 7 verkauft, tatsächlich 4 | Nachrechnung liefert 4 |
@@ -3150,14 +3154,14 @@ Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_roundAway_halfAwayFromZero` | Cent-Rundung | half-away-from-zero, positiv/negativ |
-| `test_marktwert_coreScenario` | Kernbeispiel (2 Käufe, 1 Verkauf) | `purchaseValue` (1200,00), `curValue`, `profitLoss` (175,00), `completeProfitLossMarket` (281,04), `completeCurValueMarket` (1881,04), `salePayoutMarket` (517,00) + Depotwert-Basis |
+| `test_marktwert_coreScenario` | Kernbeispiel (2 Käufe, 1 Verkauf) | `purchaseValue` (1200,00), `curValue`, `profitLoss` (175,00), seit 25.10.2026 rein Kurs: `completeProfitLossMarket` (295,00), `completeCurValueMarket` (1895,00), `salePayoutMarket` (520,00 brutto), `saleProfitLoss` (120,00) + Depotwert-Basis |
 | `test_depotwert_finalFields` | Depotwert-Tab (mit Brokerage), per-Lot-Zuordnung — gleiche Fixture | `profitLossFinal` (166,06), `profitLossPctFinal`, `purchaseValueFinal` (1208,94), `completeCurValue` (1885,00), `completeProfitLoss` (272,10), `completeProfitPct` |
 | `test_depotwert_partialLotBrokerageAndReduction` | Brokerage UND Rabatt anteilig auf teilverkauftem Lot (6/10 gehalten) | `purchaseValueFinal` (602,65, nicht 604,43), `purchaseValue` (600,00 — Marktwert schließt jetzt auch Rabatt aus), `profitLossFinal` (-2,65) — Voll-Zuordnung explizit ausgeschlossen |
 | `test_depotwert_dividendInCompleteValue` | Netto-Dividende fliesst in die Komplett-Spalten | `completeCurValue` (1012,00 statt 1000,00), `completeProfitLoss` (12,00) |
-| `test_marktwert_emptyDetails_sameResult` | Regression "viel zu hoch" | Ergebnis identisch trotz **leerer** `SaleBuyDetails` (Aggregat-basiert); `completeProfitLossMarket` (281,04) |
+| `test_marktwert_emptyDetails_sameResult` | Regression "viel zu hoch" | Ergebnis identisch trotz **leerer** `SaleBuyDetails` (Aggregat-basiert); `completeProfitLossMarket` (295,00) |
 | `test_marktwert_columnIdentity` | Spalten-Identität | `Kpl. Marktwert = Kpl. Einzahlung + Kpl. Entwicklung` |
-| `test_marktwert_fullySold` | Position komplett verkauft | `volume = 0`, `purchaseValue = 0`, realisierte G/V mit Gebühren |
-| `test_depotwert_saleProfitLossFinal_matchesRealizedWhenFullySold` | Wie `test_marktwert_fullySold` (gleiche Fixture) | `saleProfitLossFinal == completeProfitLossMarket` (Algebra-Invariante, held = 0), `salePayoutFinal` (1292,00) |
+| `test_marktwert_fullySold` | Position komplett verkauft | `volume = 0`, `purchaseValue = 0`, seit 25.10.2026 rein Kurs: Kpl. Marktwert 1300,00, Kompl. Entw. 300,00 (Kosten zählen nicht) |
+| `test_depotwert_saleProfitLossFinal_matchesRealizedWhenFullySold` | Wie `test_marktwert_fullySold` (gleiche Fixture) | `saleProfitLossFinal == completeProfitLoss` (Algebra-Invariante, held = 0, keine Dividenden; bis 25.10.2026 gegen `completeProfitLossMarket`), `salePayoutFinal` (1292,00) |
 | `test_marktwert_noSales` | keine Verkäufe | reine unrealisierte Entwicklung, `Kpl. Marktwert == curValue` |
 | `test_prevDay_diffAndPct` | Vortagswerte | `prevDayDiff`, `prevDayPct` |
 | `test_split_heldVolumeAndCurValueUseTodayScale` | Aktiensplit Phase 2a, 07.08.2026: Kauf vor einem 20:1-Split (Alphabet-Fixture, 5 Stück à 1.003,00 €), keine Verkäufe | `volume` (100,0), `curValue`/`purchaseValue` (5.015,00), `profitLoss` (0,00) |
@@ -3165,8 +3169,11 @@ Logik. Die Sollwerte sind gegen die C#-Referenz abgeglichen.
 | `test_split_realizedAndHeldValuesUseTodayScale` | Kauf vor dem Split (teilverkauft in Beleg-Skala), Verkauf danach — Bestands- **und** realisierte Seite in einer split-übergreifenden Position | `volume` (60,0), `curValue` (3.300,00), `purchaseValue` (3.000,00), `profitLoss` (300,00), `saleProfitLoss` (400,00), `completePurchaseMarket` (5.000,00), `completeProfitLossMarket` (700,00), `completeCurValueMarket` (5.700,00) |
 | `test_split_brokerageStaysUnscaled` | Brokerage ist ein Geldbetrag, nicht stückbezogen — nur die Pro-Lot-Fraktion nutzt die split-bereinigten Stückzahlen | `purchaseValueFinal` (3.012,00 = heldBuyValue 3.000,00 + heldBrokerage round(20,00×0,6)=12,00) |
 | `test_freestandingCost_addedToCompletePurchaseOnly` | Footer-Lücke-Fix (20.08.2026): freistehender Kosteneintrag (kein `buyGuid`/`saleGuid`), `addFreestandingCost(15,00, 5,00)` | `completePurchase` (1.010,00, +10,00 gegenüber ohne Eintrag), `completePurchaseMarket` unverändert (1.000,00), `totalBrokerage` (15,00) |
-| `test_freestandingCost_reducesCompleteEntwicklungBothTabs` | Gleiche Fixture — Auswirkung auf beide Tabs | `completeProfitLossMarket` UND `completeProfitLoss` je -10,00 (ohne den Eintrag wären beide 0,00) |
+| `test_freestandingCost_reducesCompleteEntwicklungDepotOnly` (umbenannt 25.10.2026, vorher `..._BothTabs`) | Gleiche Fixture — Auswirkung auf beide Tabs | `completeProfitLoss` -10,00, `completeProfitLossMarket` 0,00 (Marktwert rein Kurs kennt keine Kosten) |
 | `test_freestandingCost_doesNotDoubleCountLinkedBrokerage` | Regression: Kernfixture ohne freistehende Einträge, nur kauf-/verkaufsgebundene Brokerage | `completePurchase` unverändert (1.612,90, wie in `test_marktwert_coreScenario`) |
+| `test_beispielA_vollstaendigVerkauft` (ergänzt 25.10.2026) | Rechenbeispiel a aus ARCHITECTURE.md, "Rechenregeln Depotwert und Marktwert" (Alphabet, echte Zahlen) | Aktuell alles 0; Depotwert 9.749,95 / 23.871,34 / 23.981,14 / 14.231,19 / 145,96 %; Marktwert 9.719,00 / 29.000,00 / 19.281,00 / 198,38 % |
+| `test_beispielB_teilverkauf` (ergänzt 25.10.2026) | Rechenbeispiel b, 80 von 200 Stück gehalten | Einzahlung gehalten 3.899,98 / 3.887,60, Kpl. Wert 37.920,02, Kpl. Marktwert 40.908,00, beide Gegenproben (realisiert + Dividenden + aktuell = komplett) |
+| `test_beispielC_fifoKostenJeKauf` (ergänzt 25.10.2026) | Rechenbeispiel c, zwei Käufe mit eigenen Kosten, Kauf 1 vollständig verkauft | gehaltene Kosten 10,95 × 80/100 = 8,76 (nicht pauschal 12,38) |
 
 @note **Test-Fixture-Bug in `addSale()` aufgedeckt durch den Footer-Lücke-Fix
 (20.08.2026, CI-Lauf nach dem ursprünglichen Fix schlug in 6 von 20 Tests
@@ -3243,7 +3250,11 @@ gleiche Fixture, ohne Brokerage und ohne Rabatt). Ergänzend prüft
 Algebra-Invarianz `saleProfitLossFinal == completeProfitLossMarket` im
 Fully-Sold-Fall (held = 0), unabhängig von Hand nachgerechneten Zahlen.
 
-@note **Offen:** `saleProfitLoss` und `marketValue` (beide bereits vor dieser
+@note **Erledigt 25.10.2026:** `marketValue` ist entfallen, `saleProfitLoss`
+ist in `test_marktwert_coreScenario`, `test_split_realizedAndHeldValuesUseTodayScale`
+und `test_beispielB_teilverkauf` direkt geprüft. Ursprünglicher Stand:
+
+@note **Offen (bis 25.10.2026):** `saleProfitLoss` und `marketValue` (beide bereits vor dieser
 Iteration vorhanden) werden jetzt auch von `PresenterShareDetails` für die
 Marktwert-"Aktuelle Bestandsberechnung"-Box verwendet, haben in
 `tst_sharecalculator.cpp` aber weiterhin keine direkte, isolierte Prüfung —
@@ -5215,6 +5226,7 @@ eigenständig in `tst_portfolioseriescalculator.cpp` und
 | `test_loadPortfolioInput_split_scalesBuyAndPriceToTodayScale` | Alphabet-Fixture: Kauf und Tageswert vor einem 20:1-Split, beide unbereinigt gespeichert | Beide landen auf derselben heutigen Skala (100 Stück à 50,15 €) |
 | `test_loadPortfolioInput_split_saleAfterSplitStaysInTodayScale` | Verkauf nach dem Split | Werte unverändert, keine weitere Umrechnung nötig |
 | `test_loadPortfolioInput_split_costsStayUnscaled` | Brokerage-Kosten trotz Split | Betrag bleibt exakt 9,90 € |
+| `test_loadPortfolioInput_costInvestmentFlag` (ergänzt 25.10.2026) | je ein kauf-, verkaufsgebundener und freistehender Kosteneintrag | `PortfolioCostEvent::investment` true für Kauf und freistehend, false für Verkauf (Prozent-Nenner, Entscheidung 5) |
 | `test_loadPortfolioInput_reverseSplit_scalesDown` | Reverse-Split 1:10 | 100 Stück à 5,00 € → 10 Stück à 50,00 € |
 
 @note Bugfix 08.08.2026 — dieser Block war von seiner Einführung an nie

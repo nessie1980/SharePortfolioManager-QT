@@ -68,7 +68,6 @@ private:
         v.purchaseValue            = 600.0;
         v.curValue                 = 744.0;
         v.profitLoss               = 144.0;
-        v.marketValue              = 744.0;
         v.completePurchaseMarket   = 600.0;
         v.completeProfitLossMarket = 144.0;
         v.completeCurValueMarket   = 744.0;
@@ -140,23 +139,28 @@ private slots:
         QVERIFY(partThree(report).contains(QStringLiteral("Keine —")));
     }
 
-    void test_build_footerWithRealizedGain_flagsDeviationAgainstChart()
+    void test_build_realizedGain_doesNotMoveFooterDepotstand()
     {
-        // Genau der Fall vom 19.10.2026: der Footer "Aktueller Depotstand"
-        // addiert den realisierten Gewinn (hier 65,00), der Chart nicht.
+        // Bis 25.10.2026 der Fall vom 19.10.2026: der Footer "Aktueller
+        // Depotstand" addierte den realisierten Gewinn, der Chart nicht.
+        // Seit dem Bugfix vom 25.10.2026 ist er Σ Kurswert — ein
+        // realisierter Gewinn erscheint nur in den Gesamt-Spalten.
         CalculationReportShare s = consistentShare();
-        s.values.saleProfitLoss = 65.0;
-        s.values.marketValue    = 809.0;
+        s.values.saleProfitLoss         = 65.0;
+        s.values.salePayoutMarket       = 465.0;
+        s.values.completePurchaseMarket = 1000.0;
+        s.values.completeCurValueMarket = 1209.0;
 
-        const QString report = CalculationReport::build(inputFor({ s }));
+        const QString report   = CalculationReport::build(inputFor({ s }));
         const QString findings = partThree(report);
 
-        QVERIFY(report.contains(QStringLiteral("ABWEICHUNG")));
-        QVERIFY2(findings.contains(QStringLiteral("Footer \"Aktueller Depotstand\""))
-                     && findings.contains(QLocale().toString(65.0, 'f', 2)),
-                 qPrintable(findings));
-        // Die Zeilensumme selbst passt weiterhin zum Chart.
-        QVERIFY(!findings.contains(QStringLiteral("Σ Marktwert der Zeilen")));
+        QVERIFY2(!report.contains(QStringLiteral("ABWEICHUNG")), qPrintable(findings));
+        const qsizetype footer = report.indexOf(QStringLiteral("Footer \"Kompletter Marktwert\""));
+        QVERIFY(footer >= 0);
+        const qsizetype line = report.indexOf(QStringLiteral("Aktueller Depotstand"), footer);
+        const QString depotstand = report.mid(line, report.indexOf(QLatin1Char('\n'), line) - line);
+        QVERIFY2(depotstand.contains(QLocale().toString(744.0, 'f', 2)), qPrintable(depotstand));
+        QVERIFY2(!depotstand.contains(QLocale().toString(809.0, 'f', 2)), qPrintable(depotstand));
     }
 
     void test_build_volumeDifference_isReportedPerShare()
@@ -196,20 +200,19 @@ private slots:
                  qPrintable(findings));
     }
 
-    void test_build_footerDiffBeyondPriceEffect_showsRest()
+    void test_build_marketDiffBeyondPriceEffect_showsRest()
     {
-        // Kursunterschied 12,00 plus realisierter Gewinn 65,00 im Footer —
-        // der Footer bleibt eine Abweichung, der Rest 65,00 wird genannt.
+        // Kursunterschied 12,00 (12 × (62,00 − 61,00)) erklärt nur einen
+        // Teil: der Marktwert-Chart liegt 44,00 unter der Tabelle, der Rest
+        // 32,00 bleibt eine Abweichung und wird genannt.
         CalculationReportShare s = consistentShare();
-        s.chart.price           = 61.0;
-        s.chart.holdingsValue   = 732.0;
-        s.chart.marketValue     = 732.0;
-        s.values.saleProfitLoss = 65.0;
-        s.values.marketValue    = 809.0;
+        s.chart.price         = 61.0;
+        s.chart.holdingsValue = 732.0;
+        s.chart.marketValue   = 700.0;
 
         const QString findings = partThree(CalculationReport::build(inputFor({ s })));
-        QVERIFY2(findings.contains(QStringLiteral("Footer \"Aktueller Depotstand\""))
-                     && findings.contains(QStringLiteral("Rest ") + QLocale().toString(65.0, 'f', 2)),
+        QVERIFY2(findings.contains(QStringLiteral("Marktwert / Marktwert-Chart"))
+                     && findings.contains(QStringLiteral("Rest ") + QLocale().toString(32.0, 'f', 2)),
                  qPrintable(findings));
     }
 
@@ -496,6 +499,59 @@ private slots:
 
         const QString findings = partThree(CalculationReport::build(inputFor({ s })));
         QVERIFY2(findings.contains(QStringLiteral("Aktie A: keine Tageswerte")), qPrintable(findings));
+    }
+
+    // Nebenbefund aus Nessies Testdepot (26.10.2026): eine verkaufte Aktie
+    // ohne Tageswerte zählt mit ihrer Kompletten Entwicklung im Footer, fehlt
+    // aber im Chart. Die Differenz ist erwartbar und gehört zu den Hinweisen,
+    // nicht zu den Abweichungen.
+    static CalculationReportShare soldShareWithoutDailyValues(double completeProfitLoss)
+    {
+        CalculationReportShare s;
+        s.share = ShareObject(QStringLiteral("share-4"), QStringLiteral("B0BCDE"),
+                              QStringLiteral("DE000B0BCDE0"), QStringLiteral("Aktie B"));
+        s.values.completePurchase   = 6380.24;
+        s.values.completeCurValue   = 6380.24 + completeProfitLoss;
+        s.values.completeProfitLoss = completeProfitLoss;
+        s.chartExcluded = true;
+        return s;
+    }
+
+    static QString deviationsSection(const QString& report)
+    {
+        const QString three = partThree(report);
+        const qsizetype from = three.indexOf(QStringLiteral("Abweichungen"));
+        const qsizetype to   = three.indexOf(QStringLiteral("Hinweise"));
+        return three.mid(from, to < 0 ? -1 : to - from);
+    }
+
+    void test_build_excludedShare_explainsFooterDifference()
+    {
+        const CalculationReportInput input =
+            inputFor({ consistentShare(), soldShareWithoutDailyValues(1279.86) });
+        const QString report = CalculationReport::build(input);
+
+        const QString deviations = deviationsSection(report);
+        QVERIFY2(!deviations.contains(QStringLiteral("GESAMT")), qPrintable(deviations));
+        QVERIFY2(report.contains(QStringLiteral("(Hinweis, durch Aktien o. Tageswerte erklärt) GESAMT: "
+                                                "Depotwert: Footer \"Komplette Entwicklung\"")),
+                 qPrintable(partThree(report)));
+        // Die fehlenden Tageswerte selbst bleiben als Befund stehen.
+        QVERIFY2(deviations.contains(QStringLiteral("Aktie B: keine Tageswerte")), qPrintable(deviations));
+    }
+
+    void test_build_excludedShare_restBeyondItStaysDeviation()
+    {
+        CalculationReportInput input =
+            inputFor({ consistentShare(), soldShareWithoutDailyValues(1279.86) });
+        input.chartTotal.development -= 10.0; // Chart liegt zusätzlich 10,00 darunter
+
+        const QString deviations = deviationsSection(CalculationReport::build(input));
+        const QLocale loc;
+        QVERIFY2(deviations.contains(QStringLiteral("durch Aktien ohne Tageswerte ")
+                                     + loc.toString(1279.86, 'f', 2))
+                     && deviations.contains(QStringLiteral("Rest ") + loc.toString(10.0, 'f', 2)),
+                 qPrintable(deviations));
     }
 
     void test_build_emptyPortfolio()

@@ -3527,9 +3527,9 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
         m_finalValueFooter->setColumnWidth(c, m_finalValueTable->columnWidth(c));
 
     // ── Marktwert footer ──────────────────────────────────────────────────
-    double mPurchase = 0, mCurValue = 0, mMarketValue = 0, mProfit = 0, mProfitPct = 0, mMarketPct = 0;
+    double mPurchase = 0, mCurValue = 0, mProfit = 0, mProfitPct = 0;
     ShareCalculator::portfolioTotalsMarket(shareValues,
-        mPurchase, mCurValue, mMarketValue, mProfit, mProfitPct, mMarketPct);
+        mPurchase, mCurValue, mProfit, mProfitPct);
 
     double mcPurchase = 0, mcCurValue = 0, mcProfit = 0, mcProfitPct = 0;
     ShareCalculator::portfolioCompleteTotalsMarket(shareValues,
@@ -3588,12 +3588,15 @@ void MainWindow::updatePortfolioFooters(const QList<ShareValues>& shareValues)
         m_marketValueFooter->setItem(1, static_cast<int>(MC::CompleteChart), chartItem);
     }
 
-    // Row 2 — Aktueller Depotstand (= marketValue gesamt)
+    // Row 2 — Aktueller Depotstand = Summe der Kurswerte, genau wie im
+    // Depotwert-Footer (Bugfix 25.10.2026, Entscheidung 3: bis 25.10.2026 stand
+    // hier Kurswert + realisierter Gewinn, bei leerem Depot also ein Betrag
+    // ungleich 0). Realisierte Gewinne zeigt nur die Gesamt-Spalte.
     m_marketValueFooter->setItem(2, static_cast<int>(MC::Icon),
         makeTextItem(tr("Aktueller Depotstand"), neutral, Qt::AlignRight | Qt::AlignVCenter));
     m_marketValueFooter->item(2, static_cast<int>(MC::Icon))->setToolTip(footerPrevDayTooltip);
     m_marketValueFooter->setItem(2, static_cast<int>(MC::PurchaseMarketValue),
-        makeFooterItem(locale.toString(mMarketValue, 'f', 2) + QStringLiteral(" €"), neutral,
+        makeFooterItem(locale.toString(mCurValue, 'f', 2) + QStringLiteral(" €"), neutral,
                        QString(), muted));
     m_marketValueFooter->setItem(2, static_cast<int>(MC::CompletePurchaseMarketValue),
         makeFooterItem(locale.toString(mcCurValue, 'f', 2) + QStringLiteral(" €"), neutral,

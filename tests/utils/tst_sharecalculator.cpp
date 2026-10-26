@@ -241,20 +241,18 @@ private slots:
         CMP_MONEY(v.purchaseValue,            1200.0);  // held basis, no brokerage, no reduction
         CMP_MONEY(v.profitLoss,               175.0);   // Aktuelle Entwicklung
         CMP_MONEY(v.completePurchaseMarket,   1600.0);  // Kpl. Einzahlung
-        CMP_MONEY(v.completeProfitLossMarket, 281.04);  // realized P/L incl. fees
-        // completeCurValueMarket is UNCHANGED by the Rabatt fix: Buy2 is 100%
-        // held (frac=1), so its reduction cancelled out of
-        // (completePurchaseMarket - purchaseValueMarket) either way —
-        // completeCurValueMarket = curValue + that difference + realized P/L.
-        CMP_MONEY(v.completeCurValueMarket,   1881.04); // Kpl. Marktwert
-
-        // salePayoutMarket (ergänzt 10.07.2026, für die ShareDetailsForm
-        // Marktwert-Box "+ Verkäufe"-Zeile) — Marktwert-Pendant zu
-        // salePayoutFinal, ohne Brokerage und ohne Rabatt. Unverändert durch
-        // den Rabatt-Fix, da die Sale-Rabatt in dieser Fixture bereits 0 ist:
-        //   saleValue = round(4 * 130) = 520.00
-        //   salePayoutMarket = round(520 - tax(3)) = 517.00
-        CMP_MONEY(v.salePayoutMarket, 517.00);
+        // "Rein Kurs" (Nessies Rechenregel vom 25.10.2026): keine Kosten,
+        // keine Steuern, keine Dividenden.
+        //   salePayoutMarket = round(4 * 130)               =  520.00 (brutto)
+        //   Kpl. Marktwert   = curValue + Verkäufe = 1375 + 520 = 1895.00
+        //   Kompl. Entw.     = 1895 - 1600                  =  295.00
+        //   saleProfitLoss   = 520 - (1600 - 1200)          =  120.00
+        // Bis 25.10.2026: 281.04 / 1881.04 / 517.00 (Steuer abgezogen und
+        // realisierter G/V mit Kosten eingerechnet).
+        CMP_MONEY(v.completeProfitLossMarket, 295.00);
+        CMP_MONEY(v.completeCurValueMarket,   1895.00); // Kpl. Marktwert
+        CMP_MONEY(v.salePayoutMarket,          520.00);
+        CMP_MONEY(v.saleProfitLoss,            120.00);
 
         // Depotwert basics (with brokerage) — unaffected by the Marktwert fix
         CMP_MONEY(v.purchaseValueFinal,       1208.94);
@@ -360,12 +358,9 @@ private slots:
 
         const ShareValues v = ShareCalculator::compute(k_shareGuid, 125.0, 120.0);
 
-        // completeProfitLossMarket recomputed for the Rabatt fix (10.07.2026,
-        // same fixture as test_marktwert_coreScenario) — completeCurValueMarket
-        // stays identical since Buy2's reduction cancels out of the
-        // (completePurchaseMarket - purchaseValueMarket) difference either way.
-        CMP_MONEY(v.completeProfitLossMarket, 281.04);
-        CMP_MONEY(v.completeCurValueMarket,   1881.04);
+        // Same fixture and values as test_marktwert_coreScenario.
+        CMP_MONEY(v.completeProfitLossMarket, 295.00);
+        CMP_MONEY(v.completeCurValueMarket,   1895.00);
     }
 
     // ── Column identity: Kpl. Marktwert == Kpl. Einzahlung + Kpl. Entwicklung
@@ -393,13 +388,16 @@ private slots:
         CMP_MONEY(v.curValue,                 0.0);
         CMP_MONEY(v.purchaseValue,            0.0);
         CMP_MONEY(v.profitLossPct,            0.0);   // guarded division
-        CMP_MONEY(v.completeProfitLossMarket, 282.0); // realized only, incl. fees
-        CMP_MONEY(v.completeCurValueMarket,   1282.0);
+        // Rein Kurs: Verkauf 1300 brutto - Kauf 1000, Kosten zählen nicht.
+        CMP_MONEY(v.completeProfitLossMarket, 300.0);
+        CMP_MONEY(v.completeCurValueMarket,   1300.0);
     }
 
-    // ── saleProfitLossFinal: identisch zu completeProfitLossMarket, sobald
-    // nichts mehr gehalten wird (held = 0 → unrealisierter Anteil entfällt in
-    // beiden Formeln, es bleibt nur der realisierte, brokeragehaltige G/V).
+    // ── saleProfitLossFinal: identisch zu completeProfitLoss (Depotwert),
+    // sobald nichts mehr gehalten wird und keine Dividenden vorliegen (held = 0
+    // → unrealisierter Anteil entfällt, es bleibt nur der realisierte,
+    // brokeragehaltige G/V). Bis 25.10.2026 gegen completeProfitLossMarket
+    // geprüft, das seither "rein Kurs" rechnet.
     // Ergänzt 09.07.2026 für die ShareDetailsForm-Depotwert-Box
     // ("+ Gewinn / Verlust (Verkäufe)"-Zeile) — reine Algebra-Prüfung, ohne
     // von Hand nachgerechnete Zahlen.
@@ -410,7 +408,7 @@ private slots:
 
         const ShareValues v = ShareCalculator::compute(k_shareGuid, 125.0, 120.0);
 
-        CMP_MONEY(v.saleProfitLossFinal, v.completeProfitLossMarket);
+        CMP_MONEY(v.saleProfitLossFinal, v.completeProfitLoss);
         CMP_MONEY(v.saleProfitLossFinal, 282.0);
 
         // salePayoutFinal = round(10*130 - brokerage(8) + 0 - tax(0)) = 1292.00
@@ -429,6 +427,107 @@ private slots:
         CMP_MONEY(v.completeProfitLossMarket, 250.0);
         CMP_MONEY(v.completeCurValueMarket,   1250.0);
         CMP_MONEY(v.completeCurValueMarket,   v.curValue); // nothing realized
+    }
+
+    // ── Rechenbeispiele aus ARCHITECTURE.md, "Rechenregeln Depotwert und
+    // Marktwert" (Nessies Rechenregel vom 25.10.2026) ─────────────────────
+    //
+    // Echte Zahlen (Alphabet-Analyse 24./25.10.2026). Die Tests pinnen genau
+    // die dort dokumentierten Ergebnisse — wer eine Regel ändert, muss
+    // Beispiel und Test gemeinsam anpassen.
+
+    // Beispiel (a): vollständig verkauft.
+    //   Kauf     200 x 48,595 = 9.719,00 + Kosten 30,95 = 9.749,95
+    //   Verkauf  200 x 145,00 = 29.000,00 - Kosten 69,90 - Steuern 5.058,76
+    //   Dividenden netto 109,80
+    void test_beispielA_vollstaendigVerkauft()
+    {
+        addBuy(200.0, 200.0, 48.595, 30.95, 0.0);
+        addSale(200.0, 145.0, 69.90, 0.0, 5058.76, {});
+        addDividend(0.549, 200.0, 0.0); // 109,80
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 293.85, 293.85);
+
+        // Beide Sichten: kein Bestand, aktuell alles 0.
+        CMP_MONEY(v.volume,             0.0);
+        CMP_MONEY(v.curValue,           0.0);
+        CMP_MONEY(v.purchaseValue,      0.0);
+        CMP_MONEY(v.purchaseValueFinal, 0.0);
+        CMP_MONEY(v.profitLoss,         0.0);
+        CMP_MONEY(v.profitLossFinal,    0.0);
+
+        // Depotwert
+        CMP_MONEY(v.completePurchase,   9749.95);
+        CMP_MONEY(v.salePayoutFinal,   23871.34);
+        CMP_MONEY(v.totalDividend,       109.80);
+        CMP_MONEY(v.completeCurValue,  23981.14);  // Rückflüsse, NICHT Gewinn
+        CMP_MONEY(v.completeProfitLoss, 14231.19);
+        QVERIFY(qAbs(v.completeProfitPct - 145.96) < 0.005);
+
+        // Marktwert
+        CMP_MONEY(v.completePurchaseMarket,    9719.00);
+        CMP_MONEY(v.salePayoutMarket,         29000.00);
+        CMP_MONEY(v.completeCurValueMarket,   29000.00);
+        CMP_MONEY(v.completeProfitLossMarket, 19281.00);
+        QVERIFY(qAbs(v.completeProfitPctMarket - 198.38) < 0.005);
+    }
+
+    // Beispiel (b): Teilverkauf, 120 von 200 verkauft, 80 gehalten.
+    //   Verkauf 120 x 145,00 = 17.400,00 - Kosten 69,90 - Steuern 3.027,88
+    //   Kurs 293,85
+    void test_beispielB_teilverkauf()
+    {
+        addBuy(200.0, 120.0, 48.595, 30.95, 0.0);
+        addSale(120.0, 145.0, 69.90, 0.0, 3027.88, {});
+        addDividend(0.549, 200.0, 0.0); // 109,80
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 293.85, 293.85);
+
+        CMP_MONEY(v.volume,   80.0);
+        CMP_MONEY(v.curValue, 23508.00);
+
+        // Depotwert: Einzahlung gehalten = 80 x 48,595 + 30,95 x 80/200
+        CMP_MONEY(v.purchaseValueFinal,   3899.98);
+        CMP_MONEY(v.profitLossFinal,     19608.02);
+        QVERIFY(qAbs(v.profitLossPctFinal - 502.77) < 0.005);
+        CMP_MONEY(v.salePayoutFinal,     14302.22);
+        CMP_MONEY(v.completeCurValue,    37920.02);
+        CMP_MONEY(v.completeProfitLoss,  28170.07);
+        QVERIFY(qAbs(v.completeProfitPct - 288.93) < 0.005);
+        // Gegenprobe: realisiert + Dividenden + aktuell = komplett
+        CMP_MONEY(v.saleProfitLossFinal, 8452.25);
+        CMP_MONEY(v.saleProfitLossFinal + v.totalDividend + v.profitLossFinal,
+                  v.completeProfitLoss);
+
+        // Marktwert
+        CMP_MONEY(v.purchaseValue,             3887.60);
+        CMP_MONEY(v.profitLoss,               19620.40);
+        QVERIFY(qAbs(v.profitLossPct - 504.69) < 0.005);
+        CMP_MONEY(v.salePayoutMarket,         17400.00);
+        CMP_MONEY(v.completeCurValueMarket,   40908.00);
+        CMP_MONEY(v.completeProfitLossMarket, 31189.00);
+        QVERIFY(qAbs(v.completeProfitPctMarket - 320.91) < 0.005);
+        // Gegenprobe: realisiert + aktuell = komplett
+        CMP_MONEY(v.saleProfitLoss, 11568.60);
+        CMP_MONEY(v.saleProfitLoss + v.profitLoss, v.completeProfitLossMarket);
+    }
+
+    // Beispiel (c): FIFO mit Kosten je Kauf. Kauf 1 ist vollständig verkauft,
+    // von Kauf 2 sind 80 Stück übrig — gehalten werden nur dessen Kosten
+    // anteilig: 10,95 x 80/100 = 8,76 (pauschal über beide Käufe wären es
+    // 30,95 x 80/200 = 12,38, das wäre falsch).
+    void test_beispielC_fifoKostenJeKauf()
+    {
+        addBuy(100.0, 100.0, 40.00, 20.00, 0.0);
+        addBuy(100.0,  20.0, 57.19, 10.95, 0.0, QStringLiteral("2024-02-01T10:00:00"));
+        addSale(120.0, 145.0, 0.0, 0.0, 0.0, {});
+
+        const ShareValues v = ShareCalculator::compute(k_shareGuid, 293.85, 293.85);
+
+        CMP_MONEY(v.volume,             80.0);
+        CMP_MONEY(v.purchaseValue,      4575.20);           // 80 x 57,19
+        CMP_MONEY(v.purchaseValueFinal, 4575.20 + 8.76);    // + 10,95 x 80/100
+        CMP_MONEY(v.completePurchase,   4000.00 + 20.00 + 5719.00 + 10.95);
     }
 
     // ── Previous-day figures ─────────────────────────────────────────────
@@ -551,7 +650,7 @@ private slots:
         CMP_MONEY(v.totalBrokerage, 15.00);
     }
 
-    void test_freestandingCost_reducesCompleteEntwicklungBothTabs()
+    void test_freestandingCost_reducesCompleteEntwicklungDepotOnly()
     {
         addBuy(10.0, 0.0, 100.0, 0.0, 0.0);
         addFreestandingCost(15.0, 5.0); // brokerageReduction() = 10.00
@@ -560,11 +659,10 @@ private slots:
 
         // Before the fix this freestanding entry flowed only into
         // totalBrokerage (display), never into completePurchase — so
-        // "Komplette Entwicklung" was 10.00 € too high in BOTH tabs (both
-        // completeProfitLossMarket and completeProfitLoss derive from
-        // realizedProfitLossWithFees, which derives from completePurchase).
-        // Without the freestanding entry both values would be 0.00.
-        CMP_MONEY(v.completeProfitLossMarket, -10.00);
+        // "Komplette Entwicklung" was 10.00 € too high. Seit der Rechenregel
+        // vom 25.10.2026 ("rein Kurs") trifft das nur noch den Depotwert:
+        // der Marktwert kennt keine Kosten und bleibt bei 0.00.
+        CMP_MONEY(v.completeProfitLossMarket,   0.00);
         CMP_MONEY(v.completeProfitLoss,       -10.00);
     }
 

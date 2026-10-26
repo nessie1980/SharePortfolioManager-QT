@@ -10,7 +10,7 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
-## [1.27.0] - 2026-10-24
+## [1.27.0] - 2026-10-26
 
 ### Added
 
@@ -31,6 +31,36 @@ Zurzeit keine unveroeffentlichten Aenderungen.
   Namen und anonymisiert daneben ("-anonymisiert"). Ersetzt werden
   Aktiennamen, WKN, ISIN, Depotnummern und der Portfolio-Pfad; Betraege,
   Kurse, Stueckzahlen und Daten bleiben unveraendert.
+
+### Fixed
+
+- Marktwert rechnet durchgaengig "rein Kurs": Kpl. Marktwert = Kurswert +
+  Verkaeufe brutto (Stueck x Verkaufskurs), Komplette Entwicklung = Kpl.
+  Marktwert - Kpl. Einzahlung, ohne Kosten, Steuern und Dividenden. Bisher
+  wurde der realisierte Gewinn MIT Kosten und Steuern auf die Einzahlung OHNE
+  Kosten gerechnet.
+- Footer "Aktueller Depotstand" im Tab "Kompletter Marktwert" zeigt die Summe
+  der Kurswerte wie im Depotwert-Tab. Bisher kam der realisierte Gewinn
+  hinzu, bei leerem Depot also ein Betrag ungleich 0.
+- Detailansicht einer Aktie, Box "Aktuell" (beide Modi): nur noch der
+  Bestand, Bestandswert - Einzahlungen (Bestand) = Gewinn / Verlust
+  (aktuell) mit Entwicklung in Prozent. Dividenden und Verkaufsgewinne stehen
+  nur noch in der Box "Gesamt". Box "Gesamt" im Marktwert-Modus und der Tab
+  "Gewinne / Verluste" im Marktwert-Modus rechnen ohne Steuern.
+- Depotwert-Chart: der Prozentwert bezieht sich auf das eingesetzte Kapital
+  mit Kauf- und freistehenden Kosten, wie "Kpl. Einzahlung" im Footer. Am
+  rechten Rand stimmen Chart und Footer damit auch im Prozentwert ueberein.
+- Berechnungsbericht: Zeilen und Rechenwege folgen den neuen Regeln. Aktien
+  ohne Tageswerte, die im Footer zaehlen, aber im Chart fehlen, gelten im
+  Abgleich Footer gegen Chart als Erklaerung und erscheinen nicht mehr als
+  Abweichung.
+
+### Changed
+
+- Die verbindlichen Rechenregeln fuer Depotwert und Marktwert stehen mit drei
+  durchgerechneten Beispielen (vollstaendig verkauft, Teilverkauf, FIFO mit
+  Kosten je Kauf) in ARCHITECTURE.md, "Rechenregeln Depotwert und Marktwert";
+  jedes Beispiel ist als Test festgehalten.
 
 ## [1.26.0] - 2026-10-17
 

@@ -383,35 +383,95 @@ private slots:
         QCOMPARE(pl->value, locale.toString(-50.00, 'f', 2) + QStringLiteral(" €"));
     }
 
-    void test_loadAndDisplay_aktuelleBox_sumAddsCurValueDividendAndSaleProfitLoss()
+    // ── Aktuelle-Box (Entscheidung 3, Bugfix 25.10.2026) ─────────────────
+    // Beide Modi: nur der Bestand — Bestandswert − Einzahlungen (Bestand) =
+    // Gewinn / Verlust (aktuell) + Entwicklung. Keine Dividenden, keine
+    // realisierten Gewinne (bis 25.10.2026: Bestandswert + Dividenden + G/V
+    // Verkäufe = Summe).
+
+    void test_loadAndDisplay_aktuelleBox_depotMode_showsHeldPositionOnly()
     {
         FakeViewShareDetails view;
         FakeModelShareDetails model;
         model.share = ShareObject(QStringLiteral("g7"), QStringLiteral("WKN007"),
                                    QStringLiteral("ISIN0000007"), QStringLiteral("Sieben AG"));
 
+        // Werte aus Rechenbeispiel (b) in ARCHITECTURE.md, "Rechenregeln
+        // Depotwert und Marktwert": 80 von 200 Stück gehalten.
         ShareValues& v = model.values;
-        v.volume             = 40.0;
-        v.curPrice           = 484.40;
-        v.curValue           = 19376.00;
-        v.totalDividend      = 0.0;
-        v.saleProfitLossFinal = -252.20;
+        v.volume              = 80.0;
+        v.curPrice            = 293.85;
+        v.curValue            = 23508.00;
+        v.purchaseValueFinal  = 3899.98;
+        v.profitLossFinal     = 19608.02;
+        v.profitLossPctFinal  = 19608.02 / 3899.98 * 100.0; // 502,77 %
+        v.purchaseValue       = 3887.60;   // Marktwert-Sicht, darf hier nicht erscheinen
+        v.totalDividend       = 109.80;    // gehört nur in die Gesamt-Box
+        v.saleProfitLossFinal = 8452.25;   // gehört nur in die Gesamt-Box
 
         PresenterShareDetails presenter(view, model, QStringLiteral("g7"));
         QVERIFY(presenter.loadAndDisplay());
 
         const QLocale locale;
 
-        const CalculationRow* saleProfit = FakeViewShareDetails::findRow(
-            view.aktuelleRows, QStringLiteral("Gewinn / Verlust (Verkäufe):"));
-        QVERIFY(saleProfit);
-        QCOMPARE(saleProfit->value, locale.toString(-252.20, 'f', 2) + QStringLiteral(" €"));
+        QCOMPARE(view.aktuelleRows.size(), 6);
+        QVERIFY(!FakeViewShareDetails::findRow(view.aktuelleRows, QStringLiteral("Dividenden:")));
+        QVERIFY(!FakeViewShareDetails::findRow(view.aktuelleRows, QStringLiteral("Gewinn / Verlust (Verkäufe):")));
+        QVERIFY(!FakeViewShareDetails::findRow(view.aktuelleRows, QStringLiteral("Summe:")));
 
-        // 19376.00 + 0.00 + (-252.20) = 19123.80
-        const CalculationRow* sum = FakeViewShareDetails::findRow(view.aktuelleRows, QStringLiteral("Summe:"));
-        QVERIFY(sum);
-        QCOMPARE(sum->value, locale.toString(19123.80, 'f', 2) + QStringLiteral(" €"));
-        QVERIFY(sum->emphasize);
+        const CalculationRow* value = FakeViewShareDetails::findRow(
+            view.aktuelleRows, QStringLiteral("Aktueller Bestandswert:"));
+        QVERIFY(value);
+        QCOMPARE(value->value, locale.toString(23508.00, 'f', 2) + QStringLiteral(" €"));
+
+        const CalculationRow* purchase = FakeViewShareDetails::findRow(
+            view.aktuelleRows, QStringLiteral("Einzahlungen (Bestand):"));
+        QVERIFY(purchase);
+        QCOMPARE(purchase->operatorSymbol, QStringLiteral("−"));
+        QCOMPARE(purchase->value, locale.toString(3899.98, 'f', 2) + QStringLiteral(" €"));
+
+        const CalculationRow* pl = FakeViewShareDetails::findRow(
+            view.aktuelleRows, QStringLiteral("Gewinn / Verlust (aktuell):"));
+        QVERIFY(pl);
+        QCOMPARE(pl->value, locale.toString(19608.02, 'f', 2) + QStringLiteral(" €"));
+        QCOMPARE(pl->color, QColor(QStringLiteral("green")));
+        QVERIFY(pl->emphasize);
+
+        const CalculationRow* perf = FakeViewShareDetails::findRow(view.aktuelleRows, QStringLiteral("Entwicklung:"));
+        QVERIFY(perf);
+        QCOMPARE(perf->value, locale.toString(502.77, 'f', 2) + QStringLiteral(" %"));
+    }
+
+    void test_loadAndDisplay_aktuelleBox_fullySold_showsZero()
+    {
+        // Rechenbeispiel (a): vollständig verkauft — die Aktuell-Box zeigt in
+        // beiden Modi 0, egal wie hoch Verkaufsgewinn und Dividenden waren.
+        for (const bool market : { false, true }) {
+            FakeViewShareDetails view;
+            FakeModelShareDetails model;
+            model.share = ShareObject(QStringLiteral("g8"), QStringLiteral("WKN008"),
+                                       QStringLiteral("ISIN0000008"), QStringLiteral("Acht AG"));
+
+            ShareValues& v = model.values;
+            v.curPrice            = 293.85;
+            v.totalDividend       = 109.80;
+            v.saleProfitLossFinal = 14121.39;
+            v.saleProfitLoss      = 19281.00;
+
+            PresenterShareDetails presenter(view, model, QStringLiteral("g8"), market);
+            QVERIFY(presenter.loadAndDisplay());
+
+            const QLocale locale;
+            const QString zero = locale.toString(0.0, 'f', 2) + QStringLiteral(" €");
+            const CalculationRow* pl = FakeViewShareDetails::findRow(
+                view.aktuelleRows, QStringLiteral("Gewinn / Verlust (aktuell):"));
+            QVERIFY(pl);
+            QCOMPARE(pl->value, zero);
+            const CalculationRow* value = FakeViewShareDetails::findRow(
+                view.aktuelleRows, QStringLiteral("Aktueller Bestandswert:"));
+            QVERIFY(value);
+            QCOMPARE(value->value, zero);
+        }
     }
 
     // ── Marktwert-Modus (marketValueMode = true) ────────────────────────────
@@ -420,7 +480,10 @@ private slots:
     //   sum        = curValue + salePayoutMarket      = 37969.39 + 7766.03 = 45735.42
     //   profitLoss = sum - completePurchaseMarket      = 45735.42 - 29442.56 = 16292.86
     //   profitPct  = profitLoss / completePurchaseMarket * 100 = 55.34 %
-    //   marketValue (Aktuelle "Summe") = curValue + saleProfitLoss = 37969.39 + 152.82 = 38122.21
+    // salePayoutMarket ist seit dem Bugfix vom 25.10.2026 der Verkaufswert
+    // brutto (ohne Steuern); die Fixture setzt die Felder direkt, die Box
+    // liest sie unverändert — es geht hier um die Abbildung, nicht um die
+    // Rechnung (die prüft tst_sharecalculator).
 
     void test_loadAndDisplay_marketMode_setsTabTitle()
     {
@@ -463,8 +526,11 @@ private slots:
         v.volume                = 168.50796;
         v.curPrice               = 225.327;
         v.curValue               = 37969.39;
-        v.salePayoutMarket       = 7766.03;
-        v.completePurchaseMarket = 29442.56;
+        v.salePayoutMarket         = 7766.03;
+        v.completePurchaseMarket   = 29442.56;
+        v.completeCurValueMarket   = 45735.42;
+        v.completeProfitLossMarket = 16292.86;
+        v.completeProfitPctMarket  = 16292.86 / 29442.56 * 100.0;
 
         PresenterShareDetails presenter(view, model, QStringLiteral("m3"), /*marketValueMode=*/true);
         QVERIFY(presenter.loadAndDisplay());
@@ -500,7 +566,7 @@ private slots:
         QCOMPARE(perf->value, locale.toString(55.34, 'f', 2) + QStringLiteral(" %"));
     }
 
-    void test_loadAndDisplay_marketMode_aktuelleBox_matchesScreenshotValues()
+    void test_loadAndDisplay_marketMode_aktuelleBox_showsHeldPositionOnly()
     {
         FakeViewShareDetails view;
         FakeModelShareDetails model;
@@ -508,31 +574,39 @@ private slots:
                                    QStringLiteral("LU0000000001"),
                                    QStringLiteral("AGIF-Allianz Glo.Eq.Insights"), ShareType::Fond);
 
+        // Rechenbeispiel (b), Marktwert-Sicht: 80 x 48,595 = 3.887,60 gehalten.
         ShareValues& v = model.values;
-        v.volume        = 168.50796;
-        v.curPrice      = 225.327;
-        v.curValue      = 37969.39;
-        v.saleProfitLoss = 152.82;
-        v.marketValue    = 38122.21;
+        v.volume             = 80.0;
+        v.curPrice           = 293.85;
+        v.curValue           = 23508.00;
+        v.purchaseValue      = 3887.60;
+        v.profitLoss         = 19620.40;
+        v.profitLossPct      = 19620.40 / 3887.60 * 100.0; // 504,69 %
+        v.purchaseValueFinal = 3899.98;    // Depotwert-Sicht, darf hier nicht erscheinen
+        v.saleProfitLoss     = 11568.60;   // gehört nur in die Gesamt-Box
 
         PresenterShareDetails presenter(view, model, QStringLiteral("m4"), /*marketValueMode=*/true);
         QVERIFY(presenter.loadAndDisplay());
 
         const QLocale locale;
 
-        const CalculationRow* div = FakeViewShareDetails::findRow(view.aktuelleRows, QStringLiteral("Dividenden:"));
-        QVERIFY(div);
-        QCOMPARE(div->value, QStringLiteral("-"));
-        QCOMPARE(div->color, QColor(Qt::gray));
+        QCOMPARE(view.aktuelleRows.size(), 6);
+        QVERIFY(!FakeViewShareDetails::findRow(view.aktuelleRows, QStringLiteral("Dividenden:")));
+        QVERIFY(!FakeViewShareDetails::findRow(view.aktuelleRows, QStringLiteral("Gewinn / Verlust (Verkäufe):")));
 
-        const CalculationRow* saleProfit = FakeViewShareDetails::findRow(
-            view.aktuelleRows, QStringLiteral("Gewinn / Verlust (Verkäufe):"));
-        QVERIFY(saleProfit);
-        QCOMPARE(saleProfit->value, locale.toString(152.82, 'f', 2) + QStringLiteral(" €"));
+        const CalculationRow* purchase = FakeViewShareDetails::findRow(
+            view.aktuelleRows, QStringLiteral("Einzahlungen (Bestand):"));
+        QVERIFY(purchase);
+        QCOMPARE(purchase->value, locale.toString(3887.60, 'f', 2) + QStringLiteral(" €"));
 
-        const CalculationRow* sum = FakeViewShareDetails::findRow(view.aktuelleRows, QStringLiteral("Summe:"));
-        QVERIFY(sum);
-        QCOMPARE(sum->value, locale.toString(38122.21, 'f', 2) + QStringLiteral(" €"));
+        const CalculationRow* pl = FakeViewShareDetails::findRow(
+            view.aktuelleRows, QStringLiteral("Gewinn / Verlust (aktuell):"));
+        QVERIFY(pl);
+        QCOMPARE(pl->value, locale.toString(19620.40, 'f', 2) + QStringLiteral(" €"));
+
+        const CalculationRow* perf = FakeViewShareDetails::findRow(view.aktuelleRows, QStringLiteral("Entwicklung:"));
+        QVERIFY(perf);
+        QCOMPARE(perf->value, locale.toString(504.69, 'f', 2) + QStringLiteral(" %"));
     }
 
     void test_loadAndDisplay_marketMode_vortagBox_unaffectedByMode()

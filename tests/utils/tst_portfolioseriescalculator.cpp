@@ -51,7 +51,7 @@ private:
         a.sales     = { { d(2026, 4, 10),  8.0, 60.0, 15.0 } };
         a.dividends = { { d(2026, 3, 10), 22.0 } };
         a.costs     = { { d(2026, 1, 10), 10.0 },
-                        { d(2026, 4, 10),  4.0 } };
+                        { d(2026, 4, 10),  4.0, /*investment=*/false } }; // sale fee
         a.prices    = { { d(2026, 1, 10),  50.0 },
                         { d(2026, 2,  1),  55.0 },
                         { d(2026, 3, 10),  58.0 },
@@ -189,15 +189,20 @@ private slots:
         CMP_MONEY(last.costs,                22.0); // 10 + 8 + 4
         CMP_MONEY(last.purchaseValueHeld,  1600.0); // 12 x 50 + 5 x 200
         CMP_MONEY(last.purchaseValueTotal, 2000.0); // 20 x 50 + 5 x 200
+        CMP_MONEY(last.investedTotal,      2018.0); // 2000 + buy fees 10 + 8
     }
 
-    void test_referenceScenario_percentUsesTotalPurchaseValue()
+    void test_referenceScenario_percentUsesInvestedCapital()
     {
         const PortfolioSeriesResult r =
             PortfolioSeriesCalculator::compute(referenceFixture());
 
-        // 259 / 2000 x 100 — all buys, not only the held ones.
-        QVERIFY(qAbs(r.points.constLast().developmentPct - 12.95) < 0.01);
+        // 259 / 2018 x 100 — all buys, not only the held ones, plus the buy
+        // fees (Entscheidung 5, 25.10.2026: Nenner wie "Kpl. Einzahlung" im
+        // Depotwert-Footer). The sale fee 4 is not part of the denominator.
+        // Bis 25.10.2026: 259 / 2000 = 12,95 %.
+        QVERIFY(qAbs(r.points.constLast().developmentPct - 259.0 / 2018.0 * 100.0) < 1e-9);
+        QVERIFY(qAbs(r.points.constLast().developmentPct - 12.83) < 0.01);
     }
 
     void test_buyDoesNotMoveTheLine()
@@ -234,7 +239,7 @@ private slots:
         s.sales     = { { d(2026, 5, 15), 10.0, 120.0, 30.0 } };
         s.dividends = { { d(2026, 4, 15), 15.0 } };
         s.costs     = { { d(2026, 3,  1), 10.0 },
-                        { d(2026, 5, 15),  5.0 } };
+                        { d(2026, 5, 15),  5.0, /*investment=*/false } }; // sale fee
         s.prices    = { { d(2026, 3,  1), 100.0 },
                         { d(2026, 4,  1), 110.0 },
                         { d(2026, 4, 15), 110.0 },
@@ -253,10 +258,12 @@ private slots:
         CMP_MONEY(r.points.at(5).development, 170.0); // nothing held, line flat
 
         // Held purchase value is 0 afterwards, so the percentage has to fall
-        // back on the total purchase value to stay meaningful.
+        // back on the total invested capital to stay meaningful:
+        // 170 / (1000 + buy fee 10) = 16,83 % (bis 25.10.2026: 170 / 1000 = 17 %).
         CMP_MONEY(r.points.constLast().purchaseValueHeld,     0.0);
         CMP_MONEY(r.points.constLast().purchaseValueTotal, 1000.0);
-        QVERIFY(qAbs(r.points.constLast().developmentPct - 17.0) < 0.01);
+        CMP_MONEY(r.points.constLast().investedTotal,      1010.0);
+        QVERIFY(qAbs(r.points.constLast().developmentPct - 170.0 / 1010.0 * 100.0) < 1e-9);
     }
 
     void test_fifo_usesOldestLotFirst()
@@ -439,19 +446,40 @@ private slots:
         QVERIFY(r.sharesWithoutHistory.isEmpty());
     }
 
-    void test_percentIsZeroWhenNothingWasEverBought()
+    void test_percentIsZeroWhenNothingWasEverInvested()
     {
         // Guard against division by zero, same pattern as ShareCalculator.
+        // Only a sale-linked cost — it never counts as invested capital.
         PortfolioShareSeriesInput s;
         s.name   = QStringLiteral("Aktie");
-        s.costs  = { { d(2026, 6, 1), 12.0 } };
+        s.costs  = { { d(2026, 6, 1), 12.0, /*investment=*/false } };
         s.prices = { { d(2026, 6, 1), 100.0 } };
 
         const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute({ s });
 
         CMP_MONEY(r.points.constFirst().purchaseValueTotal,   0.0);
+        CMP_MONEY(r.points.constFirst().investedTotal,        0.0);
         CMP_MONEY(r.points.constFirst().development,        -12.0);
         CMP_MONEY(r.points.constFirst().developmentPct,       0.0);
+    }
+
+    void test_percent_freestandingCostCountsAsInvested()
+    {
+        // A freestanding cost entry is invested capital like a buy fee — the
+        // Depotwert footer adds it to "Kpl. Einzahlung" too
+        // (ShareCalculator::compute(), fixed 20.08.2026).
+        PortfolioShareSeriesInput s;
+        s.name   = QStringLiteral("Aktie");
+        s.buys   = { { d(2026, 6, 1), 10.0, 100.0 } };
+        s.costs  = { { d(2026, 6, 1), 10.0 } };   // freestanding, investment = true
+        s.prices = { { d(2026, 6, 1), 100.0 },
+                     { d(2026, 6, 2), 111.0 } };
+
+        const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute({ s });
+
+        CMP_MONEY(r.points.constLast().investedTotal, 1010.0);
+        CMP_MONEY(r.points.constLast().development,    100.0); // 110 gain - 10 cost
+        QVERIFY(qAbs(r.points.constLast().developmentPct - 100.0 / 1010.0 * 100.0) < 1e-9);
     }
 
     void test_unsortedInputIsSortedInternally()

@@ -61,10 +61,13 @@ QList<PortfolioShareSeriesInput> ModelPortfolioChart::loadPortfolioInput() const
         // findByShare() liefert kauf-, verkaufsgebundene UND freistehende
         // Einträge. Alle drei gehören in den Kosten-Term (Nessies Vorgabe
         // 05.08.2026) — brokerageReduction() ist bereits
-        // provision + brokerFee + traderFee - reduction.
+        // provision + brokerFee + traderFee - reduction. Verkaufsgebundene
+        // Kosten zählen nicht zum eingesetzten Kapital (Prozent-Nenner), siehe
+        // PortfolioCostEvent::investment.
         for (const BrokerageObject& brokerage : m_brokerageRepo.findByShare(share.guid()))
             input.costs.append(PortfolioCostEvent{ brokerage.date(),
-                                                   brokerage.brokerageReduction() });
+                                                   brokerage.brokerageReduction(),
+                                                   brokerage.saleGuid().isEmpty() });
 
         for (const DailyValuesObject& daily : m_dailyValuesRepo.findByShare(share.guid()))
             input.prices.append(PortfolioPriceEvent{

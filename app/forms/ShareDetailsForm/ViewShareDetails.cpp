@@ -396,17 +396,20 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>&       sa
     if (!m_gewinneVerlusteTab)
         return; // defensiv — Tab wird seit 14.07.2026 immer in setupUi() angelegt
 
-    // Marktwert-Modus (seit 14.07.2026, Nessies Vorgabe): brokeragefreie
-    // Felder, konsistent zum Rest der Marktwert-Box (siehe ShareCalculator.h,
-    // "Marktwert-Tab (no brokerage, no reduction)"). Depotwert-Modus bleibt
-    // unverändert bei den *BrokerageReduction()-Feldern (verifiziert gegen
+    // Marktwert-Modus: "rein Kurs" (Nessies Rechenregel vom 25.10.2026,
+    // ARCHITECTURE.md "Rechenregeln Depotwert und Marktwert") — Auszahlung =
+    // Verkaufswert brutto (Stück x Verkaufskurs), Gewinn/Verlust =
+    // Verkaufswert - Kaufwert der verkauften Stücke, beides ohne Kosten UND
+    // ohne Steuern. Bis 25.10.2026 wurden hier payout()/profitLoss() verwendet,
+    // die die Steuer abziehen. Depotwert-Modus bleibt bei den
+    // *BrokerageReduction()-Feldern (verifiziert gegen
     // ViewSaleEdit::populateOverview(), 13.07.2026).
     const bool market = m_marketValueMode;
     auto salePayout = [market](const SaleObject& s) {
-        return market ? s.payout() : s.payoutBrokerageReduction();
+        return market ? s.saleValue() : s.payoutBrokerageReduction();
     };
     auto saleProfitLoss = [market](const SaleObject& s) {
-        return market ? s.profitLoss() : s.profitLossBrokerageReduction();
+        return market ? s.saleValue() - s.buyValue() : s.profitLossBrokerageReduction();
     };
 
     QList<int> years;

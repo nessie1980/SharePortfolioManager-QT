@@ -213,14 +213,13 @@ CalculationRows PresenterShareDetails::buildGesamtBox(const ShareValues& v) cons
     // "= Einzahlungen:").
 
     if (m_marketValueMode) {
-        // Pure market-only arithmetic — deliberately NOT completeCurValueMarket/
-        // completeProfitLossMarket/completeProfitPctMarket, see class comment.
-        const double sum        = roundAway(v.curValue + v.salePayoutMarket);
-        const double profitLoss = roundAway(sum - v.completePurchaseMarket);
-        const double profitPct  = (v.completePurchaseMarket > 0.0)
-                                  ? (profitLoss / v.completePurchaseMarket * 100.0)
-                                  : 0.0;
-        const QColor plColor = performanceColor(profitLoss);
+        // "Rein Kurs" (Nessies Rechenregel vom 25.10.2026): Kurswert plus
+        // Verkäufe brutto (Stück x Verkaufskurs, ohne Kosten und Steuern)
+        // gegen alle Käufe ohne Kosten. Seit dem Bugfix liefert
+        // ShareCalculator genau diese Werte in completeCurValueMarket/
+        // completeProfitLossMarket/completeProfitPctMarket — Box, Tabelle und
+        // Footer zeigen damit denselben Betrag.
+        const QColor plColor = performanceColor(v.completeProfitLossMarket);
 
         CalculationRows rows;
         rows << CalculationRow{ QString(), tr("Anteile:"), formatVolume(locale, v.volume), QColor(), false }
@@ -228,10 +227,10 @@ CalculationRows PresenterShareDetails::buildGesamtBox(const ShareValues& v) cons
              << CalculationRow{ QStringLiteral("="), tr("Aktueller Bestandswert:"), formatMoney(locale, v.curValue), QColor(), true }
              << disabledRow(QStringLiteral("+"), tr("Dividenden:"))
              << CalculationRow{ QStringLiteral("+"), tr("Verkäufe:"), formatMoney(locale, v.salePayoutMarket), QColor(), false }
-             << CalculationRow{ QStringLiteral("="), tr("Summe:"), formatMoney(locale, sum), QColor(), true }
+             << CalculationRow{ QStringLiteral("="), tr("Summe:"), formatMoney(locale, v.completeCurValueMarket), QColor(), true }
              << CalculationRow{ QStringLiteral("−"), tr("Alle Einzahlungen:"), formatMoney(locale, v.completePurchaseMarket), QColor(), false }
-             << CalculationRow{ QStringLiteral("="), tr("Gewinn / Verlust (gesamt):"), formatMoney(locale, profitLoss), plColor, true }
-             << CalculationRow{ QString(), tr("Entwicklung:"), formatPercent(locale, profitPct), plColor, false };
+             << CalculationRow{ QStringLiteral("="), tr("Gewinn / Verlust (gesamt):"), formatMoney(locale, v.completeProfitLossMarket), plColor, true }
+             << CalculationRow{ QString(), tr("Entwicklung:"), formatPercent(locale, v.completeProfitPctMarket), plColor, false };
         return rows;
     }
 
@@ -281,30 +280,25 @@ CalculationRows PresenterShareDetails::buildAktuelleBox(const ShareValues& v) co
 {
     const QLocale locale;
 
-    if (m_marketValueMode) {
-        // marketValue already equals curValue + saleProfitLoss (see
-        // ShareCalculator::compute()) — no fresh rounding needed here.
-        CalculationRows rows;
-        rows << CalculationRow{ QString(), tr("Anteile:"), formatVolume(locale, v.volume), QColor(), false }
-             << CalculationRow{ QStringLiteral("×"), tr("Aktueller Kurswert:"), formatPrice(locale, v.curPrice), QColor(), false }
-             << CalculationRow{ QStringLiteral("="), tr("Aktueller Bestandswert:"), formatMoney(locale, v.curValue), QColor(), true }
-             << disabledRow(QStringLiteral("+"), tr("Dividenden:"))
-             << CalculationRow{ QStringLiteral("+"), tr("Gewinn / Verlust (Verkäufe):"), formatMoney(locale, v.saleProfitLoss), QColor(), false }
-             << CalculationRow{ QStringLiteral("="), tr("Summe:"), formatMoney(locale, v.marketValue), QColor(), true };
-        return rows;
-    }
-
-    // Depotwert mode — unchanged. Simple arithmetic over already-computed
-    // fields (curValue, totalDividend, saleProfitLossFinal) — see class comment.
-    const double sum = roundAway(v.curValue + v.totalDividend + v.saleProfitLossFinal);
+    // Entscheidung 3 (Bugfix 25.10.2026, beide Modi): die Box zeigt nur den
+    // Bestand — Bestandswert gegen die Einzahlung der noch gehaltenen Stücke.
+    // Realisierte Gewinne und Dividenden gehören ausschließlich in die
+    // Gesamt-Box; bis 25.10.2026 wurden sie hier addiert, so dass eine
+    // vollständig verkaufte Aktie einen "aktuellen" Wert ungleich 0 hatte.
+    // Die Werte sind exakt die der Tabellenspalten "Einzahlung" und
+    // "Aktuelle Entwicklung" (purchaseValue/profitLoss bzw. *Final).
+    const double purchase   = m_marketValueMode ? v.purchaseValue : v.purchaseValueFinal;
+    const double profitLoss = m_marketValueMode ? v.profitLoss    : v.profitLossFinal;
+    const double profitPct  = m_marketValueMode ? v.profitLossPct : v.profitLossPctFinal;
+    const QColor plColor    = performanceColor(profitLoss);
 
     CalculationRows rows;
     rows << CalculationRow{ QString(), tr("Anteile:"), formatVolume(locale, v.volume), QColor(), false }
          << CalculationRow{ QStringLiteral("×"), tr("Aktueller Kurswert:"), formatPrice(locale, v.curPrice), QColor(), false }
          << CalculationRow{ QStringLiteral("="), tr("Aktueller Bestandswert:"), formatMoney(locale, v.curValue), QColor(), true }
-         << CalculationRow{ QStringLiteral("+"), tr("Dividenden:"), formatMoney(locale, v.totalDividend), QColor(), false }
-         << CalculationRow{ QStringLiteral("+"), tr("Gewinn / Verlust (Verkäufe):"), formatMoney(locale, v.saleProfitLossFinal), QColor(), false }
-         << CalculationRow{ QStringLiteral("="), tr("Summe:"), formatMoney(locale, sum), QColor(), true };
+         << CalculationRow{ QStringLiteral("−"), tr("Einzahlungen (Bestand):"), formatMoney(locale, purchase), QColor(), false }
+         << CalculationRow{ QStringLiteral("="), tr("Gewinn / Verlust (aktuell):"), formatMoney(locale, profitLoss), plColor, true }
+         << CalculationRow{ QString(), tr("Entwicklung:"), formatPercent(locale, profitPct), plColor, false };
 
     return rows;
 }

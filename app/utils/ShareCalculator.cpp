@@ -145,8 +145,11 @@ ShareValues ShareCalculator::compute(const QString& guid,
     // sold shares' buy cost unsubtracted and massively overstate the gain.
     //
     // salePayoutFinal:  net cash from sales WITH brokerage (- tax)
-    // salePayoutMarket: net cash from sales WITHOUT brokerage AND WITHOUT
-    //                    reduction (- tax) — see reduction comment above.
+    // salePayoutMarket: gross sale value (Stück x Verkaufskurs) — WITHOUT
+    //                    brokerage, reduction AND tax. Marktwert = "rein Kurs"
+    //                    (Nessies Rechenregel vom 25.10.2026, ARCHITECTURE.md
+    //                    "Rechenregeln Depotwert und Marktwert"); bis 25.10.2026
+    //                    wurde hier fälschlich die Steuer abgezogen.
 
     double salePayoutFinal  = 0.0;
     double salePayoutMarket = 0.0;
@@ -166,16 +169,16 @@ ShareValues ShareCalculator::compute(const QString& guid,
                                      + sale.reduction()
                                      - sale.taxSum());
 
-        salePayoutMarket += roundAway(saleValue
-                                      - sale.taxSum());
+        salePayoutMarket += saleValue;
     }
 
     // Cost basis of the SOLD shares = all buys minus still-held buys.
     const double soldCostFinal  = completePurchase       - purchaseValueFinal;  // with brokerage
     const double soldCostMarket = completePurchaseMarket - purchaseValueMarket; // no brokerage
 
-    // Realized P/L with brokerage (= C# profitLossBrokerageReduction) and
-    // without brokerage (Marktwert footer aggregate).
+    // Realized P/L with brokerage and tax (= C# profitLossBrokerageReduction)
+    // and purely price-based (Marktwert: gross sale value - gross buy value of
+    // the sold pieces).
     const double realizedProfitLossWithFees = salePayoutFinal  - soldCostFinal;
     const double saleProfitLossMarket       = salePayoutMarket - soldCostMarket;
 
@@ -192,22 +195,20 @@ ShareValues ShareCalculator::compute(const QString& guid,
                         ? (v.profitLoss / purchaseValueMarket * 100.0)
                         : 0.0;
     v.saleProfitLoss  = roundAway(saleProfitLossMarket);
-    v.marketValue     = roundAway(curValue + saleProfitLossMarket);
-    v.marketValuePct  = (purchaseValueMarket > 0.0)
-                        ? (v.marketValue / purchaseValueMarket * 100.0 - 100.0)
-                        : 0.0;
     v.salePayoutMarket = roundAway(salePayoutMarket);
 
-    // Marktwert complete columns.
+    // Marktwert complete columns — "rein Kurs" (Nessies Rechenregel vom
+    // 25.10.2026): keine Kosten, keine Steuern, keine Dividenden.
+    //   Kpl. Einzahlung = Summe aller Käufe (Stück x Kaufkurs)
+    //   Kpl. Marktwert  = Kurswert + Summe aller Verkäufe (Stück x Verkaufskurs)
+    //   Kompl. Entw.    = Kpl. Marktwert - Kpl. Einzahlung
+    // Bis 25.10.2026 wurde die Entwicklung aus dem unrealisierten Marktwert-Teil
+    // plus dem realisierten Ergebnis MIT Kosten und Steuern zusammengesetzt —
+    // eine Mischung aus beiden Sichten.
     v.completePurchaseMarket   = roundAway(completePurchaseMarket);
-    // Komplette Entwicklung = unrealized development (held, no brokerage)
-    // + realized P/L WITH brokerage (real net gain/loss on closed positions).
-    v.completeProfitLossMarket = roundAway((curValue - purchaseValueMarket)
-                                           + realizedProfitLossWithFees);
-    // Kpl. Marktwert = Kpl. Einzahlung + Komplette Entwicklung, so the column
-    // stays consistent (Kpl. Entwicklung = Kpl. Marktwert - Kpl. Einzahlung).
-    v.completeCurValueMarket   = roundAway(v.completePurchaseMarket
-                                           + v.completeProfitLossMarket);
+    v.completeCurValueMarket   = roundAway(curValue + salePayoutMarket);
+    v.completeProfitLossMarket = roundAway(v.completeCurValueMarket
+                                           - v.completePurchaseMarket);
     v.completeProfitPctMarket  = (v.completePurchaseMarket > 0.0)
                                  ? (v.completeProfitLossMarket / v.completePurchaseMarket * 100.0)
                                  : 0.0;
@@ -241,31 +242,23 @@ ShareValues ShareCalculator::compute(const QString& guid,
 void ShareCalculator::portfolioTotalsMarket(const QList<ShareValues>& values,
                                              double& totalPurchase,
                                              double& totalCurValue,
-                                             double& totalMarketValue,
                                              double& totalProfitLoss,
-                                             double& totalProfitPct,
-                                             double& totalMarketValuePct)
+                                             double& totalProfitPct)
 {
-    totalPurchase       = 0.0;
-    totalCurValue       = 0.0;
-    totalMarketValue    = 0.0;
-    totalProfitLoss     = 0.0;
-    totalProfitPct      = 0.0;
-    totalMarketValuePct = 0.0;
+    totalPurchase   = 0.0;
+    totalCurValue   = 0.0;
+    totalProfitLoss = 0.0;
+    totalProfitPct  = 0.0;
 
     for (const ShareValues& v : values) {
-        totalPurchase    += v.purchaseValue;
-        totalCurValue    += v.curValue;
-        totalMarketValue += v.marketValue;
-        totalProfitLoss  += v.profitLoss;
+        totalPurchase   += v.purchaseValue;
+        totalCurValue   += v.curValue;
+        totalProfitLoss += v.profitLoss;
     }
 
-    totalProfitPct      = (totalPurchase > 0.0)
-                          ? (totalProfitLoss / totalPurchase * 100.0)
-                          : 0.0;
-    totalMarketValuePct = (totalPurchase > 0.0)
-                          ? (totalMarketValue / totalPurchase * 100.0 - 100.0)
-                          : 0.0;
+    totalProfitPct = (totalPurchase > 0.0)
+                     ? (totalProfitLoss / totalPurchase * 100.0)
+                     : 0.0;
 }
 
 // -- portfolioCompleteTotalsMarket ---------------------------------------------

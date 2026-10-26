@@ -23,20 +23,21 @@
  * Both modes share the same Vortag-Box entirely (no brokerage involved) and
  * the same "Anteile x Aktueller Preis = Einzahlungen" opening rows of the
  * Gesamt-/Aktuelle-Box. They differ in:
- * - Dividenden row: shown normally in Depotwert mode, shown as a disabled
+ * - Dividenden row (Gesamt-Box): shown normally in Depotwert mode, shown as a disabled
  *   "-" placeholder in Marktwert mode (dividends are a Depotwert-only concept).
- * - Gesamt-Box "Verkäufe"/"Verkaufte Einzahlungen"/"Gewinn / Verlust (gesamt)"/
- *   "Entwicklung": Depotwert mode reads the existing completeCurValue/
- *   completePurchase/completeProfitLoss/completeProfitPct fields directly.
- *   Marktwert mode computes curValue + salePayoutMarket - completePurchaseMarket
- *   fresh in the presenter — deliberately NOT completeCurValueMarket/
- *   completeProfitLossMarket/completeProfitPctMarket, which mix in the
- *   brokerage-inclusive realized P/L for the portfolio grid footer (see
- *   ShareCalculator.h doc comment).
- * - Aktuelle-Box "Gewinn / Verlust (Verkäufe)"/"Summe": Depotwert mode uses
- *   saleProfitLossFinal and computes the sum in the presenter; Marktwert mode
- *   uses the existing saleProfitLoss/marketValue fields directly (marketValue
- *   already equals curValue + saleProfitLoss).
+ * - Gesamt-Box: Depotwert mode reads completeCurValue/completePurchase/
+ *   completeProfitLoss/completeProfitPct, Marktwert mode the "rein Kurs"
+ *   counterparts completeCurValueMarket (= curValue + salePayoutMarket,
+ *   Verkäufe brutto)/completePurchaseMarket/completeProfitLossMarket/
+ *   completeProfitPctMarket — seit dem Bugfix vom 25.10.2026 dieselben Werte
+ *   wie Tabelle und Footer (siehe ShareCalculator.h und ARCHITECTURE.md,
+ *   "Rechenregeln Depotwert und Marktwert").
+ * - Aktuelle-Box (Entscheidung 3, 25.10.2026, beide Modi gleich aufgebaut):
+ *   Bestandswert − Einzahlungen (Bestand) = Gewinn / Verlust (aktuell) plus
+ *   Entwicklung in %, also exakt die Tabellenspalten "Einzahlung" und
+ *   "Aktuelle Entwicklung" — purchaseValue/profitLoss/profitLossPct im
+ *   Marktwert-, purchaseValueFinal/profitLossFinal/profitLossPctFinal im
+ *   Depotwert-Modus. Keine Dividenden, keine realisierten Gewinne.
  * - Gewinne/Verluste-Tab: seit 14.07.2026 in beiden Modi angelegt und
  *   befüllt (siehe ViewShareDetails::setupUi()) — brokeragefreie Werte im
  *   Marktwert-Modus, siehe ViewShareDetails::populateGewinneVerluste().

@@ -41,6 +41,16 @@
  * Kosten-Term. Nessies Vorgabe vom 05.08.2026. Dividenden haben fachlich keine
  * Gebühren, entsprechend kennt DividendObject auch kein Gebührenfeld.
  *
+ * ### Prozentwert
+ *
+ * developmentPct = development / investedTotal x 100, mit investedTotal =
+ * Kaufwert aller Käufe bis t plus kaufgebundene und freistehende Kosten bis t
+ * — derselbe Nenner wie "Kpl. Einzahlung" im Depotwert-Footer (Entscheidung 5,
+ * 25.10.2026). Verkaufsgebundene Kosten gehören zum Verkauf und mindern nur
+ * die Linie, nicht den Nenner. Bis 25.10.2026 war der Nenner der Kaufwert ohne
+ * Kosten; am rechten Rand wich der Prozentwert dadurch vom Footer ab
+ * (Alphabet: 146,43 % gegen 145,96 %).
+ *
  * @note Der Kosten-Term umfasst alle Brokerage-Einträge einer Aktie, also auch
  * freistehende Kosteneinträge ohne Bezug zu einem Kauf oder Verkauf. Dadurch
  * weicht die Linie am heutigen Stichtag von der Footer-Spalte "Komplette
@@ -160,6 +170,12 @@ struct PortfolioCostEvent
 {
     QDate  date;            ///< Datum des Kosteneintrags
     double amount = 0.0;    ///< Provision + Broker-Gebühr + Händler-Gebühr - Rabatt
+    /// true für kaufgebundene und freistehende Kosten — sie zählen zum
+    /// eingesetzten Kapital und damit zum Nenner von developmentPct; false
+    /// für verkaufsgebundene Kosten, die gehören zum Verkauf (Nessies
+    /// Rechenregel vom 25.10.2026, Entscheidung 5). Auf die Linie in Euro
+    /// wirkt das Flag nicht, dort zählen alle Kosten gleich.
+    bool   investment = true;
 };
 
 /**
@@ -203,6 +219,11 @@ struct PortfolioSeriesPoint
     double costs              = 0.0;    ///< Kumulierte Kosten
     double purchaseValueHeld  = 0.0;    ///< Kaufwert der noch gehaltenen Anteile
     double purchaseValueTotal = 0.0;    ///< Kaufwert aller Käufe bis zum Stichtag
+    /// Eingesetztes Kapital bis zum Stichtag: purchaseValueTotal plus
+    /// kaufgebundene und freistehende Kosten (PortfolioCostEvent::investment).
+    /// Entspricht "Kpl. Einzahlung" im Depotwert-Footer und ist seit
+    /// 25.10.2026 der Nenner von developmentPct.
+    double investedTotal      = 0.0;
     double development        = 0.0;    ///< Die dargestellte Linie, in Euro
     double developmentPct     = 0.0;    ///< Dieselbe Linie in Prozent
     /// Linie des Marktwert-Charts (ergänzt 17.10.2026): Wert der gehaltenen

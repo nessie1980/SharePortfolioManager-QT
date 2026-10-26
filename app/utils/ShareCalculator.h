@@ -39,14 +39,20 @@
  * - curValue       = round(heldVolume x curPrice)
  * - profitLoss      = curValue - purchaseValue          [Aktuelle Entwicklung EUR]
  * - profitLossPct   = profitLoss / purchaseValue x 100  [Aktuelle Entwicklung %]
- * - saleProfitLoss  = realized gain/loss (no brokerage, no reduction)
- * - marketValue     = curValue + saleProfitLoss         [footer aggregate only]
+ * - salePayoutMarket = sum(round(saleVol x salePrice))   [gross, no costs, no tax]
+ * - saleProfitLoss  = salePayoutMarket - gross buy value of the sold pieces
  *
- * Marktwert complete columns (brokerage- and reduction-free, internally consistent):
+ * Marktwert complete columns — "rein Kurs": no brokerage, no reduction, no tax,
+ * no dividends (Nessies Rechenregel vom 25.10.2026, see ARCHITECTURE.md
+ * "Rechenregeln Depotwert und Marktwert"):
  * - completePurchaseMarket   = all buys: sum(round(vol x price))
- * - completeCurValueMarket   = completePurchaseMarket + completeProfitLossMarket
- * - completeProfitLossMarket = (curValue - purchaseValue) + realized P/L WITH brokerage
+ * - completeCurValueMarket   = curValue + salePayoutMarket          [Kpl. Marktwert]
+ * - completeProfitLossMarket = completeCurValueMarket - completePurchaseMarket
  * - completeProfitPctMarket  = completeProfitLossMarket / completePurchaseMarket x 100
+ *
+ * Kein eigenes "Marktwert"-Aggregat mehr (marketValue = curValue + saleProfitLoss,
+ * entfernt 25.10.2026): der Footer "Aktueller Depotstand" zeigt in beiden Sichten
+ * die Summe der Kurswerte, realisierte Gewinne gehören nur in die Gesamt-Spalten.
  *
  * ### Depotwert-Tab (with brokerage + dividends)
  *
@@ -79,17 +85,16 @@ struct ShareValues
     double curValue         = 0.0; ///< round(heldVolume x curPrice)
     double profitLoss       = 0.0; ///< Aktuelle Entwicklung EUR (market)
     double profitLossPct    = 0.0; ///< Aktuelle Entwicklung % (market)
-    double saleProfitLoss   = 0.0; ///< Realized gain/loss from sales (no brokerage)
-    double marketValue      = 0.0; ///< curValue + saleProfitLoss
-    double marketValuePct   = 0.0; ///< (marketValue / purchaseValue - 1) x 100
+    double saleProfitLoss   = 0.0; ///< Realized gain/loss, gross sale - gross buy (no costs, no tax)
 
-    /// Raw sale proceeds WITHOUT brokerage AND WITHOUT reduction (ShareDetailsForm
-    /// Marktwert-Box "+ Verkäufe" row) — Marktwert-Pendant to salePayoutFinal.
+    /// Gross sale value: sum(Stück x Verkaufskurs), WITHOUT brokerage, reduction
+    /// AND tax (ShareDetailsForm Marktwert-Box "+ Verkäufe" row) —
+    /// Marktwert-Pendant to salePayoutFinal.
     double salePayoutMarket = 0.0;
 
-    // -- Marktwert-Tab complete columns (brokerage- and reduction-free) ----
+    // -- Marktwert-Tab complete columns ("rein Kurs") ----------------------
     double completePurchaseMarket   = 0.0; ///< All buys, no brokerage, no reduction
-    double completeCurValueMarket   = 0.0; ///< completePurchaseMarket + completeProfitLossMarket
+    double completeCurValueMarket   = 0.0; ///< Kpl. Marktwert = curValue + salePayoutMarket
     double completeProfitLossMarket = 0.0;
     double completeProfitPctMarket  = 0.0;
 
@@ -156,13 +161,18 @@ public:
                                double curPrice,
                                double prevDayPrice);
 
+    /**
+     * @brief Footer totals of the Marktwert tab, held shares only.
+     *
+     * totalCurValue is the footer row "Aktueller Depotstand" — the plain sum of
+     * the current values, identical to the Depotwert footer (fixed 25.10.2026;
+     * until 25.10.2026 the row showed curValue + realized gains).
+     */
     static void portfolioTotalsMarket(const QList<ShareValues>& values,
                                       double& totalPurchase,
                                       double& totalCurValue,
-                                      double& totalMarketValue,
                                       double& totalProfitLoss,
-                                      double& totalProfitPct,
-                                      double& totalMarketValuePct);
+                                      double& totalProfitPct);
 
     /**
      * @brief Complete (Kpl.) column totals for the Marktwert footer.

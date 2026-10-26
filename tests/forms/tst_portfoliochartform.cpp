@@ -740,6 +740,53 @@ private slots:
         QVERIFY(qAbs(input.first().costs.first().amount - 9.90) < 1e-6);
     }
 
+    void test_loadPortfolioInput_costInvestmentFlag()
+    {
+        // Entscheidung 5 (25.10.2026): kaufgebundene und freistehende Kosten
+        // zählen zum eingesetzten Kapital (Prozent-Nenner des Depotwert-
+        // Charts), verkaufsgebundene nicht.
+        const QString shareGuid = insertTestShare();
+
+        BuyRepository buyRepo;
+        const BuyObject buy(QStringLiteral("buy-1"), shareGuid, QString(),
+                            QStringLiteral("ord-1"),
+                            QStringLiteral("2020-01-01T10:00:00"), 10.0, 4.0, 100.0);
+        buyRepo.insert(buy);
+
+        SaleRepository saleRepo;
+        saleRepo.insert(SaleObject(QStringLiteral("sale-1"), shareGuid, QString(),
+                                   QStringLiteral("ord-s1"),
+                                   QStringLiteral("2021-01-01T10:00:00"),
+                                   4.0, 120.0, {}));
+
+        BrokerageRepository brokRepo;
+        brokRepo.insert(BrokerageObject(QStringLiteral("brok-buy"), shareGuid, buy.guid(),
+                                        QString(), buy.dateTime(), 9.90, 0.0, 0.0, 0.0));
+        brokRepo.insert(BrokerageObject(QStringLiteral("brok-sale"), shareGuid, QString(),
+                                        QStringLiteral("sale-1"),
+                                        QStringLiteral("2021-01-01T10:00:00"), 7.00, 0.0, 0.0, 0.0));
+        brokRepo.insert(BrokerageObject(QStringLiteral("brok-free"), shareGuid, QString(),
+                                        QString(), QStringLiteral("2020-06-01T10:00:00"),
+                                        3.00, 0.0, 0.0, 0.0));
+
+        ModelPortfolioChart model;
+        const QList<PortfolioShareSeriesInput> input = model.loadPortfolioInput();
+
+        QCOMPARE(input.first().costs.size(), 3);
+        int invested = 0, saleLinked = 0;
+        for (const PortfolioCostEvent& cost : input.first().costs) {
+            if (qAbs(cost.amount - 7.00) < 1e-6) {
+                QVERIFY(!cost.investment);
+                ++saleLinked;
+            } else {
+                QVERIFY(cost.investment);
+                ++invested;
+            }
+        }
+        QCOMPARE(invested,   2);
+        QCOMPARE(saleLinked, 1);
+    }
+
     void test_loadPortfolioInput_reverseSplit_scalesDown()
     {
         const QString shareGuid = insertTestShare();

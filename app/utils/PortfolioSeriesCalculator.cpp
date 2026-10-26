@@ -190,6 +190,7 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
         double realizedGain       = 0.0;
         double dividendSum        = 0.0;
         double costSum            = 0.0;
+        double investmentCostSum  = 0.0; // buy-linked + freestanding costs only
         double lastPrice          = 0.0;
 
         for (int gridIdx = 0; gridIdx < grid.size(); ++gridIdx) {
@@ -260,6 +261,8 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
             // -- Costs up to and including the current date -----------------
             while (costIdx < costs.size() && costs.at(costIdx).date <= stichtag) {
                 costSum += costs.at(costIdx).amount;
+                if (costs.at(costIdx).investment)
+                    investmentCostSum += costs.at(costIdx).amount;
                 ++costIdx;
             }
 
@@ -309,6 +312,7 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
             point.costs              += costSum;
             point.purchaseValueHeld  += purchaseValueHeld;
             point.purchaseValueTotal += purchaseValueTotal;
+            point.investedTotal      += purchaseValueTotal + investmentCostSum;
             point.marketValue        += marketValue;
         }
     }
@@ -321,13 +325,15 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
                                    - point.costs
                                    - point.purchaseValueHeld);
 
-        // Denominator is the cumulative buy value of ALL buys up to the
-        // stichtag, not just the held ones (Nessies Vorgabe 05.08.2026): after
-        // a complete sale the held value is 0, which would force the percentage
-        // to 0 even though the line still shows the realized gain. Same guard
-        // pattern as ShareCalculator (`> 0.0` before dividing).
-        point.developmentPct = (point.purchaseValueTotal > 0.0)
-                               ? (point.development / point.purchaseValueTotal * 100.0)
+        // Denominator is the capital invested up to the stichtag — ALL buys,
+        // not just the held ones (Nessies Vorgabe 05.08.2026: after a complete
+        // sale the held value is 0, which would force the percentage to 0 even
+        // though the line still shows the realized gain), plus buy-linked and
+        // freestanding costs (Entscheidung 5, 25.10.2026: same denominator as
+        // the Depotwert footer's "Kpl. Einzahlung"). Same guard pattern as
+        // ShareCalculator (`> 0.0` before dividing).
+        point.developmentPct = (point.investedTotal > 0.0)
+                               ? (point.development / point.investedTotal * 100.0)
                                : 0.0;
     }
 
