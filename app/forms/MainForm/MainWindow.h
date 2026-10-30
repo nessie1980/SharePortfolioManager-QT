@@ -22,6 +22,7 @@
 #include "../ShareAddForm/ViewShareAdd.h"
 #include "../ShareEditForm/ViewShareEdit.h"
 #include "../PortfolioChartForm/ViewPortfolioChart.h"
+#include "../CalculationOverviewForm/ViewCalculationOverview.h"
 #include "../../models/ShareObject.h"
 #include "../../../libs/parser/src/Parser.h"
 #include "../../../libs/parser/src/DataTypes.h"
@@ -50,6 +51,7 @@ class QNetworkAccessManager;
  *     - "Depotwert-Chart"       (ViewPortfolioChart, Development)
  *     - "Kompletter Marktwert"  (market value)
  *     - "Marktwert-Chart"       (ViewPortfolioChart, MarketValue — 17.10.2026)
+ *     - "Depot- vs. Marktwert"  (ViewCalculationOverview — 27.10.2026)
  * - Bottom area (horizontal, via QSplitter):
  *     - Left  (~75%): Status-Meldungen (scrollable log)
  *     - Right (~25%): Direkte Dokumentenerfassung (compact) + Aktualisierungs-Status (2 progress bars)
@@ -924,7 +926,9 @@ private:
      * mehreren Stellen auf konkrete Indizes zu prüfen, kapselt dieser Helfer
      * die Zuordnung an einer Stelle.
      *
-     * @return Zeiger auf die Tabelle, oder nullptr auf dem Chart-Tab.
+     * @return Zeiger auf die Tabelle, oder nullptr auf den beiden Chart-Tabs
+     *         und auf dem Tab "Depot- vs. Marktwert" (seit 27.10.2026) —
+     *         keiner von ihnen hat eine Portfolio-Tabelle mit Auswahl.
      */
     QTableWidget* activePortfolioTable() const;
 
@@ -961,6 +965,31 @@ private:
      * Depotwert- und Marktwert-Chart gleichermaßen.
      */
     void invalidatePortfolioChart();
+
+    /**
+     * @brief Erzeugt den Tab "Depot- vs. Marktwert" beim ersten Betreten bzw.
+     * lässt ihn neu rechnen, wenn seine Daten veraltet sind (ergänzt
+     * 27.10.2026).
+     *
+     * Gleiche verzögerte Erzeugung wie bei den Charts: der Tab liest über
+     * CalculationReport::collect() das gesamte Portfolio samt
+     * Chart-Historie. Während der Rechnung zeigt der Mauszeiger "bitte
+     * warten".
+     */
+    void ensureCalculationOverviewUpToDate();
+
+    /**
+     * @brief Markiert den Tab "Depot- vs. Marktwert" als veraltet (ergänzt
+     * 27.10.2026).
+     *
+     * Aufgerufen bei jedem Neuaufbau der Tabellen und nach jeder
+     * Kursaktualisierung einer Aktie — anders als die Charts zeigt der Tab
+     * auch die Tabellenwerte, die sich mit dem Kurs ändern. Liegt der Tab
+     * vorn, rechnet er sofort neu, außer während eines laufenden Abrufs:
+     * dann erst in finaliseRefresh(), damit "Alle aktualisieren" nicht nach
+     * jeder einzelnen Aktie das ganze Portfolio neu liest.
+     */
+    void invalidateCalculationOverview();
 
     /**
      * @brief Install TwoLineDelegate on all two-line columns of both tables.
@@ -1044,6 +1073,7 @@ private:
     static constexpr int kTabPortfolioChart   = 1;
     static constexpr int kTabMarketValue      = 2;
     static constexpr int kTabMarketValueChart = 3;
+    static constexpr int kTabCalculationOverview = 4; ///< "Depot- vs. Marktwert", an letzter Stelle (27.10.2026)
 
     /** Aktien mit Bestand > 0, die keine Tageswerte abrufen — bei jedem
      *  populatePortfolioTables() neu gefüllt, ausgewertet von
@@ -1097,6 +1127,10 @@ private:
     QWidget*            m_marketValueChartContainer = nullptr; ///< wie m_portfolioChartContainer (17.10.2026)
     ViewPortfolioChart* m_marketValueChart          = nullptr; ///< Modus MarketValue, erst beim ersten Betreten erzeugt
     bool                m_marketValueChartDirty     = true;    ///< siehe invalidatePortfolioChart()
+
+    QWidget*                 m_calculationOverviewContainer = nullptr; ///< Platzhalter wie bei den Charts (27.10.2026)
+    ViewCalculationOverview* m_calculationOverview          = nullptr; ///< erst beim ersten Betreten erzeugt
+    bool                     m_calculationOverviewDirty     = true;    ///< siehe invalidateCalculationOverview()
 
     // ── Bottom panel — left ───────────────────────────────────────────────
     QGroupBox*    m_statusMessageGroup    = nullptr;

@@ -39,6 +39,10 @@
 #include "../../app/forms/ChartForm/ChartPopup.h"
 #include "../../app/forms/ChartForm/ViewChart.h"
 #include "../../app/forms/PortfolioChartForm/ViewPortfolioChart.h"
+#include "../../app/forms/CalculationOverviewForm/ViewCalculationOverview.h"
+#include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
+#include <QPushButton>
 #include "../../app/utils/ValueFormatter.h"
 #include <QLineSeries>
 #include <QGraphicsLineItem>
@@ -3518,7 +3522,8 @@ private slots:
 
         QTabWidget* tabs = findPortfolioTabs(window);
         QVERIFY(tabs);
-        QCOMPARE(tabs->count(), 4);
+        // Seit 27.10.2026 fünf Tabs: "Depot- vs. Marktwert" an letzter Stelle.
+        QCOMPARE(tabs->count(), 5);
         QCOMPARE(tabs->tabText(0), QStringLiteral("Kompletter Depotwert"));
         QCOMPARE(tabs->tabText(1), QStringLiteral("Depotwert-Chart"));
         QCOMPARE(tabs->tabText(2), QStringLiteral("Kompletter Marktwert"));
@@ -3543,6 +3548,70 @@ private slots:
         QVERIFY(chart->mode() == PortfolioChartMode::MarketValue);
         // Der Depotwert-Chart wird dabei nicht mit angelegt.
         QVERIFY(!window.findChild<ViewPortfolioChart*>(QStringLiteral("ViewPortfolioChart")));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Tab "Depot- vs. Marktwert" (ergänzt 27.10.2026, Nessies Vorgaben):
+    // immer sichtbar (ohne Debug-Schalter), an letzter Stelle, verzögert
+    // erzeugt wie die Charts. Inhalt und Auswahl prüft
+    // tst_calculationoverviewform, die Zahlen tst_calculationbreakdown.
+    // ─────────────────────────────────────────────────────────────────────
+
+    void test_calculationOverview_isLastTabWithoutDiagnosticsSwitch()
+    {
+        openMemoryDb();
+        AppSettings::instance().setShowDiagnostics(false);
+        MainWindow window;
+
+        QTabWidget* tabs = findPortfolioTabs(window);
+        QVERIFY(tabs);
+        QCOMPARE(tabs->count(), 5);
+        QCOMPARE(tabs->tabText(4), QStringLiteral("Depot- vs. Marktwert"));
+    }
+
+    void test_calculationOverview_createdLazilyOnFirstVisit()
+    {
+        openMemoryDb();
+        MainWindow window;
+
+        QTabWidget* tabs = findPortfolioTabs(window);
+        QVERIFY(tabs);
+        QVERIFY(!window.findChild<ViewCalculationOverview*>(QStringLiteral("ViewCalculationOverview")));
+
+        tabs->setCurrentIndex(4);
+
+        QVERIFY(window.findChild<ViewCalculationOverview*>(QStringLiteral("ViewCalculationOverview")));
+        // Die Charts werden dabei nicht mit angelegt.
+        QVERIFY(!window.findChild<ViewPortfolioChart*>(QStringLiteral("ViewPortfolioChart")));
+        QVERIFY(!window.findChild<ViewPortfolioChart*>(QStringLiteral("ViewMarketValueChart")));
+        // "Bericht speichern…" ist im Tab vorhanden.
+        QVERIFY(window.findChild<QPushButton*>(QStringLiteral("calculationReportSaveButton")));
+    }
+
+    void test_calculationOverview_listsTotalAndShares()
+    {
+        const QString guid = insertTestShare(); // ohne Käufe: Bestand 0
+        MainWindow window;
+
+        QTabWidget* tabs = findPortfolioTabs(window);
+        QVERIFY(tabs);
+        tabs->setCurrentIndex(4);
+
+        auto* tree = window.findChild<QTreeWidget*>(QStringLiteral("calculationOverviewList"));
+        QVERIFY(tree);
+        QStringList keys;
+        for (QTreeWidgetItemIterator it(tree); *it; ++it)
+            keys << (*it)->data(0, Qt::UserRole).toString();
+        QVERIFY2(keys.contains(QStringLiteral("#gesamt")), qPrintable(keys.join(QLatin1Char(','))));
+        QVERIFY2(keys.contains(guid), qPrintable(keys.join(QLatin1Char(','))));
+
+        // Vorauswahl "Gesamt / Footer" mit beiden Footern nebeneinander.
+        auto* title = window.findChild<QLabel*>(QStringLiteral("calculationOverviewTitle"));
+        QVERIFY(title);
+        QCOMPARE(title->text(), QStringLiteral("Gesamt / Footer"));
+        auto* table = window.findChild<QTableWidget*>(QStringLiteral("calculationComparisonTable"));
+        QVERIFY(table);
+        QCOMPARE(table->rowCount(), 10);
     }
 
     void test_marketValueChart_tooltipShowsDateAndValueWithoutPercent()

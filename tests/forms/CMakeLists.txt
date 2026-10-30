@@ -149,6 +149,16 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/utils/PortfolioSeriesCalculator.cpp
     ../../app/utils/CalculationReport.h
     ../../app/utils/CalculationReport.cpp
+    ../../app/utils/CalculationBreakdown.h
+    ../../app/utils/CalculationBreakdown.cpp
+    ../../app/forms/CalculationOverviewForm/CalculationOverviewTypes.h
+    ../../app/forms/CalculationOverviewForm/IViewCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/IModelCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/ModelCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/PresenterCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/PresenterCalculationOverview.cpp
+    ../../app/forms/CalculationOverviewForm/ViewCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/ViewCalculationOverview.cpp
     ../../app/utils/PdfTextExtractor.h
     ../../app/utils/PdfTextExtractor.cpp
     ../../app/utils/DocumentClassifier.h
@@ -927,6 +937,54 @@ target_link_libraries(tst_portfoliochartform
 add_test(NAME tst_portfoliochartform COMMAND tst_portfoliochartform)
 
 # ─────────────────────────────────────────────────────────────────────────────
+# tst_calculationoverviewform — PresenterCalculationOverview (Fake-View/
+# Fake-Model wie tst_portfoliochartform), Tab "Depot- vs. Marktwert"
+# (ergänzt 27.10.2026). Kein QWidget, keine Datenbank: die Eingangsdaten
+# füllt der Test von Hand. Qt6::Sql und Database trotzdem, weil
+# CalculationBreakdown über ShareCalculator (Footer-Summen, roundAway())
+# die Repositories einbindet — gleiche Begründung wie bei
+# tst_portfoliochartform. Die View selbst prüft tst_mainwindow.
+# ─────────────────────────────────────────────────────────────────────────────
+qt_add_executable(tst_calculationoverviewform tst_calculationoverviewform.cpp
+    ../../app/forms/CalculationOverviewForm/CalculationOverviewTypes.h
+    ../../app/forms/CalculationOverviewForm/IViewCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/IModelCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/PresenterCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/PresenterCalculationOverview.cpp
+    ../../app/utils/CalculationBreakdown.h
+    ../../app/utils/CalculationBreakdown.cpp
+    ../../app/utils/ShareCalculator.cpp
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/models/ShareObject.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/BrokerageObject.cpp
+    ../../app/models/DividendObject.cpp
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/BuyRepository.cpp
+    ../../app/repositories/SaleRepository.cpp
+    ../../app/repositories/BrokerageRepository.cpp
+    ../../app/repositories/DividendRepository.cpp
+    ../../app/repositories/ShareSplitRepository.cpp
+)
+
+target_include_directories(tst_calculationoverviewform
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/core
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/CalculationOverviewForm
+)
+
+set_target_properties(tst_calculationoverviewform PROPERTIES
+    AUTOMOC ON
+)
+
+target_link_libraries(tst_calculationoverviewform
+    PRIVATE Qt6::Test Qt6::Core Qt6::Gui Qt6::Sql Database
+)
+
+add_test(NAME tst_calculationoverviewform COMMAND tst_calculationoverviewform)
+
+# ─────────────────────────────────────────────────────────────────────────────
 # tst_sharesplitsform — ViewShareSplitEdit / PresenterShareSplitEdit
 # Phase 3 der Aktiensplit-Behandlung (08.08.2026).
 # Deutlich schlanker als tst_shareeditform: die Split-Maske hat weder
@@ -1403,6 +1461,16 @@ qt_add_executable(tst_backupform tst_backupform.cpp
     ../../app/utils/PortfolioSeriesCalculator.cpp
     ../../app/utils/CalculationReport.h
     ../../app/utils/CalculationReport.cpp
+    ../../app/utils/CalculationBreakdown.h
+    ../../app/utils/CalculationBreakdown.cpp
+    ../../app/forms/CalculationOverviewForm/CalculationOverviewTypes.h
+    ../../app/forms/CalculationOverviewForm/IViewCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/IModelCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/ModelCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/PresenterCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/PresenterCalculationOverview.cpp
+    ../../app/forms/CalculationOverviewForm/ViewCalculationOverview.h
+    ../../app/forms/CalculationOverviewForm/ViewCalculationOverview.cpp
     ../../app/utils/PdfTextExtractor.h
     ../../app/utils/PdfTextExtractor.cpp
     ../../app/utils/DocumentClassifier.h

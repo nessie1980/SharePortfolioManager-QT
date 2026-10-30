@@ -560,16 +560,30 @@ void MainWindow::setupCentralWidget()
     marketChartLayout->setContentsMargins(0, 0, 0, 0);
     marketChartLayout->setSpacing(0);
 
-    m_portfolioTabs->addTab(finalContainer,              tr("Kompletter Depotwert"));
-    m_portfolioTabs->addTab(m_portfolioChartContainer,   tr("Depotwert-Chart"));
-    m_portfolioTabs->addTab(marketContainer,             tr("Kompletter Marktwert"));
-    m_portfolioTabs->addTab(m_marketValueChartContainer, tr("Marktwert-Chart"));
+    // ── Tab "Depot- vs. Marktwert" (ergänzt 27.10.2026) ──────────────────────
+    // Stellt Marktwert- und Depotwert-Sicht je Aktie und für die Footer
+    // nebeneinander, mit Rechenweg und "Fließt ein in" — siehe
+    // ARCHITECTURE.md, "Tab Depot- vs. Marktwert". Immer sichtbar und an
+    // letzter Stelle (Nessies Entscheidungen 27.10.2026); gleiche verzögerte
+    // Erzeugung wie die Charts.
+    m_calculationOverviewContainer = new QWidget();
+    auto* overviewLayout = new QVBoxLayout(m_calculationOverviewContainer);
+    overviewLayout->setContentsMargins(0, 0, 0, 0);
+    overviewLayout->setSpacing(0);
+
+    m_portfolioTabs->addTab(finalContainer,                 tr("Kompletter Depotwert"));
+    m_portfolioTabs->addTab(m_portfolioChartContainer,      tr("Depotwert-Chart"));
+    m_portfolioTabs->addTab(marketContainer,                tr("Kompletter Marktwert"));
+    m_portfolioTabs->addTab(m_marketValueChartContainer,    tr("Marktwert-Chart"));
+    m_portfolioTabs->addTab(m_calculationOverviewContainer, tr("Depot- vs. Marktwert"));
 
     connect(m_portfolioTabs, &QTabWidget::currentChanged, this, [this](int index) {
         if (index == kTabPortfolioChart)
             ensurePortfolioChartUpToDate();
         else if (index == kTabMarketValueChart)
             ensureMarketValueChartUpToDate();
+        else if (index == kTabCalculationOverview)
+            ensureCalculationOverviewUpToDate();
     });
 
     // Install two-line delegates
@@ -1243,8 +1257,10 @@ void MainWindow::populatePortfolioTables()
     clearPortfolioTables();
 
     // Jeder Neuaufbau der Tabellen bedeutet geänderte Datenlage — der Chart
-    // rechnet beim nächsten Betreten seines Tabs neu.
+    // rechnet beim nächsten Betreten seines Tabs neu, ebenso der Tab
+    // "Depot- vs. Marktwert".
     invalidatePortfolioChart();
+    invalidateCalculationOverview();
 
     ShareRepository shareRepo;
     const QList<ShareObject> shares = shareRepo.findAll();
@@ -2878,6 +2894,11 @@ void MainWindow::finaliseRefresh()
     m_actionEdit->setEnabled(hasSelection);
     m_actionDelete->setEnabled(hasSelection);
     m_actionRefresh->setEnabled(hasSelection);
+
+    // Während des Abrufs zurückgehaltene Neuberechnung des Tabs
+    // "Depot- vs. Marktwert" nachholen, siehe invalidateCalculationOverview().
+    if (m_portfolioTabs->currentIndex() == kTabCalculationOverview)
+        ensureCalculationOverviewUpToDate();
 }
 
 // ── playUpdateFinishedSound ────────────────────────────────────────────────────
@@ -3624,6 +3645,10 @@ void MainWindow::refreshPortfolioFooters()
     }
 
     updatePortfolioFooters(allValues);
+
+    // Neue Kurse ändern auch die Werte im Tab "Depot- vs. Marktwert"
+    // (ergänzt 27.10.2026).
+    invalidateCalculationOverview();
 }
 
 // ── onSaveCalculationReport ───────────────────────────────────────────────────
@@ -3735,4 +3760,42 @@ void MainWindow::ensureChartTabUpToDate(ViewPortfolioChart*& chart, QWidget* con
     }
 
     dirty = false;
+}
+
+// ── invalidateCalculationOverview ─────────────────────────────────────────────
+
+void MainWindow::invalidateCalculationOverview()
+{
+    m_calculationOverviewDirty = true;
+
+    // Liegt der Tab vorn, sofort neu rechnen — außer während eines Abrufs,
+    // dann holt finaliseRefresh() das einmal nach (siehe Header).
+    if (!m_refreshInProgress && m_portfolioTabs->currentIndex() == kTabCalculationOverview)
+        ensureCalculationOverviewUpToDate();
+}
+
+// ── ensureCalculationOverviewUpToDate ─────────────────────────────────────────
+
+void MainWindow::ensureCalculationOverviewUpToDate()
+{
+    if (!m_calculationOverviewDirty && m_calculationOverview)
+        return;
+
+    // collect() liest das ganze Portfolio und rechnet die Chart-Historie je
+    // Aktie — bei großen Depots spürbar, daher der Warte-Mauszeiger.
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    if (!m_calculationOverview) {
+        m_calculationOverview = new ViewCalculationOverview(m_calculationOverviewContainer);
+        m_calculationOverviewContainer->layout()->addWidget(m_calculationOverview);
+
+        // "Bericht speichern…" im Tab schreibt denselben Bericht wie das
+        // Hilfe-Menü — im Tab ohne Debug-Schalter erreichbar.
+        connect(m_calculationOverview, &ViewCalculationOverview::saveReportRequested,
+                this, &MainWindow::onSaveCalculationReport);
+    } else {
+        m_calculationOverview->reload();
+    }
+    QApplication::restoreOverrideCursor();
+
+    m_calculationOverviewDirty = false;
 }

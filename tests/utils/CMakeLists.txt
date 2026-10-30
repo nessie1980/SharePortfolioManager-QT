@@ -107,6 +107,8 @@ add_test(NAME tst_portfolioseriescalculator COMMAND tst_portfolioseriescalculato
 qt_add_executable(tst_calculationreport tst_calculationreport.cpp
     ../../app/utils/CalculationReport.h
     ../../app/utils/CalculationReport.cpp
+    ../../app/utils/CalculationBreakdown.h
+    ../../app/utils/CalculationBreakdown.cpp
     ../../app/utils/SaleFifoAllocator.cpp
     ../../app/utils/ShareCalculator.cpp
     ../../app/utils/ShareSplitAdjuster.cpp
@@ -143,6 +145,52 @@ target_link_libraries(tst_calculationreport
 )
 
 add_test(NAME tst_calculationreport COMMAND tst_calculationreport)
+
+# ── CalculationBreakdown tests ─────────────────────────────────────────────────
+# Gemeinsames Zeilenmodell von Berechnungsbericht und Tab "Depot- vs.
+# Marktwert" (ergänzt 27.10.2026). Datenbankfrei geprüft; die Quellen sind
+# dieselben wie bei tst_calculationreport, weil ein Test Teil 3 des Berichts
+# gegen findings() abgleicht und ShareCalculator (Footer-Summen, roundAway())
+# die Repositories einbindet.
+qt_add_executable(tst_calculationbreakdown tst_calculationbreakdown.cpp
+    ../../app/utils/CalculationBreakdown.h
+    ../../app/utils/CalculationBreakdown.cpp
+    ../../app/utils/CalculationReport.h
+    ../../app/utils/CalculationReport.cpp
+    ../../app/utils/SaleFifoAllocator.cpp
+    ../../app/utils/ShareCalculator.cpp
+    ../../app/utils/ShareSplitAdjuster.cpp
+    ../../app/utils/PortfolioSeriesCalculator.cpp
+    ../../app/forms/PortfolioChartForm/ModelPortfolioChart.cpp
+    ../../app/models/ShareObject.cpp
+    ../../app/models/BuyObject.cpp
+    ../../app/models/SaleObject.cpp
+    ../../app/models/BrokerageObject.cpp
+    ../../app/models/DividendObject.cpp
+    ../../app/models/DailyValuesObject.cpp
+    ../../app/models/ShareSplitObject.cpp
+    ../../app/repositories/ShareRepository.cpp
+    ../../app/repositories/BuyRepository.cpp
+    ../../app/repositories/SaleRepository.cpp
+    ../../app/repositories/BrokerageRepository.cpp
+    ../../app/repositories/DividendRepository.cpp
+    ../../app/repositories/DailyValuesRepository.cpp
+    ../../app/repositories/ShareSplitRepository.cpp
+)
+
+target_include_directories(tst_calculationbreakdown
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../app
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/core
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../app/forms/PortfolioChartForm
+)
+
+set_target_properties(tst_calculationbreakdown PROPERTIES AUTOMOC ON)
+
+target_link_libraries(tst_calculationbreakdown
+    PRIVATE Qt6::Test Qt6::Gui Qt6::Sql Database
+)
+
+add_test(NAME tst_calculationbreakdown COMMAND tst_calculationbreakdown)
 
 # ── ShareUpdateRules tests ─────────────────────────────────────────────────────
 # Regelmodul "Tageswert-Historie bei Bestand > 0 erzwingen" (Feature

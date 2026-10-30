@@ -42,6 +42,7 @@ ctest --output-on-failure
 ./bin/tst_sharecalculator
 ./bin/tst_portfolioseriescalculator
 ./bin/tst_calculationreport
+./bin/tst_calculationbreakdown
 ./bin/tst_sharesplitadjuster
 ./bin/tst_salefifoallocator
 ./bin/tst_dividendvolumechecker
@@ -60,6 +61,7 @@ ctest --output-on-failure
 ./bin/tst_sharedetailsform
 ./bin/tst_chartform
 ./bin/tst_portfoliochartform
+./bin/tst_calculationoverviewform
 ./bin/tst_overviewtabwidget
 ./bin/tst_buysform
 ./bin/tst_dividendform
@@ -2028,8 +2030,11 @@ eine echte Emission mit korrekt gesetztem `sender()` auslöst.
 | `test_portfolioChartSettings_userChangeIsSavedOnClose` (**20.09.2026**) | Obergrenze auf 50, Spinbox auf 7, Combo auf Woche | Vor dem Schließen noch nichts gespeichert, danach Woche/7 |
 | `test_portfolioChartSettings_desiredCountReturnsWhenMaximumGrows` (**20.09.2026**) | Gewählt 5, Obergrenze 2, dann wieder 50 | Spinbox 2, danach wieder 5 |
 | `test_shareChartSettings_savedSeparatelyFromPortfolioChart` (**20.09.2026**) | Gespeichert Woche/4 für den Aktien-Chart, `ViewChart` für eine Aktie ohne Tageswerte angelegt und zerstört | Combo Woche, Spinbox 4, danach Woche/4 gespeichert, Depotwert-Chart-Wert unverändert Jahr/1 |
-| `test_marketValueChart_tabSitsDirectlyBehindKompletterMarktwert` (**17.10.2026**, Marktwert-Chart, siehe ARCHITECTURE.md) | `MainWindow` mit In-Memory-DB, Portfolio-Tabwidget über seinen Tab "Kompletter Marktwert" gefunden | Vier Tabs in der Reihenfolge Kompletter Depotwert, Depotwert-Chart, Kompletter Marktwert, Marktwert-Chart |
+| `test_marketValueChart_tabSitsDirectlyBehindKompletterMarktwert` (**17.10.2026**, Marktwert-Chart, siehe ARCHITECTURE.md) | `MainWindow` mit In-Memory-DB, Portfolio-Tabwidget über seinen Tab "Kompletter Marktwert" gefunden | Seit 27.10.2026 fünf Tabs; die ersten vier in der Reihenfolge Kompletter Depotwert, Depotwert-Chart, Kompletter Marktwert, Marktwert-Chart |
 | `test_marketValueChart_createdLazilyInMarketValueMode` (**17.10.2026**) | Wechsel auf Tab 3 | Vorher kein `ViewMarketValueChart`, danach vorhanden mit Modus `MarketValue`; der Depotwert-Chart wird nicht mit angelegt |
+| `test_calculationOverview_isLastTabWithoutDiagnosticsSwitch` (**27.10.2026**, Tab "Depot- vs. Marktwert", siehe ARCHITECTURE.md) | `Debug/ShowDiagnostics` aus | Fünfter Tab heißt "Depot- vs. Marktwert" — immer sichtbar, an letzter Stelle |
+| `test_calculationOverview_createdLazilyOnFirstVisit` (**27.10.2026**) | Wechsel auf Tab 4 | Vorher kein `ViewCalculationOverview`, danach vorhanden; keiner der beiden Charts wird mit angelegt; Knopf "Bericht speichern…" vorhanden |
+| `test_calculationOverview_listsTotalAndShares` (**27.10.2026**) | Eine Aktie ohne Käufe in der DB, Wechsel auf Tab 4 | Liste enthält "Gesamt / Footer" und die Aktie; Vorauswahl "Gesamt / Footer" mit zehn Zeilen Footer-Gegenüberstellung |
 | `test_marketValueChart_tooltipShowsDateAndValueWithoutPercent` (**17.10.2026**) | `ViewPortfolioChart(MarketValue)`, zwei Punkte per `setChartData()`, `onSeriesHovered()` per `invokeMethod()` | Tooltip exakt "Datum\nWert €", kein "%" |
 | `test_marketValueChart_readsSharedPortfolioChartSettings` (**17.10.2026**) | Gespeichert Monat/6 | Der Marktwert-Chart liest denselben Schlüssel wie der Depotwert-Chart |
 | `test_portfolioCharts_unchangedChartDoesNotOverwriteSharedSettings` (**17.10.2026**) | Beide Charts angelegt, nur im Depotwert-Chart Anzahl 7 gewählt; der unveränderte Marktwert-Chart wird zuletzt zerstört | Gespeichert bleibt 7 — der Destruktor speichert nur bei einer Änderung |
@@ -3133,6 +3138,38 @@ werden. `main()` setzt `QLocale::setDefault(German)` wie die Anwendung.
 | `test_collect_tableAndChartValuesForOneShare` | Aktie mit Kauf 10 × 100 und zwei Tageswerten (100, 110) in der Datenbank | Bestand 10, Chart-Stichtag 01.02., Marktwert 1.100 je Aktie und gesamt, Bericht enthält die Aktie |
 | `test_writeToFile_utf8WithBom` | Text mit Umlauten | Datei beginnt mit UTF-8-BOM, Inhalt korrekt |
 | `test_writeToFile_reportsErrorForInvalidPath` | Nicht existierendes Verzeichnis | `false` und Fehlermeldung gesetzt |
+
+---
+
+### CalculationBreakdown (tests/utils/tst_calculationbreakdown.cpp)
+
+Executable: `tst_calculationbreakdown`
+Klasse unter Test: `CalculationBreakdown` — das gemeinsame Zeilenmodell von
+Berechnungsbericht und Tab "Depot- vs. Marktwert" (ergänzt 27.10.2026, siehe
+ARCHITECTURE.md "Tab Depot- vs. Marktwert").
+
+Datenbankfrei mit von Hand befüllten Eingangsdaten (gleiche Muster-Aktie wie
+`tst_calculationreport`: 12 Stück à 50,00, Kurs 62,00, Kosten 10,00).
+Dass der Berichtstext durch den Umbau gleich geblieben ist, sichert das
+unveränderte `tst_calculationreport`. `main()` setzt
+`QLocale::setDefault(German)`.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_shareRows_fourteenRowsInReportOrder` | Zeilen je Aktie | 14 Bezeichnungen in Berichtsreihenfolge |
+| `test_shareRows_valuesComeFromTheMatchingFields` | Zuordnung zu `ShareValues` | Einzahlung Markt/Depot aus `purchaseValue`/`purchaseValueFinal`, Kosten nur Depotwert, Prozentzeilen markiert |
+| `test_shareRows_everyRowNamesWhereItIsUsed` | "Fließt ein in" | Jede Zeile nennt mindestens eine Stelle |
+| `test_shareRows_usedInNamesTabColumnAndFooter` | Wortlaut | Zeile 1 nennt Tab, Spalte, oben und den Footer als Summand; Zeile 2 den Marktwert-Chart, Zeile 12 den Depotwert-Chart |
+| `test_shareRows_derivedRowsCarryFigures` | Rechnung mit Zahlen | Aktuelle Entwicklung "744,00 − 600,00 = 144,00" bzw. "− 610,00 = 134,00"; Summen ohne Zahlenrechnung |
+| `test_footerTotals_matchSumsOfBothShares` | Zwei Aktien | Einzahlung, Depotstand, Entwicklung, Kosten, Dividenden und Komplette Entwicklung beider Footer |
+| `test_footerRows_tenRowsCostsOnlyInDepot` | Footer-Gegenüberstellung | Zehn Zeilen, Kosten nur Depotwert, Depotstand 744,00 in beiden, jede Zeile mit "Fließt ein in" |
+| `test_check_results` | `check()` | ok, Hinweis, Abweichung, durch Kurs erklärt; Rest 2,00 bei teilweiser Erklärung |
+| `test_shareChecks_fiveChecksAllOkForConsistentShare` | Stimmige Aktie | Fünf Abgleichzeilen, alle ok |
+| `test_shareChecks_emptyWithoutDailyValues` | Aktie ohne Tageswerte | Kein Abgleich, Befund "keine Tageswerte, fehlt in beiden Charts" |
+| `test_findings_sharesFirstThenTotal` | Abweichung je Aktie und im Gesamt | Erst die Aktie, zuletzt "GESAMT:" |
+| `test_findings_sameAsReportPartThree` | Bericht gegen Zeilenmodell | Jede Zeile aus `findings()` steht genau so in Teil 3 des Berichts |
+| `test_totalChecks_noChartPoint_noChecks` | Kein Chartpunkt | Kein Abgleich Footer gegen Chart |
+| `test_priceEffect_heldVolumeTimesPriceDifference` | Kurs 62,00 gegen Schlusskurs 61,00 | 12,00 |
 
 ---
 
@@ -5205,6 +5242,35 @@ Die presenter-seitige Begrenzung muss unabhängig davon greifen.
 | `test_defaultMode_isDevelopment` (**17.10.2026**) | Presenter ohne Modus-Angabe | Modus `Development` — der Depotwert-Chart bleibt unverändert |
 | `test_buildRangeInfo_marketMode_usesMarketValueOfLastPoint` (**17.10.2026**) | Statischer Textaufbau | Marktwert des letzten Punkts mit "€", kein Prozentwert |
 | `test_diagnosticsCsv_marketMode_titleAndMarketValueColumn` (**17.10.2026**) | Diagnose im Marktwert-Modus | Überschrift "Marktwert-Chart Diagnose", Spalte "Marktwert" in Block 2 und 3, Wert 1.100,00 |
+
+---
+
+### CalculationOverviewForm (tests/forms/tst_calculationoverviewform.cpp)
+
+Executable: `tst_calculationoverviewform`
+Klasse unter Test: `PresenterCalculationOverview` — Tab "Depot- vs.
+Marktwert" (ergänzt 27.10.2026).
+
+Fake-View/Fake-Model-Paar wie `tst_portfoliochartform` — keine Datenbank,
+kein `QWidget`. Der Fake-Model liefert von Hand befüllte Eingangsdaten und
+zählt die Ladevorgänge; die Fake-View hält Liste, Auswahl, Kopfzeile und
+Detail fest. Die Zahlen selbst prüft `tst_calculationbreakdown`, die echte
+View `tst_mainwindow`.
+
+| Test | Beschreibung | Prüft |
+|------|--------------|-------|
+| `test_loadAndDisplay_selectsTotalByDefault` | Erster Aufbau | Auswahl "Gesamt / Footer", zehn Footer-Zeilen, drei Abgleichzeilen, keine Auffälligkeiten |
+| `test_entries_totalFirstThenHeldAndSold` | Eine Aktie mit, eine ohne Bestand | Reihenfolge Gesamt, Bestand, verkauft; Titel "Name (WKN)"; Kopfzeile mit Anzahl und Stand |
+| `test_entries_deviationIsMarked` | Chart-Bestand weicht ab | Aktie und Gesamt als Abweichung markiert, Tooltip "1 Abweichung" |
+| `test_selectShare_showsComparisonAndChecks` | Auswahl einer Aktie | 14 Zeilen, fünf Abgleichzeilen ok, "Fließt ein in" nennt beide Tabs |
+| `test_selectGroupHeader_keepsDetail` | Auswahl ohne Schlüssel | Detail wird nicht neu gesetzt |
+| `test_reload_keepsSelectionAndReadsModelAgain` | `reload()` | Model ein zweites Mal gelesen, Auswahl und Detail bleiben |
+| `test_reload_fallsBackToTotalWhenShareIsGone` | Aktie nach dem Neuladen weg | Zurück auf "Gesamt / Footer" |
+| `test_shareWithoutDailyValues_noChecksButNote` | Aktie ohne Tageswerte | Kein Abgleich, Hinweiszeile, eine Abweichung |
+| `test_priceDifference_isHintInChecksAndFindings` | Schlusskurs 61,50 | Kurszeile "Hinweis", Auffälligkeit als Hinweis |
+| `test_comparisonRow_waysAndDash` | `toComparisonRow()` | "beide:" bei gleichem Rechenweg, sonst zwei Zeilen; "–" ohne Wert; Tooltip nur für vorhandene Sicht |
+| `test_totalDetail_withoutChartPoint_showsNote` | Kein Chartpunkt | Kein Abgleich, Hinweis "Kein Chartpunkt" |
+| `test_emptyPortfolio_onlyTotalEntry` | Keine Aktien | Nur "Gesamt / Footer", Kopfzeile "0 Aktien" |
 
 ---
 

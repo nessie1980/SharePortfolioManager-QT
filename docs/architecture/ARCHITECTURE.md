@@ -60,9 +60,9 @@ spm-qt/
     ├── database/        # Unit-Tests für Database
     ├── app/             # AppStartup, IconProvider, SingleInstanceGuard
     ├── config/          # WebSitesConfig, DocumentsConfig
-    ├── utils/           # ShareCalculator, PortfolioSeriesCalculator, ShareUpdateRules, ShareSplitAdjuster, DocumentClassifier
+    ├── utils/           # ShareCalculator, PortfolioSeriesCalculator, ShareUpdateRules, ShareSplitAdjuster, DocumentClassifier, CalculationReport, CalculationBreakdown
     ├── xml-importer/    # XmlPortfolioParser, PortfolioValidator, PortfolioImporter
-    └── forms/           # Unit-Tests für Forms (MainWindow, ShareAddForm, ShareEditForm, BuysForm, SalesForm, DividendForm, BrokeragesForm, OwnMessageBox, BackupProgressForm, ShareDetailsForm, ChartForm, PortfolioChartForm, OverviewTabWidget, BackupSettingsForm, TraySettingsForm, DocumentsSettingsForm)
+    └── forms/           # Unit-Tests für Forms (MainWindow, ShareAddForm, ShareEditForm, BuysForm, SalesForm, DividendForm, BrokeragesForm, OwnMessageBox, BackupProgressForm, ShareDetailsForm, ChartForm, PortfolioChartForm, CalculationOverviewForm, OverviewTabWidget, BackupSettingsForm, TraySettingsForm, DocumentsSettingsForm)
 @endcode
 
 ---
@@ -144,6 +144,8 @@ tst_salefifoallocator   ← nur Qt6::Test + BuyObject, ShareSplitObject — zust
 tst_dividendvolumechecker ← nur Qt6::Test + BuyObject, SaleObject, ShareSplitObject, ShareSplitAdjuster — zustandslos, datenbankfrei, kein QApplication
 tst_overviewtabwidget   ← nur OverviewTabWidget, keine DB, kein ShareCalculator (korrigiert 07.08.2026)
 tst_portfoliochartform  ← PortfolioChartForm-Trio + ModelPortfolioChart + PortfolioSeriesCalculator + alle Repositories (zwei Testklassen seit Phase 2b, 07.08.2026 — TestPortfolioChartForm + TestModelPortfolioChart, eigener main() statt QTEST_MAIN)
+tst_calculationoverviewform ← PresenterCalculationOverview über Fake-View/Fake-Model + CalculationBreakdown, ShareCalculator und dessen Repositories (27.10.2026, Tab "Depot- vs. Marktwert")
+tst_calculationreport / tst_calculationbreakdown ← CalculationReport bzw. CalculationBreakdown + ModelPortfolioChart, PortfolioSeriesCalculator, SaleFifoAllocator, alle Repositories (23.10. bzw. 27.10.2026)
 tst_documentssettingsform ← DocumentsSettingsForm + DocumentRootMigrator + AppSettings
 tst_documentsxml        ← DocumentsConfig + echte Belege (Phase 5, 21.08.2026, Regression-Prüfung für Documents.xml)
 tst_traysettingsform    ← TraySettingsForm + AppSettings, IconProvider
@@ -4177,7 +4179,9 @@ Nessies Vorgaben vom 19./23.10.2026:
   und Chart zusammenpassen.
 - Aufruf vorerst nur bei `Debug/ShowDiagnostics` über Hilfe →
   "Berechnungsbericht speichern…"; ein dauerhafter Menüeintrag ist später
-  schnell gemacht.
+  schnell gemacht. Seit v1.28.0 ist der Bericht zusätzlich immer über den
+  Knopf "Bericht speichern…" im Tab "Depot- vs. Marktwert" erreichbar, ohne
+  Debug-Schalter; der Menüeintrag bleibt hinter dem Schalter.
 - Ein Menüeintrag schreibt zwei Dateien (24.10.2026): Realwerte unter dem
   gewählten Namen, daneben die anonymisierte Fassung mit dem Zusatz
   "-anonymisiert". Ersetzt werden Aktienname (Aktie 1, 2, …), WKN und ISIN
@@ -4271,6 +4275,146 @@ Geschrieben wird UTF-8 mit BOM, wie beim Diagnose-Export der Charts.
 `MainWindow::onSaveCalculationReport()` enthält nur den Dateidialog und wird
 wie alle exec()-Pfade nicht automatisiert; getestet sind
 `tst_calculationreport` und die Sichtbarkeit der Aktion in `tst_mainwindow`.
+
+Seit 27.10.2026 kommen die Gegenüberstellung Marktwert/Depotwert, die
+Footer-Werte, der Abgleich gegen die Charts und die Auffälligkeiten (Teil 3)
+aus `CalculationBreakdown`, demselben Zeilenmodell wie der Tab
+"Depot- vs. Marktwert" (siehe dort). Der Berichtstext ist dabei unverändert
+geblieben. Der Tab hat einen eigenen Knopf "Bericht speichern…", der
+`onSaveCalculationReport()` aufruft; damit ist der Bericht auch ohne
+`Debug/ShowDiagnostics` erreichbar, der Menüeintrag bleibt hinter dem
+Schalter.
+
+---
+
+## Tab Depot- vs. Marktwert (ergänzt 27.10.2026, v1.28.0)
+
+Der Berechnungsbericht legt jede Rechnung offen, aber nur als Datei. Der Tab
+"Depot- vs. Marktwert" zeigt dieselbe Gegenüberstellung in der Oberfläche und
+nennt zu jedem Wert, an welcher Stelle der Tabs "Kompletter Depotwert" und
+"Kompletter Marktwert", ihrer Footer und der beiden Charts er erscheint. So
+lässt sich jeder Wert aus einer Übersicht bis zu seiner Rechnung
+zurückverfolgen, genau wie im Bericht.
+
+Nessies Entscheidungen vom 27.10.2026:
+
+- Immer sichtbar, nicht nur mit `Debug/ShowDiagnostics`.
+- Name "Depot- vs. Marktwert", an letzter Stelle (`kTabCalculationOverview
+  = 4`); die Indizes der vier bestehenden Tabs bleiben unverändert.
+- Stand heute, kein Stichtag — sonst passten die Werte nicht mehr zu den
+  Tabellen.
+- Je Aktie vorerst nur die Gegenüberstellung und der Abgleich gegen die
+  Charts. Transaktionen und FIFO-Bestandsabgleich stehen weiter nur im
+  Bericht (offener Punkt).
+- "Fließt ein in" als reiner Text (Variante a). Anklickbar (Variante b) ist
+  ein offener Punkt, zusammen mit einem Kontextmenü "Rechenweg anzeigen" in
+  den Tabellen, das in den Tab springt.
+- Der Bericht bekommt die Spalte "Fließt ein in" nicht (Variante b); sein
+  Text bleibt unverändert.
+- Refactoring und Tab in einem Commit.
+
+### Aufbau
+
+- Oben eine Kopfzeile: Stand (Zeitpunkt der Rechnung), Anzahl Aktien im
+  Bestand und verkauft, Anzahl Abweichungen und Hinweise.
+- Links die Auswahl: "Gesamt / Footer" ganz oben, darunter die Gruppen "Im
+  Bestand" und "Vollständig verkauft" mit den Aktien in Berichtsreihenfolge.
+  Jeder Eintrag trägt ein Symbol für Abweichung (`SearchFailed`, Farbe
+  Fehler), Hinweis (`SearchInfo`, Farbe Warnung) oder ok (`SearchOk`); der
+  Tooltip nennt die Anzahl. Vorauswahl ist "Gesamt / Footer"; nach einem
+  Neuladen bleibt die Auswahl erhalten, solange es die Aktie noch gibt.
+- Rechts bei einer Aktie: Kopf mit WKN, ISIN, Kurs, Vortag und Bestand, dann
+  die 14 Zeilen der Gegenüberstellung aus dem Bericht (Nr, Wert, Marktwert,
+  Depotwert, Depot − Markt, Rechenweg, Fließt ein in), darunter der Abgleich
+  Tabelle gegen Chart (fünf Zeilen, Ergebnis eingefärbt) mit Chart-Stichtag
+  und Kurseffekt, darunter die Auffälligkeiten dieser Aktie.
+- Rechts bei "Gesamt / Footer": beide Footer nebeneinander (zehn Zeilen),
+  der Abgleich Footer gegen Chart (drei Zeilen) mit Kurseffekt und Aktien
+  ohne Tageswerte, darunter alle Auffälligkeiten — dieselbe Liste wie Teil 3
+  des Berichts.
+- Der Tooltip einer Zeile zeigt den Rechenweg je Sicht und, bei
+  abgeleiteten Werten, die Rechnung mit den eingesetzten Zahlen, z. B.
+  "744,00 − 600,00 = 144,00".
+- Unten "Bericht speichern…" (siehe "Berechnungsbericht").
+
+### Gemeinsames Zeilenmodell
+
+`CalculationBreakdown` (`app/utils/CalculationBreakdown.*`, zustandslos,
+datenbankfrei) ist aus `CalculationReport` herausgelöst, damit Bericht und
+Tab ihre Zeilen nicht zweimal zusammenbauen — sonst liefen sie früher oder
+später auseinander, wie damals die `parseDouble()`-Kopien.
+
+- `shareRows()`: die 14 Zeilen je Aktie mit Werten, Rechenweg, Rechnung mit
+  Zahlen und "Fließt ein in".
+- `footerTotals()`: beide Footer mit genau den Aufrufen aus
+  `MainWindow::updatePortfolioFooters()`; `footerRows()` stellt sie in zehn
+  Zeilen gegenüber (nur im Tab).
+- `check()`, `shareChecks()`, `totalChecks()`: der Abgleich gegen die Charts
+  samt Erklärung durch Kursunterschied und Aktien ohne Tageswerte
+  (vorher `compare()` im Bericht).
+- `shareFindings()`, `findings()`: Abweichungen und Hinweise, erst je Aktie,
+  dann Footer gegen Chart — Teil 3 des Berichts.
+- Formatierung (`money()`, `euro()`, `volume()`, `price()`, `percent()`)
+  mit der Null-Bereinigung vom 24.10.2026.
+
+Der Bericht rendert diese Zeilen als Text, der Tab als Qt-Tabellen. Die
+Zahlenrechnung (`marketFigures`/`depotFigures`) und "Fließt ein in"
+(`usedIn`) nutzt nur der Tab.
+
+### Fließt ein in
+
+Spaltennamen wie die Ueberschriften der Tabellen; "oben" und "unten" meinen
+die beiden Zeilen einer Zelle. Die Footer-Werte stehen immer in derselben
+Spalte wie der Tabellenwert darueber, im Tab deshalb knapp als "-> Footer"
+geschrieben:
+
+| Nr | Wert | Erscheint in |
+|----|------|--------------|
+| 1 | Einzahlung (gehaltene Stücke) | beide Tabs, Spalte "Einzahlung / Marktwert" oben; Footer Zeile "Einzahlung (gesamt)" als Summand |
+| 2 | Kurswert gehaltener Stücke | beide Tabs, Spalte "Einzahlung / Marktwert" unten; Footer Zeile "Aktueller Depotstand" als Summand; Endwert des Marktwert-Charts |
+| 3 | Aktuelle Entwicklung | beide Tabs, Spalte "Aktuelle Entwicklung" oben; Footer Zeile "Entwicklung (gesamt)" (Depotwert über Depotstand − Einzahlung) |
+| 4 | Aktuelle Entwicklung % | beide Tabs, Spalte "Aktuelle Entwicklung" unten |
+| 5, 6 | Kosten, Dividenden | Depotwert-Tab, Spalte "Kosten / Dividenden" oben bzw. unten; Footer "Kosten (ges.)" bzw. "Dividenden (ges.)" |
+| 7 bis 9 | Verkäufe, Realisiert | keine eigene Spalte — Verkäufe stecken im Kpl. Marktwert bzw. Kpl. Wert, realisiert ist informativ |
+| 10 | Kpl. Einzahlung | beide Tabs, Spalte "Kpl. Einzahlung / Kpl. Marktwert" oben; Footer Zeile "Einzahlung (gesamt)" in dieser Spalte |
+| 11 | Kpl. Marktwert / Kpl. Wert | dieselbe Spalte unten; Footer Zeile "Aktueller Depotstand" in dieser Spalte |
+| 12 | Komplette Entwicklung | beide Tabs, Spalte "Komplette Entwicklung" oben; Footer Zeile "Entwicklung (gesamt)" in dieser Spalte; Endwert des Depotwert-Charts |
+| 13 | Komplette Entwicklung % | dieselbe Spalte unten und der Entwicklungs-Pfeil davor |
+| 14 | Beitrag Footer Aktueller Depotstand | beide Footer, Zeile "Aktueller Depotstand" |
+
+@note Die Texte stehen in `CalculationBreakdown.cpp` an einer Stelle
+(Konstanten `kCol…`, `kRow…` und die Helfer `cell()`, `footer()`,
+`footerCell()`). Wer eine Spalte in
+`MainWindow::setupCentralWidget()` umbenennt, ändert sie dort mit.
+
+### Umsetzung
+
+Eigenes MVP-Tripel unter `app/forms/CalculationOverviewForm/`:
+`CalculationOverviewTypes.h` (fertig formatierte Anzeigedaten und die
+Bewertung `CalculationOverviewTone`), `IViewCalculationOverview`,
+`IModelCalculationOverview`, `ModelCalculationOverview` (header-only, ruft
+`CalculationReport::collect()` mit der aktuellen Uhrzeit),
+`PresenterCalculationOverview` (Aufbau als `public static` testbar) und
+`ViewCalculationOverview` (einbettbares `QWidget` wie `ViewPortfolioChart`).
+Die View setzt nur die Bewertung in Farbe (Logfarben 2, 3, 5 wie die
+Status-Meldungen) und Symbol um.
+
+MainWindow: Platzhalter-Container und verzögerte Erzeugung wie bei den
+Charts (`ensureCalculationOverviewUpToDate()`), mit Warte-Mauszeiger, weil
+`collect()` das ganze Portfolio samt Chart-Historie je Aktie liest.
+`invalidateCalculationOverview()` markiert den Tab als veraltet — bei jedem
+`populatePortfolioTables()` und anders als die Charts auch nach jeder
+Kursaktualisierung in `refreshPortfolioFooters()`, weil der Tab die
+Tabellenwerte zeigt. Liegt der Tab vorn, rechnet er sofort neu, während
+eines laufenden Abrufs aber erst in `finaliseRefresh()`, damit "Alle
+aktualisieren" nicht nach jeder Aktie das ganze Portfolio neu liest.
+`activePortfolioTable()` liefert auf dem Tab `nullptr` wie auf den Charts.
+
+Tests: `tst_calculationbreakdown` (Zeilenmodell, Footer, Abgleich, gleiche
+Auffälligkeiten wie Teil 3 des Berichts), `tst_calculationoverviewform`
+(Presenter über Fake-View/Fake-Model) und in `tst_mainwindow` Position,
+verzögerte Erzeugung und Inhalt des Tabs. `tst_calculationreport` ist
+unverändert und sichert den Berichtstext.
 
 ---
 
@@ -5277,6 +5421,35 @@ Vor der Umsetzung zu klären (Fragen an Nessie, 19.10.2026):
    der gehaltenen Stücke zeigen, also exakt den Endwert des Marktwert-Charts?
 5. "Kpl. Marktwert": soll er durchgängig ohne Gebühren und Steuern rechnen,
    passend zur Marktwert-Sicht?
+
+### Zählung der Testziele in "Build-Struktur" veraltet (offen, 30.10.2026)
+
+Die Kette der @note-Absätze unter "Build-Struktur (CMake)" endet bei 48
+Testzielen (26.08.2026). Seitdem kamen mehrere Ziele hinzu, u. a.
+`tst_calculationreport` (23.10.2026) sowie `tst_calculationbreakdown` und
+`tst_calculationoverviewform` (27.10.2026), ohne dass die Zahl nachgeführt
+wurde. Zu tun: alle `add_test()` in `tests/` zählen, die Zahl korrigieren
+und gegen die Startbefehl-Liste in TESTING.md abgleichen. Aufgefallen beim
+Abschluss von v1.28.0, bewusst nicht in diesem Commit.
+
+### Tab Depot- vs. Marktwert: weitere Ausbaustufen (offen, 27.10.2026)
+
+Bei der Umsetzung des Tabs bewusst zurückgestellt (Nessies Entscheidungen
+vom 27.10.2026, siehe "Tab Depot- vs. Marktwert"):
+
+1. Navigation aus den Tabellen: ein Kontextmenüeintrag "Rechenweg anzeigen"
+   in "Kompletter Depotwert" und "Kompletter Marktwert" springt in den Tab
+   und wählt die Aktie vor. Der Rechtsklick öffnet dort heute das
+   ChartPopup — vor der Umsetzung klären, wie beides zusammengeht.
+2. "Fließt ein in" anklickbar (Variante b): ein Klick wechselt in den
+   Ziel-Tab und markiert Zeile und Zelle der Aktie bzw. die Footer-Zelle.
+   Braucht eine Zuordnung Aktie zu Tabellenzeile, die auch nach dem
+   Umsortieren stimmt, und eine Zuordnung der Footer-Zellen; beim Chart den
+   Cursor auf dem letzten Tag. Dieselbe Navigation wie Punkt 1, nur in
+   Gegenrichtung — sinnvoll gemeinsam umzusetzen.
+3. Detailansicht je Aktie um die Transaktionen (Käufe, Verkäufe,
+   Dividenden, Kosten, Splits) und den FIFO-Bestandsabgleich erweitern,
+   zugeklappt unter der Gegenüberstellung — heute nur im Bericht.
 
 ### Breite Belegkennungen gewinnen gegen den Dialog-Fallback (offen, 02.09.2026)
 

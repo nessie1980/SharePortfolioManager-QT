@@ -2,6 +2,7 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "CalculationReport.h"
 
+#include "CalculationBreakdown.h"
 #include "SaleFifoAllocator.h"
 #include "ShareSplitAdjuster.h"
 #include "ValueFormatter.h"
@@ -23,7 +24,6 @@
 #include <QTextStream>
 
 #include <algorithm>
-#include <cmath>
 #include <numeric>
 
 namespace {
@@ -32,15 +32,13 @@ namespace {
 
 constexpr int kLineWidth = 100;
 
-/// Werte, die gerundet null ergeben, als exakt null — sonst erscheint eine
-/// Rechendifferenz wie −0,000000001 als "-0,00" (Bugfix 24.10.2026, in
-/// Nessies Bericht beim Abgleich der Kompletten Entwicklung).
-double clean(double value, double tolerance) { return std::abs(value) < tolerance ? 0.0 : value; }
-
-QString money(double value) { return ValueFormatter::formatMoney(clean(value, 0.005)); }
-QString euro(double value)  { return money(value) + QStringLiteral(" €"); }
-QString vol(double value)   { return ValueFormatter::formatVolume(clean(value, 0.00005)); }
-QString price(double value) { return ValueFormatter::formatPrice(clean(value, 0.00005)); }
+// Seit 27.10.2026 in CalculationBreakdown, damit Bericht und Tab
+// "Depot- vs. Marktwert" gleich formatieren; die kurzen Namen bleiben, weil
+// der Bericht sie überall verwendet.
+QString money(double value) { return CalculationBreakdown::money(value); }
+QString euro(double value)  { return CalculationBreakdown::euro(value); }
+QString vol(double value)   { return CalculationBreakdown::volume(value); }
+QString price(double value) { return CalculationBreakdown::price(value); }
 
 QString dateText(const QDate& date)
 {
@@ -176,92 +174,10 @@ private:
 
 // ── Abgleich ──────────────────────────────────────────────────────────────────
 
-/// Sammelt Abweichungen und Hinweise für Teil 3 — getrennt, damit echte
-/// Abweichungen oben stehen und nicht zwischen erwartbaren Kursdifferenzen
-/// untergehen.
-struct Findings
-{
-    QStringList lines; ///< Abweichungen
-    QStringList hints; ///< Hinweise (erwartbar oder durch Kurs erklärt)
-};
-
-/**
- * Eine Vergleichszeile "Tabelle / Chart / Differenz / Ergebnis" in die
- * Abgleichtabelle; Abweichungen landen zusätzlich in @p findings.
- */
-/**
- * @param hintOnly        Eine Differenz ist erwartbar und kein Fehler
- *                        (aktueller Kurs gegen letzten Tageswert) — sie wird
- *                        gezeigt, aber als Hinweis geführt.
- * @param priceExplained  Anteil der Differenz, der allein aus dem
- *                        Kursunterschied folgt (Chart-Bestand × (aktueller
- *                        Kurs − letzter Tageswert)). Geht die Differenz darin
- *                        vollständig auf, ist sie "durch Kurs erklärt" und
- *                        ebenfalls nur ein Hinweis; bleibt ein Rest, ist es
- *                        eine Abweichung.
- */
-/// Vergleicht einen Tabellen- mit einem Chartwert und trägt das Ergebnis in
-/// Tabelle und Befundliste ein. Zwei bekannte Ursachen gelten als Erklärung,
-/// wenn die Differenz genau in ihnen aufgeht: der Kursunterschied
-/// (@p priceExplained, siehe priceEffect()) und Aktien ohne Tageswerte, die in
-/// der Tabelle zählen, im Chart aber fehlen (@p excludedExplained, ergänzt
-/// 26.10.2026). Bleibt ein Rest, ist es eine Abweichung, und beide Anteile
-/// werden neben dem Rest genannt.
-void compare(TextTable& table, Findings& findings, const QString& shareName,
-             const QString& label, double tableValue, double chartValue, bool isVolume,
-             bool hintOnly = false, double priceExplained = 0.0,
-             double excludedExplained = 0.0)
-{
-    const double diff      = tableValue - chartValue;
-    const double tolerance = isVolume ? CalculationReport::kVolumeTolerance
-                                      : CalculationReport::kMoneyTolerance;
-    const bool   hasPrice    = std::abs(priceExplained)    >= tolerance;
-    const bool   hasExcluded = std::abs(excludedExplained) >= tolerance;
-    const double explained   = (hasPrice ? priceExplained : 0.0)
-                             + (hasExcluded ? excludedExplained : 0.0);
-    const bool   ok          = std::abs(diff) < tolerance;
-    const bool   byKnown     = !ok && (hasPrice || hasExcluded)
-                               && std::abs(diff - explained) < tolerance;
-    const auto   fmt         = [isVolume](double v) { return isVolume ? vol(v) : money(v); };
-
-    QString reason;
-    if (hasPrice && hasExcluded)
-        reason = QStringLiteral("durch Kurs und Aktien o. Tageswerte erklärt");
-    else if (hasExcluded)
-        reason = QStringLiteral("durch Aktien o. Tageswerte erklärt");
-    else
-        reason = QStringLiteral("durch Kurs erklärt");
-
-    const QString verdict = ok       ? QStringLiteral("ok")
-                          : byKnown  ? reason
-                          : hintOnly ? QStringLiteral("Hinweis")
-                                     : QStringLiteral("ABWEICHUNG");
-    table.addRow({ label, fmt(tableValue), fmt(chartValue), fmt(diff), verdict });
-
-    if (ok)
-        return;
-
-    QString prefix;
-    if (byKnown)
-        prefix = QStringLiteral("(Hinweis, %1) ").arg(reason);
-    else if (hintOnly)
-        prefix = QStringLiteral("(Hinweis) ");
-
-    QString line = QStringLiteral("%1%2: %3 — Tabelle %4, Chart %5, Differenz %6")
-                       .arg(prefix, shareName, label, fmt(tableValue), fmt(chartValue), fmt(diff));
-    if (!byKnown && !hintOnly && (hasPrice || hasExcluded)) {
-        if (hasPrice)
-            line += QStringLiteral(", davon durch Kurs %1").arg(fmt(priceExplained));
-        if (hasExcluded)
-            line += QStringLiteral(", durch Aktien ohne Tageswerte %1").arg(fmt(excludedExplained));
-        line += QStringLiteral(", Rest %1").arg(fmt(diff - explained));
-    }
-
-    if (byKnown || hintOnly)
-        findings.hints << line;
-    else
-        findings.lines << line;
-}
+// Vergleichslogik, Kurseffekt und Befunde liegen seit 27.10.2026 in
+// CalculationBreakdown (check(), priceEffect(), shareChecks(), findings()),
+// gemeinsam mit dem Tab "Depot- vs. Marktwert". Hier bleibt nur die
+// Textdarstellung.
 
 TextTable makeCompareTable()
 {
@@ -272,33 +188,18 @@ TextTable makeCompareTable()
                        { QStringLiteral("Ergebnis"),  18, false } });
 }
 
-QString shareTitle(const CalculationReportShare& s)
+/// Eine Vergleichszeile "Tabelle / Chart / Differenz / Ergebnis".
+void addCheckRow(TextTable& table, const CalculationCheck& c)
 {
-    return s.share.name().isEmpty() ? s.share.guid() : s.share.name();
+    const auto fmt = [&c](double v) { return c.isVolume ? vol(v) : money(v); };
+    table.addRow({ c.label, fmt(c.tableValue), fmt(c.chartValue), fmt(c.diff), c.resultText });
 }
 
-/// Teil einer Differenz Tabelle − Chart, der allein aus dem Kursunterschied
-/// folgt: der Chart bewertet seinen Bestand mit dem letzten Tageswert, die
-/// Tabelle denselben Bestand mit dem aktuellen Kurs.
-double priceEffect(const CalculationReportShare& s)
-{
-    if (s.chartExcluded || !s.chart.date.isValid())
-        return 0.0;
-    return ShareCalculator::roundAway(s.chart.volume * s.values.curPrice)
-         - s.chart.holdingsValue;
-}
-
-/// Entwicklung einer Aktie im Depotwert-Chart, aus ihren Bestandteilen —
-/// dieselbe Formel wie PortfolioSeriesCalculator::compute() für die Summe.
-double chartDevelopment(const PortfolioSharePoint& p)
-{
-    return ShareCalculator::roundAway(p.holdingsValue + p.realizedGain + p.dividends
-                                      - p.costs - p.purchaseValueHeld);
-}
+QString shareTitle(const CalculationReportShare& s) { return CalculationBreakdown::shareTitle(s); }
 
 // ── Teil 1: je Aktie ──────────────────────────────────────────────────────────
 
-QString buildShareSection(const CalculationReportShare& s, Findings& findings)
+QString buildShareSection(const CalculationReportShare& s)
 {
     const ShareValues& v = s.values;
     const QString name   = shareTitle(s);
@@ -580,76 +481,9 @@ QString buildShareSection(const CalculationReportShare& s, Findings& findings)
     // stehen nummeriert unter der Tabelle, sonst würde sie zu breit.
     out += heading(QStringLiteral("Tabellen \"Kompletter Marktwert\" und \"Kompletter Depotwert\""));
     {
-        struct Row
-        {
-            QString label;
-            bool    hasMarket;
-            double  market;
-            bool    hasDepot;
-            double  depot;
-            bool    percent;
-            QString marketWay;
-            QString depotWay;
-        };
-
-        const QString held = QStringLiteral("%1 × %2").arg(vol(v.volume), price(v.curPrice));
-        const QList<Row> rows = {
-            { QStringLiteral("Einzahlung (gehaltene Stücke)"),
-              true, v.purchaseValue, true, v.purchaseValueFinal, false,
-              QStringLiteral("Σ Reststück × Kaufkurs je Kauf"),
-              QStringLiteral("Σ je Kauf: Reststück × Kaufkurs + Kaufkosten × Reststück / Stück "
-                             "− anteiliger Rabatt (FIFO, Kosten je Kauf)") },
-            { QStringLiteral("Kurswert gehaltener Stücke"),
-              true, v.curValue, true, v.curValue, false, held, held },
-            { QStringLiteral("Aktuelle Entwicklung"),
-              true, v.profitLoss, true, v.profitLossFinal, false,
-              QStringLiteral("Kurswert − Einzahlung"), QStringLiteral("Kurswert − Einzahlung") },
-            { QStringLiteral("Aktuelle Entwicklung %"),
-              true, v.profitLossPct, true, v.profitLossPctFinal, true,
-              QStringLiteral("Aktuelle Entwicklung / Einzahlung"),
-              QStringLiteral("Aktuelle Entwicklung / Einzahlung") },
-            { QStringLiteral("Kosten gesamt"),
-              false, 0.0, true, v.totalBrokerage, false,
-              QStringLiteral("nicht enthalten"),
-              QStringLiteral("alle Kosteneinträge (Kauf, Verkauf, freistehend) − Rabatt") },
-            { QStringLiteral("Dividenden netto"),
-              false, 0.0, true, v.totalDividend, false,
-              QStringLiteral("nicht enthalten"), QStringLiteral("Σ Dividende brutto − Steuern") },
-            { QStringLiteral("Verkäufe (Markt brutto / Depot netto)"),
-              true, v.salePayoutMarket, true, v.salePayoutFinal, false,
-              QStringLiteral("Σ Stück × Verkaufskurs (ohne Kosten, ohne Steuern)"),
-              QStringLiteral("Σ Stück × Verkaufskurs − Kosten + Rabatt − Steuern") },
-            { QStringLiteral("Realisiert rein Kurs"),
-              true, v.saleProfitLoss, false, 0.0, false,
-              QStringLiteral("Verkäufe brutto − Kaufwert verkaufter Stücke; nur informativ, "
-                             "steckt bereits im Kpl. Marktwert"),
-              QStringLiteral("nicht verwendet") },
-            { QStringLiteral("Realisiert mit Kosten und Steuern"),
-              false, 0.0, true, v.saleProfitLossFinal, false,
-              QStringLiteral("nicht verwendet"),
-              QStringLiteral("Verkäufe netto − Kaufwert verkaufter Stücke inkl. anteiliger "
-                             "Kaufkosten; nur informativ, steckt bereits im Kpl. Wert") },
-            { QStringLiteral("Kpl. Einzahlung"),
-              true, v.completePurchaseMarket, true, v.completePurchase, false,
-              QStringLiteral("Σ Stück × Kaufkurs aller Käufe"),
-              QStringLiteral("alle Käufe + Kaufgebühren − Rabatt + freistehende Kosten") },
-            { QStringLiteral("Kpl. Marktwert / Kpl. Wert"),
-              true, v.completeCurValueMarket, true, v.completeCurValue, false,
-              QStringLiteral("Kurswert + Verkäufe brutto"),
-              QStringLiteral("Kurswert + Verkäufe netto + Dividenden netto") },
-            { QStringLiteral("Komplette Entwicklung"),
-              true, v.completeProfitLossMarket, true, v.completeProfitLoss, false,
-              QStringLiteral("Kpl. Marktwert − Kpl. Einzahlung"),
-              QStringLiteral("Kpl. Wert − Kpl. Einzahlung") },
-            { QStringLiteral("Komplette Entwicklung %"),
-              true, v.completeProfitPctMarket, true, v.completeProfitPct, true,
-              QStringLiteral("Komplette Entwicklung / Kpl. Einzahlung"),
-              QStringLiteral("Komplette Entwicklung / Kpl. Einzahlung") },
-            { QStringLiteral("Beitrag Footer \"Aktueller Depotstand\""),
-              true, v.curValue, true, v.curValue, false,
-              QStringLiteral("Kurswert"),
-              QStringLiteral("Kurswert") },
-        };
+        // Zeilen seit 27.10.2026 aus CalculationBreakdown::shareRows(),
+        // gemeinsam mit dem Tab "Depot- vs. Marktwert".
+        const QList<CalculationBreakdownRow> rows = CalculationBreakdown::shareRows(v);
 
         // Rechenweg rechts neben der jeweiligen Zeile statt als Liste unter
         // der Tabelle (Nessies Wunsch 23.10.2026). Unterscheiden sich die
@@ -663,7 +497,7 @@ QString buildShareSection(const CalculationReportShare& s, Findings& findings)
                       { QStringLiteral("Depot − Markt"),14, true  },
                       { QStringLiteral("Rechenweg"),     0, false } });
         for (int i = 0; i < rows.size(); ++i) {
-            const Row& r = rows.at(i);
+            const CalculationBreakdownRow& r = rows.at(i);
             const auto fmt = [&r](double value) {
                 return r.percent ? ValueFormatter::formatPercent(value) + QStringLiteral(" %")
                                  : euro(value);
@@ -690,8 +524,8 @@ QString buildShareSection(const CalculationReportShare& s, Findings& findings)
     // ── Charts ────────────────────────────────────────────────────────────
     out += heading(QStringLiteral("Charts (letzter Stichtag dieser Aktie)"));
     if (s.chartExcluded) {
+        // Der Befund dazu kommt aus CalculationBreakdown::shareFindings().
         out += QStringLiteral("  Keine Tageswerte — die Aktie fehlt in beiden Charts.\n");
-        findings.lines << QStringLiteral("%1: keine Tageswerte, fehlt in beiden Charts").arg(name);
         return out;
     }
     if (!s.chart.date.isValid()) {
@@ -700,7 +534,7 @@ QString buildShareSection(const CalculationReportShare& s, Findings& findings)
     }
 
     const PortfolioSharePoint& c = s.chart;
-    const double chartDev = chartDevelopment(c);
+    const double chartDev = CalculationBreakdown::chartDevelopment(c);
     out += valueLine(QStringLiteral("Stichtag"), dateText(c.date));
     out += valueLine(QStringLiteral("Bestand (FIFO aus Verkäufen, ohne Depot)"), vol(c.volume));
     out += valueLine(QStringLiteral("Schlusskurs (letzter Tageswert)"), price(c.price));
@@ -717,16 +551,9 @@ QString buildShareSection(const CalculationReportShare& s, Findings& findings)
     // ── Abgleich ──────────────────────────────────────────────────────────
     out += heading(QStringLiteral("Abgleich Tabelle gegen Chart"));
     TextTable t = makeCompareTable();
-    compare(t, findings, name, QStringLiteral("Bestand (Stück)"), v.volume, c.volume, true);
-    compare(t, findings, name, QStringLiteral("Kurs (Tabelle aktuell / Chart Schluss)"),
-            v.curPrice, c.price, true, /*hintOnly*/ true);
-    compare(t, findings, name, QStringLiteral("Kaufwert gehalten (ohne Gebühren)"),
-            v.purchaseValue, c.purchaseValueHeld, false);
-    const double byPrice = priceEffect(s);
-    compare(t, findings, name, QStringLiteral("Marktwert / Marktwert-Chart"),
-            v.curValue, c.marketValue, false, false, byPrice);
-    compare(t, findings, name, QStringLiteral("Kompl. Entwicklung Depotwert / Depot-Chart"),
-            v.completeProfitLoss, chartDev, false, false, byPrice);
+    for (const CalculationCheck& check : CalculationBreakdown::shareChecks(s))
+        addCheckRow(t, check);
+    const double byPrice = CalculationBreakdown::priceEffect(s);
     out += t.render();
     out += valueLine(QStringLiteral("Davon durch Kursunterschied"), euro(byPrice),
                      QStringLiteral("%1 × (%2 − %3)")
@@ -737,16 +564,12 @@ QString buildShareSection(const CalculationReportShare& s, Findings& findings)
 
 // ── Teil 2: Gesamtübersicht ───────────────────────────────────────────────────
 
-QString buildTotals(const CalculationReportInput& input, Findings& findings)
+QString buildTotals(const CalculationReportInput& input)
 {
     QString out;
     out += QLatin1Char('\n') + rule(QLatin1Char('#'));
     out += QStringLiteral("TEIL 2 — GESAMTÜBERSICHT\n");
     out += rule(QLatin1Char('#'));
-
-    QList<ShareValues> values;
-    for (const CalculationReportShare& s : input.shares)
-        values.append(s.values);
 
     // ── Je Aktie, Marktwert-Sicht ─────────────────────────────────────────
     out += heading(QStringLiteral("Marktwert-Sicht je Aktie"));
@@ -790,7 +613,7 @@ QString buildTotals(const CalculationReportInput& input, Findings& findings)
         for (const CalculationReportShare& s : input.shares) {
             const ShareValues& v = s.values;
             const double chart = (s.chartExcluded || !s.chart.date.isValid())
-                                     ? 0.0 : chartDevelopment(s.chart);
+                                     ? 0.0 : CalculationBreakdown::chartDevelopment(s.chart);
             t.addRow({ shareTitle(s).left(28), money(v.purchaseValueFinal), money(v.curValue),
                        money(v.completePurchase), money(v.completeCurValue),
                        money(v.completeProfitLoss),
@@ -804,11 +627,13 @@ QString buildTotals(const CalculationReportInput& input, Findings& findings)
     }
 
     // ── Footer "Kompletter Marktwert" ─────────────────────────────────────
-    // Exakt die Aufrufe aus MainWindow::updatePortfolioFooters().
-    double mPurchase = 0, mCurValue = 0, mProfit = 0, mProfitPct = 0;
-    ShareCalculator::portfolioTotalsMarket(values, mPurchase, mCurValue, mProfit, mProfitPct);
-    double mcPurchase = 0, mcCurValue = 0, mcProfit = 0, mcProfitPct = 0;
-    ShareCalculator::portfolioCompleteTotalsMarket(values, mcPurchase, mcCurValue, mcProfit, mcProfitPct);
+    // Exakt die Aufrufe aus MainWindow::updatePortfolioFooters(), seit
+    // 27.10.2026 gebündelt in CalculationBreakdown::footerTotals().
+    const CalculationFooterTotals ft = CalculationBreakdown::footerTotals(input.shares);
+    const double mPurchase  = ft.marketPurchase,         mCurValue   = ft.marketCurValue;
+    const double mProfit    = ft.marketProfit,           mProfitPct  = ft.marketProfitPct;
+    const double mcPurchase = ft.marketCompletePurchase, mcCurValue  = ft.marketCompleteValue;
+    const double mcProfit   = ft.marketCompleteProfit,   mcProfitPct = ft.marketCompleteProfitPct;
 
     out += heading(QStringLiteral("Footer \"Kompletter Marktwert\" (wie angezeigt)"));
     out += valueLine(QStringLiteral("Einzahlung (gesamt)"), euro(mPurchase), QStringLiteral("Σ Einzahlung"));
@@ -821,15 +646,11 @@ QString buildTotals(const CalculationReportInput& input, Findings& findings)
     out += valueLine(QStringLiteral("Kpl. Marktwert"), euro(mcCurValue), QStringLiteral("Σ Kpl. Marktwert"));
 
     // ── Footer "Kompletter Depotwert" ─────────────────────────────────────
-    double tBrokDiv = 0, tPurchase = 0, tCurValue = 0, tProfit = 0, tProfitPct = 0;
-    double cPurchase = 0, cCurValue = 0, cProfit = 0, cProfitPct = 0;
-    ShareCalculator::portfolioTotalsFinal(values, tBrokDiv, tPurchase, tCurValue, tProfit, tProfitPct,
-                                          cPurchase, cCurValue, cProfit, cProfitPct);
-    double tBrokerage = 0.0, tDividend = 0.0;
-    for (const ShareValues& v : values) {
-        tBrokerage += v.totalBrokerage;
-        tDividend  += v.totalDividend;
-    }
+    const double tPurchase  = ft.depotPurchase,          tCurValue   = ft.depotCurValue;
+    const double tProfit    = ft.depotProfit,            tProfitPct  = ft.depotProfitPct;
+    const double cPurchase  = ft.depotCompletePurchase,  cCurValue   = ft.depotCompleteValue;
+    const double cProfit    = ft.depotCompleteProfit,    cProfitPct  = ft.depotCompleteProfitPct;
+    const double tBrokerage = ft.depotBrokerage,         tDividend   = ft.depotDividend;
 
     out += heading(QStringLiteral("Footer \"Kompletter Depotwert\" (wie angezeigt)"));
     out += valueLine(QStringLiteral("Einzahlung (gesamt)"), euro(tPurchase), QStringLiteral("Σ Einzahlung"));
@@ -864,31 +685,18 @@ QString buildTotals(const CalculationReportInput& input, Findings& findings)
     out += valueLine(QStringLiteral("Marktwert-Chart: Marktwert"), euro(ct.marketValue));
 
     // ── Abgleich Footer gegen Chart ───────────────────────────────────────
-    double totalByPrice = 0.0;
-    for (const CalculationReportShare& s : input.shares)
-        totalByPrice += priceEffect(s);
-
     // Aktien ohne Tageswerte zählen im Footer, fehlen aber im Chart (Nessies
-    // Nebenbefund 26.10.2026: im Testdepot stand ihr Beitrag als ABWEICHUNG
-    // in Teil 3, obwohl er erwartbar ist). Ihr Footer-Beitrag gilt deshalb
-    // wie der Kursunterschied als Erklärung.
-    double excludedCurValue = 0.0, excludedProfit = 0.0;
-    for (const CalculationReportShare& s : input.shares) {
-        if (!s.chartExcluded)
-            continue;
-        excludedCurValue += s.values.curValue;
-        excludedProfit   += s.values.completeProfitLoss;
-    }
+    // Nebenbefund 26.10.2026) — ihr Footer-Beitrag gilt wie der
+    // Kursunterschied als Erklärung, siehe CalculationBreakdown::totalChecks().
+    const CalculationTotalChecks totals = CalculationBreakdown::totalChecks(input, ft);
+    const double totalByPrice     = totals.byPrice;
+    const double excludedCurValue = totals.excludedCurValue;
+    const double excludedProfit   = totals.excludedProfit;
 
     out += heading(QStringLiteral("Abgleich Footer gegen Chart"));
     TextTable t = makeCompareTable();
-    const QString total = QStringLiteral("GESAMT");
-    compare(t, findings, total, QStringLiteral("Marktwert: Footer \"Aktueller Depotstand\""),
-            mCurValue, ct.marketValue, false, false, totalByPrice, excludedCurValue);
-    compare(t, findings, total, QStringLiteral("Depotwert: Footer \"Komplette Entwicklung\""),
-            cProfit, ct.development, false, false, totalByPrice, excludedProfit);
-    compare(t, findings, total, QStringLiteral("Depotwert: Footer \"Aktueller Depotstand\""),
-            tCurValue, ct.holdingsValue, false, false, totalByPrice, excludedCurValue);
+    for (const CalculationCheck& check : totals.checks)
+        addCheckRow(t, check);
     out += t.render();
     out += valueLine(QStringLiteral("Davon durch Kursunterschied"), euro(totalByPrice),
                      QStringLiteral("Σ je Aktie, siehe Teil 1"));
@@ -1110,7 +918,6 @@ bool CalculationReport::writeToFile(const QString& path, const QString& text,
 
 QString CalculationReport::build(const CalculationReportInput& input)
 {
-    Findings findings;
     QString out;
 
     out += rule(QLatin1Char('#'));
@@ -1138,18 +945,22 @@ QString CalculationReport::build(const CalculationReportInput& input)
     if (input.shares.isEmpty())
         out += QStringLiteral("  Keine Aktien im Portfolio.\n");
     for (const CalculationReportShare& s : input.shares)
-        out += buildShareSection(s, findings);
+        out += buildShareSection(s);
 
-    out += buildTotals(input, findings);
+    out += buildTotals(input);
+
+    // Teil 3 aus derselben Quelle wie der Tab "Depot- vs. Marktwert"
+    // (27.10.2026): erst je Aktie, dann Footer gegen Chart.
+    const CalculationFindings findings = CalculationBreakdown::findings(input);
 
     out += QLatin1Char('\n') + rule(QLatin1Char('#'));
     out += QStringLiteral("TEIL 3 — AUFFÄLLIGKEITEN\n");
     out += rule(QLatin1Char('#'));
     out += heading(QStringLiteral("Abweichungen"));
-    if (findings.lines.isEmpty()) {
+    if (findings.deviations.isEmpty()) {
         out += QStringLiteral("  Keine — Tabellen, Footer und Charts stimmen überein.\n");
     } else {
-        for (const QString& line : findings.lines)
+        for (const QString& line : findings.deviations)
             out += QStringLiteral("  • ") + line + QLatin1Char('\n');
     }
 

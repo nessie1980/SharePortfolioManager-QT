@@ -90,6 +90,12 @@ struct CalculationReportInput
  *
  * Die Texte sind bewusst nicht über tr() geführt: der Bericht ist eine
  * Diagnose-Datei für die Fehlersuche, keine Oberfläche.
+ *
+ * @note Seit 27.10.2026 stammen die Gegenüberstellung Marktwert/Depotwert,
+ * die Footer-Werte, der Abgleich gegen die Charts und die Auffälligkeiten aus
+ * CalculationBreakdown — demselben Zeilenmodell, aus dem der Tab
+ * "Depot- vs. Marktwert" seine Tabellen füllt. Der Berichtstext selbst ist
+ * dabei unverändert geblieben.
  */
 class CalculationReport
 {

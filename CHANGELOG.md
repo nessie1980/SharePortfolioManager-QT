@@ -10,6 +10,30 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.28.0] - 2026-10-30
+
+### Added
+
+- Neuer Tab "Depot- vs. Marktwert" an letzter Stelle, immer sichtbar. Er
+  stellt Marktwert- und Depotwert-Sicht nebeneinander, je Aktie (14 Zeilen
+  wie im Berechnungsbericht) und fuer beide Footer (10 Zeilen), mit
+  Differenz, Rechenweg und der Spalte "Fliesst ein in": an welcher Stelle
+  der Tabs "Kompletter Depotwert" und "Kompletter Marktwert", ihrer Footer
+  und der Charts der Wert erscheint. Darunter der Abgleich gegen die Charts
+  und die Auffaelligkeiten. Links eine Auswahl "Gesamt / Footer", "Im
+  Bestand" und "Vollstaendig verkauft" mit Markierung fuer Abweichungen und
+  Hinweise. Stand ist immer heute.
+- Der Tab hat einen Knopf "Bericht speichern...", der den
+  Berechnungsbericht wie ueber das Hilfe-Menue schreibt; damit ist der
+  Bericht auch ohne `Debug/ShowDiagnostics` erreichbar.
+
+### Changed
+
+- Gegenueberstellung, Footer-Werte, Abgleich gegen die Charts und
+  Auffaelligkeiten des Berechnungsberichts kommen aus dem neuen
+  `CalculationBreakdown`, demselben Zeilenmodell wie der neue Tab. Der
+  Berichtstext bleibt unveraendert.
+
 ## [1.27.0] - 2026-10-26
 
 ### Added

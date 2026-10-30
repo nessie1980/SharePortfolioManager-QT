@@ -70,6 +70,8 @@ set(APP_SOURCES
     utils/PortfolioSeriesCalculator.cpp
     utils/CalculationReport.h
     utils/CalculationReport.cpp
+    utils/CalculationBreakdown.h
+    utils/CalculationBreakdown.cpp
     utils/ShareSplitAdjuster.h
     utils/ShareSplitAdjuster.cpp
     utils/SaleFifoAllocator.h
@@ -204,6 +206,15 @@ set(APP_SOURCES
     forms/PortfolioChartForm/PresenterPortfolioChart.cpp
     forms/PortfolioChartForm/ViewPortfolioChart.h
     forms/PortfolioChartForm/ViewPortfolioChart.cpp
+    # Tab "Depot- vs. Marktwert" (27.10.2026); das Model ist header-only.
+    forms/CalculationOverviewForm/CalculationOverviewTypes.h
+    forms/CalculationOverviewForm/IViewCalculationOverview.h
+    forms/CalculationOverviewForm/IModelCalculationOverview.h
+    forms/CalculationOverviewForm/ModelCalculationOverview.h
+    forms/CalculationOverviewForm/PresenterCalculationOverview.h
+    forms/CalculationOverviewForm/PresenterCalculationOverview.cpp
+    forms/CalculationOverviewForm/ViewCalculationOverview.h
+    forms/CalculationOverviewForm/ViewCalculationOverview.cpp
 
     # ── Forms – Settings ──────────────────────────────────────────────────
     forms/LoggerSettingsForm/LoggerSettingsForm.h
