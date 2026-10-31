@@ -4374,6 +4374,13 @@ Verkaufskursen bewertet (Ersatzkurse)", der Chartwert heisst "Kurs
 (Ersatzkurs aus Kauf/Verkauf)". Für den Fonds aus dem Testdepot entfallen
 damit die Abweichung und der Gesamt-Hinweis.
 
+Bezeichnung angepasst in v1.29.1 (31.10.2026): Was der Abgleich Footer gegen
+Chart als Erklärung heranzieht, sind seither nur noch Aktien ohne Tageswerte
+UND ohne Transaktionen. Bericht und Tab nennen sie deshalb "Aktien ohne
+Kursdaten" (Zeilen "Aktien ohne Kursdaten: Kurswert / Kompl. Entw." in
+Teil 2, Begründung "durch Aktien o. Kursdaten erklärt"); bis v1.29.0 hiessen
+sie "Aktien ohne Tageswerte". Die Werte sind unverändert.
+
 Kurs-Abgleich ohne Bestand (31.10.2026, Nessies Entscheidung, Punkt A): Sind
 Bestand in Tabelle und Chart 0, geht der Kurs in keinen Wert ein. Die Zeile
 "Kurs (Tabelle / Chart)" steht dann mit Ergebnis "ohne Bestand" im Abgleich

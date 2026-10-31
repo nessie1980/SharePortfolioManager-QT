@@ -694,9 +694,11 @@ QString buildTotals(const CalculationReportInput& input)
     out += valueLine(QStringLiteral("Marktwert-Chart: Marktwert"), euro(ct.marketValue));
 
     // ── Abgleich Footer gegen Chart ───────────────────────────────────────
-    // Aktien ohne Tageswerte zählen im Footer, fehlen aber im Chart (Nessies
+    // Aktien ohne Kursdaten zählen im Footer, fehlen aber im Chart (Nessies
     // Nebenbefund 26.10.2026) — ihr Footer-Beitrag gilt wie der
     // Kursunterschied als Erklärung, siehe CalculationBreakdown::totalChecks().
+    // Seit den Ersatzkursen (v1.29.0) sind das nur noch Aktien ohne
+    // Tageswerte UND ohne Transaktionen; Bezeichnung angepasst in v1.29.1.
     const CalculationTotalChecks totals = CalculationBreakdown::totalChecks(input, ft);
     const double totalByPrice     = totals.byPrice;
     const double excludedCurValue = totals.excludedCurValue;
@@ -709,10 +711,10 @@ QString buildTotals(const CalculationReportInput& input)
     out += t.render();
     out += valueLine(QStringLiteral("Davon durch Kursunterschied"), euro(totalByPrice),
                      QStringLiteral("Σ je Aktie, siehe Teil 1"));
-    out += valueLine(QStringLiteral("Aktien ohne Tageswerte: Kurswert"), euro(excludedCurValue),
-                     QStringLiteral("zählen in der Tabelle, fehlen im Chart"));
-    out += valueLine(QStringLiteral("Aktien ohne Tageswerte: Kompl. Entw."), euro(excludedProfit),
-                     QStringLiteral("zählen in der Tabelle, fehlen im Chart"));
+    out += valueLine(QStringLiteral("Aktien ohne Kursdaten: Kurswert"), euro(excludedCurValue),
+                     QStringLiteral("ohne Tageswerte und Transaktionen, nicht im Chart"));
+    out += valueLine(QStringLiteral("Aktien ohne Kursdaten: Kompl. Entw."), euro(excludedProfit),
+                     QStringLiteral("ohne Tageswerte und Transaktionen, nicht im Chart"));
 
     return out;
 }

@@ -534,7 +534,7 @@ private slots:
 
         const QString deviations = deviationsSection(report);
         QVERIFY2(!deviations.contains(QStringLiteral("GESAMT")), qPrintable(deviations));
-        QVERIFY2(report.contains(QStringLiteral("(Hinweis, durch Aktien o. Tageswerte erklärt) GESAMT: "
+        QVERIFY2(report.contains(QStringLiteral("(Hinweis, durch Aktien o. Kursdaten erklärt) GESAMT: "
                                                 "Depotwert: Footer \"Komplette Entwicklung\"")),
                  qPrintable(partThree(report)));
         // Die fehlenden Tageswerte selbst bleiben als Befund stehen.
@@ -549,7 +549,7 @@ private slots:
 
         const QString deviations = deviationsSection(CalculationReport::build(input));
         const QLocale loc;
-        QVERIFY2(deviations.contains(QStringLiteral("durch Aktien ohne Tageswerte ")
+        QVERIFY2(deviations.contains(QStringLiteral("durch Aktien ohne Kursdaten ")
                                      + loc.toString(1279.86, 'f', 2))
                      && deviations.contains(QStringLiteral("Rest ") + loc.toString(10.0, 'f', 2)),
                  qPrintable(deviations));

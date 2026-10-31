@@ -230,8 +230,9 @@ CalculationOverviewDetail PresenterCalculationOverview::buildTotalDetail(
         for (const CalculationReportShare& s : input.shares)
             anyExcluded = anyExcluded || s.chartExcluded;
         if (anyExcluded) {
-            d.checkNotes << QStringLiteral("Aktien ohne Tageswerte: Kurswert %1, Kompl. Entwicklung "
-                                           "%2 — zählen in der Tabelle, fehlen im Chart.")
+            d.checkNotes << QStringLiteral("Aktien ohne Kursdaten (ohne Tageswerte und Transaktionen): "
+                                           "Kurswert %1, Kompl. Entwicklung %2 — zählen in der "
+                                           "Tabelle, fehlen im Chart.")
                                 .arg(B::euro(checks.excludedCurValue),
                                      B::euro(checks.excludedProfit));
         }

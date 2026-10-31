@@ -329,9 +329,9 @@ CalculationCheck CalculationBreakdown::check(const QString& subject, const QStri
 
     QString reason;
     if (hasPrice && hasExcluded)
-        reason = QStringLiteral("durch Kurs und Aktien o. Tageswerte erklärt");
+        reason = QStringLiteral("durch Kurs und Aktien o. Kursdaten erklärt");
     else if (hasExcluded)
-        reason = QStringLiteral("durch Aktien o. Tageswerte erklärt");
+        reason = QStringLiteral("durch Aktien o. Kursdaten erklärt");
     else
         reason = QStringLiteral("durch Kurs erklärt");
 
@@ -363,7 +363,7 @@ CalculationCheck CalculationBreakdown::check(const QString& subject, const QStri
         if (hasPrice)
             line += QStringLiteral(", davon durch Kurs %1").arg(fmt(priceExplained));
         if (hasExcluded)
-            line += QStringLiteral(", durch Aktien ohne Tageswerte %1").arg(fmt(excludedExplained));
+            line += QStringLiteral(", durch Aktien ohne Kursdaten %1").arg(fmt(excludedExplained));
         line += QStringLiteral(", Rest %1").arg(fmt(c.diff - explained));
     }
     c.finding = line;
@@ -609,9 +609,10 @@ CalculationTotalChecks CalculationBreakdown::totalChecks(const CalculationReport
     CalculationTotalChecks result;
     for (const CalculationReportShare& s : input.shares) {
         result.byPrice += priceEffect(s);
-        // Aktien ohne Tageswerte zählen im Footer, fehlen aber im Chart
+        // Aktien ohne Kursdaten zählen im Footer, fehlen aber im Chart
         // (Nessies Nebenbefund 26.10.2026) — ihr Footer-Beitrag gilt wie der
-        // Kursunterschied als Erklärung.
+        // Kursunterschied als Erklärung. Seit v1.29.0 nur noch Aktien ohne
+        // Tageswerte UND ohne Transaktionen (sonst Ersatzkurse).
         if (s.chartExcluded) {
             result.excludedCurValue += s.values.curValue;
             result.excludedProfit   += s.values.completeProfitLoss;

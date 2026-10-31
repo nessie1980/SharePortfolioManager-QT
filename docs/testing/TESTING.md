@@ -3142,8 +3142,8 @@ werden. `main()` setzt `QLocale::setDefault(German)` wie die Anwendung.
 | `test_anonymizedFilePath` (**24.10.2026**) | Dateinamen mit, ohne und mit mehrfacher Endung | "-anonymisiert" vor der letzten Endung, ohne Endung ".txt" |
 | `test_build_soldShareIsListedAndMarked` | Bestand 0 nach Verkauf | Aktie erscheint mit "vollständig verkauft" und Verkaufstabelle |
 | `test_build_shareWithoutDailyValues_isNamedInFindings` | Aktie ohne Tageswerte | Teil 3 nennt sie |
-| `test_build_excludedShare_explainsFooterDifference` (ergänzt 26.10.2026) | Verkaufte Aktie ohne Tageswerte mit Kompletter Entwicklung 1.279,86 (Nebenbefund aus Nessies Testdepot) | Footer-Differenz steht als "(Hinweis, durch Aktien o. Tageswerte erklärt)", nicht unter Abweichungen; "keine Tageswerte" bleibt Abweichung |
-| `test_build_excludedShare_restBeyondItStaysDeviation` (ergänzt 26.10.2026) | Wie oben, Chart zusätzlich 10,00 darunter | Abweichung nennt "durch Aktien ohne Tageswerte 1.279,86" und "Rest 10,00" |
+| `test_build_excludedShare_explainsFooterDifference` (ergänzt 26.10.2026) | Verkaufte Aktie ohne Tageswerte mit Kompletter Entwicklung 1.279,86 (Nebenbefund aus Nessies Testdepot) | Footer-Differenz steht als "(Hinweis, durch Aktien o. Kursdaten erklärt)" (bis v1.29.0 "o. Tageswerte"), nicht unter Abweichungen; "keine Tageswerte" bleibt Abweichung |
+| `test_build_excludedShare_restBeyondItStaysDeviation` (ergänzt 26.10.2026) | Wie oben, Chart zusätzlich 10,00 darunter | Abweichung nennt "durch Aktien ohne Kursdaten 1.279,86" (bis v1.29.0 "ohne Tageswerte") und "Rest 10,00" |
 | `test_build_emptyPortfolio` | Keine Aktien | Hinweis "Keine Aktien im Portfolio.", Teil 3 vorhanden |
 | `test_replayFifoSold_oldestBuyFirst` | Zwei Käufe à 10, Verkauf 15 | 10 / 5 |
 | `test_replayFifoSold_ignoresStoredVolumeSold` | Gespeichert 7 verkauft, tatsächlich 4 | Nachrechnung liefert 4 |

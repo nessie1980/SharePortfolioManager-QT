@@ -10,6 +10,16 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.29.1] - 2026-10-31
+
+### Fixed
+
+- Berechnungsbericht und Tab "Depot- vs. Marktwert": Die Aktien, die im
+  Abgleich Footer gegen Chart als Erklaerung dienen, heissen jetzt "Aktien
+  ohne Kursdaten" statt "Aktien ohne Tageswerte". Seit den Ersatzkursen in
+  1.29.0 sind das nur noch Aktien ohne Tageswerte und ohne Transaktionen;
+  die alte Bezeichnung passte nicht mehr. Die Werte sind unveraendert.
+
 ## [1.29.0] - 2026-10-31
 
 ### Changed

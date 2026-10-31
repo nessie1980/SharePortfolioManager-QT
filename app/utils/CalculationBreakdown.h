@@ -44,7 +44,7 @@ struct CalculationBreakdownRow
 enum class CalculationCheckResult
 {
     Ok,         ///< Differenz unter der Toleranz
-    Explained,  ///< Differenz geht genau in bekannten Ursachen auf (Kurs, Aktien ohne Tageswerte)
+    Explained,  ///< Differenz geht genau in bekannten Ursachen auf (Kurs, Aktien ohne Kursdaten)
     Hint,       ///< Differenz erwartbar (aktueller Kurs gegen letzten Tageswert)
     Deviation   ///< echte Abweichung
 };
@@ -110,8 +110,8 @@ struct CalculationTotalChecks
 {
     QList<CalculationCheck> checks;  ///< leer, wenn es keinen Chartpunkt gibt
     double byPrice          = 0.0;   ///< Σ Kurseffekt je Aktie
-    double excludedCurValue = 0.0;   ///< Kurswert der Aktien ohne Tageswerte
-    double excludedProfit   = 0.0;   ///< Kompl. Entwicklung der Aktien ohne Tageswerte
+    double excludedCurValue = 0.0;   ///< Kurswert der Aktien ohne Kursdaten (nicht im Chart)
+    double excludedProfit   = 0.0;   ///< Kompl. Entwicklung der Aktien ohne Kursdaten (nicht im Chart)
 };
 
 /**
@@ -207,7 +207,7 @@ public:
      *
      * Zwei bekannte Ursachen gelten als Erklärung, wenn die Differenz genau
      * in ihnen aufgeht: der Kursunterschied (@p priceExplained, siehe
-     * priceEffect()) und Aktien ohne Tageswerte, die in der Tabelle zählen,
+     * priceEffect()) und Aktien ohne Kursdaten, die in der Tabelle zählen,
      * im Chart aber fehlen (@p excludedExplained, ergänzt 26.10.2026). Bleibt
      * ein Rest, ist es eine Abweichung, und beide Anteile werden neben dem
      * Rest genannt.
