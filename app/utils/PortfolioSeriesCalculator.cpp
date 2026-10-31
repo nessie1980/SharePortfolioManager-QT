@@ -3,6 +3,9 @@
 #include "PortfolioSeriesCalculator.h"
 #include "ShareCalculator.h"
 
+#include <QMap>
+#include <QPair>
+
 #include <algorithm>
 
 namespace {
@@ -114,6 +117,66 @@ double PortfolioSeriesCalculator::closingPriceAt(const QList<PortfolioPriceEvent
     return result;
 }
 
+// -- applyCurrentPrice ---------------------------------------------------------
+
+bool PortfolioSeriesCalculator::applyCurrentPrice(QList<PortfolioPriceEvent>& prices,
+                                                  const QDate& date, double price)
+{
+    if (!date.isValid() || price <= 0.0 || prices.isEmpty())
+        return false;
+
+    // Jüngster gültiger Tageswert — die Liste muss nicht sortiert sein.
+    qsizetype latest = -1;
+    for (qsizetype i = 0; i < prices.size(); ++i) {
+        const QDate d = prices.at(i).date;
+        if (d.isValid() && (latest < 0 || d > prices.at(latest).date))
+            latest = i;
+    }
+    if (latest < 0)
+        return false; // nur ungültige Daten: wie keine Historie
+
+    const QDate latestDate = prices.at(latest).date;
+    if (date < latestDate)
+        return false; // Tageswert ist neuer und gewinnt
+
+    if (date == latestDate) {
+        prices[latest].closingPrice = price;
+        prices[latest].currentPrice = true;
+        prices[latest].substitute   = false; // jetzt ein echter Kurs, kein Ersatz mehr
+        return true;
+    }
+
+    prices.append(PortfolioPriceEvent{ date, price, true });
+    return true;
+}
+
+// -- substitutePrices ----------------------------------------------------------
+
+QList<PortfolioPriceEvent> PortfolioSeriesCalculator::substitutePrices(
+    const PortfolioShareSeriesInput& share)
+{
+    // Je Tag Summe aus Stück x Kurs und Stück, daraus der gewichtete Kurs.
+    QMap<QDate, QPair<double, double>> byDay; // date -> (value, volume)
+    const auto add = [&byDay](const QDate& date, double volume, double price) {
+        if (!date.isValid() || volume <= 0.0 || price <= 0.0)
+            return;
+        QPair<double, double>& day = byDay[date];
+        day.first  += volume * price;
+        day.second += volume;
+    };
+    for (const PortfolioBuyEvent& buy : share.buys)
+        add(buy.date, buy.volume, buy.price);
+    for (const PortfolioSaleEvent& sale : share.sales)
+        add(sale.date, sale.volume, sale.price);
+
+    QList<PortfolioPriceEvent> prices;
+    prices.reserve(byDay.size());
+    for (auto it = byDay.cbegin(); it != byDay.cend(); ++it)
+        prices.append(PortfolioPriceEvent{ it.key(), it.value().first / it.value().second,
+                                           /*currentPrice*/ false, /*substitute*/ true });
+    return prices;
+}
+
 // -- compute -------------------------------------------------------------------
 
 PortfolioSeriesResult PortfolioSeriesCalculator::compute(
@@ -192,6 +255,8 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
         double costSum            = 0.0;
         double investmentCostSum  = 0.0; // buy-linked + freestanding costs only
         double lastPrice          = 0.0;
+        bool   lastPriceIsCurrent = false; // lastPrice ist der aktuelle Kurs (30.10.2026)
+        bool   lastPriceIsSubst   = false; // lastPrice ist ein Ersatzkurs (31.10.2026)
 
         for (int gridIdx = 0; gridIdx < grid.size(); ++gridIdx) {
             const QDate stichtag = grid.at(gridIdx);
@@ -268,7 +333,9 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
 
             // -- Forward-filled closing price ------------------------------
             while (priceIdx < prices.size() && prices.at(priceIdx).date <= stichtag) {
-                lastPrice = prices.at(priceIdx).closingPrice;
+                lastPrice          = prices.at(priceIdx).closingPrice;
+                lastPriceIsCurrent = prices.at(priceIdx).currentPrice;
+                lastPriceIsSubst   = prices.at(priceIdx).substitute;
                 ++priceIdx;
             }
 
@@ -302,6 +369,8 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
                 detail.dividends         = dividendSum;
                 detail.costs             = costSum;
                 detail.marketValue       = marketValue;
+                detail.currentPrice      = lastPriceIsCurrent;
+                detail.substitutePrice   = lastPriceIsSubst;
                 result.sharePoints.append(detail);
             }
 
@@ -314,6 +383,10 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
             point.purchaseValueTotal += purchaseValueTotal;
             point.investedTotal      += purchaseValueTotal + investmentCostSum;
             point.marketValue        += marketValue;
+            // Kennzeichnung nur, wenn der aktuelle Kurs tatsächlich in die
+            // Linie eingeht — bei Bestand 0 spielt der Kurs keine Rolle.
+            if (lastPriceIsCurrent && heldVolume > 0.0)
+                point.usesCurrentPrice = true;
         }
     }
 

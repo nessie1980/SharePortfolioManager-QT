@@ -3642,6 +3642,45 @@ private slots:
                                    Q_ARG(QPointF, QPointF(x, 0.0)), Q_ARG(bool, false));
     }
 
+    void test_portfolioCharts_tooltipMarksCurrentPrice()
+    {
+        // Ergänzt 30.10.2026: ein Punkt, der mit dem aktuellen Kurs statt
+        // eines Schlusskurses bewertet ist, trägt "(aktueller Kurs)" hinter
+        // dem Datum — in beiden Charts. Ein Schlusskurs-Punkt bleibt ohne.
+        openMemoryDb();
+
+        const QDate d1(2026, 10, 29);
+        const QDate d2(2026, 10, 30);
+        PortfolioChartData data;
+        data.points = {
+            { d1, 10.00, 1.00, 1000.00, false },
+            { d2, 25.50, 2.50, 1234.56, true  }
+        };
+
+        for (const PortfolioChartMode mode : { PortfolioChartMode::Development,
+                                               PortfolioChartMode::MarketValue }) {
+            ViewPortfolioChart view(mode);
+            view.setChartData(data);
+
+            const auto hover = [&view](const QDate& date) {
+                const double x = static_cast<double>(QDateTime(date, QTime(0, 0)).toMSecsSinceEpoch());
+                QMetaObject::invokeMethod(&view, "onSeriesHovered", Qt::DirectConnection,
+                                          Q_ARG(QPointF, QPointF(x, 0.0)), Q_ARG(bool, true));
+                const QString text = QToolTip::text();
+                QMetaObject::invokeMethod(&view, "onSeriesHovered", Qt::DirectConnection,
+                                          Q_ARG(QPointF, QPointF(x, 0.0)), Q_ARG(bool, false));
+                return text;
+            };
+
+            const QString current = hover(d2);
+            QVERIFY2(current.startsWith(d2.toString(QStringLiteral("dd.MM.yyyy"))
+                                        + QStringLiteral(" (aktueller Kurs)\n")),
+                     qPrintable(current));
+            const QString close = hover(d1);
+            QVERIFY2(!close.contains(QStringLiteral("aktueller Kurs")), qPrintable(close));
+        }
+    }
+
     void test_marketValueChart_readsSharedPortfolioChartSettings()
     {
         openMemoryDb();

@@ -2,6 +2,8 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "PresenterCalculationOverview.h"
 
+#include <cmath>
+
 namespace {
 
 using B = CalculationBreakdown;
@@ -161,10 +163,29 @@ CalculationOverviewDetail PresenterCalculationOverview::buildShareDetail(
     } else {
         const PortfolioSharePoint& c = s.chart;
         d.checks = toCheckRows(B::shareChecks(s));
+        // Seit 30.10.2026 bewerten die Charts am rechten Rand mit dem
+        // aktuellen Kurs; ein Unterschied bleibt nur, wenn der letzte
+        // Tageswert neuer ist als der letzte Kursabruf.
+        if (s.substitutePrices)
+            d.checkNotes << QStringLiteral("Keine Tageswerte — die Charts bewerten die Aktie mit den "
+                                           "Kursen ihrer Käufe und Verkäufe (Ersatzkurse).");
+        // Kursart am Chart-Stichtag; die Erklärung zum älteren Kursabruf nur,
+        // wenn der Kurs bei vorhandenem Bestand tatsächlich abweicht.
+        const bool held = std::abs(c.volume) >= CalculationReport::kVolumeTolerance;
+        QString priceNote;
+        if (c.currentPrice) {
+            priceNote = QStringLiteral("Chart-Stichtag %1, Kurs %2 € (aktueller Kurs, wie in der Tabelle).");
+        } else if (c.substitutePrice) {
+            priceNote = QStringLiteral("Chart-Stichtag %1, Kurs %2 € (Ersatzkurs aus Kauf/Verkauf).");
+        } else if (held && std::abs(v.curPrice - c.price) >= CalculationReport::kVolumeTolerance) {
+            priceNote = QStringLiteral("Chart-Stichtag %1, Kurs %2 € (Schlusskurs) — der letzte "
+                                       "Tageswert ist neuer als der letzte Kursabruf, die Tabelle "
+                                       "rechnet noch mit dem älteren aktuellen Kurs.");
+        } else {
+            priceNote = QStringLiteral("Chart-Stichtag %1, Kurs %2 € (Schlusskurs).");
+        }
         d.checkNotes
-            << QStringLiteral("Chart-Stichtag %1, Schlusskurs %2 € — die Tabelle rechnet mit dem "
-                              "aktuellen Kurs, die Charts mit dem letzten Tageswert.")
-                   .arg(dateText(c.date), B::price(c.price))
+            << priceNote.arg(dateText(c.date), B::price(c.price))
             << QStringLiteral("Davon durch Kursunterschied: %1 (%2 × (%3 − %4))")
                    .arg(B::euro(B::priceEffect(s)), B::volume(c.volume),
                         B::price(v.curPrice), B::price(c.price));
@@ -199,8 +220,9 @@ CalculationOverviewDetail PresenterCalculationOverview::buildTotalDetail(
         const CalculationTotalChecks checks = B::totalChecks(input, totals);
         d.checks = toCheckRows(checks.checks);
         d.checkNotes
-            << QStringLiteral("Chart-Stichtag %1 — die Tabellen rechnen mit dem aktuellen Kurs, "
-                              "die Charts mit dem letzten Tageswert.").arg(dateText(ct.date))
+            << (ct.usesCurrentPrice
+                    ? QStringLiteral("Chart-Stichtag %1 (aktueller Kurs).").arg(dateText(ct.date))
+                    : QStringLiteral("Chart-Stichtag %1.").arg(dateText(ct.date)))
             << QStringLiteral("Davon durch Kursunterschied: %1 (Summe je Aktie)")
                    .arg(B::euro(checks.byPrice));
 

@@ -717,6 +717,192 @@ private slots:
         CMP_MONEY(sum, 2100.0);
         CMP_MONEY(r.points.at(1).marketValue, 2100.0);
     }
+
+    // ── Aktueller Kurs am rechten Rand (ergänzt 30.10.2026) ──────────────
+    //
+    // Nessies Regel: neuerer Kursabruf wird angehängt, gleicher Tag ersetzt
+    // den Schlusskurs, älterer ändert nichts. Siehe applyCurrentPrice().
+
+    void test_applyCurrentPrice_newerDateIsAppended()
+    {
+        QList<PortfolioPriceEvent> prices = { { d(2026, 4, 10), 60.0 }, { d(2026, 4, 30), 62.0 } };
+        QVERIFY(PortfolioSeriesCalculator::applyCurrentPrice(prices, d(2026, 5, 2), 63.0));
+
+        QCOMPARE(prices.size(), 3);
+        QCOMPARE(prices.last().date, d(2026, 5, 2));
+        QCOMPARE(prices.last().closingPrice, 63.0);
+        QVERIFY(prices.last().currentPrice);
+        QVERIFY(!prices.at(1).currentPrice); // Schlusskurs bleibt unberührt
+    }
+
+    void test_applyCurrentPrice_sameDayReplacesClose()
+    {
+        QList<PortfolioPriceEvent> prices = { { d(2026, 4, 10), 60.0 }, { d(2026, 4, 30), 62.0 } };
+        QVERIFY(PortfolioSeriesCalculator::applyCurrentPrice(prices, d(2026, 4, 30), 64.0));
+
+        QCOMPARE(prices.size(), 2);
+        QCOMPARE(prices.at(1).closingPrice, 64.0);
+        QVERIFY(prices.at(1).currentPrice);
+    }
+
+    void test_applyCurrentPrice_olderDateKeepsDailyValue()
+    {
+        QList<PortfolioPriceEvent> prices = { { d(2026, 4, 10), 60.0 }, { d(2026, 4, 30), 62.0 } };
+        QVERIFY(!PortfolioSeriesCalculator::applyCurrentPrice(prices, d(2026, 4, 20), 99.0));
+
+        QCOMPARE(prices.size(), 2);
+        QCOMPARE(prices.at(1).closingPrice, 62.0);
+        QVERIFY(!prices.at(0).currentPrice && !prices.at(1).currentPrice);
+    }
+
+    void test_applyCurrentPrice_unsortedListComparesWithNewestDate()
+    {
+        // Gleicher Tag wie der jüngste Eintrag, der aber vorn steht.
+        QList<PortfolioPriceEvent> prices = { { d(2026, 4, 30), 62.0 }, { d(2026, 4, 10), 60.0 } };
+        QVERIFY(PortfolioSeriesCalculator::applyCurrentPrice(prices, d(2026, 4, 30), 64.0));
+        QCOMPARE(prices.size(), 2);
+        QCOMPARE(prices.at(0).closingPrice, 64.0);
+        QCOMPARE(prices.at(1).closingPrice, 60.0);
+    }
+
+    void test_applyCurrentPrice_noChangeWithoutUsableInput()
+    {
+        // Ohne Tageswerte bleibt die Aktie ausgeschlossen — ein einzelner
+        // aktueller Kurs macht noch keine Historie.
+        QList<PortfolioPriceEvent> empty;
+        QVERIFY(!PortfolioSeriesCalculator::applyCurrentPrice(empty, d(2026, 5, 2), 63.0));
+        QVERIFY(empty.isEmpty());
+
+        QList<PortfolioPriceEvent> prices = { { d(2026, 4, 30), 62.0 } };
+        QVERIFY(!PortfolioSeriesCalculator::applyCurrentPrice(prices, QDate(), 63.0));   // kein Datum
+        QVERIFY(!PortfolioSeriesCalculator::applyCurrentPrice(prices, d(2026, 5, 2), 0.0)); // kein Kurs
+        QCOMPARE(prices.size(), 1);
+        QCOMPARE(prices.at(0).closingPrice, 62.0);
+    }
+
+    void test_currentPrice_newerValueEndsTheLineAndIsMarked()
+    {
+        // Referenz-Fixture, A hat zusätzlich den aktuellen Kurs 63 vom 02.05.
+        //   02.05.  A 12 x 63 + B 5 x 210 (fortgeschrieben) = 1806
+        QList<PortfolioShareSeriesInput> shares = referenceFixture();
+        PortfolioSeriesCalculator::applyCurrentPrice(shares[0].prices, d(2026, 5, 2), 63.0);
+
+        const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute(shares);
+        QCOMPARE(r.points.size(), 6);
+        QCOMPARE(r.points.last().date, d(2026, 5, 2));
+        CMP_MONEY(r.points.last().marketValue, 1806.0);
+        CMP_MONEY(r.points.last().holdingsValue, 1806.0);
+        QVERIFY(r.points.last().usesCurrentPrice);
+        // Die Punkte davor bleiben Schlusskurse.
+        for (int i = 0; i < 5; ++i)
+            QVERIFY2(!r.points.at(i).usesCurrentPrice, qPrintable(r.points.at(i).date.toString()));
+    }
+
+    void test_currentPrice_sameDayReplacesCloseOfLastPoint()
+    {
+        //   30.04.  A 12 x 64 + B 5 x 210 = 1818 statt 1794
+        QList<PortfolioShareSeriesInput> shares = referenceFixture();
+        PortfolioSeriesCalculator::applyCurrentPrice(shares[0].prices, d(2026, 4, 30), 64.0);
+
+        const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute(shares);
+        QCOMPARE(r.points.size(), 5);
+        CMP_MONEY(r.points.last().marketValue, 1818.0);
+        QVERIFY(r.points.last().usesCurrentPrice);
+    }
+
+    void test_currentPrice_soldShareIsNotMarked()
+    {
+        // Bestand 0: der aktuelle Kurs geht in nichts ein, der Punkt bleibt
+        // ohne Kennzeichnung.
+        PortfolioShareSeriesInput s = singleShare({ { d(2026, 1, 1), 10.0, 10.0 } },
+                                                  { { d(2026, 1, 5), 10.0, 12.0, 0.0 } },
+                                                  { { d(2026, 1, 1), 10.0 }, { d(2026, 1, 5), 12.0 } });
+        PortfolioSeriesCalculator::applyCurrentPrice(s.prices, d(2026, 1, 6), 13.0);
+
+        const PortfolioSeriesResult r =
+            PortfolioSeriesCalculator::compute({ s }, QDate(), QDate(), /*withPerShareDetail=*/true);
+        QCOMPARE(r.points.last().date, d(2026, 1, 6));
+        QVERIFY(!r.points.last().usesCurrentPrice);
+        CMP_MONEY(r.points.last().marketValue, 0.0);
+        // Die Einzelwerte nennen den Kurs trotzdem als aktuellen Kurs.
+        QVERIFY(r.sharePoints.last().currentPrice);
+    }
+
+    // ── Ersatzkurse für Aktien ohne Tageswerte (ergänzt 31.10.2026) ──────
+    //
+    // Nessies Entscheidung: statt Ausschluss die Kurse der eigenen Käufe und
+    // Verkäufe. Siehe substitutePrices().
+
+    void test_substitutePrices_oneEventPerTransactionDay()
+    {
+        PortfolioShareSeriesInput s = singleShare({ { d(2016, 9, 21), 10.0, 88.0 },
+                                                    { d(2016, 10, 17), 2.0, 90.0 } },
+                                                  { { d(2019, 12, 17), 12.0, 111.0, 0.0 } },
+                                                  {});
+        const QList<PortfolioPriceEvent> p = PortfolioSeriesCalculator::substitutePrices(s);
+        QCOMPARE(p.size(), 3);
+        QCOMPARE(p.at(0).date, d(2016, 9, 21));
+        QCOMPARE(p.at(0).closingPrice, 88.0);
+        QCOMPARE(p.at(2).date, d(2019, 12, 17));
+        QCOMPARE(p.at(2).closingPrice, 111.0);
+        for (const PortfolioPriceEvent& e : p)
+            QVERIFY(e.substitute && !e.currentPrice);
+    }
+
+    void test_substitutePrices_sameDayIsVolumeWeighted()
+    {
+        // 3 x 100 und 1 x 120 am selben Tag: (300 + 120) / 4 = 105
+        PortfolioShareSeriesInput s = singleShare({ { d(2026, 1, 1), 3.0, 100.0 },
+                                                    { d(2026, 1, 1), 1.0, 120.0 } }, {}, {});
+        const QList<PortfolioPriceEvent> p = PortfolioSeriesCalculator::substitutePrices(s);
+        QCOMPARE(p.size(), 1);
+        QCOMPARE(p.first().closingPrice, 105.0);
+    }
+
+    void test_substitutePrices_skipsUnusableEntries()
+    {
+        PortfolioShareSeriesInput s = singleShare({ { QDate(), 1.0, 10.0 },
+                                                    { d(2026, 1, 2), 0.0, 10.0 },
+                                                    { d(2026, 1, 3), 1.0, 0.0 } }, {}, {});
+        QVERIFY(PortfolioSeriesCalculator::substitutePrices(s).isEmpty());
+    }
+
+    void test_substitutePrices_soldShareEndsOnItsCompleteResult()
+    {
+        // Wie der Sparplan-Fonds aus Nessies Bericht, verkleinert:
+        // Kauf 10 x 88, Kauf 10 x 92, Verkauf 20 x 111 mit 30 Steuer,
+        // Dividende netto 5, Kosten -4 (Rabatt).
+        //   realisiert = 2220 - 30 - (880 + 920) = 390
+        //   Entwicklung = 390 + 5 - (-4) = 399, danach unverändert.
+        PortfolioShareSeriesInput s = singleShare({ { d(2016, 9, 21), 10.0, 88.0 },
+                                                    { d(2017, 9, 21), 10.0, 92.0 } },
+                                                  { { d(2019, 12, 17), 20.0, 111.0, 30.0 } },
+                                                  {});
+        s.dividends = { { d(2018, 3, 7), 5.0 } };
+        s.costs     = { { d(2016, 9, 21), -4.0 } };
+        s.prices    = PortfolioSeriesCalculator::substitutePrices(s);
+
+        const PortfolioSeriesResult r =
+            PortfolioSeriesCalculator::compute({ s }, QDate(), QDate(), /*withPerShareDetail=*/true);
+        QVERIFY(r.sharesWithoutHistory.isEmpty());
+        CMP_MONEY(r.points.last().development, 399.0);
+        CMP_MONEY(r.points.last().marketValue, 0.0);
+        // Zwischen den Käufen gilt der letzte Transaktionskurs: am 2. Kauftag
+        // 10 x 92 (alter Bestand) + 10 x 92 (Kauf, Kaufpreis) = 1840.
+        CMP_MONEY(r.points.at(1).marketValue, 1840.0);
+        QVERIFY(r.sharePoints.last().substitutePrice);
+        // Ersatzkurse werden im Tooltip nicht gekennzeichnet.
+        for (const PortfolioSeriesPoint& p : r.points)
+            QVERIFY(!p.usesCurrentPrice);
+    }
+
+    void test_applyCurrentPrice_sameDayOnSubstituteBecomesRealPrice()
+    {
+        QList<PortfolioPriceEvent> prices = { { d(2026, 4, 30), 62.0, false, true } };
+        QVERIFY(PortfolioSeriesCalculator::applyCurrentPrice(prices, d(2026, 4, 30), 64.0));
+        QVERIFY(prices.first().currentPrice);
+        QVERIFY(!prices.first().substitute);
+    }
 };
 
 QTEST_MAIN(TestPortfolioSeriesCalculator)

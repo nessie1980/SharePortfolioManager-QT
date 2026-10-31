@@ -1979,6 +1979,24 @@ Regressionstests: `test_refresh_setsMaxIntervalCount_basedOnEarliestDailyValue`,
 (`tst_dailyvaluesrepository.cpp`) — siehe TESTING.md.
 
 
+#### Bezugskurs bleibt der Schlusskurs (entschieden 30.10.2026)
+
+Die Portfolio-Charts bewerten seit 30.10.2026 am rechten Rand mit dem
+aktuellen Kurs (siehe "PortfolioChartForm-Details", "Aktueller Kurs am
+rechten Rand"). Für den Aktien-Chart hat Nessie das am 30.10.2026 bewusst
+abgelehnt — sowohl für den Bezugskurs von "Letzter Kauf" und "Letzter
+Verkauf" in der Legende als auch für die Kurve selbst:
+
+- Die Kurve zeigt wahlweise Eröffnung, Hoch, Tief und Schluss. Ein
+  aktueller Kurs ist nur ein einzelner Wert und hätte für die übrigen Linien
+  keinen Tageswert.
+- Die Legende soll zur gezeichneten Kurve passen. Rechnete nur sie mit dem
+  aktuellen Kurs, stimmten Legende und Kurve nicht mehr überein.
+
+Bezugskurs bleibt deshalb `PresenterChart::currentClosingPrice()`, der
+jüngste Schlusskurs. Dass die Legende damit leicht von der Spalte "Aktuelle
+Entwicklung" der Tabellen abweichen kann, ist bekannt und akzeptiert.
+
 #### Vertikale Cursorlinie im Aktien-Chart (ergänzt 17.10.2026, v1.25.0)
 
 Nessies Wunsch: eine vertikale Linie an der Mausposition, die den zugehörigen
@@ -3680,11 +3698,106 @@ künstlich ein.
 Eine Aktie ohne einen einzigen Eintrag in `daily_values` (Update-Typ "Nur
 Kurs" oder "Kein Update") kann zu keinem Stichtag bewertet werden. Sie wird
 vollständig ausgeschlossen — mit allen Käufen, Verkäufen, Dividenden und
-Kosten — und in einer Warnzeile unter dem Chart benannt. Würde nur ihr
+Kosten — und in einer Warnzeile unter dem Chart benannt (bis 31.10.2026,
+siehe "Ersatzkurse für Aktien ohne Tageswerte" unten). Würde nur ihr
 Bestandswert entfallen, ihr Kaufwert aber zählen, zeigte die Kurve einen
 Verlust, den es nicht gibt. Aus demselben Grund trägt eine Aktie an
 Stichtagen vor ihrem ersten Kursdatum nichts bei, auch wenn zu diesem
 Zeitpunkt bereits Käufe verbucht sind.
+
+### Aktueller Kurs am rechten Rand (ergänzt 30.10.2026, v1.29.0)
+
+Bis 30.10.2026 rechneten beide Portfolio-Charts ausschliesslich mit den
+Schlusskursen aus `daily_values`, die Tabellen und Footer dagegen mit dem
+aktuellen Kurs der Aktie. Am rechten Rand lagen Chart und Footer deshalb um
+Bestand × Kursunterschied auseinander; im Tab "Depot- vs. Marktwert"
+erschienen dadurch je Aktie drei Hinweise ("durch Kurs erklärt"). Einen
+fachlichen Grund dafür gab es nicht, der Rechenkern bekam den aktuellen
+Kurs schlicht nicht übergeben.
+
+Nessies Entscheidungen vom 30.10.2026:
+
+- Depotwert- und Marktwert-Chart bewerten am rechten Rand mit dem aktuellen
+  Kurs.
+- Regel, verglichen mit dem jüngsten Tageswert der Aktie: ist der Kursabruf
+  neuer, wird der aktuelle Kurs als zusätzlicher Kurspunkt angehängt; am
+  selben Tag ersetzt er den Schlusskurs; ist er älter, gewinnt der
+  Tageswert.
+- Ein Punkt, an dem mindestens eine Aktie mit Bestand mit ihrem aktuellen
+  Kurs bewertet ist, trägt im Tooltip "(aktueller Kurs)" hinter dem Datum.
+- Der Aktien-Chart (`ViewChart`, auch im `ChartPopup`) bleibt beim
+  Schlusskurs, siehe "ChartForm-Details".
+
+Umsetzung: `ModelPortfolioChart::loadPortfolioInput()` ruft je Aktie
+`PortfolioSeriesCalculator::applyCurrentPrice()` mit `curPrice` und dem
+Datum aus `lastPriceUpdate` (ISO-Zeitstempel des Kursabrufs,
+`ModelPortfolioChart::currentPriceDate()`). `curPrice` liegt bereits in
+heutiger Skala, eine Split-Umrechnung entfällt. Der eingefügte oder
+ersetzte Kurspunkt trägt `PortfolioPriceEvent::currentPrice`; der
+Rechenkern behandelt ihn wie jeden anderen Kurs und meldet über
+`PortfolioSeriesPoint::usesCurrentPrice` bzw.
+`PortfolioSharePoint::currentPrice`, wo er eingeht. Der Presenter reicht das
+als `PortfolioChartPoint::currentPrice` an die View, der Diagnose-Export
+zeigt es im dritten Block in der neuen Spalte "Kursart".
+
+Grenzen:
+
+- Eine Aktie ganz ohne Tageswerte und ohne Transaktionen bleibt
+  ausgeschlossen; ein einzelner aktueller Kurs macht noch keine Historie.
+  Aktien ohne Tageswerte, aber mit Transaktionen, bekommen seit 31.10.2026
+  Ersatzkurse, siehe "Ersatzkurse für Aktien ohne Tageswerte".
+- Fehlt der Zeitstempel oder ist er kein ISO-Datum (z. B. aus einem alten
+  Import), bleibt es beim Schlusskurs.
+- Ein Kursabruf am Wochenende hängt einen Punkt mit dem Wochenend-Datum an,
+  meist mit dem Schlusskurs vom Freitag. Das ist gewollt: der Chart endet
+  damit auf dem Stand der Tabelle.
+- Ist der letzte Tageswert neuer als der letzte Kursabruf, rechnen Tabelle
+  und Chart weiter mit verschiedenen Kursen. Der Abgleich im Bericht und im
+  Tab führt das wie bisher als "durch Kurs erklärt".
+
+### Ersatzkurse für Aktien ohne Tageswerte (ergänzt 31.10.2026, v1.29.0)
+
+Der Ausschluss oben war zu streng. Aufgefallen an einem Sparplan-Fonds in
+Nessies Depot (39 Käufe 09/2016–10/2019, verkauft 12/2019, keine
+Tageswerte): seine Komplette Entwicklung von 1.279,86 EUR fehlte dem
+Depotwert-Chart nicht nur in der Historie, sondern auch am rechten Rand —
+Footer 236.129,24 EUR, Chart 234.849,38 EUR. Im Marktwert-Chart fehlte der
+Fonds während der Haltedauer. Nach dem Verkauf braucht es aber gar keinen
+Kurs mehr, und während der Haltedauer gibt es die Kurse der eigenen
+Transaktionen.
+
+Nessies Entscheidungen vom 31.10.2026:
+
+- Eine Aktie ohne Tageswerte wird mit den Kursen ihrer eigenen Käufe und
+  Verkäufe bewertet statt ausgeschlossen.
+- Gekennzeichnet wird das nur in Berechnungsbericht, Tab "Depot- vs.
+  Marktwert" und Diagnose-Export, nicht im Tooltip der Charts.
+- Die Warnzeile unter den Charts entfällt.
+- Im Bericht und im Tab bleibt je solcher Aktie ein Hinweis "keine
+  Tageswerte, in den Charts mit Kauf- und Verkaufskursen bewertet
+  (Ersatzkurse)" — statt der bisherigen Abweichung.
+
+Umsetzung: `PortfolioSeriesCalculator::substitutePrices()` bildet je
+Transaktionstag einen Kurspunkt, bei mehreren Transaktionen am selben Tag
+den nach Stückzahl gewichteten Mittelwert; Einträge ohne gültiges Datum oder
+mit Stückzahl bzw. Kurs <= 0 entfallen. Die Punkte tragen
+`PortfolioPriceEvent::substitute`. `ModelPortfolioChart::loadPortfolioInput()`
+setzt sie ein, wenn die Kursliste leer ist; Käufe und Verkäufe liegen dort
+bereits in heutiger Skala. Danach ergänzt `applyCurrentPrice()` wie bei
+allen Aktien den aktuellen Kurs; ersetzt er einen Ersatzkurs am selben Tag,
+ist der Punkt danach ein echter Kurs. Der Rechenkern ist unverändert.
+
+Wirkung: zwischen zwei Transaktionen gilt der letzte Transaktionskurs, die
+Linie verläuft für diese Aktie in Stufen (Näherung). Nach dem letzten Verkauf
+ist ihr Beitrag exakt — Realisiertes plus Dividenden minus Kosten — und der
+Depotwert-Chart endet auf dem Footer. Ausgeschlossen bleibt nur eine Aktie
+ganz ohne Tageswerte und ohne Transaktionen; sie hat nichts beizutragen.
+
+`IViewPortfolioChart::setWarning()`, die Warnzeile in `ViewPortfolioChart`
+und `PresenterPortfolioChart::buildWarningText()` sind entfernt. Die
+Startwarnung für Aktien im Bestand ohne Tageswerte
+(`MainWindow::buildDailyValuesWarningMessage()`) bleibt, ihr Text sagt jetzt,
+dass solche Positionen nur angenähert bewertet werden.
 
 ### Ungültige Datumsangaben (Bugfix 06.08.2026)
 
@@ -3729,7 +3842,10 @@ Entwicklung in Euro und Prozent.
 
 Ein dritter Block schlüsselt jede Aktie an jedem Stichtag einzeln auf:
 gehaltene Stückzahl, verwendeter Schlusskurs, Bestandswert, Kaufwert
-gehalten, realisierter Gewinn, Dividenden und Kosten. Er entsteht nur, wenn
+gehalten, realisierter Gewinn, Dividenden und Kosten, seit 30.10.2026
+zusätzlich die Spalte "Kursart": "Schluss" (Tageswert), "aktuell" (aktueller
+Kurs, siehe "Aktueller Kurs am rechten Rand") oder "Ersatz" (Kurs aus Kauf
+oder Verkauf, siehe "Ersatzkurse für Aktien ohne Tageswerte"). Er entsteht nur, wenn
 `PortfolioSeriesCalculator::compute()` mit `withPerShareDetail` aufgerufen
 wird, da er Stichtage mal Aktien Zeilen erzeugt.
 
@@ -3869,8 +3985,9 @@ Kosten, Steuern, Dividenden und Verkaufserlöse fliessen nicht ein. Am Kauftag
 zählen die an diesem Tag gekauften Stücke mit ihrem Kaufpreis, ab dem
 nächsten Stichtag mit dem Schlusskurs; bei Interval Woche/Monat/Jahr fällt
 ein Kauftag nur selten genau auf einen Stichtag. Aktien ohne Tageswerte
-fallen heraus und stehen in der Warnzeile, vor ihrem ersten Tageswert trägt
-eine Aktie nichts bei — beides wie im Depotwert-Chart.
+werden seit 31.10.2026 mit Ersatzkursen aus ihren Transaktionen bewertet
+(vorher fielen sie heraus und standen in einer Warnzeile), vor ihrem ersten
+Kurspunkt trägt eine Aktie nichts bei — beides wie im Depotwert-Chart.
 
 Rechenkern: `PortfolioSeriesCalculator` liefert je Punkt zusätzlich
 `marketValue` (siehe dortige Klassendoku "Marktwert-Linie"), ohne
@@ -4218,7 +4335,12 @@ Aufbau:
 - Teil 3: zuerst die echten Abweichungen, darunter getrennt die Hinweise.
 
 Kursunterschied: Die Tabelle bewertet mit dem aktuellen Kurs der Aktie, der
-Chart mit dem letzten Tageswert. Der Unterschied selbst ist erwartbar und
+Chart mit dem letzten Tageswert. Seit 30.10.2026 bewertet auch der Chart am
+rechten Rand mit dem aktuellen Kurs (siehe "PortfolioChartForm-Details",
+"Aktueller Kurs am rechten Rand"); ein Unterschied bleibt nur, wenn der
+letzte Tageswert neuer ist als der letzte Kursabruf. Die Chart-Werte je
+Aktie heissen im Bericht seither "Kurs (aktueller Kurs)" bzw. "Kurs
+(Schlusskurs, letzter Tageswert)". Der Unterschied selbst ist erwartbar und
 wird nur als Hinweis geführt. Er überträgt sich auf Marktwert und
 Entwicklung; der Bericht rechnet deshalb je Aktie den Kurseffekt aus
 (Chart-Bestand × (aktueller Kurs − letzter Tageswert)). Geht eine Differenz
@@ -4243,6 +4365,22 @@ auf, steht sie als "durch Aktien o. Tageswerte erklärt" bei den Hinweisen;
 bleibt ein Rest, nennt die Abweichung beide Anteile und den Rest. Der Befund
 "keine Tageswerte, fehlt in beiden Charts" je Aktie bleibt eine Abweichung,
 weil er auf fehlende Daten hinweist.
+
+Seit 31.10.2026 (v1.29.0) betrifft das nur noch Aktien ohne Tageswerte UND
+ohne Transaktionen: alle übrigen bewerten die Charts mit Ersatzkursen (siehe
+"PortfolioChartForm-Details", "Ersatzkurse für Aktien ohne Tageswerte"). Sie
+stehen in Teil 3 als Hinweis "keine Tageswerte, in den Charts mit Kauf- und
+Verkaufskursen bewertet (Ersatzkurse)", der Chartwert heisst "Kurs
+(Ersatzkurs aus Kauf/Verkauf)". Für den Fonds aus dem Testdepot entfallen
+damit die Abweichung und der Gesamt-Hinweis.
+
+Kurs-Abgleich ohne Bestand (31.10.2026, Nessies Entscheidung, Punkt A): Sind
+Bestand in Tabelle und Chart 0, geht der Kurs in keinen Wert ein. Die Zeile
+"Kurs (Tabelle / Chart)" steht dann mit Ergebnis "ohne Bestand" im Abgleich
+und erscheint nicht in Teil 3. Anlass waren 13 vollständig verkaufte Aktien
+in Nessies Depot, deren gespeicherter Kurs nicht mehr abgerufen wird,
+während die Tageswerte weiterlaufen (z. B. 27,52 gegen Schlusskurs 167,70).
+Die übrigen vier Abgleichzeilen prüfen unverändert.
 
 Umsetzung: `CalculationReport` (`app/utils/CalculationReport.*`), zweiteilig
 wie Presenter und Rechenkern der Charts. `collect()` liest alle Aktien, ruft

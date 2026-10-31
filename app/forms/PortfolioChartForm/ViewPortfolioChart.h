@@ -34,8 +34,9 @@ class QWheelEvent;
  * Layout: Chart links, rechts nur der Zeitraum-Block (Start-Datum, Interval,
  * Anzahl). Eine Legende gibt es bewusst nicht — es wird genau eine Linie
  * dargestellt, eine Farbzuordnung wäre also inhaltsleer (Nessies Vorgabe
- * 05.08.2026). Unterhalb des Charts liegt eine Warnzeile, die nur erscheint,
- * wenn Aktien ohne Tageswert-Historie ausgeschlossen wurden.
+ * 05.08.2026). Die frühere Warnzeile unter dem Chart für Aktien ohne
+ * Tageswert-Historie ist seit 31.10.2026 entfallen: solche Aktien werden mit
+ * Ersatzkursen aus ihren Käufen und Verkäufen bewertet.
  *
  * Die Kurve wird abschnittsweise nach Vorzeichen eingefärbt: Abschnitte über
  * der Null-Linie grün, darunter rot. An jedem Vorzeichenwechsel wird der
@@ -92,7 +93,6 @@ public:
     void setChartData(const PortfolioChartData& chartData) override;
     void showEmptyChart(const QString& message) override;
     void showCalculating(const QString& message) override;
-    void setWarning(const QString& message) override;
     void setRangeInfo(const QString& infoText) override;
     void showError(const QString& message) override;
 
@@ -159,7 +159,6 @@ private:
     QChart*         m_chart             = nullptr;
     QLabel*         m_emptyLabel        = nullptr;
     QLabel*         m_calculatingLabel  = nullptr;
-    QLabel*         m_warningLabel      = nullptr;
     QDateTimeAxis*  m_xAxis             = nullptr;
     QValueAxis*     m_yAxis             = nullptr;
 

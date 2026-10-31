@@ -11,6 +11,8 @@
 #include "../../models/ShareSplitObject.h"
 #include "../../utils/ShareSplitAdjuster.h"
 
+#include <QDateTime>
+
 // -- loadPortfolioInput --------------------------------------------------------
 
 QList<PortfolioShareSeriesInput> ModelPortfolioChart::loadPortfolioInput() const
@@ -74,10 +76,37 @@ QList<PortfolioShareSeriesInput> ModelPortfolioChart::loadPortfolioInput() const
                 daily.date(),
                 ShareSplitAdjuster::adjustedHistoryPrice(daily.closingPrice(), splits, daily.date()) });
 
+        // Ersatzkurse für Aktien ohne Tageswerte (ergänzt 31.10.2026, Nessies
+        // Entscheidung): statt die Aktie aus beiden Charts auszuschliessen,
+        // wird sie mit den Kursen ihrer eigenen Käufe und Verkäufe bewertet.
+        // Käufe und Verkäufe liegen oben bereits in heutiger Skala vor.
+        if (input.prices.isEmpty())
+            input.prices = PortfolioSeriesCalculator::substitutePrices(input);
+
+        // Aktueller Kurs am rechten Rand (ergänzt 30.10.2026, Nessies
+        // Entscheidung): dieselbe Bewertung wie die Tabellen, damit beide
+        // Charts auf den Footer-Werten enden. Datiert auf den letzten
+        // Kursabruf; curPrice liegt bereits in heutiger Skala, eine
+        // Split-Umrechnung ist nicht nötig. Regel siehe
+        // PortfolioSeriesCalculator::applyCurrentPrice().
+        PortfolioSeriesCalculator::applyCurrentPrice(
+            input.prices, currentPriceDate(share), share.curPrice());
+
         result.append(input);
     }
 
     return result;
+}
+
+// -- currentPriceDate ----------------------------------------------------------
+
+QDate ModelPortfolioChart::currentPriceDate(const ShareObject& share)
+{
+    // MainWindow schreibt last_price_update als ISO-Zeitstempel
+    // ("2026-10-30T21:45:12"). Leere oder anders formatierte Werte, z. B. aus
+    // einem alten Import, ergeben ein ungültiges Datum — dann bleibt es beim
+    // Schlusskurs.
+    return QDateTime::fromString(share.lastPriceUpdate(), Qt::ISODate).date();
 }
 
 // -- earliestRelevantDate ------------------------------------------------------

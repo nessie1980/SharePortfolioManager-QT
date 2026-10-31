@@ -291,6 +291,54 @@ private slots:
         QVERIFY(t.checks.isEmpty());
     }
 
+    // ── Punkt A und Ersatzkurse (ergänzt 31.10.2026) ─────────────────────
+
+    void test_shareChecks_soldShare_priceDifferenceIsNotReported()
+    {
+        // Vollständig verkauft, gespeicherter Kurs veraltet (Fall ADIDAS aus
+        // Nessies Bericht: 27,52 gegen Schlusskurs 167,70). Ohne Bestand
+        // wirkt der Kurs auf keinen Wert — die Zeile bleibt, ohne Meldung.
+        CalculationReportShare s = consistentShare();
+        s.values.volume   = 0.0;
+        s.values.curValue = 0.0;
+        s.values.curPrice = 27.518;
+        s.chart.volume        = 0.0;
+        s.chart.price         = 167.70;
+        s.chart.holdingsValue = 0.0;
+        s.chart.marketValue   = 0.0;
+        s.chart.purchaseValueHeld = 0.0;
+        s.values.purchaseValue = 0.0;
+        s.chart.realizedGain  = 134.0 + 10.0; // Entwicklung wie in der Tabelle
+        s.chart.costs         = 10.0;
+
+        const QList<CalculationCheck> checks = CalculationBreakdown::shareChecks(s);
+        QCOMPARE(checks.at(1).label, QStringLiteral("Kurs (Tabelle / Chart)"));
+        QVERIFY(checks.at(1).result == CalculationCheckResult::Ok);
+        QCOMPARE(checks.at(1).resultText, QStringLiteral("ohne Bestand"));
+
+        const CalculationFindings f = CalculationBreakdown::shareFindings(s);
+        QVERIFY2(f.deviations.isEmpty() && f.hints.isEmpty(),
+                 qPrintable((f.deviations + f.hints).join(QLatin1Char('\n'))));
+    }
+
+    void test_shareChecks_heldShare_priceDifferenceStaysHint()
+    {
+        CalculationReportShare s = consistentShare();
+        s.chart.price = 61.5;
+        QVERIFY(CalculationBreakdown::shareChecks(s).at(1).result == CalculationCheckResult::Hint);
+    }
+
+    void test_shareFindings_substitutePricesIsHintNotDeviation()
+    {
+        CalculationReportShare s = consistentShare();
+        s.substitutePrices = true;
+
+        const CalculationFindings f = CalculationBreakdown::shareFindings(s);
+        QVERIFY(f.deviations.isEmpty());
+        QCOMPARE(f.hints, QStringList({ QStringLiteral("Aktie A: keine Tageswerte, in den Charts mit "
+                                                       "Kauf- und Verkaufskursen bewertet (Ersatzkurse)") }));
+    }
+
     void test_priceEffect_heldVolumeTimesPriceDifference()
     {
         CalculationReportShare s = consistentShare();

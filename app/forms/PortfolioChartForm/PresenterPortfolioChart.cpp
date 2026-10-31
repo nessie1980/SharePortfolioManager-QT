@@ -38,13 +38,9 @@ void PresenterPortfolioChart::loadAndDisplay()
 
     if (!m_hasData) {
         m_view->setMaxIntervalCount(1);
-        m_view->showEmptyChart(tr("Keine Tageswerte vorhanden."));
-
-        QStringList names;
-        for (const PortfolioShareSeriesInput& share : m_input)
-            names.append(share.name.isEmpty() ? share.shareGuid : share.name);
-        m_view->setWarning(buildWarningText(names));
-
+        // Seit 31.10.2026 nur noch ohne jede Transaktion und ohne Tageswerte
+        // erreichbar — Aktien ohne Tageswerte bekommen sonst Ersatzkurse.
+        m_view->showEmptyChart(tr("Keine Kursdaten vorhanden."));
         m_view->setRangeInfo(QString());
         return;
     }
@@ -104,8 +100,6 @@ void PresenterPortfolioChart::refresh()
     const PortfolioSeriesResult series =
         PortfolioSeriesCalculator::compute(m_input, rangeStart, rangeEnd);
 
-    m_view->setWarning(buildWarningText(series.sharesWithoutHistory));
-
     if (series.points.isEmpty()) {
         m_view->showEmptyChart(tr("Keine Tageswerte im gewählten Zeitraum."));
         m_view->setRangeInfo(buildRangeInfo(rangeStart, rangeEnd, {}, m_mode));
@@ -117,7 +111,8 @@ void PresenterPortfolioChart::refresh()
     for (const PortfolioSeriesPoint& point : series.points)
         data.points.append(PortfolioChartPoint{ point.date, point.development,
                                                 point.developmentPct,
-                                                point.marketValue });
+                                                point.marketValue,
+                                                point.usesCurrentPrice });
 
     m_view->setChartData(data);
     m_view->setRangeInfo(buildRangeInfo(rangeStart, rangeEnd, data.points, m_mode));
@@ -159,19 +154,6 @@ int PresenterPortfolioChart::computeMaxIntervalCount(const QDate& rangeEnd,
         ++count;
 
     return std::max(1, count);
-}
-
-// -- buildWarningText ----------------------------------------------------------
-
-QString PresenterPortfolioChart::buildWarningText(const QStringList& shareNames)
-{
-    if (shareNames.isEmpty())
-        return QString();
-
-    // Bewusst ohne %n-Pluralform: der Satz liest sich für eine wie für
-    // mehrere Aktien gleich gut, und die Übersetzungsdateien bleiben einfach.
-    return tr("Aktien ohne Tageswert-Historie sind im Chart nicht enthalten: %1")
-           .arg(shareNames.join(QStringLiteral(", ")));
 }
 
 // -- buildRangeInfo ------------------------------------------------------------
@@ -298,8 +280,11 @@ QString PresenterPortfolioChart::buildDiagnosticsCsv() const
     // Der teuerste Block — Stichtage mal Aktien Zeilen. Bei einer
     // auffälligen Stelle im Kurvenverlauf lohnt es sich, den Zeitraum vorher
     // eng um das fragliche Datum zu legen (z.B. Interval "Tag", Anzahl 5).
+    // Spalte "Kursart" (ergänzt 30./31.10.2026): woher "Kurs" stammt —
+    // Schlusskurs aus den Tageswerten, aktueller Kurs der Aktie oder
+    // Ersatzkurs aus Kauf/Verkauf bei Aktien ohne Tageswerte.
     csv += tr("Datum;Aktie;Stueck;Kurs;Bestandswert;Kaufwert gehalten;"
-              "Realisierter Gewinn;Dividenden;Kosten;Marktwert") + QLatin1Char('\n');
+              "Realisierter Gewinn;Dividenden;Kosten;Marktwert;Kursart") + QLatin1Char('\n');
 
     for (const PortfolioSharePoint& detail : series.sharePoints) {
         const QStringList fields = {
@@ -312,7 +297,10 @@ QString PresenterPortfolioChart::buildDiagnosticsCsv() const
             money(detail.realizedGain),
             money(detail.dividends),
             money(detail.costs),
-            money(detail.marketValue)
+            money(detail.marketValue),
+            detail.currentPrice      ? tr("aktuell")
+            : detail.substitutePrice ? tr("Ersatz")
+                                     : tr("Schluss")
         };
         csv += fields.join(QLatin1Char(';')) + QLatin1Char('\n');
     }

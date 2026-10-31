@@ -56,7 +56,6 @@ public:
     QString            lastEmptyMessage;
     bool               emptyShown = false;
     QString            lastCalculatingMessage;
-    QString            lastWarning;
     QString            lastRangeInfo;
     QString            lastError;
 
@@ -101,12 +100,6 @@ public:
     {
         lastCalculatingMessage = message;
         callLog << QStringLiteral("showCalculating");
-    }
-
-    void setWarning(const QString& message) override
-    {
-        lastWarning = message;
-        callLog << QStringLiteral("setWarning");
     }
 
     void setRangeInfo(const QString& infoText) override
@@ -239,11 +232,15 @@ private slots:
 
         QVERIFY(view.emptyShown);
         QVERIFY(!view.chartDataSet);
-        QVERIFY(view.lastWarning.isEmpty());
         QVERIFY(view.lastRangeInfo.isEmpty());
     }
 
-    void test_loadAndDisplay_onlySharesWithoutHistory_warnsAndShowsEmpty()
+    // Die Warnzeile unter dem Chart ist am 31.10.2026 entfallen (Nessies
+    // Entscheidung): ModelPortfolioChart bewertet Aktien ohne Tageswerte mit
+    // Ersatzkursen. Ohne jeden Kurs, also auch ohne Transaktion, bleibt nur
+    // der leere Chart.
+
+    void test_loadAndDisplay_onlySharesWithoutPrices_showsEmpty()
     {
         FakeViewPortfolioChart  view;
         FakeModelPortfolioChart model;
@@ -254,10 +251,10 @@ private slots:
 
         QVERIFY(view.emptyShown);
         QVERIFY(!view.chartDataSet);
-        QVERIFY(view.lastWarning.contains(QStringLiteral("Ohne Historie")));
+        QCOMPARE(view.lastEmptyMessage, QStringLiteral("Keine Kursdaten vorhanden."));
     }
 
-    void test_warningNamesExcludedShares()
+    void test_shareWithoutPrices_isLeftOutSilently()
     {
         FakeViewPortfolioChart  view;
         FakeModelPortfolioChart model;
@@ -269,22 +266,8 @@ private slots:
         presenter.loadAndDisplay();
 
         QVERIFY(view.chartDataSet);
-        QVERIFY(view.lastWarning.contains(QStringLiteral("Stille Aktie")));
-        QVERIFY(!view.lastWarning.contains(QStringLiteral("Aktie A")));
-    }
-
-    void test_warningIsClearedWhenAllSharesHaveHistory()
-    {
-        FakeViewPortfolioChart  view;
-        FakeModelPortfolioChart model;
-        model.m_input    = { risingShare() };
-        model.m_earliest = d(2026, 6, 1);
-        view.m_intervalCount = 5;
-
-        PresenterPortfolioChart presenter(&view, &model);
-        presenter.loadAndDisplay();
-
-        QVERIFY(view.lastWarning.isEmpty());
+        // Nur Aktie A trägt bei: 1000 am Kauftag, dann 1100.
+        QVERIFY(qAbs(view.lastChartData.points.constLast().marketValue - 1100.0) < 0.005);
     }
 
     // ── Refresh / reload ─────────────────────────────────────────────────
@@ -439,18 +422,6 @@ private slots:
 
     // ── Textaufbau ───────────────────────────────────────────────────────
 
-    void test_buildWarningText_emptyForEmptyList()
-    {
-        QVERIFY(PresenterPortfolioChart::buildWarningText({}).isEmpty());
-    }
-
-    void test_buildWarningText_joinsNames()
-    {
-        const QString text = PresenterPortfolioChart::buildWarningText(
-            { QStringLiteral("A"), QStringLiteral("B") });
-        QVERIFY(text.contains(QStringLiteral("A, B")));
-    }
-
     void test_buildRangeInfo_withoutPointsShowsOnlyRange()
     {
         const QString text = PresenterPortfolioChart::buildRangeInfo(
@@ -502,6 +473,29 @@ private slots:
         QCOMPARE(view.lastChartData.points.size(), 2);
         QVERIFY(qAbs(view.lastChartData.points.constFirst().marketValue - 1000.0) < 0.005);
         QVERIFY(qAbs(view.lastChartData.points.constLast().marketValue  - 1100.0) < 0.005);
+    }
+
+    void test_chartData_carriesCurrentPriceMarker()
+    {
+        // Ergänzt 30.10.2026: ist der letzte Kurs der aktuelle Kurs, trägt
+        // der letzte Punkt die Kennzeichnung für den Tooltip, die Punkte
+        // davor nicht.
+        PortfolioShareSeriesInput share = risingShare();
+        share.prices.last().currentPrice = true;
+
+        FakeViewPortfolioChart  view;
+        FakeModelPortfolioChart model;
+        model.m_input    = { share };
+        model.m_earliest = d(2026, 6, 1);
+        view.m_intervalCount = 5;
+
+        PresenterPortfolioChart presenter(&view, &model, PortfolioChartMode::MarketValue);
+        presenter.loadAndDisplay();
+
+        QVERIFY(view.chartDataSet);
+        QCOMPARE(view.lastChartData.points.size(), 2);
+        QVERIFY(!view.lastChartData.points.constFirst().currentPrice);
+        QVERIFY(view.lastChartData.points.constLast().currentPrice);
     }
 
     void test_marketMode_rangeInfoShowsMarketValueWithoutPercent()
@@ -686,6 +680,113 @@ private slots:
         QVERIFY(qAbs(share.buys.first().price  -  50.15) < 1e-6);
         QCOMPARE(share.prices.size(), 1);
         QVERIFY(qAbs(share.prices.first().closingPrice - 50.15) < 1e-6);
+    }
+
+    // ── Aktueller Kurs am rechten Rand (ergänzt 30.10.2026) ──────────────
+    // Das Model hängt den aktuellen Kurs der Aktie an, datiert auf den
+    // letzten Kursabruf. Die Regel selbst prüft tst_portfolioseriescalculator.
+
+    void test_loadPortfolioInput_currentPriceNewerThanDailyValue_isAppended()
+    {
+        const QString shareGuid = insertTestShare();
+        DailyValuesRepository dvRepo;
+        dvRepo.upsert(DailyValuesObject(shareGuid, QDate(2026, 10, 29),
+                                        100.0, 100.0, 101.0, 99.0, 0.0));
+        ShareRepository shareRepo;
+        QVERIFY(shareRepo.updatePrice(shareGuid, 104.5, 100.0,
+                                      QStringLiteral("2026-10-30T21:45:12")));
+
+        ModelPortfolioChart model;
+        const QList<PortfolioShareSeriesInput> input = model.loadPortfolioInput();
+
+        QCOMPARE(input.size(), 1);
+        const QList<PortfolioPriceEvent>& prices = input.first().prices;
+        QCOMPARE(prices.size(), 2);
+        QCOMPARE(prices.last().date, QDate(2026, 10, 30));
+        QCOMPARE(prices.last().closingPrice, 104.5);
+        QVERIFY(prices.last().currentPrice);
+        QVERIFY(!prices.first().currentPrice);
+    }
+
+    void test_loadPortfolioInput_dailyValueNewerThanCurrentPrice_isKept()
+    {
+        const QString shareGuid = insertTestShare();
+        DailyValuesRepository dvRepo;
+        dvRepo.upsert(DailyValuesObject(shareGuid, QDate(2026, 10, 30),
+                                        100.0, 100.0, 101.0, 99.0, 0.0));
+        ShareRepository shareRepo;
+        QVERIFY(shareRepo.updatePrice(shareGuid, 104.5, 100.0,
+                                      QStringLiteral("2026-10-28T09:00:00")));
+
+        ModelPortfolioChart model;
+        const QList<PortfolioPriceEvent> prices = model.loadPortfolioInput().first().prices;
+        QCOMPARE(prices.size(), 1);
+        QCOMPARE(prices.first().closingPrice, 100.0);
+        QVERIFY(!prices.first().currentPrice);
+    }
+
+    void test_loadPortfolioInput_noPriceTimestamp_keepsDailyValues()
+    {
+        // Alter Import ohne Zeitstempel des Kursabrufs: kein Datum, also
+        // bleibt es beim Schlusskurs.
+        const QString shareGuid = insertTestShare();
+        DailyValuesRepository dvRepo;
+        dvRepo.upsert(DailyValuesObject(shareGuid, QDate(2026, 10, 29),
+                                        100.0, 100.0, 101.0, 99.0, 0.0));
+        ShareRepository shareRepo;
+        QVERIFY(shareRepo.updatePrice(shareGuid, 104.5, 100.0, QString()));
+
+        ModelPortfolioChart model;
+        const QList<PortfolioPriceEvent> prices = model.loadPortfolioInput().first().prices;
+        QCOMPARE(prices.size(), 1);
+        QVERIFY(!prices.first().currentPrice);
+    }
+
+    void test_loadPortfolioInput_withoutDailyValues_usesSubstitutePrices()
+    {
+        // Ergänzt 31.10.2026 (Nessies Entscheidung, Fall Sparplan-Fonds):
+        // ohne Tageswerte bekommt die Aktie Kurspunkte aus Kauf und Verkauf
+        // statt aus beiden Charts zu fallen.
+        const QString shareGuid = insertTestShare();
+        BuyRepository buyRepo;
+        buyRepo.insert(BuyObject(QStringLiteral("buy-1"), shareGuid, QString(), QStringLiteral("ord-1"),
+                                 QStringLiteral("2016-09-21T10:00:00"), 10.0, 0.0, 88.0));
+        SaleRepository saleRepo;
+        saleRepo.insert(SaleObject(QStringLiteral("sale-1"), shareGuid, QString(), QStringLiteral("ord-s1"),
+                                   QStringLiteral("2019-12-17T10:00:00"), 10.0, 111.0, {}));
+
+        ModelPortfolioChart model;
+        const QList<PortfolioPriceEvent> prices = model.loadPortfolioInput().first().prices;
+        QCOMPARE(prices.size(), 2);
+        QCOMPARE(prices.at(0).date, QDate(2016, 9, 21));
+        QCOMPARE(prices.at(0).closingPrice, 88.0);
+        QCOMPARE(prices.at(1).date, QDate(2019, 12, 17));
+        QCOMPARE(prices.at(1).closingPrice, 111.0);
+        QVERIFY(prices.at(0).substitute && prices.at(1).substitute);
+    }
+
+    void test_loadPortfolioInput_withDailyValues_noSubstitutePrices()
+    {
+        const QString shareGuid = insertTestShare();
+        BuyRepository buyRepo;
+        buyRepo.insert(BuyObject(QStringLiteral("buy-1"), shareGuid, QString(), QStringLiteral("ord-1"),
+                                 QStringLiteral("2024-01-01T10:00:00"), 10.0, 0.0, 100.0));
+        DailyValuesRepository dvRepo;
+        dvRepo.upsert(DailyValuesObject(shareGuid, QDate(2024, 1, 2), 101.0, 101.0, 101.0, 101.0, 0.0));
+
+        ModelPortfolioChart model;
+        const QList<PortfolioPriceEvent> prices = model.loadPortfolioInput().first().prices;
+        QCOMPARE(prices.size(), 1);
+        QVERIFY(!prices.first().substitute);
+    }
+
+    void test_currentPriceDate_readsIsoTimestamp()
+    {
+        ShareObject share(QStringLiteral("g"), QString(), QString(), QStringLiteral("X"));
+        share.setLastPriceUpdate(QStringLiteral("2026-10-30T21:45:12"));
+        QCOMPARE(ModelPortfolioChart::currentPriceDate(share), QDate(2026, 10, 30));
+        share.setLastPriceUpdate(QStringLiteral("30.10.2026 21:45"));
+        QVERIFY(!ModelPortfolioChart::currentPriceDate(share).isValid());
     }
 
     void test_loadPortfolioInput_split_saleAfterSplitStaysInTodayScale()

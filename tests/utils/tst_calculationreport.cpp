@@ -18,6 +18,7 @@
 #include <QFile>
 
 #include "../../app/utils/CalculationReport.h"
+#include "../../app/utils/CalculationBreakdown.h"
 #include "../../app/core/Database.h"
 #include "../../app/repositories/ShareRepository.h"
 #include "../../app/repositories/BuyRepository.h"
@@ -655,6 +656,90 @@ private slots:
 
         const QString report = CalculationReport::build(input);
         QVERIFY(report.contains(QStringLiteral("AKTIE: DB Aktie")));
+    }
+
+    void test_collect_currentPriceEndsChartOnTableValue()
+    {
+        // Ergänzt 30.10.2026: die Charts bewerten am rechten Rand mit dem
+        // aktuellen Kurs, wenn der Kursabruf nicht älter ist als der letzte
+        // Tageswert. Tabelle und Chart stimmen dann überein, der
+        // Kurs-Hinweis entfällt. Die Aktie aus dem Test davor liegt noch in
+        // der Datenbank; geprüft wird nur die neue.
+        const QString guid = QStringLiteral("share-db-2");
+        QVERIFY(ShareRepository().insert(ShareObject(guid, QStringLiteral("DB0002"), QString(),
+                                                      QStringLiteral("DB Aktie 2"))));
+        QVERIFY(ShareRepository().updatePrice(guid, 120.0, 110.0,
+                                              QStringLiteral("2026-02-03T18:00:00")));
+        QVERIFY(BuyRepository().insert(BuyObject(QStringLiteral("db-b2"), guid, QString(),
+                                                 QStringLiteral("o2"), iso(d(2026, 1, 1)),
+                                                 10.0, 0.0, 100.0)));
+        DailyValuesRepository dv;
+        dv.upsert(DailyValuesObject(guid, d(2026, 1, 1), 100.0, 100.0, 100.0, 100.0, 0.0));
+        dv.upsert(DailyValuesObject(guid, d(2026, 2, 1), 110.0, 110.0, 110.0, 110.0, 0.0));
+
+        const CalculationReportInput input =
+            CalculationReport::collect(QDateTime::currentDateTime(), QStringLiteral(":memory:"));
+
+        const CalculationReportShare* s = nullptr;
+        for (const CalculationReportShare& candidate : input.shares)
+            if (candidate.share.guid() == guid)
+                s = &candidate;
+        QVERIFY(s);
+        QCOMPARE(s->chart.date, d(2026, 2, 3));
+        QVERIFY(s->chart.currentPrice);
+        QVERIFY(qAbs(s->chart.price - 120.0) < 1e-9);
+        QVERIFY(qAbs(s->chart.marketValue - 1200.0) < 0.005);
+        QVERIFY(qAbs(s->chart.marketValue - s->values.curValue) < 0.005);
+
+        CalculationReportInput only = input;
+        only.shares = { *s };
+        const QString report = CalculationReport::build(only);
+        QVERIFY(report.contains(QStringLiteral("Kurs (aktueller Kurs)")));
+        const QString part3 = partThree(report);
+        QVERIFY2(!part3.contains(QStringLiteral("DB Aktie 2: Kurs")), qPrintable(part3));
+    }
+
+    void test_collect_shareWithoutDailyValues_usesSubstitutePrices()
+    {
+        // Ergänzt 31.10.2026, Fall Sparplan-Fonds aus Nessies Bericht,
+        // verkleinert: ohne Tageswerte bewerten die Charts die Aktie mit den
+        // Kursen ihrer Käufe und Verkäufe. Nach dem Verkauf endet ihr
+        // Beitrag im Depotwert-Chart genau auf der Kompletten Entwicklung der
+        // Tabelle; statt der Abweichung "fehlt in beiden Charts" bleibt ein
+        // Hinweis.
+        const QString guid = QStringLiteral("share-db-3");
+        QVERIFY(ShareRepository().insert(ShareObject(guid, QStringLiteral("DB0003"), QString(),
+                                                      QStringLiteral("DB Fonds"))));
+        QVERIFY(BuyRepository().insert(BuyObject(QStringLiteral("db-b3"), guid, QString(),
+                                                 QStringLiteral("o3"), iso(d(2016, 9, 21)),
+                                                 10.0, 10.0, 88.0)));
+        QVERIFY(SaleRepository().insert(SaleObject(QStringLiteral("db-s3"), guid, QString(),
+                                                   QStringLiteral("o4"), iso(d(2019, 12, 17)),
+                                                   10.0, 111.0, {})));
+
+        const CalculationReportInput input =
+            CalculationReport::collect(QDateTime::currentDateTime(), QStringLiteral(":memory:"));
+        const CalculationReportShare* s = nullptr;
+        for (const CalculationReportShare& candidate : input.shares)
+            if (candidate.share.guid() == guid)
+                s = &candidate;
+        QVERIFY(s);
+        QVERIFY(!s->chartExcluded);
+        QVERIFY(s->substitutePrices);
+        QVERIFY(s->chart.substitutePrice);
+        // 10 x 111 - 10 x 88 = 230, in Tabelle und Chart gleich
+        QVERIFY(qAbs(s->values.completeProfitLoss - 230.0) < 0.005);
+        QVERIFY(qAbs(CalculationBreakdown::chartDevelopment(s->chart) - 230.0) < 0.005);
+
+        CalculationReportInput only = input;
+        only.shares = { *s };
+        const QString report = CalculationReport::build(only);
+        QVERIFY(report.contains(QStringLiteral("Kurs (Ersatzkurs aus Kauf/Verkauf)")));
+        const QString part3 = partThree(report);
+        QVERIFY2(part3.contains(QStringLiteral("DB Fonds: keine Tageswerte, in den Charts mit "
+                                               "Kauf- und Verkaufskursen bewertet (Ersatzkurse)")),
+                 qPrintable(part3));
+        QVERIFY2(!part3.contains(QStringLiteral("fehlt in beiden Charts")), qPrintable(part3));
     }
 
     // ── writeToFile() ────────────────────────────────────────────────────

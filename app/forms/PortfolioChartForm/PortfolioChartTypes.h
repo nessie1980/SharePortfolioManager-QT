@@ -43,6 +43,10 @@ struct PortfolioChartPoint
     double development    = 0.0;  ///< Entwicklung in Euro
     double developmentPct = 0.0;  ///< Dieselbe Entwicklung in Prozent
     double marketValue    = 0.0;  ///< Marktwert in Euro (ergänzt 17.10.2026)
+    /// Mindestens eine Aktie ist an diesem Stichtag mit ihrem aktuellen Kurs
+    /// statt eines Schlusskurses bewertet (ergänzt 30.10.2026); die View
+    /// kennzeichnet den Punkt im Tooltip mit "(aktueller Kurs)".
+    bool   currentPrice   = false;
 };
 
 /**

@@ -88,13 +88,6 @@ public:
                                        const QDate& earliestDate);
 
     /**
-     * @brief Warnzeile für Aktien ohne Tageswert-Historie.
-     * @param shareNames  Namen der ausgeschlossenen Aktien.
-     * @return Fertiger Text, oder ein leerer String bei leerer Liste.
-     */
-    static QString buildWarningText(const QStringList& shareNames);
-
-    /**
      * @brief Kopfzeile für den Tab-Tooltip.
      *
      * Depotwert-Chart: "Zeitraum: ... / Entwicklung: X € (Y %)".

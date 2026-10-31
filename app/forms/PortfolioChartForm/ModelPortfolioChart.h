@@ -11,6 +11,7 @@
 #include "../../repositories/BrokerageRepository.h"
 #include "../../repositories/DailyValuesRepository.h"
 #include "../../repositories/ShareSplitRepository.h"
+#include "../../models/ShareObject.h"
 
 /**
  * @brief Produktionsimplementierung von IModelPortfolioChart, gestützt auf die
@@ -24,6 +25,14 @@ public:
     QList<PortfolioShareSeriesInput> loadPortfolioInput() const override;
 
     QDate earliestRelevantDate() const override;
+
+    /**
+     * @brief Tag des aktuellen Kurses einer Aktie: das Datum von
+     * ShareObject::lastPriceUpdate() (ergänzt 30.10.2026).
+     * @return Ungültiges Datum, wenn der Zeitstempel fehlt oder kein
+     *         ISO-Format hat.
+     */
+    static QDate currentPriceDate(const ShareObject& share);
 
 private:
     ShareRepository       m_shareRepo;

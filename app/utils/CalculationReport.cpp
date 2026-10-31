@@ -537,7 +537,16 @@ QString buildShareSection(const CalculationReportShare& s)
     const double chartDev = CalculationBreakdown::chartDevelopment(c);
     out += valueLine(QStringLiteral("Stichtag"), dateText(c.date));
     out += valueLine(QStringLiteral("Bestand (FIFO aus Verkäufen, ohne Depot)"), vol(c.volume));
-    out += valueLine(QStringLiteral("Schlusskurs (letzter Tageswert)"), price(c.price));
+    // Seit 30.10.2026 kann das der aktuelle Kurs sein (applyCurrentPrice()),
+    // seit 31.10.2026 bei Aktien ohne Tageswerte ein Ersatzkurs aus einem
+    // Kauf oder Verkauf (substitutePrices()).
+    if (s.substitutePrices)
+        out += QStringLiteral("  Keine Tageswerte — die Charts bewerten die Aktie mit den Kursen ihrer "
+                              "Käufe und Verkäufe (Ersatzkurse).\n");
+    out += valueLine(c.currentPrice      ? QStringLiteral("Kurs (aktueller Kurs)")
+                     : c.substitutePrice ? QStringLiteral("Kurs (Ersatzkurs aus Kauf/Verkauf)")
+                                         : QStringLiteral("Kurs (Schlusskurs, letzter Tageswert)"),
+                     price(c.price));
     out += valueLine(QStringLiteral("Bestandswert"), euro(c.holdingsValue),
                      QStringLiteral("%1 × %2").arg(vol(c.volume), price(c.price)));
     out += valueLine(QStringLiteral("Kaufwert gehalten"), euro(c.purchaseValueHeld));
@@ -815,6 +824,8 @@ CalculationReportInput CalculationReport::collect(const QDateTime& created,
             const PortfolioSeriesResult r =
                 PortfolioSeriesCalculator::compute({ in }, QDate(), QDate(), /*withPerShareDetail*/ true);
             s.chartExcluded = !r.sharesWithoutHistory.isEmpty();
+            s.substitutePrices = std::any_of(in.prices.cbegin(), in.prices.cend(),
+                                             [](const PortfolioPriceEvent& p) { return p.substitute; });
             if (!r.sharePoints.isEmpty())
                 s.chart = r.sharePoints.constLast();
             break;
@@ -936,8 +947,11 @@ QString CalculationReport::build(const CalculationReportInput& input)
     out += QStringLiteral(
         "Inhalt: Teil 1 je Aktie (auch vollständig verkaufte), Teil 2 Gesamtübersicht mit Footer und\n"
         "Charts, Teil 3 Auffälligkeiten. Alle Beträge in Euro, Stückzahlen und Kurse mit vier\n"
-        "Nachkommastellen. Tabellen rechnen mit dem aktuellen Kurs der Aktie, die Charts mit dem\n"
-        "letzten Tageswert über die gesamte Historie (unabhängig vom eingestellten Zeitraum).\n");
+        "Nachkommastellen. Tabellen rechnen mit dem aktuellen Kurs der Aktie, die Charts mit den\n"
+        "Tageswerten über die gesamte Historie (unabhängig vom eingestellten Zeitraum) und am\n"
+        "rechten Rand ebenfalls mit dem aktuellen Kurs, sofern der Kursabruf nicht älter ist als\n"
+        "der letzte Tageswert. Aktien ohne Tageswerte bewerten die Charts mit Ersatzkursen aus\n"
+        "ihren eigenen Transaktionen.\n");
 
     out += QLatin1Char('\n') + rule(QLatin1Char('#'));
     out += QStringLiteral("TEIL 1 — JE AKTIE\n");

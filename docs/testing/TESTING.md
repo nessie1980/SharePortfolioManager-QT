@@ -2036,6 +2036,7 @@ eine echte Emission mit korrekt gesetztem `sender()` auslöst.
 | `test_calculationOverview_createdLazilyOnFirstVisit` (**27.10.2026**) | Wechsel auf Tab 4 | Vorher kein `ViewCalculationOverview`, danach vorhanden; keiner der beiden Charts wird mit angelegt; Knopf "Bericht speichern…" vorhanden |
 | `test_calculationOverview_listsTotalAndShares` (**27.10.2026**) | Eine Aktie ohne Käufe in der DB, Wechsel auf Tab 4 | Liste enthält "Gesamt / Footer" und die Aktie; Vorauswahl "Gesamt / Footer" mit zehn Zeilen Footer-Gegenüberstellung |
 | `test_marketValueChart_tooltipShowsDateAndValueWithoutPercent` (**17.10.2026**) | `ViewPortfolioChart(MarketValue)`, zwei Punkte per `setChartData()`, `onSeriesHovered()` per `invokeMethod()` | Tooltip exakt "Datum\nWert €", kein "%" |
+| `test_portfolioCharts_tooltipMarksCurrentPrice` (**30.10.2026**) | Beide Chart-Modi, Punkt 29.10. Schlusskurs, 30.10. aktueller Kurs | Tooltip am 30.10. beginnt mit "30.10.2026 (aktueller Kurs)", am 29.10. ohne Zusatz |
 | `test_marketValueChart_readsSharedPortfolioChartSettings` (**17.10.2026**) | Gespeichert Monat/6 | Der Marktwert-Chart liest denselben Schlüssel wie der Depotwert-Chart |
 | `test_portfolioCharts_unchangedChartDoesNotOverwriteSharedSettings` (**17.10.2026**) | Beide Charts angelegt, nur im Depotwert-Chart Anzahl 7 gewählt; der unveränderte Marktwert-Chart wird zuletzt zerstört | Gespeichert bleibt 7 — der Destruktor speichert nur bei einer Änderung |
 | `test_onCrosshairMoved_betweenPoints_tooltipShowsActualClosingPrice` (**17.10.2026**, Cursorlinie, ersetzt `test_seriesHovered_offsetAbovePeak_...` vom 19.09.2026, siehe ARCHITECTURE.md) | Drei Tageswerte (Spitze 190,90 in der Mitte, alle vier Kursfelder gleich) auf die letzten drei Tage vor heute geseedet, `ChartPopup` konstruiert, `onCrosshairMoved()` drei Stunden nach dem Spitzendatum aufgerufen | `QToolTip::text()` beginnt mit dem Spitzendatum und enthält `"Schluss-Kurs: "` plus `formatPrice(190.90)` — eingerasteter Wert statt Mausposition |
@@ -3088,6 +3089,19 @@ nicht der Test.
 | `test_marketValue_shareWithoutHistoryIsExcluded` (**17.10.2026**) | Zweite Aktie ohne Tageswerte | Trägt nichts bei, wird in `sharesWithoutHistory` gemeldet |
 | `test_marketValue_nothingBeforeFirstPriceDate` (**17.10.2026**) | Kauf vor dem ersten Tageswert | 0 am Kauftag, 1100 ab dem ersten Tageswert |
 | `test_marketValue_perShareDetailSumsToPoint` (**17.10.2026**) | Diagnose-Daten je Aktie | Summe der Aktien-Marktwerte am 01.02. = Punktwert 2100 |
+| `test_applyCurrentPrice_newerDateIsAppended` (**30.10.2026**, aktueller Kurs am rechten Rand) | Kursabruf 02.05. nach Tageswert 30.04. | Dritter Kurspunkt 63,00 am 02.05., als aktueller Kurs markiert; Schlusskurs unberührt |
+| `test_applyCurrentPrice_sameDayReplacesClose` (**30.10.2026**) | Kursabruf am Tag des letzten Tageswerts | Schlusskurs 62,00 durch 64,00 ersetzt und markiert, keine zusätzliche Zeile |
+| `test_applyCurrentPrice_olderDateKeepsDailyValue` (**30.10.2026**) | Kursabruf älter als der letzte Tageswert | Liste unverändert, nichts markiert |
+| `test_applyCurrentPrice_unsortedListComparesWithNewestDate` (**30.10.2026**) | Jüngster Tageswert steht vorn | Ersetzt wird der jüngste Eintrag, nicht der letzte der Liste |
+| `test_applyCurrentPrice_noChangeWithoutUsableInput` (**30.10.2026**) | Leere Kursliste, ungültiges Datum, Kurs 0 | Keine Änderung — eine Aktie ohne Tageswerte bleibt ausgeschlossen |
+| `test_currentPrice_newerValueEndsTheLineAndIsMarked` (**30.10.2026**) | Referenz-Fixture, A mit aktuellem Kurs 63 am 02.05. | Sechster Punkt 02.05. mit Marktwert und Bestandswert 1806, `usesCurrentPrice`; Punkte davor unmarkiert |
+| `test_currentPrice_sameDayReplacesCloseOfLastPoint` (**30.10.2026**) | Aktueller Kurs 64 am 30.04. | Weiter fünf Punkte, letzter Marktwert 1818 statt 1794, markiert |
+| `test_currentPrice_soldShareIsNotMarked` (**30.10.2026**) | Vollständig verkaufte Aktie mit neuerem aktuellem Kurs | Punkt nicht markiert, Marktwert 0; Einzelwert nennt den Kurs als aktuellen Kurs |
+| `test_substitutePrices_oneEventPerTransactionDay` (**31.10.2026**, Ersatzkurse) | Zwei Käufe, ein Verkauf an drei Tagen | Drei Kurspunkte mit den Transaktionskursen, als Ersatzkurs markiert |
+| `test_substitutePrices_sameDayIsVolumeWeighted` (**31.10.2026**) | 3 × 100 und 1 × 120 am selben Tag | Ein Kurspunkt 105 |
+| `test_substitutePrices_skipsUnusableEntries` (**31.10.2026**) | Ungültiges Datum, Stückzahl 0, Kurs 0 | Keine Kurspunkte |
+| `test_substitutePrices_soldShareEndsOnItsCompleteResult` (**31.10.2026**, Fall Sparplan-Fonds) | Zwei Käufe, Verkauf mit Steuer, Dividende, negative Kosten | Nicht ausgeschlossen, Entwicklung am Ende 399 (= Komplette Entwicklung), Marktwert 0, Stufenwert 1840 am 2. Kauftag, kein Tooltip-Zusatz |
+| `test_applyCurrentPrice_sameDayOnSubstituteBecomesRealPrice` (**31.10.2026**) | Aktueller Kurs am Tag eines Ersatzkurses | Punkt ist danach aktueller Kurs, kein Ersatzkurs |
 
 ---
 
@@ -3136,6 +3150,8 @@ werden. `main()` setzt `QLocale::setDefault(German)` wie die Anwendung.
 | `test_replayFifoSold_onlyBuysOfTheSameDepot` | Verkauf aus Depot 222 | Nur der Kauf aus Depot 222 wird belastet |
 | `test_replayFifoSold_buyAfterSaleIsNotUsed` | Kauf nach dem Verkaufsdatum | Bleibt unberührt, Rest des Verkaufs offen |
 | `test_collect_tableAndChartValuesForOneShare` | Aktie mit Kauf 10 × 100 und zwei Tageswerten (100, 110) in der Datenbank | Bestand 10, Chart-Stichtag 01.02., Marktwert 1.100 je Aktie und gesamt, Bericht enthält die Aktie |
+| `test_collect_shareWithoutDailyValues_usesSubstitutePrices` (**31.10.2026**) | Kauf 10 × 88, Verkauf 10 × 111, keine Tageswerte | Nicht ausgeschlossen, Ersatzkurse; Komplette Entwicklung 230 in Tabelle und Chart; Bericht nennt "Kurs (Ersatzkurs aus Kauf/Verkauf)" und den Hinweis, nicht mehr "fehlt in beiden Charts" |
+| `test_collect_currentPriceEndsChartOnTableValue` (**30.10.2026**) | Wie oben, zusätzlich Kursabruf 03.02. mit 120,00 | Chart-Stichtag 03.02., Kurs 120,00 als aktueller Kurs, Marktwert 1.200 = Kurswert der Tabelle; Bericht nennt "Kurs (aktueller Kurs)", kein Kurs-Hinweis |
 | `test_writeToFile_utf8WithBom` | Text mit Umlauten | Datei beginnt mit UTF-8-BOM, Inhalt korrekt |
 | `test_writeToFile_reportsErrorForInvalidPath` | Nicht existierendes Verzeichnis | `false` und Fehlermeldung gesetzt |
 
@@ -3170,6 +3186,9 @@ unveränderte `tst_calculationreport`. `main()` setzt
 | `test_findings_sameAsReportPartThree` | Bericht gegen Zeilenmodell | Jede Zeile aus `findings()` steht genau so in Teil 3 des Berichts |
 | `test_totalChecks_noChartPoint_noChecks` | Kein Chartpunkt | Kein Abgleich Footer gegen Chart |
 | `test_priceEffect_heldVolumeTimesPriceDifference` | Kurs 62,00 gegen Schlusskurs 61,00 | 12,00 |
+| `test_shareChecks_soldShare_priceDifferenceIsNotReported` (**31.10.2026**, Punkt A) | Bestand 0, Kurs 27,52 gegen Schlusskurs 167,70 | Kurszeile "ohne Bestand", ok; keine Auffälligkeit |
+| `test_shareChecks_heldShare_priceDifferenceStaysHint` (**31.10.2026**) | Bestand 12, Schlusskurs 61,50 | Kurszeile bleibt Hinweis |
+| `test_shareFindings_substitutePricesIsHintNotDeviation` (**31.10.2026**) | Aktie mit Ersatzkursen | Ein Hinweis "keine Tageswerte, in den Charts mit Kauf- und Verkaufskursen bewertet (Ersatzkurse)", keine Abweichung |
 
 ---
 
@@ -5219,10 +5238,9 @@ Die presenter-seitige Begrenzung muss unabhängig davon greifen.
 | `test_loadAndDisplay_setsTodayAsDefaultStartDate` | Vorgabe-Start-Datum | `QDate::currentDate()` |
 | `test_loadAndDisplay_drawsCurveAndRangeInfo` | Erster Aufbau | Zwei Punkte (0,00 / 100,00), Kopfzeile mit Zeitraum und Entwicklung |
 | `test_loadAndDisplay_showsCalculatingBeforeChartData` | Reihenfolge | `showCalculating()` vor `setChartData()` |
-| `test_loadAndDisplay_noSharesAtAll_showsEmptyChart` | Leeres Portfolio | Hinweis statt Chart, keine Warnzeile |
-| `test_loadAndDisplay_onlySharesWithoutHistory_warnsAndShowsEmpty` | Nur Aktien ohne Historie | Hinweis plus Warnzeile mit Namen |
-| `test_warningNamesExcludedShares` | Gemischtes Portfolio | Nur die ausgeschlossene Aktie steht in der Warnzeile |
-| `test_warningIsClearedWhenAllSharesHaveHistory` | Alle Aktien mit Historie | Warnzeile leer |
+| `test_loadAndDisplay_noSharesAtAll_showsEmptyChart` | Leeres Portfolio | Hinweis statt Chart |
+| `test_loadAndDisplay_onlySharesWithoutPrices_showsEmpty` (**31.10.2026**, ersetzt `..._onlySharesWithoutHistory_warnsAndShowsEmpty`) | Nur Aktien ganz ohne Kurse | Hinweis "Keine Kursdaten vorhanden.", keine Warnzeile mehr |
+| `test_shareWithoutPrices_isLeftOutSilently` (**31.10.2026**, ersetzt `test_warningNamesExcludedShares` und `test_warningIsClearedWhenAllSharesHaveHistory`) | Gemischtes Portfolio | Chart nur aus Aktie A (1100), ohne Warnzeile |
 | `test_onControlsChanged_recomputesWithNarrowerWindow` | Fenster auf einen Tag | Hinweis statt Chart |
 | `test_reload_readsTheModelAgain` | `reload()` | Model wird ein zweites Mal gelesen |
 | `test_onControlsChanged_doesNotReadTheModelAgain` | Datencache | Model wird genau einmal gelesen |
@@ -5233,8 +5251,6 @@ Die presenter-seitige Begrenzung muss unabhängig davon greifen.
 | `test_computeMaxIntervalCount_withoutHistoryReturnsOne` | Keine Historie | 1 |
 | `test_computeMaxIntervalCount_oldestNotBeforeRangeEndReturnsOne` | Ältester Wert = Start-Datum | 1 |
 | `test_computeMaxIntervalCount_yearsAreCounted` | Interval Jahr | 3 bei drei Jahren Historie |
-| `test_buildWarningText_emptyForEmptyList` | Keine ausgeschlossenen Aktien | Leerer String |
-| `test_buildWarningText_joinsNames` | Mehrere Namen | Kommagetrennt |
 | `test_buildRangeInfo_withoutPointsShowsOnlyRange` | Ohne Punkte | Nur Zeitraum, kein Entwicklungsteil |
 | `test_buildRangeInfo_usesLastPoint` | Mit Punkten | Werte des letzten Punkts, lokalisiert formatiert |
 | `test_marketMode_chartDataCarriesMarketValue` (**17.10.2026**, Marktwert-Chart) | Presenter im Modus `MarketValue`, 10 Stück zu 100, Kurs 110 | Punkte tragen Marktwert 1000 (Kauftag, Kaufpreis) und 1100 |
@@ -5242,6 +5258,7 @@ Die presenter-seitige Begrenzung muss unabhängig davon greifen.
 | `test_defaultMode_isDevelopment` (**17.10.2026**) | Presenter ohne Modus-Angabe | Modus `Development` — der Depotwert-Chart bleibt unverändert |
 | `test_buildRangeInfo_marketMode_usesMarketValueOfLastPoint` (**17.10.2026**) | Statischer Textaufbau | Marktwert des letzten Punkts mit "€", kein Prozentwert |
 | `test_diagnosticsCsv_marketMode_titleAndMarketValueColumn` (**17.10.2026**) | Diagnose im Marktwert-Modus | Überschrift "Marktwert-Chart Diagnose", Spalte "Marktwert" in Block 2 und 3, Wert 1.100,00 |
+| `test_chartData_carriesCurrentPriceMarker` (**30.10.2026**) | Letzter Kurs als aktueller Kurs markiert | Letzter Chart-Punkt mit `currentPrice`, erster ohne |
 
 ---
 
@@ -5294,6 +5311,12 @@ eigenständig in `tst_portfolioseriescalculator.cpp` und
 | `test_loadPortfolioInput_split_costsStayUnscaled` | Brokerage-Kosten trotz Split | Betrag bleibt exakt 9,90 € |
 | `test_loadPortfolioInput_costInvestmentFlag` (ergänzt 25.10.2026) | je ein kauf-, verkaufsgebundener und freistehender Kosteneintrag | `PortfolioCostEvent::investment` true für Kauf und freistehend, false für Verkauf (Prozent-Nenner, Entscheidung 5) |
 | `test_loadPortfolioInput_reverseSplit_scalesDown` | Reverse-Split 1:10 | 100 Stück à 5,00 € → 10 Stück à 50,00 € |
+| `test_loadPortfolioInput_currentPriceNewerThanDailyValue_isAppended` (**30.10.2026**) | Tageswert 29.10., Kursabruf 30.10. mit 104,50 | Zweiter Kurspunkt 30.10. mit 104,50, als aktueller Kurs markiert |
+| `test_loadPortfolioInput_dailyValueNewerThanCurrentPrice_isKept` (**30.10.2026**) | Tageswert 30.10., Kursabruf 28.10. | Nur der Tageswert, unmarkiert |
+| `test_loadPortfolioInput_noPriceTimestamp_keepsDailyValues` (**30.10.2026**) | Kursabruf ohne Zeitstempel | Nur der Tageswert, unmarkiert |
+| `test_loadPortfolioInput_withoutDailyValues_usesSubstitutePrices` (**31.10.2026**) | Kauf 21.09.2016 zu 88, Verkauf 17.12.2019 zu 111, keine Tageswerte | Zwei Kurspunkte 88 und 111, beide als Ersatzkurs markiert |
+| `test_loadPortfolioInput_withDailyValues_noSubstitutePrices` (**31.10.2026**) | Ein Tageswert vorhanden | Nur der Tageswert, kein Ersatzkurs |
+| `test_currentPriceDate_readsIsoTimestamp` (**30.10.2026**) | ISO-Zeitstempel und deutsches Format | 30.10.2026 bzw. ungültiges Datum |
 
 @note Bugfix 08.08.2026 — dieser Block war von seiner Einführung an nie
 lauffähig. Der von Hand geschriebene `main()` legte keine `QCoreApplication`

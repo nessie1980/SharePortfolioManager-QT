@@ -52,8 +52,10 @@ QString footerCell(const QString& where, const QString& row, const QString& colu
     return text;
 }
 
-const QString kMarketChart = QStringLiteral("Marktwert-Chart: Endwert (mit letztem Tageswert)");
-const QString kDepotChart  = QStringLiteral("Depotwert-Chart: Endwert (mit letztem Tageswert)");
+// Seit 30.10.2026 rechnen die Charts am rechten Rand mit dem aktuellen Kurs,
+// sofern der Kursabruf nicht älter ist als der letzte Tageswert.
+const QString kMarketChart = QStringLiteral("Marktwert-Chart: Endwert");
+const QString kDepotChart  = QStringLiteral("Depotwert-Chart: Endwert");
 
 /// "a − b = c"
 QString minus(double a, double b, double result)
@@ -380,10 +382,29 @@ QList<CalculationCheck> CalculationBreakdown::shareChecks(const CalculationRepor
     const QString              name    = shareTitle(s);
     const double               byPrice = priceEffect(s);
 
+    // Ohne Bestand geht der Kurs in keinen Wert ein (Kurswert und Marktwert
+    // 0, die Komplette Entwicklung hängt nur an Transaktionen). Ein
+    // Kursunterschied ist dann ohne Folgen und wird nicht gemeldet —
+    // Nessies Entscheidung vom 31.10.2026 (Punkt A). Die übrigen Zeilen
+    // prüfen weiter.
+    const auto tol = CalculationReport::kVolumeTolerance;
+    CalculationCheck priceCheck;
+    if (std::abs(v.volume) < tol && std::abs(c.volume) < tol) {
+        priceCheck.label      = QStringLiteral("Kurs (Tabelle / Chart)");
+        priceCheck.tableValue = v.curPrice;
+        priceCheck.chartValue = c.price;
+        priceCheck.diff       = v.curPrice - c.price;
+        priceCheck.isVolume   = true;
+        priceCheck.result     = CalculationCheckResult::Ok;
+        priceCheck.resultText = QStringLiteral("ohne Bestand");
+    } else {
+        priceCheck = check(name, QStringLiteral("Kurs (Tabelle / Chart)"),
+                           v.curPrice, c.price, true, /*hintOnly*/ true);
+    }
+
     return {
         check(name, QStringLiteral("Bestand (Stück)"), v.volume, c.volume, true),
-        check(name, QStringLiteral("Kurs (Tabelle aktuell / Chart Schluss)"),
-              v.curPrice, c.price, true, /*hintOnly*/ true),
+        priceCheck,
         check(name, QStringLiteral("Kaufwert gehalten (ohne Gebühren)"),
               v.purchaseValue, c.purchaseValueHeld, false),
         check(name, QStringLiteral("Marktwert / Marktwert-Chart"),
@@ -415,6 +436,12 @@ void addFinding(CalculationFindings& findings, const CalculationCheck& c)
 CalculationFindings CalculationBreakdown::shareFindings(const CalculationReportShare& s)
 {
     CalculationFindings findings;
+    // Ersatzkurse statt Ausschluss (31.10.2026): bleibt als Hinweis sichtbar
+    // (Nessies Entscheidung), die Abgleiche laufen danach normal weiter.
+    if (s.substitutePrices) {
+        findings.hints << QStringLiteral("%1: keine Tageswerte, in den Charts mit Kauf- und "
+                                         "Verkaufskursen bewertet (Ersatzkurse)").arg(shareTitle(s));
+    }
     if (s.chartExcluded) {
         findings.deviations << QStringLiteral("%1: keine Tageswerte, fehlt in beiden Charts")
                                    .arg(shareTitle(s));

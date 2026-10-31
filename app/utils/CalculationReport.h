@@ -40,7 +40,14 @@ struct CalculationReportShare
     PortfolioSharePoint chart;
 
     /// true, wenn die Aktie mangels Tageswerten aus beiden Charts fällt.
+    /// Seit 31.10.2026 nur noch, wenn sie auch keine Transaktion hat, siehe
+    /// substitutePrices.
     bool chartExcluded = false;
+
+    /// true, wenn die Aktie keine Tageswerte hat und die Charts sie mit
+    /// Ersatzkursen aus ihren Käufen und Verkäufen bewerten (ergänzt
+    /// 31.10.2026, siehe PortfolioSeriesCalculator::substitutePrices()).
+    bool substitutePrices = false;
 };
 
 /**

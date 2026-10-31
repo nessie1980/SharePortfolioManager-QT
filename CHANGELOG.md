@@ -10,6 +10,42 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.29.0] - 2026-10-31
+
+### Changed
+
+- Depotwert- und Marktwert-Chart bewerten am rechten Rand mit dem aktuellen
+  Kurs der Aktie, wie die Tabellen und Footer. Ist der letzte Kursabruf
+  neuer als der letzte Tageswert, kommt ein zusaetzlicher Punkt hinzu; am
+  selben Tag ersetzt der aktuelle Kurs den Schlusskurs; ist er aelter,
+  gilt weiter der Tageswert. Beide Charts enden damit auf den
+  Footer-Werten, und die Hinweise "durch Kurs erklaert" im Tab "Depot- vs.
+  Marktwert" und im Berechnungsbericht entfallen in diesem Fall.
+- Ein Chart-Punkt mit aktuellem Kurs traegt im Tooltip "(aktueller Kurs)"
+  hinter dem Datum.
+- Berechnungsbericht und Tab "Depot- vs. Marktwert" nennen beim Chartwert,
+  ob es der aktuelle Kurs oder der Schlusskurs ist.
+- Der Aktien-Chart in den Aktiendetails bleibt bewusst beim Schlusskurs.
+- Aktien ohne Tageswerte fallen nicht mehr aus den Portfolio-Charts heraus,
+  sondern werden mit den Kursen ihrer eigenen Kaeufe und Verkaeufe bewertet
+  (Ersatzkurse). Nach einem Verkauf endet ihr Beitrag im Depotwert-Chart
+  damit genau auf der Kompletten Entwicklung der Tabelle. Die Warnzeile
+  unter den Charts entfaellt; Bericht, Tab "Depot- vs. Marktwert" und
+  Diagnose-Export kennzeichnen Ersatzkurse, und je solcher Aktie bleibt ein
+  Hinweis statt der bisherigen Abweichung.
+- Der Diagnose-Export der Charts nennt im dritten Block in der Spalte
+  "Kursart", ob der Kurs ein Schlusskurs, der aktuelle Kurs oder ein
+  Ersatzkurs ist.
+- Die Startwarnung fuer Aktien im Bestand ohne Tageswerte erklaert, dass
+  diese in den Charts nur angenaehert bewertet werden.
+
+### Fixed
+
+- Abgleich im Tab "Depot- vs. Marktwert" und im Berechnungsbericht: bei
+  vollstaendig verkauften Aktien wird ein Kursunterschied zwischen Tabelle
+  und Chart nicht mehr gemeldet, da der Kurs ohne Bestand in keinen Wert
+  eingeht.
+
 ## [1.28.0] - 2026-10-30
 
 ### Added

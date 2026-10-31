@@ -50,11 +50,10 @@ public:
      */
     virtual void showCalculating(const QString& message) = 0;
 
-    /**
-     * @brief Warnzeile unterhalb des Charts für Aktien ohne
-     * Tageswert-Historie. Leerer Text blendet die Zeile aus.
-     */
-    virtual void setWarning(const QString& message) = 0;
+    // setWarning() entfernt am 31.10.2026: Aktien ohne Tageswerte werden
+    // seither mit Ersatzkursen bewertet statt ausgeschlossen; die
+    // Kennzeichnung steht nur noch in Berechnungsbericht und Tab "Depot- vs.
+    // Marktwert" (Nessies Entscheidung).
 
     /** "Zeitraum: dd.MM.yyyy - dd.MM.yyyy / Entwicklung: X € (Y %)". */
     virtual void setRangeInfo(const QString& infoText) = 0;

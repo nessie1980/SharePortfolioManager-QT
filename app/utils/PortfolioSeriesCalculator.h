@@ -113,6 +113,24 @@
  * Kursdatum nichts bei, auch wenn zu diesem Zeitpunkt bereits Käufe
  * verbucht sind.
  *
+ * @note Seit 31.10.2026 (Nessies Entscheidung) bekommt eine Aktie ohne
+ * Tageswerte von ModelPortfolioChart Ersatzkurse aus ihren eigenen Käufen
+ * und Verkäufen, siehe substitutePrices(). Ausgeschlossen bleibt damit nur
+ * noch eine Aktie ganz ohne Tageswerte UND ohne Transaktionen — sie hat
+ * ohnehin nichts beizutragen. Der Rechenkern selbst ist unverändert: ohne
+ * Kurse kein Beitrag.
+ *
+ * ### Aktueller Kurs am rechten Rand (ergänzt 30.10.2026)
+ *
+ * Die Tabellen bewerten mit dem aktuellen Kurs der Aktie, die Kurve mit den
+ * Tageswerten. Damit beide am rechten Rand übereinstimmen, hängt
+ * ModelPortfolioChart den aktuellen Kurs als zusätzlichen Kurspunkt an,
+ * markiert mit PortfolioPriceEvent::currentPrice (Nessies Entscheidung
+ * 30.10.2026). Welcher Kurs gilt, regelt applyCurrentPrice(). Der Rechenkern
+ * behandelt den Punkt wie jeden anderen Kurs; er meldet nur über
+ * PortfolioSeriesPoint::usesCurrentPrice, an welchen Stichtagen ein solcher
+ * Kurs in die Linie eingeht.
+ *
  * ### Ungültige Datumsangaben
  *
  * Einträge ohne gültiges Datum werden vollständig ignoriert und in
@@ -185,6 +203,14 @@ struct PortfolioPriceEvent
 {
     QDate  date;                   ///< Börsentag
     double closingPrice = 0.0;     ///< Schlusskurs
+    /// true, wenn der Wert der aktuelle Kurs der Aktie ist und kein
+    /// Schlusskurs aus den Tageswerten (ergänzt 30.10.2026), siehe
+    /// PortfolioSeriesCalculator::applyCurrentPrice().
+    bool   currentPrice = false;
+    /// true, wenn der Wert ein Ersatzkurs aus einem Kauf oder Verkauf ist,
+    /// weil die Aktie keine Tageswerte hat (ergänzt 31.10.2026), siehe
+    /// PortfolioSeriesCalculator::substitutePrices().
+    bool   substitute   = false;
 };
 
 /**
@@ -230,6 +256,10 @@ struct PortfolioSeriesPoint
     /// Stücke, am Kauftag mit Kaufpreis, sonst mit Schlusskurs — siehe
     /// Klassendoku "Marktwert-Linie".
     double marketValue        = 0.0;
+    /// true, wenn an diesem Stichtag mindestens eine Aktie mit Bestand mit
+    /// ihrem aktuellen Kurs statt eines Schlusskurses bewertet ist
+    /// (ergänzt 30.10.2026) — die View kennzeichnet den Punkt im Tooltip.
+    bool   usesCurrentPrice   = false;
 };
 
 /**
@@ -277,6 +307,8 @@ struct PortfolioSharePoint
     double  dividends         = 0.0;   ///< Kumulierte Netto-Dividenden
     double  costs             = 0.0;   ///< Kumulierte Kosten
     double  marketValue       = 0.0;   ///< Marktwert-Linie dieser Aktie (ergänzt 17.10.2026)
+    bool    currentPrice      = false; ///< price ist der aktuelle Kurs, kein Schlusskurs (30.10.2026)
+    bool    substitutePrice   = false; ///< price ist ein Ersatzkurs aus Kauf/Verkauf (31.10.2026)
 };
 
 /**
@@ -355,4 +387,52 @@ public:
      */
     static double closingPriceAt(const QList<PortfolioPriceEvent>& prices,
                                  const QDate& date);
+
+    /**
+     * @brief Nimmt den aktuellen Kurs einer Aktie in ihre Kursliste auf
+     * (ergänzt 30.10.2026).
+     *
+     * Regel nach Nessies Entscheidung vom 30.10.2026, verglichen mit dem
+     * jüngsten Tageswert:
+     * - Datum des aktuellen Kurses neuer: als zusätzlicher Kurspunkt
+     *   angehängt.
+     * - Gleicher Tag: ersetzt den Schlusskurs dieses Tages.
+     * - Älter: keine Änderung, der Tageswert gewinnt.
+     *
+     * Der eingefügte bzw. ersetzte Punkt trägt PortfolioPriceEvent::currentPrice.
+     * Ohne gültiges Datum, ohne positiven Kurs oder bei leerer Kursliste
+     * bleibt die Liste unverändert: eine Aktie ganz ohne Tageswerte bleibt
+     * aus der Kurve ausgeschlossen, ein einzelner aktueller Kurs macht noch
+     * keine Historie.
+     *
+     * @param prices  Kursliste der Aktie, Reihenfolge beliebig.
+     * @param date    Tag des aktuellen Kurses (Tag des letzten Kursabrufs).
+     * @param price   Aktueller Kurs, in heutiger Skala.
+     * @return true, wenn die Liste geändert wurde.
+     */
+    static bool applyCurrentPrice(QList<PortfolioPriceEvent>& prices,
+                                  const QDate& date, double price);
+
+    /**
+     * @brief Ersatzkurse für eine Aktie ohne Tageswerte (ergänzt 31.10.2026).
+     *
+     * Nessies Entscheidung vom 31.10.2026: statt die Aktie aus beiden Charts
+     * auszuschliessen, wird sie mit den Kursen ihrer eigenen Käufe und
+     * Verkäufe bewertet. Je Transaktionstag ein Kurspunkt; mehrere
+     * Transaktionen an einem Tag ergeben den nach Stückzahl gewichteten
+     * Mittelwert. Einträge ohne gültiges Datum oder mit Kurs/Stückzahl <= 0
+     * werden übergangen.
+     *
+     * Wirkung: zwischen zwei Transaktionen gilt der letzte Transaktionskurs
+     * (Näherung); nach dem letzten Verkauf ist der Beitrag exakt, da er nur
+     * noch aus Realisiertem, Dividenden und Kosten besteht. Am rechten Rand
+     * ergänzt applyCurrentPrice() wie bei allen Aktien den aktuellen Kurs.
+     *
+     * @param share  Eingangsdaten der Aktie, Käufe und Verkäufe bereits in
+     *               heutiger Skala.
+     * @return Kurspunkte aufsteigend nach Datum, alle mit
+     *         PortfolioPriceEvent::substitute; leer ohne verwertbare
+     *         Transaktion.
+     */
+    static QList<PortfolioPriceEvent> substitutePrices(const PortfolioShareSeriesInput& share);
 };

@@ -177,15 +177,9 @@ void ViewPortfolioChart::setupUi()
     m_stack->addWidget(m_emptyLabel);       // 1
     m_stack->addWidget(m_calculatingLabel); // 2
 
-    m_warningLabel = new QLabel();
-    m_warningLabel->setObjectName(QStringLiteral("portfolioChartWarningLabel"));
-    m_warningLabel->setWordWrap(true);
-    m_warningLabel->hide(); // only shown when setWarning() gets a non-empty text
-
     auto* leftLayout = new QVBoxLayout();
     leftLayout->setContentsMargins(0, 0, 0, 0);
     leftLayout->addWidget(m_stack, 1);
-    leftLayout->addWidget(m_warningLabel);
     mainLayout->addLayout(leftLayout, 1);
 
     // ── Right panel: Zeitraum only ────────────────────────────────────────
@@ -405,12 +399,6 @@ void ViewPortfolioChart::showCalculating(const QString& message)
     m_stack->setCurrentIndex(2);
 }
 
-void ViewPortfolioChart::setWarning(const QString& message)
-{
-    m_warningLabel->setText(message);
-    m_warningLabel->setVisible(!message.isEmpty());
-}
-
 void ViewPortfolioChart::setRangeInfo(const QString& infoText)
 {
     m_lastRangeInfo = infoText;
@@ -508,17 +496,24 @@ void ViewPortfolioChart::onSeriesHovered(const QPointF& point, bool state)
 
     const PortfolioChartPoint& nearest = m_points.at(index);
 
+    // Punkt mit aktuellem Kurs statt Schlusskurs kenntlich machen (ergänzt
+    // 30.10.2026, Nessies Entscheidung): meist der rechte Rand, wenn der
+    // Kursabruf neuer ist als der letzte Tageswert.
+    QString dateText = nearest.date.toString(QStringLiteral("dd.MM.yyyy"));
+    if (nearest.currentPrice)
+        dateText += tr(" (aktueller Kurs)");
+
     // Marktwert-Chart (ergänzt 17.10.2026): Datum und Wert, ohne Prozent.
     if (m_mode == PortfolioChartMode::MarketValue) {
         const QString text = QStringLiteral("%1\n%2")
-            .arg(nearest.date.toString(QStringLiteral("dd.MM.yyyy")),
+            .arg(dateText,
                  QLocale().toString(nearest.marketValue, 'f', 2) + QStringLiteral(" €"));
         QToolTip::showText(QCursor::pos(), text, m_chartView);
         return;
     }
 
     const QString text = QStringLiteral("%1\n%2\n%3")
-        .arg(nearest.date.toString(QStringLiteral("dd.MM.yyyy")),
+        .arg(dateText,
              QLocale().toString(nearest.development, 'f', 2) + QStringLiteral(" €"),
              QLocale().toString(nearest.developmentPct, 'f', 2) + QStringLiteral(" %"));
 
