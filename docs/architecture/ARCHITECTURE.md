@@ -5522,39 +5522,6 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### Qt-Version für neuere GCC anheben (TODO, 26.10.2026)
-
-Seit GitHub `ubuntu-latest` am 19.10.2026 auf Ubuntu 26 umgestellt hat,
-scheiterte `build-linux` in `build.yml` beim ersten Push danach (Commit
-"Berechnungsbericht und einheitliche Rechenregeln, v1.27.0") am Linker:
-
-```
-multiple definition of `QtPrivate::IsFloatType_v<_Float16>'
-```
-
-Die Variable stammt aus dem Qt-Header `qcomparehelpers.h` von Qt 6.7.0.
-Dort ist ihre Spezialisierung für den nativen 16-Bit-Gleitkommatyp nicht
-`inline`, also definiert sie jede Quelldatei selbst; der GCC von Ubuntu 26
-lässt das nicht mehr durch. Betroffen ist jedes Testziel mit mehr als einer
-Quelldatei, unser Code ist nicht beteiligt. Windows (MSVC), der
-AppImage-Build (`ubuntu-22.04`, GCC 11) und lokale Builds mit älterem GCC
-laufen weiter.
-
-Sofortmassnahme (Nessies Entscheidung 26.10.2026): `build-linux` läuft fest
-auf `ubuntu-24.04`, mit Begründung als Kommentar im Workflow. Damit fehlt
-vorerst die Frühwarnung durch den neuesten Compiler.
-
-Zu tun: Qt in allen Jobs von `build.yml` und
-`package.yml` auf eine Version heben, die mit dem neuen GCC baut, z. B.
-6.8 LTS, und `build-linux` danach wieder auf `ubuntu-latest` stellen. Ein
-eigener Schritt mit Test auf allen Plattformen, auch für AppImage und
-Windows-Installer. Spätestens fällig, bevor GitHub `ubuntu-24.04` einstellt.
-
-@note Nicht geprüft (26.10.2026): die genaue GCC-Version des neuen Runners
-und ab welcher Qt-Version die Spezialisierung `inline` ist. Beides vor dem
-Upgrade klären — die GCC-Version steht in der CMake-Ausgabe ("The CXX
-compiler identification is GNU ...").
-
 ### Zählung der Testziele in "Build-Struktur" veraltet (offen, 30.10.2026)
 
 Die Kette der @note-Absätze unter "Build-Struktur (CMake)" endet bei 48
@@ -5867,6 +5834,57 @@ ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
 
+### Qt-Version für neuere GCC anheben (26.10.2026, erledigt 01.11.2026)
+
+Seit GitHub `ubuntu-latest` am 19.10.2026 auf Ubuntu 26 umgestellt hat,
+scheiterte `build-linux` in `build.yml` beim ersten Push danach (Commit
+"Berechnungsbericht und einheitliche Rechenregeln, v1.27.0") am Linker:
+
+```
+multiple definition of `QtPrivate::IsFloatType_v<_Float16>'
+```
+
+Die Variable stammt aus dem Qt-Header `qcomparehelpers.h` von Qt 6.7.0.
+Dort ist ihre Spezialisierung für den nativen 16-Bit-Gleitkommatyp nicht
+`inline`, also definiert sie jede Quelldatei selbst; der GCC von Ubuntu 26
+lässt das nicht mehr durch. Betroffen war jedes Testziel mit mehr als einer
+Quelldatei, unser Code war nicht beteiligt. Windows (MSVC), der
+AppImage-Build (`ubuntu-22.04`, GCC 11) und lokale Builds mit älterem GCC
+liefen weiter.
+
+Sofortmassnahme (Nessies Entscheidung 26.10.2026): `build-linux` lief fest
+auf `ubuntu-24.04`. Damit fehlte die Frühwarnung durch den neuesten Compiler.
+
+Befund (01.11.2026, Vergleich der qtbase-Tags): Die Spezialisierung ist in
+6.7.0 und 6.7.2 nur `constexpr`, ab 6.7.3 und in allen 6.8-Versionen
+`inline constexpr`. Der Fehler ist also ab Qt 6.7.3 behoben (Gentoo hatte
+für 6.7.2 einen eigenen Patch gegen GCC 15, der danach in Qt einfloss).
+
+Umgesetzt (01.11.2026, ohne Versionssprung, da die Anwendung selbst
+unverändert ist):
+
+- Qt in allen vier Jobs von `build.yml` und `package.yml` auf 6.8.3 (LTS).
+  6.8.3 ist die letzte 6.8-Version, die als freies Binärpaket erscheint
+  und damit über `install-qt-action` installierbar ist; 6.8.4 und neuer
+  gibt es offen nur als Quelltext.
+- Windows-Jobs auf `win64_msvc2022_64`, da es ab Qt 6.8 keine MSVC-2019-Pakete
+  mehr gibt. Der Runner `windows-latest` bringt VS 2022 mit, `vs-shell`
+  bleibt unverändert.
+- `build-linux` wieder auf `ubuntu-latest` (Begründung als Kommentar im
+  Workflow). `package-linux` bleibt fest auf `ubuntu-22.04`, siehe
+  "AppImage-Build auf feste Ubuntu-Version gesetzt".
+- README und Kommentar im Root-`CMakeLists.txt` nennen Qt 6.8.3 /
+  `msvc2022_64`.
+
+@note Lokal braucht der Build dieselbe Version: Qt 6.8.3 mit Charts,
+Multimedia und Qt PDF über das Maintenance Tool installieren und das Kit in
+Qt Creator umstellen. Die genaue GCC-Version des neuen Runners steht in der
+CMake-Ausgabe des Jobs ("The CXX compiler identification is GNU ...").
+
+@note Freie Patch-Versionen für 6.8 kommen nicht mehr. Steht wieder ein
+Compiler- oder Runner-Problem an, ist der nächste Schritt eine neuere
+Qt-Version, nicht ein weiteres 6.8-Update.
+
 ### Depotwert/Marktwert: zweite Kurve je Chart (19.10.2026, Rechenregeln 25.10.2026, erledigt 01.11.2026)
 
 Aufgefallen bei Nessies Abnahme des Marktwert-Charts (v1.26.0): der Endwert
@@ -6169,9 +6187,10 @@ unter Node 20. Die genutzten Eingaben (`name`, `path`,
 Job "Linux (Ubuntu, GCC)" von `build.yml` war gewollt und keine offene
 Warnung: `build-linux` blieb absichtlich auf `ubuntu-latest` (siehe
 "AppImage-Build auf feste Ubuntu-Version gesetzt"). Dass er im AppImage-Job
-nicht mehr erscheint, bestätigt die feste Version dort. Seit 26.10.2026
-läuft auch `build-linux` fest auf `ubuntu-24.04`, siehe "Qt-Version für
-neuere GCC anheben" unter "Offene Punkte".
+nicht mehr erscheint, bestätigt die feste Version dort. Vom 26.10. bis
+01.11.2026 lief auch `build-linux` fest auf `ubuntu-24.04`, seither wieder
+auf `ubuntu-latest`, siehe "Qt-Version für neuere GCC anheben" unter
+"Erledigt / Archiv".
 
 ### AppImage-Build auf feste Ubuntu-Version gesetzt (18.09.2026, erledigt 18.09.2026)
 
@@ -6197,8 +6216,9 @@ Umgesetzt:
   Frühwarnung, ähnlich wie der englische CI-Runner schon mehrere
   Locale-Fehler gefunden hat. Nachtrag 26.10.2026: Die Frühwarnung hat
   angeschlagen, Qt 6.7.0 baut mit dem GCC von Ubuntu 26 nicht mehr.
-  `build-linux` steht deshalb vorerst fest auf `ubuntu-24.04`, siehe "Qt-Version
-  für neuere GCC anheben" unter "Offene Punkte".
+  `build-linux` stand deshalb vom 26.10. bis 01.11.2026 fest auf
+  `ubuntu-24.04`; mit Qt 6.8.3 läuft er wieder auf `ubuntu-latest`, siehe
+  "Qt-Version für neuere GCC anheben" unter "Erledigt / Archiv".
 
 @note Auf 22.04 bauen GCC 11 und CMake 3.22 statt der neueren Versionen von
 24.04. CMake erfüllt das `cmake_minimum_required(VERSION 3.21)`. GCC 11

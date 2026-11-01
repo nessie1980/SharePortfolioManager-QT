@@ -20,8 +20,10 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.7.0'
-          arch: 'win64_msvc2019_64'
+          version: '6.8.3'
+          # msvc2022 statt msvc2019 seit Qt 6.8 (01.11.2026): ab 6.8 gibt es
+          # nur noch Pakete fuer MSVC 2022. windows-latest hat VS 2022 bereits.
+          arch: 'win64_msvc2022_64'
           modules: 'qtcharts qtmultimedia qtpdf'
 
       # vs-shell statt ilammy/msvc-dev-cmd@v1 (18.09.2026): msvc-dev-cmd
@@ -115,7 +117,7 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.7.0'
+          version: '6.8.3'
           host: 'linux'
           target: 'desktop'
           arch: 'linux_gcc_64'

@@ -13,7 +13,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ── Qt ──────────────────────────────────────────────────────────────────────
 # Set this to your Qt installation path, e.g.:
-#   Windows: C:/Qt/6.7.0/msvc2019_64
+#   Windows: C:/Qt/6.8.3/msvc2022_64
 #   Linux:   /usr/lib/x86_64-linux-gnu/cmake/Qt6  (or via apt: qt6-base-dev)
 # Can also be passed via: cmake -DCMAKE_PREFIX_PATH=/path/to/Qt6 ..
 find_package(Qt6 REQUIRED COMPONENTS

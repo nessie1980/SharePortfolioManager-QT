@@ -8,7 +8,16 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
-Zurzeit keine unveroeffentlichten Aenderungen.
+### Changed
+
+- Qt in allen Jobs von Build-Pipeline und Paketierung von 6.7.0 auf 6.8.3
+  (LTS) angehoben; Windows-Jobs nutzen dafuer das MSVC-2022-Paket statt
+  MSVC 2019. Installer und AppImage enthalten damit Qt 6.8.3. Am Verhalten
+  der Anwendung aendert sich nichts.
+- Der Linux-Build der Pipeline laeuft wieder auf `ubuntu-latest` statt fest
+  auf `ubuntu-24.04`. Qt 6.7.0 scheiterte mit dem GCC von Ubuntu 26 am
+  Linker; der Fehler ist ab Qt 6.7.3 behoben. Der AppImage-Build bleibt
+  bewusst auf `ubuntu-22.04` (Linux Mint 21).
 
 ## [1.30.0] - 2026-11-01
 

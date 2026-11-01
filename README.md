@@ -18,7 +18,7 @@ Built with Qt/C++ for Windows and Linux.
 |---|---|---|
 | Qt | 6.6+ | Core, Gui, Widgets, Sql, Network, Multimedia, Charts, LinguistTools (Pdf/PdfWidgets optional) |
 | CMake | 3.21+ | |
-| C++ Compiler | C++20 | GCC/Clang on Linux, MSVC (VS 2019/2022) on Windows |
+| C++ Compiler | C++20 | GCC/Clang on Linux, MSVC (VS 2022) on Windows |
 | pdftotext / pdftoppm | current | Part of `poppler-utils`; used for PDF invoice parsing and as PDF-preview fallback if `Qt6::PdfWidgets` is unavailable |
 | Graphviz | current | *(optional, for Doxygen diagrams)* |
 | Doxygen | 1.10+ | *(optional, for API docs)* |
@@ -63,14 +63,14 @@ Or open `CMakeLists.txt` directly in **Qt Creator** and select your Qt kit.
 
 ## Build — Windows
 
-Tested with Qt 6.7 / MSVC 2019+.
+Tested with Qt 6.8 / MSVC 2022.
 
 **1. Install prerequisites:**
 
-- [Qt Online Installer](https://qt.io) → install a Qt 6.6+ kit for MSVC
-  (e.g. `msvc2019_64`), including the modules **Charts** and, optionally,
+- [Qt Online Installer](https://qt.io) → install a Qt 6.8 kit for MSVC
+  (`msvc2022_64`; CI uses Qt 6.8.3), including the modules **Charts** and, optionally,
   **Qt PDF** / **Qt PDF Widgets**
-- Visual Studio 2019 or 2022 with the **"Desktop development with C++"**
+- Visual Studio 2022 with the **"Desktop development with C++"**
   workload
 - [CMake](https://cmake.org/download/) 3.21+
 - [poppler-utils for Windows](https://github.com/oschwartz10612/poppler-windows/releases)
@@ -84,7 +84,7 @@ git clone https://github.com/nessie1980/SharePortfolioManager-QT.git
 cd spm-qt
 mkdir build
 cd build
-cmake .. -DCMAKE_PREFIX_PATH="C:/Qt/6.7.0/msvc2019_64" -DCMAKE_BUILD_TYPE=Release
+cmake .. -DCMAKE_PREFIX_PATH="C:/Qt/6.8.3/msvc2022_64" -DCMAKE_BUILD_TYPE=Release
 cmake --build . --config Release --parallel
 ```
 
@@ -97,7 +97,7 @@ cmake --build . --config Release --parallel
 > On first run outside of Qt Creator, the executable needs the Qt DLLs on
 > `PATH`, or run `windeployqt` once to copy them next to the `.exe`:
 > ```powershell
-> C:\Qt\6.7.0\msvc2019_64\bin\windeployqt.exe bin\Release\SharePortfolioManager.exe
+> C:\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe bin\Release\SharePortfolioManager.exe
 > ```
 
 **Alternative:** Open `CMakeLists.txt` directly in **Qt Creator** and select
