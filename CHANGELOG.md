@@ -21,7 +21,8 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 - Build-Pipeline beschleunigt: apt installiert nur noch `poppler-utils`,
   gebaut wird mit `--parallel 4` statt 2, die Build-Jobs nutzen ccache und
   alle Jobs einen Qt-Cache. Paketierung ohne ccache, mit eigenem
-  Qt-Cache.
+  Qt-Cache. Gemessen: Build & Test mit warmem Cache 2:44 (Linux) bzw.
+  4:01 (Windows) statt 17:50 bzw. 31:35.
 
 ## [1.30.0] - 2026-11-01
 

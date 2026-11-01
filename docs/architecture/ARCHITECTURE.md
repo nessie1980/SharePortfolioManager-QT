@@ -5522,71 +5522,20 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### Laufzeit der Build-Pipeline verkürzen (26.10.2026, Teil A umgesetzt 01.11.2026)
+### Gemeinsame Bibliothek für die app-Quellen der Testziele (Teil B, offen, 01.11.2026)
 
-Ausgangspunkt waren lange Läufe von `build.yml`. Ausgewertet wurden die
-Zeitstempel je Schritt aus zwei grünen Läufen: 26.10.2026 (Qt 6.7.0,
-`ubuntu-24.04`) und 01.11.2026 (Qt 6.8.3, `ubuntu-26.04` bzw.
-`windows-2025-vs2026`). Zeiten in Minuten:Sekunden, Pakete per apt nur
-unter Linux:
+Rest aus "Laufzeit der Build-Pipeline verkürzen" (siehe "Erledigt /
+Archiv"). Jedes Testziel übersetzt die `app/`-Quellen, die es braucht,
+selbst: unter Linux sind 693 der 837 Übersetzungen solche Quellen, z. B.
+`BuyObject.cpp` 26-mal; `tst_mainwindow` und `tst_backupform` übersetzen
+je über 80 Dateien. In der Pipeline fängt ccache das seit Teil A
+weitgehend ab, im lokalen Build nicht. Eine gemeinsame (statische)
+Bibliothek für diese Quellen würde sie nur einmal übersetzen und damit
+vor allem den lokalen Build verkürzen.
 
-| Schritt | Linux 26.10. | Linux 01.11. | Windows 26.10. | Windows 01.11. |
-|---|---|---|---|---|
-| Pakete per apt | 7:05 | 0:08 | - | - |
-| Install Qt | 5:00 | 0:41 | 1:08 | 1:15 |
-| Build | 11:16 | 16:14 | 16:27 | 28:46 |
-| Test | 0:39 | 0:39 | 1:03 | 1:00 |
-| Gesamt | 24:07 | 17:50 | 19:04 | 31:35 |
-
-Befund:
-
-- Am 26.10. lieferte der Ubuntu-Paketserver nur etwa 40 kB/s; das traf den
-  apt-Schritt und die Systembibliotheken, die `install-qt-action` nachlädt.
-  Der eigentliche Qt-Download dauerte etwa 10 Sekunden. Mit dem
-  Ubuntu-26-Image ist dieser Engpass verschwunden (20,5 MB in einer
-  Sekunde).
-- Seitdem bestimmt der Build die Laufzeit, und er ist langsamer geworden:
-  unter Linux etwa 35 % mehr Zeit je Übersetzung (1,16 s statt 0,86 s,
-  dazu 837 statt 787 Übersetzungen), unter Windows insgesamt 75 % mehr.
-  Ob das an den neuen Compilern (GCC 15.2, MSVC 19.51), den Qt-6.8-Headern
-  oder an Schwankungen der Runner liegt, lässt sich aus dem Log nicht
-  trennen.
-- Gebaut wurde mit `--parallel 2`, obwohl die Runner für öffentliche
-  Repositories 4 Kerne haben.
-- 693 der 837 Übersetzungen unter Linux sind `app/`-Quellen, die jedes
-  Testziel für sich neu übersetzt, z. B. `BuyObject.cpp` 26-mal;
-  `tst_mainwindow` und `tst_backupform` übersetzen je über 80 Dateien.
-
-Teil A, umgesetzt 01.11.2026 (nur Workflows, kein Versionssprung):
-
-- apt installiert nur noch `poppler-utils` (in `build.yml` und
-  `package.yml`). `cmake` und `build-essential` sind auf den Images
-  vorinstalliert.
-- `--parallel 4` in allen vier Jobs. Die frühere 2 stammte aus der Zeit
-  mit 2-Kern-Runnern und 7 GB, auf denen mehr parallele Übersetzungen mit
-  Exit-Code 143 abbrachen.
-- ccache in beiden Jobs von `build.yml` (`hendrikmuhs/ccache-action@v1.2`,
-  ab v1.2.21 auf Node 24, je Job bis 1 GB, Schlüssel je Job mit
-  Zeitstempel). Eingebunden über `CMAKE_CXX_COMPILER_LAUNCHER`; ein
-  eigener Schritt gibt danach die Trefferquote aus. Unter Windows setzt das
-  den Ninja-Generator und einen Build ohne `/Zi` voraus, beides ist im
-  Release-Build erfüllt. `package.yml` bekommt bewusst keinen ccache, weil
-  es zu selten läuft.
-- Qt-Cache (`cache: true`) in allen vier Jobs. `package.yml` nutzt einen
-  eigenen Schlüssel-Präfix, damit der Zustand nach dem Entfernen der
-  SQL-Treiber in `package-linux` nicht in den Cache von `build.yml` gerät.
-- Der apt-Cache aus der Empfehlung vom 26.10. entfällt, weil der
-  Paketserver nicht mehr bremst.
-
-@note Die Wirkung ist erst nach zwei Läufen beurteilbar: der erste füllt
-ccache und Qt-Cache, erst der zweite zeigt die Zeiten mit warmem Cache.
-Nach jedem Lauf zeigt der Schritt "ccache statistics" die Trefferquote.
-
-Teil B, offen: eine gemeinsame Bibliothek für die `app/`-Quellen, die die
-Testziele heute einzeln übersetzen. Das verkürzt als einzige Maßnahme auch
-den lokalen Build. Größerer Umbau der CMake-Struktur der Tests (siehe
-"Build-Struktur (CMake)"), daher eigener Entwurf mit Entscheidungspunkten
-und eigener Commit.
+Größerer Umbau der CMake-Struktur der Tests (siehe "Build-Struktur
+(CMake)"), daher eigener Entwurf mit Entscheidungspunkten und eigener
+Commit.
 
 ### Zählung der Testziele in "Build-Struktur" veraltet (offen, 30.10.2026)
 
@@ -5899,6 +5848,99 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Laufzeit der Build-Pipeline verkürzen (26.10.2026, Teil A erledigt 01.11.2026)
+
+Ausgangspunkt waren lange Läufe von `build.yml`. Ausgewertet wurden die
+Zeitstempel je Schritt aus zwei grünen Läufen: 26.10.2026 (Qt 6.7.0,
+`ubuntu-24.04`) und 01.11.2026 (Qt 6.8.3, `ubuntu-26.04` bzw.
+`windows-2025-vs2026`). Zeiten in Minuten:Sekunden, Pakete per apt nur
+unter Linux:
+
+| Schritt | Linux 26.10. | Linux 01.11. | Windows 26.10. | Windows 01.11. |
+|---|---|---|---|---|
+| Pakete per apt | 7:05 | 0:08 | - | - |
+| Install Qt | 5:00 | 0:41 | 1:08 | 1:15 |
+| Build | 11:16 | 16:14 | 16:27 | 28:46 |
+| Test | 0:39 | 0:39 | 1:03 | 1:00 |
+| Gesamt | 24:07 | 17:50 | 19:04 | 31:35 |
+
+Befund:
+
+- Am 26.10. lieferte der Ubuntu-Paketserver nur etwa 40 kB/s; das traf den
+  apt-Schritt und die Systembibliotheken, die `install-qt-action` nachlädt.
+  Der eigentliche Qt-Download dauerte etwa 10 Sekunden. Mit dem
+  Ubuntu-26-Image ist dieser Engpass verschwunden (20,5 MB in einer
+  Sekunde).
+- Seitdem bestimmt der Build die Laufzeit, und er ist langsamer geworden:
+  unter Linux etwa 35 % mehr Zeit je Übersetzung (1,16 s statt 0,86 s,
+  dazu 837 statt 787 Übersetzungen), unter Windows insgesamt 75 % mehr.
+  Ob das an den neuen Compilern (GCC 15.2, MSVC 19.51), den Qt-6.8-Headern
+  oder an Schwankungen der Runner liegt, lässt sich aus dem Log nicht
+  trennen.
+- Gebaut wurde mit `--parallel 2`, obwohl die Runner für öffentliche
+  Repositories 4 Kerne haben.
+- 693 der 837 Übersetzungen unter Linux sind `app/`-Quellen, die jedes
+  Testziel für sich neu übersetzt, z. B. `BuyObject.cpp` 26-mal;
+  `tst_mainwindow` und `tst_backupform` übersetzen je über 80 Dateien.
+
+Teil A, umgesetzt 01.11.2026 (nur Workflows, kein Versionssprung):
+
+- apt installiert nur noch `poppler-utils` (in `build.yml` und
+  `package.yml`). `cmake` und `build-essential` sind auf den Images
+  vorinstalliert.
+- `--parallel 4` in allen vier Jobs. Die frühere 2 stammte aus der Zeit
+  mit 2-Kern-Runnern und 7 GB, auf denen mehr parallele Übersetzungen mit
+  Exit-Code 143 abbrachen.
+- ccache in beiden Jobs von `build.yml` (`hendrikmuhs/ccache-action@v1.2`,
+  ab v1.2.21 auf Node 24, je Job bis 1 GB, Schlüssel je Job mit
+  Zeitstempel). Eingebunden über `CMAKE_CXX_COMPILER_LAUNCHER`; ein
+  eigener Schritt gibt danach die Trefferquote aus. Unter Windows setzt das
+  den Ninja-Generator und einen Build ohne `/Zi` voraus, beides ist im
+  Release-Build erfüllt. `package.yml` bekommt bewusst keinen ccache, weil
+  es zu selten läuft.
+- Qt-Cache (`cache: true`) in allen vier Jobs. `package.yml` nutzt einen
+  eigenen Schlüssel-Präfix, damit der Zustand nach dem Entfernen der
+  SQL-Treiber in `package-linux` nicht in den Cache von `build.yml` gerät.
+- Der apt-Cache aus der Empfehlung vom 26.10. entfällt, weil der
+  Paketserver nicht mehr bremst.
+
+Ergebnis (01.11.2026), Commit "Build: Laufzeit der Build-Pipeline
+verkürzt", erst mit leerem Cache, dann als Wiederholung ohne Codeänderung
+mit warmem Cache. Zeiten in Minuten:Sekunden, Gesamt je Job:
+
+| Lauf | Linux Build | Linux gesamt | Windows Build | Windows gesamt |
+|---|---|---|---|---|
+| vorher (Qt 6.8.3, ohne Teil A) | 16:14 | 17:50 | 28:46 | 31:35 |
+| Teil A, Cache leer | 9:13 | 11:26 | 15:58 | 19:22 |
+| Teil A, Cache warm | 0:57 | 2:44 | 0:41 | 4:01 |
+
+- Schon der Lauf mit leerem Cache war 43 % (Linux) bzw. 45 % (Windows)
+  kürzer. Neben `--parallel 4` lag das daran, dass ccache innerhalb
+  desselben Laufs trifft: übersetzt ein Testziel dieselbe `app/`-Quelle
+  mit denselben Einstellungen wie ein anderes, kommt das Ergebnis aus dem
+  Cache (Treffer 72 % Linux, 38 % Windows).
+- Mit warmem Cache trafen 834 von 837 (Linux) bzw. 828 von 837 (Windows)
+  Übersetzungen. Der Build dauert dann unter einer Minute; die Laufzeit
+  bestimmen jetzt Test (0:42 bzw. 1:30) und die Einrichtungsschritte.
+- Der Qt-Cache greift (Schlüssel-Treffer in beiden Jobs). Der Schritt
+  "Install Qt" braucht trotzdem 0:38 bzw. 1:05, weil die Action die
+  Systembibliotheken und aqtinstall weiterhin selbst einrichtet. Unter
+  Linux enthält der Schlüssel die Kernel-Version des Runners; nach einem
+  Image-Update wird Qt deshalb einmal neu geladen und neu abgelegt.
+- Ein ccache-Stand ist etwa 35 MB (Linux) bzw. 56 MB (Windows) gross.
+  Jeder Lauf legt einen neuen Stand mit Zeitstempel ab; ältere räumt
+  GitHub selbst ab (nach 7 Tagen ohne Zugriff bzw. ab 10 GB je
+  Repository).
+- Unter Windows richtet die Action kein eigenes ccache ein, sondern nutzt
+  das auf dem Image vorhandene ccache 4.9.1 (aus Strawberry Perl). Es
+  unterstützt MSVC; fehlt es auf einem künftigen Image, installiert die
+  Action selbst eines.
+
+@note Ein Lauf nach einer Änderung an einem viel eingebundenen Header
+(z. B. einem Objekt aus `app/core`) liegt zwischen den beiden Zeilen
+"Cache leer" und "Cache warm", weil alle Dateien, die ihn einbinden, neu
+übersetzt werden.
 
 ### Qt-Version für neuere GCC anheben (26.10.2026, erledigt 01.11.2026)
 
