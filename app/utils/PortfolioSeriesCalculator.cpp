@@ -23,7 +23,21 @@ struct Lot
 {
     double remaining = 0.0;
     double price     = 0.0;
+    double volume    = 0.0; ///< ursprüngliche Stückzahl, für den Anteil der Kaufkosten
+    double brokerage = 0.0; ///< Gebühren des Kaufs, brutto (01.11.2026)
+    double reduction = 0.0; ///< Rabatt des Kaufs (01.11.2026)
 };
+
+/// Kaufkosten des noch gehaltenen Teils eines Lots, gerundet wie in
+/// ShareCalculator::compute(): Gebühren und Rabatt je für sich anteilig.
+double heldLotCosts(const Lot& lot)
+{
+    if (lot.remaining <= 0.0 || lot.volume <= 0.0)
+        return 0.0;
+    const double frac = lot.remaining / lot.volume;
+    return ShareCalculator::roundAway(lot.brokerage * frac)
+         - ShareCalculator::roundAway(lot.reduction * frac);
+}
 
 /**
  * Drops every entry without a valid date and reports how many were removed.
@@ -250,6 +264,8 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
         double heldVolume         = 0.0;
         double purchaseValueHeld  = 0.0; // sum over lots of round(remaining x price)
         double purchaseValueTotal = 0.0; // sum over all buys of round(volume x price)
+        double heldBuyCosts       = 0.0; // sum over lots of heldLotCosts() (01.11.2026)
+        double salesGross         = 0.0; // sum over sales of round(volume x price) (01.11.2026)
         double realizedGain       = 0.0;
         double dividendSum        = 0.0;
         double costSum            = 0.0;
@@ -272,7 +288,8 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
                 const PortfolioBuyEvent& buy = buys.at(buyIdx);
                 const double buyValue = round2(buy.volume * buy.price);
 
-                lots.append(Lot{ buy.volume, buy.price });
+                lots.append(Lot{ buy.volume, buy.price, buy.volume, buy.brokerage, buy.reduction });
+                heldBuyCosts       += heldLotCosts(lots.constLast());
                 heldVolume         += buy.volume;
                 purchaseValueHeld  += buyValue;
                 purchaseValueTotal += buyValue;
@@ -296,10 +313,13 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
                     // Keep purchaseValueHeld exactly equal to the sum of the
                     // rounded per-lot contributions by replacing this lot's
                     // contribution rather than subtracting an unrounded delta.
-                    const double before = round2(lot.remaining * lot.price);
+                    const double before      = round2(lot.remaining * lot.price);
+                    const double costsBefore = heldLotCosts(lot);
                     lot.remaining -= take;
                     const double after = round2(lot.remaining * lot.price);
                     purchaseValueHeld -= (before - after);
+                    // Gleiches Ersetzen für die anteiligen Kaufkosten.
+                    heldBuyCosts -= (costsBefore - heldLotCosts(lot));
 
                     soldCost += round2(take * lot.price);
                     open     -= take;
@@ -313,6 +333,7 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
 
                 const double netProceeds = round2(round2(sale.volume * sale.price)
                                                   - sale.taxSum);
+                salesGross += round2(sale.volume * sale.price);
                 realizedGain += netProceeds - soldCost;
                 ++saleIdx;
             }
@@ -369,6 +390,9 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
                 detail.dividends         = dividendSum;
                 detail.costs             = costSum;
                 detail.marketValue       = marketValue;
+                detail.purchaseValueHeldFinal = purchaseValueHeld + heldBuyCosts;
+                detail.salesGross        = salesGross;
+                detail.marketValueComplete = marketValue + salesGross;
                 detail.currentPrice      = lastPriceIsCurrent;
                 detail.substitutePrice   = lastPriceIsSubst;
                 result.sharePoints.append(detail);
@@ -383,6 +407,8 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
             point.purchaseValueTotal += purchaseValueTotal;
             point.investedTotal      += purchaseValueTotal + investmentCostSum;
             point.marketValue        += marketValue;
+            point.purchaseValueHeldFinal += purchaseValueHeld + heldBuyCosts;
+            point.marketValueComplete    += marketValue + salesGross;
             // Kennzeichnung nur, wenn der aktuelle Kurs tatsächlich in die
             // Linie eingeht — bei Bestand 0 spielt der Kurs keine Rolle.
             if (lastPriceIsCurrent && heldVolume > 0.0)
@@ -408,6 +434,14 @@ PortfolioSeriesResult PortfolioSeriesCalculator::compute(
         point.developmentPct = (point.investedTotal > 0.0)
                                ? (point.development / point.investedTotal * 100.0)
                                : 0.0;
+
+        // Zweite Linie des Depotwert-Charts (01.11.2026): wie "Aktuelle
+        // Entwicklung" — Bestandswert minus Einzahlung der gehaltenen Stücke
+        // inklusive anteiliger Kaufkosten, ohne Dividenden und Realisiertes.
+        point.developmentHeld    = round2(point.holdingsValue - point.purchaseValueHeldFinal);
+        point.developmentHeldPct = (point.purchaseValueHeldFinal > 0.0)
+                                   ? (point.developmentHeld / point.purchaseValueHeldFinal * 100.0)
+                                   : 0.0;
     }
 
     return result;

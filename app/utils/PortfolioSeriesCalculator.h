@@ -90,6 +90,23 @@
  * ohnehin an, eine zweite Rechnung wäre nur Aufwand. Welche Linie gezeichnet
  * wird, entscheidet der Presenter.
  *
+ * ### Zweite Linie je Chart (ergänzt 01.11.2026)
+ *
+ * Nessies Vorgabe vom 19.10.2026, entschieden am 01.11.2026: jeder Chart
+ * zeigt beide Spaltengruppen der Tabellen, "Komplett" und "Aktuell".
+ *
+ * - developmentHeld: Entwicklung der am Stichtag gehaltenen Stücke, wie die
+ *   Spalte "Aktuelle Entwicklung" im Depotwert-Tab — Bestandswert minus
+ *   Einzahlung der gehaltenen Stücke inklusive anteiliger Kaufkosten
+ *   (Gebühren und Rabatt je Kauf, anteilig nach Reststück), ohne
+ *   Dividenden. Endet heute auf dem Depotwert-Footer "Entwicklung (gesamt)".
+ * - marketValueComplete: Marktwert plus alle Verkäufe bis zum Stichtag
+ *   brutto (Stück x Verkaufskurs), wie "Kpl. Marktwert". Endet heute auf
+ *   dem Marktwert-Footer "Kpl. Marktwert".
+ *
+ * Die Kaufkosten je Kauf kommen über PortfolioBuyEvent::brokerage und
+ * ::reduction; gerundet wird je Kauf wie in ShareCalculator::compute().
+ *
  * ### FIFO
  *
  * Verkäufe werden intern FIFO abgespielt: was zuerst gekauft wurde, wird
@@ -152,6 +169,15 @@ struct PortfolioBuyEvent
     QDate  date;            ///< Kaufdatum
     double volume = 0.0;    ///< Gekaufte Stückzahl
     double price  = 0.0;    ///< Kaufkurs je Stück
+    /// Gebühren des diesem Kauf zugeordneten Kosteneintrags, brutto
+    /// (ergänzt 01.11.2026) — für die Einzahlung der gehaltenen Stücke
+    /// anteilig nach Reststück, wie BrokerageObject::brokerage() in
+    /// ShareCalculator::compute(). Der Kosten-Term (PortfolioCostEvent) bleibt
+    /// davon unberührt.
+    double brokerage = 0.0;
+    /// Rabatt desselben Kosteneintrags (ergänzt 01.11.2026), anteilig wie
+    /// brokerage.
+    double reduction = 0.0;
 };
 
 /**
@@ -256,6 +282,17 @@ struct PortfolioSeriesPoint
     /// Stücke, am Kauftag mit Kaufpreis, sonst mit Schlusskurs — siehe
     /// Klassendoku "Marktwert-Linie".
     double marketValue        = 0.0;
+    /// Einzahlung der gehaltenen Stücke inklusive anteiliger Kaufkosten
+    /// (ergänzt 01.11.2026) — wie "Einzahlung" im Depotwert-Tab.
+    double purchaseValueHeldFinal = 0.0;
+    /// Zweite Linie des Depotwert-Charts (ergänzt 01.11.2026): Bestandswert
+    /// minus purchaseValueHeldFinal, wie "Aktuelle Entwicklung".
+    double developmentHeld    = 0.0;
+    /// developmentHeld in Prozent der purchaseValueHeldFinal.
+    double developmentHeldPct = 0.0;
+    /// Zweite Linie des Marktwert-Charts (ergänzt 01.11.2026): marketValue
+    /// plus alle Verkäufe bis zum Stichtag brutto, wie "Kpl. Marktwert".
+    double marketValueComplete = 0.0;
     /// true, wenn an diesem Stichtag mindestens eine Aktie mit Bestand mit
     /// ihrem aktuellen Kurs statt eines Schlusskurses bewertet ist
     /// (ergänzt 30.10.2026) — die View kennzeichnet den Punkt im Tooltip.
@@ -307,6 +344,9 @@ struct PortfolioSharePoint
     double  dividends         = 0.0;   ///< Kumulierte Netto-Dividenden
     double  costs             = 0.0;   ///< Kumulierte Kosten
     double  marketValue       = 0.0;   ///< Marktwert-Linie dieser Aktie (ergänzt 17.10.2026)
+    double  purchaseValueHeldFinal = 0.0; ///< Einzahlung gehalten inkl. anteiliger Kaufkosten (01.11.2026)
+    double  salesGross        = 0.0;   ///< Summe der Verkäufe brutto bis zum Stichtag (01.11.2026)
+    double  marketValueComplete = 0.0; ///< marketValue + salesGross (01.11.2026)
     bool    currentPrice      = false; ///< price ist der aktuelle Kurs, kein Schlusskurs (30.10.2026)
     bool    substitutePrice   = false; ///< price ist ein Ersatzkurs aus Kauf/Verkauf (31.10.2026)
 };

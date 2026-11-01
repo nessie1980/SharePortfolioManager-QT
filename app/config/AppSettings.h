@@ -334,6 +334,22 @@ public:
      */
     void setPortfolioChartInterval(const QString& unit, int count);
 
+    // ── Kurven der Portfolio-Charts (ergänzt 01.11.2026) ─────────────────
+    // Je Chart zwei Linien: "Komplett" (alle jemals gehandelten Aktien) und
+    // "Aktuell" (nur die gehaltenen Stücke), einzeln ein- und ausblendbar.
+    // Gespeichert wie Interval und Anzahl beim Schließen der View, Vorgabe:
+    // beide sichtbar (Nessies Entscheidung 01.11.2026).
+
+    bool depotChartShowComplete()  const { return m_depotChartShowComplete; }  ///< Default true
+    bool depotChartShowHeld()      const { return m_depotChartShowHeld; }      ///< Default true
+    bool marketChartShowHeld()     const { return m_marketChartShowHeld; }     ///< Default true
+    bool marketChartShowComplete() const { return m_marketChartShowComplete; } ///< Default true
+
+    /** @brief Sichtbare Linien des Depotwert-Charts setzen und speichern. */
+    void setDepotChartCurves(bool showComplete, bool showHeld);
+    /** @brief Sichtbare Linien des Marktwert-Charts setzen und speichern. */
+    void setMarketChartCurves(bool showHeld, bool showComplete);
+
 private:
     explicit AppSettings(QObject* parent = nullptr);
 
@@ -421,4 +437,8 @@ private:
     int     m_shareChartIntervalCount     = 1;
     QString m_portfolioChartIntervalUnit  = QStringLiteral("Year");
     int     m_portfolioChartIntervalCount = 1;
+    bool    m_depotChartShowComplete      = true;
+    bool    m_depotChartShowHeld          = true;
+    bool    m_marketChartShowHeld         = true;
+    bool    m_marketChartShowComplete     = true;
 };

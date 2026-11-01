@@ -557,6 +557,43 @@ private slots:
         QVERIFY(csv.contains(QLocale().toString(1100.0, 'f', 2)));
     }
 
+    void test_chartData_carriesSecondCurves()
+    {
+        // Ergänzt 01.11.2026: die Punkte tragen beide Linien je Chart.
+        // risingShare(): 10 x 100 ohne Kosten, Kurs 110 -> im Depot 100,
+        // Kpl. Marktwert = Marktwert (kein Verkauf).
+        FakeViewPortfolioChart  view;
+        FakeModelPortfolioChart model;
+        model.m_input    = { risingShare() };
+        model.m_earliest = d(2026, 6, 1);
+        view.m_intervalCount = 5;
+
+        PresenterPortfolioChart presenter(&view, &model);
+        presenter.loadAndDisplay();
+
+        const PortfolioChartPoint& last = view.lastChartData.points.constLast();
+        QVERIFY(qAbs(last.developmentHeld - 100.0) < 0.005);
+        QVERIFY(qAbs(last.developmentHeldPct - 10.0) < 1e-9);
+        QVERIFY(qAbs(last.marketValueComplete - 1100.0) < 0.005);
+        QVERIFY(view.lastRangeInfo.contains(QStringLiteral("im Depot:")));
+    }
+
+    void test_buildRangeInfo_bothCurvesPerChart()
+    {
+        const QList<PortfolioChartPoint> points = {
+            { d(2026, 7, 1), 259.0, 12.95, 1000.0, false, 40.0, 4.0, 1300.0 }
+        };
+        const QString depot = PresenterPortfolioChart::buildRangeInfo(
+            d(2026, 6, 1), d(2026, 7, 1), points, PortfolioChartMode::Development);
+        QVERIFY2(depot.contains(QStringLiteral("im Depot: ") + QLocale().toString(40.0, 'f', 2)),
+                 qPrintable(depot));
+        const QString market = PresenterPortfolioChart::buildRangeInfo(
+            d(2026, 6, 1), d(2026, 7, 1), points, PortfolioChartMode::MarketValue);
+        QVERIFY2(market.contains(QStringLiteral("Kpl. Marktwert: ") + QLocale().toString(1300.0, 'f', 2)),
+                 qPrintable(market));
+        QVERIFY(!market.contains(QStringLiteral("%")));
+    }
+
     void test_buildRangeInfo_usesLastPoint()
     {
         const QList<PortfolioChartPoint> points = {
@@ -778,6 +815,28 @@ private slots:
         const QList<PortfolioPriceEvent> prices = model.loadPortfolioInput().first().prices;
         QCOMPARE(prices.size(), 1);
         QVERIFY(!prices.first().substitute);
+    }
+
+    void test_loadPortfolioInput_buyCarriesItsBrokerage()
+    {
+        // Ergänzt 01.11.2026: die Kaufkosten je Kauf für die Linie "Aktuell"
+        // des Depotwert-Charts, wie ShareCalculator sie über buy_guid zieht.
+        const QString shareGuid = insertTestShare();
+        BuyRepository buyRepo;
+        buyRepo.insert(BuyObject(QStringLiteral("buy-1"), shareGuid, QString(), QStringLiteral("ord-1"),
+                                 QStringLiteral("2024-01-01T10:00:00"), 10.0, 0.0, 100.0));
+        BrokerageRepository brokerageRepo;
+        brokerageRepo.insert(BrokerageObject(QStringLiteral("brk-1"), shareGuid, QStringLiteral("buy-1"),
+                                             QString(), QStringLiteral("2024-01-01T10:00:00"),
+                                             9.0, 1.0, 0.0, 2.0));
+
+        ModelPortfolioChart model;
+        const PortfolioShareSeriesInput input = model.loadPortfolioInput().first();
+        QCOMPARE(input.buys.size(), 1);
+        QCOMPARE(input.buys.first().brokerage, 10.0); // Provision + Makler
+        QCOMPARE(input.buys.first().reduction, 2.0);
+        QCOMPARE(input.costs.size(), 1);              // Kosten-Term unverändert
+        QCOMPARE(input.costs.first().amount, 8.0);
     }
 
     void test_currentPriceDate_readsIsoTimestamp()

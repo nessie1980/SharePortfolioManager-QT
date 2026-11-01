@@ -3866,6 +3866,73 @@ Zeitraum vorher eng um das fragliche Datum zu legen (etwa Interval "Tag",
 Anzahl 5) — dann bleibt der dritte Block überschaubar und die betroffene
 Aktie steht direkt nebeneinander in wenigen Zeilen.
 
+### Zwei Linien je Chart (ergänzt 01.11.2026, v1.30.0)
+
+Nessies Vorgabe vom 19.10.2026, entschieden am 01.11.2026: beide Charts
+zeigen dieselben zwei Sichten wie die Tabellen mit ihren Spaltengruppen
+"Komplett" (alle Käufe und Verkäufe) und "Aktuell" (gehaltene Stücke). Bis
+dahin zeigte jeder Chart nur eine davon, und zwar über Kreuz: der
+Depotwert-Chart "Komplett", der Marktwert-Chart "Aktuell". Der Bericht zeigt
+nur den heutigen Stand, die Charts machen dieselbe Gegenüberstellung im
+Verlauf sichtbar.
+
+| Chart | Linie | Rechnung je Stichtag | Endet auf |
+|-------|-------|----------------------|-----------|
+| Depotwert | Komplett (alle Aktien), bisherige Linie | Bestandswert + realisiert + Dividenden - Kosten - Kaufwert gehalten | Footer Depotwert "Komplette Entwicklung" |
+| Depotwert | Aktuell (im Depot), neu | Bestandswert - Einzahlung gehalten inkl. anteiliger Kaufkosten, ohne Dividenden | Footer Depotwert "Entwicklung (gesamt)" |
+| Marktwert | Aktuell (im Depot), bisherige Linie | Wert der gehaltenen Stücke, am Kauftag mit Kaufpreis | Footer Marktwert "Aktueller Depotstand" |
+| Marktwert | Komplett (alle Aktien), neu | Marktwert + alle Verkäufe bis zum Stichtag brutto | Footer Marktwert "Kpl. Marktwert" |
+
+Nessies Entscheidungen vom 01.11.2026:
+
+- "Im Depot" heisst gehalten am jeweiligen Stichtag, nicht die heutigen
+  Positionen rückwirkend. Jeder Punkt zeigt, was die Spalte "Aktuelle
+  Entwicklung" an diesem Tag gezeigt hätte.
+- Keine Legende im Chart; ein Block "Kurven" unter "Zeitraum" mit zwei
+  Häkchen "Komplett (alle Aktien)" und "Aktuell (im Depot)", die bisherige
+  Linie oben. Die Häkchen tragen ein Farbsymbol (bei vorzeichen-gefärbten
+  Linien beide Farben) und ersetzen die Legende. Vorgabe beide sichtbar,
+  mindestens eine bleibt immer an. Gespeichert je Chart in `settings.ini`
+  (`Charts/DepotShowComplete`, `Charts/DepotShowHeld`,
+  `Charts/MarketShowHeld`, `Charts/MarketShowComplete`), wie Interval und
+  Anzahl beim Schliessen und nur bei einer Änderung.
+- Farben: Depotwert "Komplett" weiter grün/rot nach Vorzeichen, "Aktuell"
+  dunkelblau (>= 0) bzw. hellblau (< 0) — das Vorzeichen soll erkennbar
+  bleiben. Marktwert "Aktuell" blau wie bisher, "Komplett" grau-grün,
+  einfarbig, da ein Marktwert nie negativ ist.
+- Prozent der Linie "Aktuell" im Depotwert-Chart: Entwicklung durch
+  Einzahlung der gehaltenen Stücke, wie die Spalte.
+- Tooltip: Datum, darunter je sichtbarer Linie "Komplett: …" bzw.
+  "Aktuell: …" (Depotwert mit Prozent, Marktwert ohne). Der Tab-Tooltip
+  nennt die Endwerte beider Linien ("im Depot: …" bzw. "Kpl. Marktwert: …"),
+  unabhängig von den Häkchen.
+
+Umsetzung: `PortfolioBuyEvent` trägt seit 01.11.2026 Gebühren (`brokerage`)
+und Rabatt (`reduction`) des Kosteneintrags, der dem Kauf über `buy_guid`
+zugeordnet ist — derselbe, den `ShareCalculator::compute()` über
+`findByBuyGuid()` heranzieht. Der Rechenkern führt sie je Lot mit und rechnet
+den gehaltenen Anteil wie die Tabelle: Gebühren und Rabatt je für sich
+anteilig nach Reststück und gerundet. Beim Verkauf wird der Beitrag des Lots
+ersetzt statt um einen ungerundeten Betrag vermindert, wie schon beim
+Kaufwert gehalten. Neue Werte je Punkt: `purchaseValueHeldFinal`,
+`developmentHeld`, `developmentHeldPct`, `marketValueComplete`; je Aktie
+zusätzlich `salesGross`. Der Kosten-Term der Linie "Komplett" bleibt
+unverändert.
+
+Das Ein- und Ausblenden zeichnet nur in der View neu (`redraw()`), ohne den
+Presenter zu fragen; die Punkte tragen immer beide Linien. Die Y-Achse
+richtet sich nach den sichtbaren Linien. Der Diagnose-Export hat in Block 2
+die Spalten "Einzahlung gehalten m. Kosten", "Entwicklung im Depot",
+"Entwicklung im Depot %" und "Kpl. Marktwert", in Block 3 "Einzahlung
+gehalten m. Kosten", "Verkaeufe brutto" und "Kpl. Marktwert".
+
+Bericht und Tab "Depot- vs. Marktwert" gleichen die neuen Linien ab: je
+Aktie "Akt. Entwicklung Depotwert / Depot-Chart im Depot" und "Kpl.
+Marktwert / Marktwert-Chart komplett" (sieben statt fünf Zeilen), im Gesamt
+"Depotwert: Footer Entwicklung (gesamt)" und "Marktwert: Footer Kpl.
+Marktwert" (fünf statt drei Zeilen). "Fließt ein in" nennt die Linien jetzt
+mit Namen ("Endwert Linie Aktuell" bzw. "Linie Komplett").
+
 ### Tooltip rastet auf Datenpunkte ein (Bugfix 06.08.2026)
 
 `QLineSeries::hovered()` liefert die CURSORPOSITION in Achsenkoordinaten,
@@ -4114,6 +4181,8 @@ Komplette Entwicklung.
 | ShareDetails, Box Gesamt | Kurswert + Dividenden + Verkäufe netto - Kpl. Einzahlung | Kurswert + Verkäufe brutto - Kpl. Einzahlung |
 | ShareDetails, Gewinne/Verluste | Auszahlung und G/V mit Kosten und Steuern | Verkaufswert brutto, G/V = Verkaufswert - Kaufwert |
 | Chart, Prozent-Nenner | Kaufwert aller Käufe + Kauf- und freistehende Kosten | (kein Prozentwert) |
+| Chart, Linie Komplett (01.11.2026) | Komplette Entwicklung (alle Aktien) | Kpl. Marktwert (Marktwert + Verkäufe brutto) |
+| Chart, Linie Aktuell (01.11.2026) | Aktuelle Entwicklung (gehaltene Stücke, ohne Dividenden) | Marktwert der gehaltenen Stücke |
 
 Box Aktuell in der ShareDetailsForm (Entscheidung 3, 25.10.2026, in beiden
 Modi): Anteile x Kurs = Bestandswert, minus Einzahlungen (Bestand), gleich
@@ -4273,7 +4342,8 @@ verkauften Teil gewandert; im Bestand ist von ihnen nichts mehr übrig.
 | 4 | Rechenweg Marktwert | Option A, rein Kurs |
 | 5 | Prozent-Nenner Depotwert-Chart | Kaufwert mit Kosten, wie Footer |
 
-Offen bleibt nur die zweite Kurve je Chart, siehe "Offene Punkte".
+Offen blieb danach nur die zweite Kurve je Chart; erledigt am 01.11.2026, siehe
+"PortfolioChartForm-Details", "Zwei Linien je Chart".
 
 ---
 
@@ -5485,88 +5555,6 @@ und ab welcher Qt-Version die Spezialisierung `inline` ist. Beides vor dem
 Upgrade klären — die GCC-Version steht in der CMake-Ausgabe ("The CXX
 compiler identification is GNU ...").
 
-### Depotwert/Marktwert: zweite Kurve je Chart (offen, 19.10.2026; Rechenregeln entschieden und umgesetzt 25.10.2026)
-
-Aufgefallen bei Nessies Abnahme des Marktwert-Charts (v1.26.0): der Endwert
-des Marktwert-Charts stimmt nicht mit der Summe im Tab "Kompletter
-Marktwert" überein. Nessies Einschätzung: der Chart stimmt, die Summe in der
-Übersicht nicht.
-
-Ursache der Abweichung (geprüft 19.10.2026): Die Footer-Zeile "Aktueller
-Depotstand" im Marktwert-Tab summiert `ShareValues::marketValue`, und das ist
-`curValue + saleProfitLoss` — also Kurswert der gehaltenen Stücke PLUS
-realisierter Gewinn/Verlust (nach Steuer) aller Verkäufe. Die Zeilen darüber
-zeigen dagegen nur `curValue`, und der Marktwert-Chart zeigt nur die
-gehaltenen Stücke. Die Summe passt also weder zu den Zeilen noch zum Chart,
-sobald es Verkäufe gibt. Daneben mischt "Kpl. Marktwert"
-(`completeCurValueMarket`) gehaltene Stücke ohne Gebühren mit verkauften
-Stücken MIT Gebühren und Steuer (siehe `ShareCalculator.cpp`,
-`completeProfitLossMarket`).
-
-Nessies Vorgabe (19.10.2026): Depotwert- und Marktwert-Tab sowie beide Charts
-werden nachgebessert. Bisher zeigt der Depotwert-Chart die Entwicklung über
-alle jemals gehandelten Aktien, der Marktwert-Chart nur die Aktien, die
-gerade im Depot liegen. Künftig:
-
-- Depotwert-Chart: zusätzlich eine zweite Kurve nur für die Aktien, die
-  tatsächlich im Depot liegen.
-- Marktwert-Chart: zusätzlich eine Kurve über alle jemals gehandelten Aktien.
-
-Damit hätten beide Charts dieselben zwei Sichten wie die Tabellen mit ihren
-Spaltengruppen "Aktuell" (gehaltene Stücke) und "Komplett" (alle Käufe und
-Verkäufe), und jede Kurve könnte am rechten Rand auf genau einer
-Footer-Summe enden — derselbe Prüfanker wie heute beim Depotwert-Chart und
-"Komplette Entwicklung".
-
-Zur Analyse gibt es seit 23.10.2026 (v1.27.0) den Berechnungsbericht, siehe
-"Berechnungsbericht". Nessie wertet ihn aus, bevor die Fragen unten
-entschieden werden.
-
-Befund aus Nessies Bericht einer vollständig verkauften Aktie (24.10.2026;
-Kauf 200 × 48,595 mit 30,95 Kosten, Verkauf 200 × 145,00 mit 69,90 Kosten
-und 5.058,76 Steuern, vier Dividenden netto 109,80):
-
-- Der Footer "Aktueller Depotstand" im Marktwert-Tab zeigt 14.222,24 EUR,
-  obwohl das Depot leer ist — der realisierte Gewinn nach Steuer ohne
-  Gebühren. Tabellenzeile und Marktwert-Chart zeigen richtig 0,00.
-- "Kpl. Marktwert" (23.840,39) entspricht keinem tatsächlich geflossenen
-  Betrag: Kpl. Einzahlung ohne Gebühren (9.719,00) plus eine Entwicklung,
-  die Kauf- und Verkaufsgebühren sowie Steuern abzieht (14.121,39). Die
-  Auszahlung war 23.871,34, der Verkaufswert 29.000,00.
-- Depotwert-Tab und Depotwert-Chart stimmen in Euro überein (14.231,19),
-  der Prozentwert aber nicht: Footer 145,96 % (Bezug Kaufwert mit Kosten
-  9.749,95), Chart 146,43 % (Bezug Kaufwert ohne Kosten 9.719,00).
-- Alle übrigen Werte rechnen sich nach, auch Steuern der Dividenden
-  (Quellensteuer 15 %, Kapitalertragsteuer 10 % nach Anrechnung, Soli) und
-  die Verkaufssteuer (25 % plus Soli auf 19.180,15 Gewinn nach Kosten).
-
-Stand 25.10.2026: die Rechenfehler in Tabellen, Footern, ShareDetailsForm und
-Depotwert-Chart-Prozent sind behoben, die verbindlichen Regeln samt
-Rechenbeispielen stehen unter "Rechenregeln Depotwert und Marktwert". Frage 4
-ist damit mit ja beantwortet (Footer = Summe der Kurswerte), Frage 5 ebenfalls
-(Kpl. Marktwert rein Kurs: Kurswert plus Verkäufe brutto). Offen ist nur noch
-die zweite Kurve je Chart (Fragen 1 bis 3): die Depotwert-Kurve "im Depot"
-braucht dafür die Kosten je Lot, die PortfolioSeriesCalculator heute nur als
-kumulierte Summe führt; die Marktwert-Kurve "gesamt" endet nach Option A auf
-"Kpl. Marktwert".
-
-Vor der Umsetzung zu klären (Fragen an Nessie, 19.10.2026):
-
-1. Entsprechen die beiden Kurven je Chart den beiden Spaltengruppen der
-   Tabelle ("Aktuell" und "Komplett"), und soll jede Kurve auf der
-   zugehörigen Footer-Summe enden?
-2. Depotwert-Chart, Kurve "im Depot": Entwicklung der gehaltenen Stücke wie
-   die Spalte "Aktuelle Entwicklung" (Kurswert minus Kaufwert inkl.
-   anteiliger Kaufgebühren)? Zählen Dividenden der noch gehaltenen Aktien
-   mit?
-3. Marktwert-Chart, Kurve "gesamt": Was passiert beim Verkauf — bleibt der
-   Verkaufswert in der Kurve stehen (z. B. Stückzahl x Verkaufskurs, brutto),
-   statt wie bei der heutigen Kurve herauszufallen?
-4. Footer "Aktueller Depotstand": soll er künftig die Summe der Marktwerte
-   der gehaltenen Stücke zeigen, also exakt den Endwert des Marktwert-Charts?
-5. "Kpl. Marktwert": soll er durchgängig ohne Gebühren und Steuern rechnen,
-   passend zur Marktwert-Sicht?
-
 ### Zählung der Testziele in "Build-Struktur" veraltet (offen, 30.10.2026)
 
 Die Kette der @note-Absätze unter "Build-Struktur (CMake)" endet bei 48
@@ -5878,6 +5866,94 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Depotwert/Marktwert: zweite Kurve je Chart (19.10.2026, Rechenregeln 25.10.2026, erledigt 01.11.2026)
+
+Aufgefallen bei Nessies Abnahme des Marktwert-Charts (v1.26.0): der Endwert
+des Marktwert-Charts stimmt nicht mit der Summe im Tab "Kompletter
+Marktwert" überein. Nessies Einschätzung: der Chart stimmt, die Summe in der
+Übersicht nicht.
+
+Ursache der Abweichung (geprüft 19.10.2026): Die Footer-Zeile "Aktueller
+Depotstand" im Marktwert-Tab summiert `ShareValues::marketValue`, und das ist
+`curValue + saleProfitLoss` — also Kurswert der gehaltenen Stücke PLUS
+realisierter Gewinn/Verlust (nach Steuer) aller Verkäufe. Die Zeilen darüber
+zeigen dagegen nur `curValue`, und der Marktwert-Chart zeigt nur die
+gehaltenen Stücke. Die Summe passt also weder zu den Zeilen noch zum Chart,
+sobald es Verkäufe gibt. Daneben mischt "Kpl. Marktwert"
+(`completeCurValueMarket`) gehaltene Stücke ohne Gebühren mit verkauften
+Stücken MIT Gebühren und Steuer (siehe `ShareCalculator.cpp`,
+`completeProfitLossMarket`).
+
+Nessies Vorgabe (19.10.2026): Depotwert- und Marktwert-Tab sowie beide Charts
+werden nachgebessert. Bisher zeigt der Depotwert-Chart die Entwicklung über
+alle jemals gehandelten Aktien, der Marktwert-Chart nur die Aktien, die
+gerade im Depot liegen. Künftig:
+
+- Depotwert-Chart: zusätzlich eine zweite Kurve nur für die Aktien, die
+  tatsächlich im Depot liegen.
+- Marktwert-Chart: zusätzlich eine Kurve über alle jemals gehandelten Aktien.
+
+Damit hätten beide Charts dieselben zwei Sichten wie die Tabellen mit ihren
+Spaltengruppen "Aktuell" (gehaltene Stücke) und "Komplett" (alle Käufe und
+Verkäufe), und jede Kurve könnte am rechten Rand auf genau einer
+Footer-Summe enden — derselbe Prüfanker wie heute beim Depotwert-Chart und
+"Komplette Entwicklung".
+
+Zur Analyse gibt es seit 23.10.2026 (v1.27.0) den Berechnungsbericht, siehe
+"Berechnungsbericht". Nessie wertet ihn aus, bevor die Fragen unten
+entschieden werden.
+
+Befund aus Nessies Bericht einer vollständig verkauften Aktie (24.10.2026;
+Kauf 200 × 48,595 mit 30,95 Kosten, Verkauf 200 × 145,00 mit 69,90 Kosten
+und 5.058,76 Steuern, vier Dividenden netto 109,80):
+
+- Der Footer "Aktueller Depotstand" im Marktwert-Tab zeigt 14.222,24 EUR,
+  obwohl das Depot leer ist — der realisierte Gewinn nach Steuer ohne
+  Gebühren. Tabellenzeile und Marktwert-Chart zeigen richtig 0,00.
+- "Kpl. Marktwert" (23.840,39) entspricht keinem tatsächlich geflossenen
+  Betrag: Kpl. Einzahlung ohne Gebühren (9.719,00) plus eine Entwicklung,
+  die Kauf- und Verkaufsgebühren sowie Steuern abzieht (14.121,39). Die
+  Auszahlung war 23.871,34, der Verkaufswert 29.000,00.
+- Depotwert-Tab und Depotwert-Chart stimmen in Euro überein (14.231,19),
+  der Prozentwert aber nicht: Footer 145,96 % (Bezug Kaufwert mit Kosten
+  9.749,95), Chart 146,43 % (Bezug Kaufwert ohne Kosten 9.719,00).
+- Alle übrigen Werte rechnen sich nach, auch Steuern der Dividenden
+  (Quellensteuer 15 %, Kapitalertragsteuer 10 % nach Anrechnung, Soli) und
+  die Verkaufssteuer (25 % plus Soli auf 19.180,15 Gewinn nach Kosten).
+
+Stand 25.10.2026: die Rechenfehler in Tabellen, Footern, ShareDetailsForm und
+Depotwert-Chart-Prozent sind behoben, die verbindlichen Regeln samt
+Rechenbeispielen stehen unter "Rechenregeln Depotwert und Marktwert". Frage 4
+ist damit mit ja beantwortet (Footer = Summe der Kurswerte), Frage 5 ebenfalls
+(Kpl. Marktwert rein Kurs: Kurswert plus Verkäufe brutto). Offen ist nur noch
+die zweite Kurve je Chart (Fragen 1 bis 3): die Depotwert-Kurve "im Depot"
+braucht dafür die Kosten je Lot, die PortfolioSeriesCalculator heute nur als
+kumulierte Summe führt; die Marktwert-Kurve "gesamt" endet nach Option A auf
+"Kpl. Marktwert".
+
+Vor der Umsetzung zu klären (Fragen an Nessie, 19.10.2026):
+
+1. Entsprechen die beiden Kurven je Chart den beiden Spaltengruppen der
+   Tabelle ("Aktuell" und "Komplett"), und soll jede Kurve auf der
+   zugehörigen Footer-Summe enden?
+2. Depotwert-Chart, Kurve "im Depot": Entwicklung der gehaltenen Stücke wie
+   die Spalte "Aktuelle Entwicklung" (Kurswert minus Kaufwert inkl.
+   anteiliger Kaufgebühren)? Zählen Dividenden der noch gehaltenen Aktien
+   mit?
+3. Marktwert-Chart, Kurve "gesamt": Was passiert beim Verkauf — bleibt der
+   Verkaufswert in der Kurve stehen (z. B. Stückzahl x Verkaufskurs, brutto),
+   statt wie bei der heutigen Kurve herauszufallen?
+4. Footer "Aktueller Depotstand": soll er künftig die Summe der Marktwerte
+   der gehaltenen Stücke zeigen, also exakt den Endwert des Marktwert-Charts?
+5. "Kpl. Marktwert": soll er durchgängig ohne Gebühren und Steuern rechnen,
+   passend zur Marktwert-Sicht?
+
+Erledigt am 01.11.2026 (v1.30.0), Beschreibung unter "PortfolioChartForm-
+Details", "Zwei Linien je Chart". Nessies Antworten auf die Fragen 1 bis 3:
+jede Linie entspricht einer Spaltengruppe und endet auf ihrer Footer-Summe;
+die Depotwert-Linie "Aktuell (im Depot)" enthält keine Dividenden; die
+Marktwert-Linie "Komplett (alle Aktien)" behält den Verkaufswert brutto.
 
 ### Marktwert-Chart (05.08.2026, erledigt 17.10.2026)
 

@@ -62,6 +62,8 @@ private:
         c.purchaseValueHeld = 600.0;
         c.costs             = 10.0;
         c.marketValue       = 744.0;
+        c.purchaseValueHeldFinal = 610.0; // zweite Linien (01.11.2026)
+        c.marketValueComplete    = 744.0;
         return s;
     }
 
@@ -79,6 +81,9 @@ private:
             t.costs             += s.chart.costs;
             t.marketValue       += s.chart.marketValue;
             t.development       += CalculationBreakdown::chartDevelopment(s.chart);
+            t.purchaseValueHeldFinal += s.chart.purchaseValueHeldFinal;
+            t.developmentHeld        += CalculationBreakdown::chartDevelopmentHeld(s.chart);
+            t.marketValueComplete    += s.chart.marketValueComplete;
         }
         return input;
     }
@@ -227,10 +232,11 @@ private slots:
         QVERIFY2(rest.finding.contains(QStringLiteral("Rest ") + money(2.0)), qPrintable(rest.finding));
     }
 
-    void test_shareChecks_fiveChecksAllOkForConsistentShare()
+    void test_shareChecks_sevenChecksAllOkForConsistentShare()
     {
+        // Seit 01.11.2026 sieben Zeilen: dazu die zweiten Linien beider Charts.
         const QList<CalculationCheck> checks = CalculationBreakdown::shareChecks(consistentShare());
-        QCOMPARE(checks.size(), 5);
+        QCOMPARE(checks.size(), 7);
         for (const CalculationCheck& c : checks)
             QVERIFY2(c.result == CalculationCheckResult::Ok, qPrintable(c.label));
     }
@@ -308,6 +314,9 @@ private slots:
         s.chart.marketValue   = 0.0;
         s.chart.purchaseValueHeld = 0.0;
         s.values.purchaseValue = 0.0;
+        s.values.purchaseValueFinal = 0.0;
+        s.values.profitLossFinal    = 0.0;
+        s.chart.purchaseValueHeldFinal = 0.0;
         s.chart.realizedGain  = 134.0 + 10.0; // Entwicklung wie in der Tabelle
         s.chart.costs         = 10.0;
 

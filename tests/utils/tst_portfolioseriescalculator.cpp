@@ -896,6 +896,74 @@ private slots:
             QVERIFY(!p.usesCurrentPrice);
     }
 
+    // ── Zweite Linie je Chart (ergänzt 01.11.2026) ───────────────────────
+    //
+    // Depotwert "Aktuell (im Depot)": Bestandswert minus Einzahlung der
+    // gehaltenen Stücke inkl. anteiliger Kaufkosten, ohne Dividenden.
+    // Marktwert "Komplett": Marktwert plus alle Verkäufe brutto.
+
+    static PortfolioShareSeriesInput costedShare()
+    {
+        // Kauf 10 x 100 mit Gebühren 10 und Rabatt 2, Verkauf 4 x 120,
+        // Dividende 30, Kurs zuletzt 110.
+        PortfolioShareSeriesInput s;
+        s.shareGuid = QStringLiteral("guid-k");
+        s.name      = QStringLiteral("Aktie K");
+        s.buys      = { { d(2026, 1, 2), 10.0, 100.0, 10.0, 2.0 } };
+        s.sales     = { { d(2026, 3, 2),  4.0, 120.0, 0.0 } };
+        s.dividends = { { d(2026, 2, 2), 30.0 } };
+        s.costs     = { { d(2026, 1, 2), 8.0 } };
+        s.prices    = { { d(2026, 1, 2), 100.0 }, { d(2026, 2, 2), 105.0 },
+                        { d(2026, 3, 2), 120.0 }, { d(2026, 4, 2), 110.0 } };
+        return s;
+    }
+
+    void test_heldCurve_proportionalBuyCostsAfterPartialSale()
+    {
+        //   02.04.: 6 gehalten. Einzahlung 6 x 100 = 600 + Gebühren
+        //   round(10 x 0,6) = 6 - Rabatt round(2 x 0,6) = 1,20 -> 604,80.
+        //   Bestandswert 6 x 110 = 660 -> Entwicklung im Depot 55,20.
+        const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute({ costedShare() });
+        const PortfolioSeriesPoint& last = r.points.last();
+        CMP_MONEY(last.purchaseValueHeldFinal, 604.80);
+        CMP_MONEY(last.developmentHeld, 55.20);
+        QVERIFY(qAbs(last.developmentHeldPct - 55.20 / 604.80 * 100.0) < 1e-9);
+    }
+
+    void test_heldCurve_ignoresDividendsAndRealized()
+    {
+        //   02.02.: 10 gehalten zu 105 -> 1050 - (1000 + 10 - 2) = 42,
+        //   obwohl die Dividende 30 an diesem Tag fliesst.
+        const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute({ costedShare() });
+        CMP_MONEY(r.points.at(1).developmentHeld, 42.0);
+        // Die Linie "Komplett" enthält die Dividende: 1050 + 30 - 8 - 1000 = 72
+        CMP_MONEY(r.points.at(1).development, 72.0);
+    }
+
+    void test_completeMarketCurve_keepsGrossSales()
+    {
+        //   02.03.: Verkauf 4 x 120 = 480; 6 x 120 = 720 gehalten -> 1200.
+        //   02.04.: 6 x 110 = 660 + 480 = 1140. Die Linie "Aktuell" fällt
+        //   beim Verkauf, "Komplett" behält den Erlös.
+        const PortfolioSeriesResult r = PortfolioSeriesCalculator::compute({ costedShare() });
+        CMP_MONEY(r.points.at(2).marketValue, 720.0);
+        CMP_MONEY(r.points.at(2).marketValueComplete, 1200.0);
+        CMP_MONEY(r.points.at(3).marketValueComplete, 1140.0);
+    }
+
+    void test_heldCurve_fullySoldIsZero()
+    {
+        PortfolioShareSeriesInput s = costedShare();
+        s.sales = { { d(2026, 3, 2), 10.0, 120.0, 0.0 } };
+        const PortfolioSeriesResult r =
+            PortfolioSeriesCalculator::compute({ s }, QDate(), QDate(), /*withPerShareDetail=*/true);
+        CMP_MONEY(r.points.last().purchaseValueHeldFinal, 0.0);
+        CMP_MONEY(r.points.last().developmentHeld, 0.0);
+        QCOMPARE(r.points.last().developmentHeldPct, 0.0);
+        CMP_MONEY(r.points.last().marketValueComplete, 1200.0);
+        CMP_MONEY(r.sharePoints.last().salesGross, 1200.0);
+    }
+
     void test_applyCurrentPrice_sameDayOnSubstituteBecomesRealPrice()
     {
         QList<PortfolioPriceEvent> prices = { { d(2026, 4, 30), 62.0, false, true } };

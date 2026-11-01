@@ -2035,7 +2035,11 @@ eine echte Emission mit korrekt gesetztem `sender()` auslöst.
 | `test_calculationOverview_isLastTabWithoutDiagnosticsSwitch` (**27.10.2026**, Tab "Depot- vs. Marktwert", siehe ARCHITECTURE.md) | `Debug/ShowDiagnostics` aus | Fünfter Tab heißt "Depot- vs. Marktwert" — immer sichtbar, an letzter Stelle |
 | `test_calculationOverview_createdLazilyOnFirstVisit` (**27.10.2026**) | Wechsel auf Tab 4 | Vorher kein `ViewCalculationOverview`, danach vorhanden; keiner der beiden Charts wird mit angelegt; Knopf "Bericht speichern…" vorhanden |
 | `test_calculationOverview_listsTotalAndShares` (**27.10.2026**) | Eine Aktie ohne Käufe in der DB, Wechsel auf Tab 4 | Liste enthält "Gesamt / Footer" und die Aktie; Vorauswahl "Gesamt / Footer" mit zehn Zeilen Footer-Gegenüberstellung |
-| `test_marketValueChart_tooltipShowsDateAndValueWithoutPercent` (**17.10.2026**) | `ViewPortfolioChart(MarketValue)`, zwei Punkte per `setChartData()`, `onSeriesHovered()` per `invokeMethod()` | Tooltip exakt "Datum\nWert €", kein "%" |
+| `test_marketValueChart_tooltipShowsDateAndValueWithoutPercent` (**17.10.2026**, angepasst 01.11.2026) | `ViewPortfolioChart(MarketValue)`, zwei Punkte per `setChartData()`, `onSeriesHovered()` per `invokeMethod()` | Tooltip exakt "Datum\nAktuell: Wert €\nKomplett: Wert €", kein "%" |
+| `test_portfolioCharts_bothCurvesVisibleByDefault` (**01.11.2026**, zwei Linien) | Beide Chart-Modi | Häkchen "Komplett (alle Aktien)" und "Aktuell (im Depot)" vorhanden, gesetzt, mit Farbsymbol |
+| `test_portfolioCharts_lastVisibleCurveCannotBeHidden` (**01.11.2026**) | Beide Häkchen nacheinander abwählen | Die letzte Linie bleibt sichtbar |
+| `test_depotChart_tooltipShowsBothCurvesAndHidesUnchecked` (**01.11.2026**) | Depotwert-Chart mit zwei Linien | Tooltip exakt "Datum\nKomplett: … (… %)\nAktuell: … (… %)"; nach Abwahl ohne "Komplett" |
+| `test_portfolioCharts_curveSelectionSavedPerChartOnClose` (**01.11.2026**) | Linie "Aktuell" im Depotwert-Chart abgewählt | Erst beim Schließen gespeichert, nur die Depotwert-Schlüssel ändern sich, ein neuer Chart übernimmt die Auswahl |
 | `test_portfolioCharts_tooltipMarksCurrentPrice` (**30.10.2026**) | Beide Chart-Modi, Punkt 29.10. Schlusskurs, 30.10. aktueller Kurs | Tooltip am 30.10. beginnt mit "30.10.2026 (aktueller Kurs)", am 29.10. ohne Zusatz |
 | `test_marketValueChart_readsSharedPortfolioChartSettings` (**17.10.2026**) | Gespeichert Monat/6 | Der Marktwert-Chart liest denselben Schlüssel wie der Depotwert-Chart |
 | `test_portfolioCharts_unchangedChartDoesNotOverwriteSharedSettings` (**17.10.2026**) | Beide Charts angelegt, nur im Depotwert-Chart Anzahl 7 gewählt; der unveränderte Marktwert-Chart wird zuletzt zerstört | Gespeichert bleibt 7 — der Destruktor speichert nur bei einer Änderung |
@@ -3101,6 +3105,10 @@ nicht der Test.
 | `test_substitutePrices_sameDayIsVolumeWeighted` (**31.10.2026**) | 3 × 100 und 1 × 120 am selben Tag | Ein Kurspunkt 105 |
 | `test_substitutePrices_skipsUnusableEntries` (**31.10.2026**) | Ungültiges Datum, Stückzahl 0, Kurs 0 | Keine Kurspunkte |
 | `test_substitutePrices_soldShareEndsOnItsCompleteResult` (**31.10.2026**, Fall Sparplan-Fonds) | Zwei Käufe, Verkauf mit Steuer, Dividende, negative Kosten | Nicht ausgeschlossen, Entwicklung am Ende 399 (= Komplette Entwicklung), Marktwert 0, Stufenwert 1840 am 2. Kauftag, kein Tooltip-Zusatz |
+| `test_heldCurve_proportionalBuyCostsAfterPartialSale` (**01.11.2026**, zweite Linien) | Kauf 10 × 100 mit Gebühren 10 und Rabatt 2, Verkauf 4, Kurs 110 | Einzahlung gehalten 604,80, Entwicklung im Depot 55,20, Prozent darauf |
+| `test_heldCurve_ignoresDividendsAndRealized` (**01.11.2026**) | Dividende 30 am selben Tag | Linie "Aktuell" 42,00 ohne Dividende, Linie "Komplett" 72,00 mit |
+| `test_completeMarketCurve_keepsGrossSales` (**01.11.2026**) | Teilverkauf 4 × 120 | Marktwert fällt auf 720, Kpl. Marktwert 1200 bzw. 1140 behält den Erlös |
+| `test_heldCurve_fullySoldIsZero` (**01.11.2026**) | Vollständig verkauft | Einzahlung gehalten und Entwicklung im Depot 0, Prozent 0, Kpl. Marktwert 1200, Verkäufe brutto je Aktie 1200 |
 | `test_applyCurrentPrice_sameDayOnSubstituteBecomesRealPrice` (**31.10.2026**) | Aktueller Kurs am Tag eines Ersatzkurses | Punkt ist danach aktueller Kurs, kein Ersatzkurs |
 
 ---
@@ -3150,6 +3158,7 @@ werden. `main()` setzt `QLocale::setDefault(German)` wie die Anwendung.
 | `test_replayFifoSold_onlyBuysOfTheSameDepot` | Verkauf aus Depot 222 | Nur der Kauf aus Depot 222 wird belastet |
 | `test_replayFifoSold_buyAfterSaleIsNotUsed` | Kauf nach dem Verkaufsdatum | Bleibt unberührt, Rest des Verkaufs offen |
 | `test_collect_tableAndChartValuesForOneShare` | Aktie mit Kauf 10 × 100 und zwei Tageswerten (100, 110) in der Datenbank | Bestand 10, Chart-Stichtag 01.02., Marktwert 1.100 je Aktie und gesamt, Bericht enthält die Aktie |
+| `test_collect_secondCurvesEndOnTableValues` (**01.11.2026**) | Kauf 10 × 100 mit Gebühren 10 und Rabatt 2, Verkauf 4 × 120, Kursabruf 120 | Aktuelle Entwicklung 115,20 und Kpl. Marktwert 1.200 in Tabelle und Chart gleich, alle sieben Abgleichzeilen ok |
 | `test_collect_shareWithoutDailyValues_usesSubstitutePrices` (**31.10.2026**) | Kauf 10 × 88, Verkauf 10 × 111, keine Tageswerte | Nicht ausgeschlossen, Ersatzkurse; Komplette Entwicklung 230 in Tabelle und Chart; Bericht nennt "Kurs (Ersatzkurs aus Kauf/Verkauf)" und den Hinweis, nicht mehr "fehlt in beiden Charts" |
 | `test_collect_currentPriceEndsChartOnTableValue` (**30.10.2026**) | Wie oben, zusätzlich Kursabruf 03.02. mit 120,00 | Chart-Stichtag 03.02., Kurs 120,00 als aktueller Kurs, Marktwert 1.200 = Kurswert der Tabelle; Bericht nennt "Kurs (aktueller Kurs)", kein Kurs-Hinweis |
 | `test_writeToFile_utf8WithBom` | Text mit Umlauten | Datei beginnt mit UTF-8-BOM, Inhalt korrekt |
@@ -3180,7 +3189,7 @@ unveränderte `tst_calculationreport`. `main()` setzt
 | `test_footerTotals_matchSumsOfBothShares` | Zwei Aktien | Einzahlung, Depotstand, Entwicklung, Kosten, Dividenden und Komplette Entwicklung beider Footer |
 | `test_footerRows_tenRowsCostsOnlyInDepot` | Footer-Gegenüberstellung | Zehn Zeilen, Kosten nur Depotwert, Depotstand 744,00 in beiden, jede Zeile mit "Fließt ein in" |
 | `test_check_results` | `check()` | ok, Hinweis, Abweichung, durch Kurs erklärt; Rest 2,00 bei teilweiser Erklärung |
-| `test_shareChecks_fiveChecksAllOkForConsistentShare` | Stimmige Aktie | Fünf Abgleichzeilen, alle ok |
+| `test_shareChecks_sevenChecksAllOkForConsistentShare` (umbenannt 01.11.2026, vorher `..._five...`) | Stimmige Aktie | Sieben Abgleichzeilen (mit den zweiten Linien beider Charts), alle ok |
 | `test_shareChecks_emptyWithoutDailyValues` | Aktie ohne Tageswerte | Kein Abgleich, Befund "keine Tageswerte, fehlt in beiden Charts" |
 | `test_findings_sharesFirstThenTotal` | Abweichung je Aktie und im Gesamt | Erst die Aktie, zuletzt "GESAMT:" |
 | `test_findings_sameAsReportPartThree` | Bericht gegen Zeilenmodell | Jede Zeile aus `findings()` steht genau so in Teil 3 des Berichts |
@@ -5253,6 +5262,8 @@ Die presenter-seitige Begrenzung muss unabhängig davon greifen.
 | `test_computeMaxIntervalCount_yearsAreCounted` | Interval Jahr | 3 bei drei Jahren Historie |
 | `test_buildRangeInfo_withoutPointsShowsOnlyRange` | Ohne Punkte | Nur Zeitraum, kein Entwicklungsteil |
 | `test_buildRangeInfo_usesLastPoint` | Mit Punkten | Werte des letzten Punkts, lokalisiert formatiert |
+| `test_chartData_carriesSecondCurves` (**01.11.2026**) | 10 × 100, Kurs 110 | Letzter Punkt: im Depot 100,00 (10 %), Kpl. Marktwert 1.100,00; Kopfzeile nennt "im Depot:" |
+| `test_buildRangeInfo_bothCurvesPerChart` (**01.11.2026**) | Ein Punkt mit beiden Linien | Depotwert-Kopfzeile mit "im Depot: 40,00", Marktwert-Kopfzeile mit "Kpl. Marktwert: 1.300,00" und ohne "%" |
 | `test_marketMode_chartDataCarriesMarketValue` (**17.10.2026**, Marktwert-Chart) | Presenter im Modus `MarketValue`, 10 Stück zu 100, Kurs 110 | Punkte tragen Marktwert 1000 (Kauftag, Kaufpreis) und 1100 |
 | `test_marketMode_rangeInfoShowsMarketValueWithoutPercent` (**17.10.2026**) | Kopfzeile im Marktwert-Modus | "Zeitraum:" und "Marktwert: 1.100,00", weder "Entwicklung:" noch "%" |
 | `test_defaultMode_isDevelopment` (**17.10.2026**) | Presenter ohne Modus-Angabe | Modus `Development` — der Depotwert-Chart bleibt unverändert |
@@ -5276,10 +5287,10 @@ View `tst_mainwindow`.
 
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
-| `test_loadAndDisplay_selectsTotalByDefault` | Erster Aufbau | Auswahl "Gesamt / Footer", zehn Footer-Zeilen, drei Abgleichzeilen, keine Auffälligkeiten |
+| `test_loadAndDisplay_selectsTotalByDefault` | Erster Aufbau | Auswahl "Gesamt / Footer", zehn Footer-Zeilen, fünf Abgleichzeilen (seit 01.11.2026), keine Auffälligkeiten |
 | `test_entries_totalFirstThenHeldAndSold` | Eine Aktie mit, eine ohne Bestand | Reihenfolge Gesamt, Bestand, verkauft; Titel "Name (WKN)"; Kopfzeile mit Anzahl und Stand |
 | `test_entries_deviationIsMarked` | Chart-Bestand weicht ab | Aktie und Gesamt als Abweichung markiert, Tooltip "1 Abweichung" |
-| `test_selectShare_showsComparisonAndChecks` | Auswahl einer Aktie | 14 Zeilen, fünf Abgleichzeilen ok, "Fließt ein in" nennt beide Tabs |
+| `test_selectShare_showsComparisonAndChecks` | Auswahl einer Aktie | 14 Zeilen, sieben Abgleichzeilen ok (seit 01.11.2026), "Fließt ein in" nennt beide Tabs |
 | `test_selectGroupHeader_keepsDetail` | Auswahl ohne Schlüssel | Detail wird nicht neu gesetzt |
 | `test_reload_keepsSelectionAndReadsModelAgain` | `reload()` | Model ein zweites Mal gelesen, Auswahl und Detail bleiben |
 | `test_reload_fallsBackToTotalWhenShareIsGone` | Aktie nach dem Neuladen weg | Zurück auf "Gesamt / Footer" |
@@ -5316,6 +5327,7 @@ eigenständig in `tst_portfolioseriescalculator.cpp` und
 | `test_loadPortfolioInput_noPriceTimestamp_keepsDailyValues` (**30.10.2026**) | Kursabruf ohne Zeitstempel | Nur der Tageswert, unmarkiert |
 | `test_loadPortfolioInput_withoutDailyValues_usesSubstitutePrices` (**31.10.2026**) | Kauf 21.09.2016 zu 88, Verkauf 17.12.2019 zu 111, keine Tageswerte | Zwei Kurspunkte 88 und 111, beide als Ersatzkurs markiert |
 | `test_loadPortfolioInput_withDailyValues_noSubstitutePrices` (**31.10.2026**) | Ein Tageswert vorhanden | Nur der Tageswert, kein Ersatzkurs |
+| `test_loadPortfolioInput_buyCarriesItsBrokerage` (**01.11.2026**) | Kauf mit zugeordnetem Kosteneintrag 9 + 1, Rabatt 2 | Kauf trägt Gebühren 10 und Rabatt 2; Kosten-Term unverändert 8 |
 | `test_currentPriceDate_readsIsoTimestamp` (**30.10.2026**) | ISO-Zeitstempel und deutsches Format | 30.10.2026 bzw. ungültiges Datum |
 
 @note Bugfix 08.08.2026 — dieser Block war von seiner Einführung an nie

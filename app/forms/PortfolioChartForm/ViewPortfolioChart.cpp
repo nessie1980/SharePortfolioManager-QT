@@ -6,7 +6,9 @@
 #include "../../utils/ChartPointSearch.h"
 #include "../../config/AppSettings.h"
 
+#include <QCheckBox>
 #include <QHBoxLayout>
+#include <QPixmap>
 #include <QVBoxLayout>
 #include <QFormLayout>
 #include <QLineSeries>
@@ -47,8 +49,10 @@ qint64 toMSecs(const QDate& date)
  * crossing into both adjoining segments so the coloured line stays visually
  * closed instead of showing a gap at the axis.
  */
-QList<CurveSegment> buildSegments(const QList<PortfolioChartPoint>& points)
+QList<CurveSegment> buildSegments(const QList<QPointF>& points)
 {
+    // Seit 01.11.2026 auf beliebige Punkte verallgemeinert — der
+    // Depotwert-Chart färbt beide Linien nach Vorzeichen.
     QList<CurveSegment> segments;
     if (points.isEmpty())
         return segments;
@@ -56,13 +60,12 @@ QList<CurveSegment> buildSegments(const QList<PortfolioChartPoint>& points)
     const auto isPositive = [](double value) { return value >= 0.0; };
 
     CurveSegment current;
-    current.positive = isPositive(points.constFirst().development);
-    current.points.append(QPointF(static_cast<double>(toMSecs(points.constFirst().date)),
-                                  points.constFirst().development));
+    current.positive = isPositive(points.constFirst().y());
+    current.points.append(points.constFirst());
 
     for (int i = 1; i < points.size(); ++i) {
-        const double x = static_cast<double>(toMSecs(points.at(i).date));
-        const double y = points.at(i).development;
+        const double x = points.at(i).x();
+        const double y = points.at(i).y();
 
         if (isPositive(y) == current.positive) {
             current.points.append(QPointF(x, y));
@@ -89,6 +92,18 @@ QList<CurveSegment> buildSegments(const QList<PortfolioChartPoint>& points)
 
     segments.append(current);
     return segments;
+}
+
+/// Häkchen-Symbol: zwei Hälften in den Farben der Linie (oben >= 0, unten
+/// < 0); bei einfarbigen Linien beide Hälften gleich (ergänzt 01.11.2026).
+QIcon curveIcon(const QColor& upper, const QColor& lower)
+{
+    QPixmap pixmap(16, 16);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.fillRect(QRect(1, 3, 14, 5), upper);
+    painter.fillRect(QRect(1, 8, 14, 5), lower);
+    return QIcon(pixmap);
 }
 
 } // namespace
@@ -118,6 +133,41 @@ ViewPortfolioChart::~ViewPortfolioChart()
     const QString unitKey = intervalUnitToKey(intervalUnit());
     if (unitKey != m_loadedIntervalKey || m_desiredCount != m_loadedCount)
         AppSettings::instance().setPortfolioChartInterval(unitKey, m_desiredCount);
+
+    // Sichtbare Linien (ergänzt 01.11.2026), je Chart eigene Schlüssel —
+    // ebenfalls nur bei einer Änderung.
+    const bool showComplete = completeCurveVisible();
+    const bool showHeld     = heldCurveVisible();
+    if (showComplete != m_loadedShowComplete || showHeld != m_loadedShowHeld) {
+        if (m_mode == PortfolioChartMode::MarketValue)
+            AppSettings::instance().setMarketChartCurves(showHeld, showComplete);
+        else
+            AppSettings::instance().setDepotChartCurves(showComplete, showHeld);
+    }
+}
+
+// ── Kurven ────────────────────────────────────────────────────────────────────
+
+bool ViewPortfolioChart::completeCurveVisible() const
+{
+    return m_completeCheck->isChecked();
+}
+
+bool ViewPortfolioChart::heldCurveVisible() const
+{
+    return m_heldCheck->isChecked();
+}
+
+void ViewPortfolioChart::onCurveToggled(QCheckBox* changed, QCheckBox* other)
+{
+    // Mindestens eine Linie bleibt sichtbar — ein leerer Chart mit Achsen
+    // ohne Linie hätte keinen Nutzen.
+    if (!changed->isChecked() && !other->isChecked()) {
+        const QSignalBlocker blocker(changed);
+        changed->setChecked(true);
+        return;
+    }
+    redraw();
 }
 
 // ── eventFilter / applyWheelStep ──────────────────────────────────────────────
@@ -150,7 +200,7 @@ void ViewPortfolioChart::setupUi()
 
     // ── Chart area plus warning line ──────────────────────────────────────
     m_chart = new QChart();
-    m_chart->legend()->hide(); // single series — a legend would carry no information
+    m_chart->legend()->hide(); // Zuordnung über die farbigen Häkchen im Block "Kurven" (01.11.2026)
     m_chart->setMargins(QMargins(4, 4, 4, 4));
 
     m_chartView = new QChartView(m_chart);
@@ -188,6 +238,7 @@ void ViewPortfolioChart::setupUi()
     auto* rightLayout = new QVBoxLayout(rightContent);
     rightLayout->setContentsMargins(0, 0, 4, 0);
     rightLayout->addWidget(setupZeitraumBox());
+    rightLayout->addWidget(setupKurvenBox());
     rightLayout->addStretch(1);
 
     auto* rightScroll = new QScrollArea();
@@ -281,6 +332,62 @@ QGroupBox* ViewPortfolioChart::setupZeitraumBox()
     return box;
 }
 
+// ── setupKurvenBox ────────────────────────────────────────────────────────────
+
+QGroupBox* ViewPortfolioChart::setupKurvenBox()
+{
+    // Ergänzt 01.11.2026 (Nessies Entscheidung): je Chart zwei Linien,
+    // einzeln ein- und ausblendbar. Die bisherige Linie steht oben.
+    auto* box = new QGroupBox(tr("Kurven:"));
+    box->setObjectName(QStringLiteral("portfolioChartKurvenBox"));
+    auto* layout = new QVBoxLayout(box);
+
+    m_completeCheck = new QCheckBox(tr("Komplett (alle Aktien)"));
+    m_completeCheck->setObjectName(QStringLiteral("portfolioChartCompleteCheck"));
+    m_heldCheck = new QCheckBox(tr("Aktuell (im Depot)"));
+    m_heldCheck->setObjectName(QStringLiteral("portfolioChartHeldCheck"));
+
+    const AppSettings& settings = AppSettings::instance();
+    if (m_mode == PortfolioChartMode::MarketValue) {
+        m_heldCheck->setIcon(curveIcon(kPortfolioMarketValueColor, kPortfolioMarketValueColor));
+        m_heldCheck->setToolTip(tr("Wert der am jeweiligen Tag gehaltenen Stücke — endet auf "
+                                   "\"Aktueller Depotstand\" im Tab \"Kompletter Marktwert\"."));
+        m_completeCheck->setIcon(curveIcon(kPortfolioMarketCompleteColor, kPortfolioMarketCompleteColor));
+        m_completeCheck->setToolTip(tr("Wert der gehaltenen Stücke plus alle Verkäufe brutto bis "
+                                       "zum jeweiligen Tag — endet auf \"Kpl. Marktwert\"."));
+        m_heldCheck->setChecked(settings.marketChartShowHeld());
+        m_completeCheck->setChecked(settings.marketChartShowComplete());
+        layout->addWidget(m_heldCheck);
+        layout->addWidget(m_completeCheck);
+    } else {
+        m_completeCheck->setIcon(curveIcon(kPortfolioGainColor, kPortfolioLossColor));
+        m_completeCheck->setToolTip(tr("Entwicklung über alle jemals gehandelten Aktien — endet "
+                                       "auf \"Komplette Entwicklung\" im Tab \"Kompletter Depotwert\"."));
+        m_heldCheck->setIcon(curveIcon(kPortfolioHeldGainColor, kPortfolioHeldLossColor));
+        m_heldCheck->setToolTip(tr("Entwicklung der am jeweiligen Tag gehaltenen Stücke, ohne "
+                                   "Dividenden — endet auf \"Entwicklung (gesamt)\", Spalte "
+                                   "\"Aktuelle Entwicklung\"."));
+        m_completeCheck->setChecked(settings.depotChartShowComplete());
+        m_heldCheck->setChecked(settings.depotChartShowHeld());
+        layout->addWidget(m_completeCheck);
+        layout->addWidget(m_heldCheck);
+    }
+    // Eine von Hand geleerte INI darf nicht beide ausblenden.
+    if (!m_completeCheck->isChecked() && !m_heldCheck->isChecked()) {
+        m_completeCheck->setChecked(true);
+        m_heldCheck->setChecked(true);
+    }
+    m_loadedShowComplete = m_completeCheck->isChecked();
+    m_loadedShowHeld     = m_heldCheck->isChecked();
+
+    connect(m_completeCheck, &QCheckBox::toggled,
+            this, [this](bool) { onCurveToggled(m_completeCheck, m_heldCheck); });
+    connect(m_heldCheck, &QCheckBox::toggled,
+            this, [this](bool) { onCurveToggled(m_heldCheck, m_completeCheck); });
+
+    return box;
+}
+
 // ── IViewPortfolioChart: Getter ───────────────────────────────────────────────
 
 QDate ViewPortfolioChart::startDate() const
@@ -326,65 +433,84 @@ void ViewPortfolioChart::setMaxIntervalCount(int maxCount)
 void ViewPortfolioChart::setChartData(const PortfolioChartData& chartData)
 {
     m_stack->setCurrentIndex(0);
-    m_chart->removeAllSeries();
-    m_points.clear();
-    m_pointsX.clear();
-
-    rebuildAxes(chartData.points);
-
-    if (chartData.points.isEmpty())
-        return;
-
     m_points = chartData.points;
+    m_pointsX.clear();
     m_pointsX.reserve(m_points.size());
     for (const PortfolioChartPoint& point : m_points)
         m_pointsX.append(toMSecs(point.date));
 
-    // Marktwert-Chart (ergänzt 17.10.2026): eine einfarbige Linie, keine
-    // Null-Linie und keine Einfärbung nach Vorzeichen — der Marktwert ist
-    // nie negativ.
-    if (m_mode == PortfolioChartMode::MarketValue) {
-        auto* line = new QLineSeries();
-        for (const PortfolioChartPoint& point : chartData.points)
-            line->append(static_cast<double>(toMSecs(point.date)), point.marketValue);
+    redraw();
+}
 
+// ── redraw ────────────────────────────────────────────────────────────────────
+
+void ViewPortfolioChart::redraw()
+{
+    m_chart->removeAllSeries();
+    rebuildAxes(m_points);
+
+    if (m_points.isEmpty())
+        return;
+
+    const auto pointsOf = [this](double PortfolioChartPoint::* member) {
+        QList<QPointF> result;
+        result.reserve(m_points.size());
+        for (const PortfolioChartPoint& point : m_points)
+            result.append(QPointF(static_cast<double>(toMSecs(point.date)), point.*member));
+        return result;
+    };
+
+    // Eine Linie in einer Farbe; Pen/Farbe erst NACH addSeries() setzen, da
+    // QChart beim Einfügen sein Theme anwendet (Qt-Charts-Eigenheit, siehe
+    // ViewChart).
+    const auto addLine = [this](const QList<QPointF>& points, const QColor& color) {
+        auto* line = new QLineSeries();
+        line->append(points);
         m_chart->addSeries(line);
-        line->setColor(kPortfolioMarketValueColor); // nach addSeries(), siehe unten
+        line->setColor(color);
         line->attachAxis(m_xAxis);
         line->attachAxis(m_yAxis);
-
         connect(line, &QLineSeries::hovered, this,
                 [this](const QPointF& point, bool state) { onSeriesHovered(point, state); });
+    };
+
+    // Linie nach Vorzeichen eingefärbt, an jedem Nulldurchgang geteilt.
+    const auto addSignedLine = [&addLine](const QList<QPointF>& points,
+                                          const QColor& gain, const QColor& loss) {
+        for (const CurveSegment& segment : buildSegments(points))
+            addLine(segment.points, segment.positive ? gain : loss);
+    };
+
+    // Marktwert-Chart (ergänzt 17.10.2026): einfarbige Linien, keine
+    // Null-Linie — ein Marktwert ist nie negativ. Seit 01.11.2026 zwei Linien.
+    if (m_mode == PortfolioChartMode::MarketValue) {
+        if (completeCurveVisible())
+            addLine(pointsOf(&PortfolioChartPoint::marketValueComplete), kPortfolioMarketCompleteColor);
+        if (heldCurveVisible())
+            addLine(pointsOf(&PortfolioChartPoint::marketValue), kPortfolioMarketValueColor);
         return;
     }
 
-    // Zero line first so the curve is drawn on top of it.
+    // Zero line first so the curves are drawn on top of it.
     auto* zeroLine = new QLineSeries();
-    zeroLine->append(static_cast<double>(toMSecs(chartData.points.constFirst().date)), 0.0);
-    zeroLine->append(static_cast<double>(toMSecs(chartData.points.constLast().date)),  0.0);
+    zeroLine->append(static_cast<double>(toMSecs(m_points.constFirst().date)), 0.0);
+    zeroLine->append(static_cast<double>(toMSecs(m_points.constLast().date)),  0.0);
     m_chart->addSeries(zeroLine);
     QPen zeroPen(kPortfolioZeroLineColor);
     zeroPen.setStyle(Qt::DashLine);
     zeroPen.setWidth(1);
-    // Pen must be set AFTER addSeries(): QChart applies its theme on insert
-    // and would otherwise overwrite it (Qt Charts quirk, see ViewChart).
     zeroLine->setPen(zeroPen);
     zeroLine->attachAxis(m_xAxis);
     zeroLine->attachAxis(m_yAxis);
 
-    for (const CurveSegment& segment : buildSegments(chartData.points)) {
-        auto* line = new QLineSeries();
-        for (const QPointF& point : segment.points)
-            line->append(point);
-
-        m_chart->addSeries(line);
-        line->setColor(segment.positive ? kPortfolioGainColor : kPortfolioLossColor);
-        line->attachAxis(m_xAxis);
-        line->attachAxis(m_yAxis);
-
-        connect(line, &QLineSeries::hovered, this,
-                [this](const QPointF& point, bool state) { onSeriesHovered(point, state); });
-    }
+    // "Aktuell (im Depot)" zuerst, damit die bisherige Linie "Komplett" bei
+    // Überlagerung oben liegt.
+    if (heldCurveVisible())
+        addSignedLine(pointsOf(&PortfolioChartPoint::developmentHeld),
+                      kPortfolioHeldGainColor, kPortfolioHeldLossColor);
+    if (completeCurveVisible())
+        addSignedLine(pointsOf(&PortfolioChartPoint::development),
+                      kPortfolioGainColor, kPortfolioLossColor);
 }
 
 void ViewPortfolioChart::showEmptyChart(const QString& message)
@@ -431,15 +557,24 @@ void ViewPortfolioChart::rebuildAxes(const QList<PortfolioChartPoint>& points)
     m_chart->addAxis(m_xAxis, Qt::AlignBottom);
 
     const bool marketMode = (m_mode == PortfolioChartMode::MarketValue);
-    const auto valueOf = [marketMode](const PortfolioChartPoint& point) {
-        return marketMode ? point.marketValue : point.development;
-    };
+    // Wertebereich über alle sichtbaren Linien (seit 01.11.2026 zwei je Chart).
+    const bool showComplete = completeCurveVisible();
+    const bool showHeld     = heldCurveVisible();
 
     double lo = std::numeric_limits<double>::max();
     double hi = std::numeric_limits<double>::lowest();
+    const auto include = [&lo, &hi](double value) {
+        lo = std::min(lo, value);
+        hi = std::max(hi, value);
+    };
     for (const PortfolioChartPoint& point : points) {
-        lo = std::min(lo, valueOf(point));
-        hi = std::max(hi, valueOf(point));
+        if (marketMode) {
+            if (showHeld)     include(point.marketValue);
+            if (showComplete) include(point.marketValueComplete);
+        } else {
+            if (showComplete) include(point.development);
+            if (showHeld)     include(point.developmentHeld);
+        }
     }
 
     // Depotwert-Chart: zero must always be visible — it is the reference the
@@ -503,21 +638,31 @@ void ViewPortfolioChart::onSeriesHovered(const QPointF& point, bool state)
     if (nearest.currentPrice)
         dateText += tr(" (aktueller Kurs)");
 
-    // Marktwert-Chart (ergänzt 17.10.2026): Datum und Wert, ohne Prozent.
+    // Je sichtbarer Linie eine Zeile, in der Reihenfolge der Häkchen
+    // (ergänzt 01.11.2026). Marktwert-Chart ohne Prozent (17.10.2026).
+    const auto euro = [](double value) {
+        return QLocale().toString(value, 'f', 2) + QStringLiteral(" €");
+    };
+    const auto pct = [](double value) {
+        return QLocale().toString(value, 'f', 2) + QStringLiteral(" %");
+    };
+
+    QStringList lines{ dateText };
     if (m_mode == PortfolioChartMode::MarketValue) {
-        const QString text = QStringLiteral("%1\n%2")
-            .arg(dateText,
-                 QLocale().toString(nearest.marketValue, 'f', 2) + QStringLiteral(" €"));
-        QToolTip::showText(QCursor::pos(), text, m_chartView);
-        return;
+        if (heldCurveVisible())
+            lines << tr("Aktuell: %1").arg(euro(nearest.marketValue));
+        if (completeCurveVisible())
+            lines << tr("Komplett: %1").arg(euro(nearest.marketValueComplete));
+    } else {
+        if (completeCurveVisible())
+            lines << tr("Komplett: %1 (%2)").arg(euro(nearest.development),
+                                                 pct(nearest.developmentPct));
+        if (heldCurveVisible())
+            lines << tr("Aktuell: %1 (%2)").arg(euro(nearest.developmentHeld),
+                                                pct(nearest.developmentHeldPct));
     }
 
-    const QString text = QStringLiteral("%1\n%2\n%3")
-        .arg(dateText,
-             QLocale().toString(nearest.development, 'f', 2) + QStringLiteral(" €"),
-             QLocale().toString(nearest.developmentPct, 'f', 2) + QStringLiteral(" %"));
-
-    QToolTip::showText(QCursor::pos(), text, m_chartView);
+    QToolTip::showText(QCursor::pos(), lines.join(QLatin1Char('\n')), m_chartView);
 }
 
 // ── onExportDiagnostics ───────────────────────────────────────────────────────

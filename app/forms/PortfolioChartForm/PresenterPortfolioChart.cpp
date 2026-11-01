@@ -112,7 +112,10 @@ void PresenterPortfolioChart::refresh()
         data.points.append(PortfolioChartPoint{ point.date, point.development,
                                                 point.developmentPct,
                                                 point.marketValue,
-                                                point.usesCurrentPrice });
+                                                point.usesCurrentPrice,
+                                                point.developmentHeld,
+                                                point.developmentHeldPct,
+                                                point.marketValueComplete });
 
     m_view->setChartData(data);
     m_view->setRangeInfo(buildRangeInfo(rangeStart, rangeEnd, data.points, m_mode));
@@ -169,12 +172,16 @@ QString PresenterPortfolioChart::buildRangeInfo(const QDate& from, const QDate& 
     if (points.isEmpty())
         return range;
 
+    // Seit 01.11.2026 beide Linien, in der Reihenfolge der Häkchen in der
+    // View; die Endwerte unabhängig davon, welche Linie gerade sichtbar ist.
     const PortfolioChartPoint& last = points.constLast();
     if (mode == PortfolioChartMode::MarketValue)
-        return range + tr(" / Marktwert: %1").arg(formatEuro(last.marketValue));
+        return range + tr(" / Marktwert: %1 / Kpl. Marktwert: %2")
+            .arg(formatEuro(last.marketValue), formatEuro(last.marketValueComplete));
 
-    return range + tr(" / Entwicklung: %1 (%2)")
-        .arg(formatEuro(last.development), formatPercent(last.developmentPct));
+    return range + tr(" / Entwicklung: %1 (%2) / im Depot: %3 (%4)")
+        .arg(formatEuro(last.development), formatPercent(last.developmentPct),
+             formatEuro(last.developmentHeld), formatPercent(last.developmentHeldPct));
 }
 
 // -- Formatting ----------------------------------------------------------------
@@ -254,8 +261,12 @@ QString PresenterPortfolioChart::buildDiagnosticsCsv() const
     csv += QLatin1Char('\n');
 
     // ── Block 2: je Stichtag ──────────────────────────────────────────────
+    // Seit 01.11.2026 zusätzlich die zweiten Linien beider Charts und ihre
+    // Bezugsgröße (Einzahlung gehalten inklusive anteiliger Kaufkosten).
     csv += tr("Datum;Bestandswert;Realisierter Gewinn;Dividenden;Kosten;"
-              "Kaufwert gehalten;Kaufwert gesamt;Entwicklung;Entwicklung %;Marktwert")
+              "Kaufwert gehalten;Kaufwert gesamt;Entwicklung;Entwicklung %;Marktwert;"
+              "Einzahlung gehalten m. Kosten;Entwicklung im Depot;Entwicklung im Depot %;"
+              "Kpl. Marktwert")
          + QLatin1Char('\n');
 
     for (const PortfolioSeriesPoint& point : series.points) {
@@ -269,7 +280,11 @@ QString PresenterPortfolioChart::buildDiagnosticsCsv() const
             money(point.purchaseValueTotal),
             money(point.development),
             money(point.developmentPct),
-            money(point.marketValue)
+            money(point.marketValue),
+            money(point.purchaseValueHeldFinal),
+            money(point.developmentHeld),
+            money(point.developmentHeldPct),
+            money(point.marketValueComplete)
         };
         csv += fields.join(QLatin1Char(';')) + QLatin1Char('\n');
     }
@@ -284,7 +299,8 @@ QString PresenterPortfolioChart::buildDiagnosticsCsv() const
     // Schlusskurs aus den Tageswerten, aktueller Kurs der Aktie oder
     // Ersatzkurs aus Kauf/Verkauf bei Aktien ohne Tageswerte.
     csv += tr("Datum;Aktie;Stueck;Kurs;Bestandswert;Kaufwert gehalten;"
-              "Realisierter Gewinn;Dividenden;Kosten;Marktwert;Kursart") + QLatin1Char('\n');
+              "Realisierter Gewinn;Dividenden;Kosten;Marktwert;Kursart;"
+              "Einzahlung gehalten m. Kosten;Verkaeufe brutto;Kpl. Marktwert") + QLatin1Char('\n');
 
     for (const PortfolioSharePoint& detail : series.sharePoints) {
         const QStringList fields = {
@@ -300,7 +316,10 @@ QString PresenterPortfolioChart::buildDiagnosticsCsv() const
             money(detail.marketValue),
             detail.currentPrice      ? tr("aktuell")
             : detail.substitutePrice ? tr("Ersatz")
-                                     : tr("Schluss")
+                                     : tr("Schluss"),
+            money(detail.purchaseValueHeldFinal),
+            money(detail.salesGross),
+            money(detail.marketValueComplete)
         };
         csv += fields.join(QLatin1Char(';')) + QLatin1Char('\n');
     }

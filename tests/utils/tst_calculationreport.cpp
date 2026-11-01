@@ -24,6 +24,7 @@
 #include "../../app/repositories/BuyRepository.h"
 #include "../../app/repositories/SaleRepository.h"
 #include "../../app/repositories/DailyValuesRepository.h"
+#include "../../app/repositories/BrokerageRepository.h"
 #include "../../app/models/DailyValuesObject.h"
 
 class TestCalculationReport : public QObject
@@ -86,6 +87,8 @@ private:
         c.holdingsValue     = 744.0;
         c.purchaseValueHeld = 600.0;
         c.marketValue       = 744.0;
+        c.purchaseValueHeldFinal = 600.0; // zweite Linien (01.11.2026)
+        c.marketValueComplete    = 744.0;
         return s;
     }
 
@@ -105,6 +108,9 @@ private:
             t.marketValue       += s.chart.marketValue;
             t.development       += s.chart.holdingsValue + s.chart.realizedGain
                                    - s.chart.purchaseValueHeld;
+            t.purchaseValueHeldFinal += s.chart.purchaseValueHeldFinal;
+            t.developmentHeld        += s.chart.holdingsValue - s.chart.purchaseValueHeldFinal;
+            t.marketValueComplete    += s.chart.marketValueComplete;
         }
         return input;
     }
@@ -151,6 +157,7 @@ private slots:
         s.values.salePayoutMarket       = 465.0;
         s.values.completePurchaseMarket = 1000.0;
         s.values.completeCurValueMarket = 1209.0;
+        s.chart.marketValueComplete     = 1209.0; // Chart-Linie "Komplett" (01.11.2026)
 
         const QString report   = CalculationReport::build(inputFor({ s }));
         const QString findings = partThree(report);
@@ -740,6 +747,50 @@ private slots:
                                                "Kauf- und Verkaufskursen bewertet (Ersatzkurse)")),
                  qPrintable(part3));
         QVERIFY2(!part3.contains(QStringLiteral("fehlt in beiden Charts")), qPrintable(part3));
+    }
+
+    void test_collect_secondCurvesEndOnTableValues()
+    {
+        // Ergänzt 01.11.2026: die zweiten Linien beider Charts enden auf
+        // "Aktuelle Entwicklung" (Depotwert) bzw. "Kpl. Marktwert" der
+        // Tabelle — mit Kaufkosten, Rabatt und Teilverkauf.
+        //   Kauf 10 x 100, Gebühren 10, Rabatt 2; Verkauf 4 x 120;
+        //   Kursabruf 120 nach dem letzten Tageswert.
+        const QString guid = QStringLiteral("share-db-4");
+        QVERIFY(ShareRepository().insert(ShareObject(guid, QStringLiteral("DB0004"), QString(),
+                                                      QStringLiteral("DB Aktie 4"))));
+        QVERIFY(ShareRepository().updatePrice(guid, 120.0, 110.0, QStringLiteral("2026-03-05T18:00:00")));
+        QVERIFY(BuyRepository().insert(BuyObject(QStringLiteral("db-b4"), guid, QString(),
+                                                 QStringLiteral("o5"), iso(d(2026, 1, 2)),
+                                                 10.0, 4.0, 100.0)));
+        QVERIFY(BrokerageRepository().insert(BrokerageObject(QStringLiteral("db-k4"), guid,
+                                                             QStringLiteral("db-b4"), QString(),
+                                                             iso(d(2026, 1, 2)), 10.0, 0.0, 0.0, 2.0)));
+        QVERIFY(SaleRepository().insert(SaleObject(QStringLiteral("db-s4"), guid, QString(),
+                                                   QStringLiteral("o6"), iso(d(2026, 3, 2)),
+                                                   4.0, 120.0, {})));
+        DailyValuesRepository dv;
+        dv.upsert(DailyValuesObject(guid, d(2026, 1, 2), 100.0, 100.0, 100.0, 100.0, 0.0));
+        dv.upsert(DailyValuesObject(guid, d(2026, 3, 2), 115.0, 115.0, 115.0, 115.0, 0.0));
+
+        const CalculationReportInput input =
+            CalculationReport::collect(QDateTime::currentDateTime(), QStringLiteral(":memory:"));
+        const CalculationReportShare* s = nullptr;
+        for (const CalculationReportShare& candidate : input.shares)
+            if (candidate.share.guid() == guid)
+                s = &candidate;
+        QVERIFY(s);
+
+        // Tabelle: Einzahlung 600 + round(10 x 0,6) - round(2 x 0,6) = 604,80,
+        // Kurswert 6 x 120 = 720 -> Aktuelle Entwicklung 115,20;
+        // Kpl. Marktwert 720 + 480 = 1200.
+        QVERIFY(qAbs(s->values.profitLossFinal - 115.20) < 0.005);
+        QVERIFY(qAbs(CalculationBreakdown::chartDevelopmentHeld(s->chart) - 115.20) < 0.005);
+        QVERIFY(qAbs(s->values.completeCurValueMarket - 1200.0) < 0.005);
+        QVERIFY(qAbs(s->chart.marketValueComplete - 1200.0) < 0.005);
+
+        for (const CalculationCheck& c : CalculationBreakdown::shareChecks(*s))
+            QVERIFY2(c.result == CalculationCheckResult::Ok, qPrintable(c.label + QStringLiteral(": ") + c.resultText));
     }
 
     // ── writeToFile() ────────────────────────────────────────────────────

@@ -39,11 +39,29 @@ QList<PortfolioShareSeriesInput> ModelPortfolioChart::loadPortfolioInput() const
         // identisch zum bisherigen Verhalten.
         const QList<ShareSplitObject> splits = m_splitRepo.findByShare(share.guid());
 
-        for (const BuyObject& buy : m_buyRepo.findByShare(share.guid()))
+        // Einmal geladen: für die Kaufkosten je Kauf (unten) und den
+        // Kosten-Term (weiter unten).
+        const QList<BrokerageObject> brokerages = m_brokerageRepo.findByShare(share.guid());
+
+        for (const BuyObject& buy : m_buyRepo.findByShare(share.guid())) {
+            // Kaufkosten je Kauf (ergänzt 01.11.2026) für die zweite Linie des
+            // Depotwert-Charts — derselbe Kosteneintrag, den
+            // ShareCalculator::compute() über findByBuyGuid() heranzieht.
+            // Geldbeträge, daher ohne Split-Umrechnung.
+            double buyBrokerage = 0.0, buyReduction = 0.0;
+            for (const BrokerageObject& brokerage : brokerages) {
+                if (brokerage.buyGuid() == buy.guid()) {
+                    buyBrokerage = brokerage.brokerage();
+                    buyReduction = brokerage.reduction();
+                    break;
+                }
+            }
             input.buys.append(PortfolioBuyEvent{
                 buy.date(),
                 ShareSplitAdjuster::adjustedVolume(buy.volume(), splits, buy.date()),
-                ShareSplitAdjuster::adjustedTransactionPrice(buy.price(), splits, buy.date()) });
+                ShareSplitAdjuster::adjustedTransactionPrice(buy.price(), splits, buy.date()),
+                buyBrokerage, buyReduction });
+        }
 
         // Die per JOIN mitgeladene Brokerage der Sale wird hier bewusst NICHT
         // verwendet: sämtliche Gebühren kommen über die Brokerage-Einträge
@@ -66,7 +84,7 @@ QList<PortfolioShareSeriesInput> ModelPortfolioChart::loadPortfolioInput() const
         // provision + brokerFee + traderFee - reduction. Verkaufsgebundene
         // Kosten zählen nicht zum eingesetzten Kapital (Prozent-Nenner), siehe
         // PortfolioCostEvent::investment.
-        for (const BrokerageObject& brokerage : m_brokerageRepo.findByShare(share.guid()))
+        for (const BrokerageObject& brokerage : brokerages)
             input.costs.append(PortfolioCostEvent{ brokerage.date(),
                                                    brokerage.brokerageReduction(),
                                                    brokerage.saleGuid().isEmpty() });

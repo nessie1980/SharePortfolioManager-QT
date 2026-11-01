@@ -83,6 +83,8 @@ private:
         c.purchaseValueHeld = volume * 50.0;
         c.realizedGain      = 144.0 - volume * 12.0;
         c.marketValue       = volume * 62.0;
+        c.purchaseValueHeldFinal = volume * 50.0; // zweite Linien (01.11.2026)
+        c.marketValueComplete    = 744.0;
         return s;
     }
 
@@ -97,6 +99,8 @@ private:
             t.holdingsValue += s.chart.holdingsValue;
             t.marketValue   += s.chart.marketValue;
             t.development   += CalculationBreakdown::chartDevelopment(s.chart);
+            t.developmentHeld     += CalculationBreakdown::chartDevelopmentHeld(s.chart);
+            t.marketValueComplete += s.chart.marketValueComplete;
         }
         return input;
     }
@@ -115,7 +119,7 @@ private slots:
         QCOMPARE(view.selected, PresenterCalculationOverview::totalKey());
         QCOMPARE(view.detail.title, QStringLiteral("Gesamt / Footer"));
         QCOMPARE(view.detail.comparison.size(), 10);
-        QCOMPARE(view.detail.checks.size(), 3);
+        QCOMPARE(view.detail.checks.size(), 5); // seit 01.11.2026 mit den zweiten Linien
         QVERIFY(view.detail.findings.isEmpty());
     }
 
@@ -166,7 +170,7 @@ private slots:
 
         QCOMPARE(view.detail.title, QStringLiteral("Aktie A"));
         QCOMPARE(view.detail.comparison.size(), 14);
-        QCOMPARE(view.detail.checks.size(), 5);
+        QCOMPARE(view.detail.checks.size(), 7); // seit 01.11.2026 mit den zweiten Linien
         for (const CalculationOverviewCheckRow& c : view.detail.checks)
             QVERIFY2(c.tone == CalculationOverviewTone::Ok, qPrintable(c.label));
 

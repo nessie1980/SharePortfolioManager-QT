@@ -47,6 +47,16 @@ struct PortfolioChartPoint
     /// statt eines Schlusskurses bewertet (ergänzt 30.10.2026); die View
     /// kennzeichnet den Punkt im Tooltip mit "(aktueller Kurs)".
     bool   currentPrice   = false;
+
+    // ── Zweite Linie je Chart (ergänzt 01.11.2026) ──────────────────────
+    /// Depotwert-Chart, Linie "Aktuell (im Depot)": wie die Spalte
+    /// "Aktuelle Entwicklung" — Bestandswert minus Einzahlung der gehaltenen
+    /// Stücke inklusive anteiliger Kaufkosten, ohne Dividenden.
+    double developmentHeld     = 0.0;
+    double developmentHeldPct  = 0.0;  ///< developmentHeld in Prozent der Einzahlung
+    /// Marktwert-Chart, Linie "Komplett (alle Aktien)": wie "Kpl. Marktwert"
+    /// — marketValue plus alle Verkäufe brutto bis zum Stichtag.
+    double marketValueComplete = 0.0;
 };
 
 /**
@@ -73,3 +83,13 @@ inline const QColor kPortfolioZeroLineColor = QColor(140, 140, 140); ///< Null-L
  *  der Gewinn-/Verlust-Einfärbung: der Marktwert ist nie negativ, eine
  *  Einfärbung nach Vorzeichen wäre also inhaltsleer. */
 inline const QColor kPortfolioMarketValueColor = QColor(0, 90, 170);
+
+/** Farben der zweiten Linien (ergänzt 01.11.2026, Nessies Vorgabe).
+ *  Depotwert-Chart "Aktuell (im Depot)": nach Vorzeichen dunkelblau (>= 0)
+ *  bzw. hellblau (< 0), damit sie sich von der grün/roten Linie "Komplett"
+ *  abhebt und das Vorzeichen trotzdem erkennbar bleibt. Marktwert-Chart
+ *  "Komplett (alle Aktien)": einfarbig grau-grün, ein Marktwert ist nie
+ *  negativ. */
+inline const QColor kPortfolioHeldGainColor       = QColor(20, 50, 140);
+inline const QColor kPortfolioHeldLossColor       = QColor(110, 170, 235);
+inline const QColor kPortfolioMarketCompleteColor = QColor(95, 140, 120);

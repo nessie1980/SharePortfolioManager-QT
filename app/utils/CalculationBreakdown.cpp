@@ -54,8 +54,11 @@ QString footerCell(const QString& where, const QString& row, const QString& colu
 
 // Seit 30.10.2026 rechnen die Charts am rechten Rand mit dem aktuellen Kurs,
 // sofern der Kursabruf nicht älter ist als der letzte Tageswert.
-const QString kMarketChart = QStringLiteral("Marktwert-Chart: Endwert");
-const QString kDepotChart  = QStringLiteral("Depotwert-Chart: Endwert");
+const QString kMarketChart = QStringLiteral("Marktwert-Chart: Endwert Linie Aktuell");
+const QString kDepotChart  = QStringLiteral("Depotwert-Chart: Endwert Linie Komplett");
+// Zweite Linien (ergänzt 01.11.2026).
+const QString kDepotHeldChart      = QStringLiteral("Depotwert-Chart: Endwert Linie Aktuell");
+const QString kMarketCompleteChart = QStringLiteral("Marktwert-Chart: Endwert Linie Komplett");
 
 /// "a − b = c"
 QString minus(double a, double b, double result)
@@ -149,7 +152,8 @@ QList<CalculationBreakdownRow> CalculationBreakdown::shareRows(const ShareValues
         r.marketFigures = minus(v.curValue, v.purchaseValue, v.profitLoss);
         r.depotFigures  = minus(v.curValue, v.purchaseValueFinal, v.profitLossFinal);
         r.usedIn    = { cell(kBoth, kColPerf, true),
-                        footer(kRowPerf, QStringLiteral("Markt: Summe, Depot: Depotstand − Einzahlung")) };
+                        footer(kRowPerf, QStringLiteral("Markt: Summe, Depot: Depotstand − Einzahlung")),
+                        kDepotHeldChart + QStringLiteral(" (Depotwert)") };
         rows.append(r);
     }
     {   // 4
@@ -236,7 +240,8 @@ QList<CalculationBreakdownRow> CalculationBreakdown::shareRows(const ShareValues
         r.depotFigures  = QStringLiteral("%1 + %2 + %3 = %4")
                               .arg(money(v.curValue), money(v.salePayoutFinal),
                                    money(v.totalDividend), money(v.completeCurValue));
-        r.usedIn    = { cell(kBoth, kColComplete, false), footer(kRowDepot) };
+        r.usedIn    = { cell(kBoth, kColComplete, false), footer(kRowDepot),
+                        kMarketCompleteChart + QStringLiteral(" (Marktwert)") };
         rows.append(r);
     }
     {   // 12
@@ -293,6 +298,11 @@ double CalculationBreakdown::chartDevelopment(const PortfolioSharePoint& p)
 {
     return ShareCalculator::roundAway(p.holdingsValue + p.realizedGain + p.dividends
                                       - p.costs - p.purchaseValueHeld);
+}
+
+double CalculationBreakdown::chartDevelopmentHeld(const PortfolioSharePoint& p)
+{
+    return ShareCalculator::roundAway(p.holdingsValue - p.purchaseValueHeldFinal);
 }
 
 QString CalculationBreakdown::shareTitle(const CalculationReportShare& s)
@@ -410,7 +420,12 @@ QList<CalculationCheck> CalculationBreakdown::shareChecks(const CalculationRepor
         check(name, QStringLiteral("Marktwert / Marktwert-Chart"),
               v.curValue, c.marketValue, false, false, byPrice),
         check(name, QStringLiteral("Kompl. Entwicklung Depotwert / Depot-Chart"),
-              v.completeProfitLoss, chartDevelopment(c), false, false, byPrice)
+              v.completeProfitLoss, chartDevelopment(c), false, false, byPrice),
+        // Zweite Linien beider Charts (ergänzt 01.11.2026).
+        check(name, QStringLiteral("Akt. Entwicklung Depotwert / Depot-Chart im Depot"),
+              v.profitLossFinal, chartDevelopmentHeld(c), false, false, byPrice),
+        check(name, QStringLiteral("Kpl. Marktwert / Marktwert-Chart komplett"),
+              v.completeCurValueMarket, c.marketValueComplete, false, false, byPrice)
     };
 }
 
@@ -526,6 +541,7 @@ QList<CalculationBreakdownRow> CalculationBreakdown::footerRows(const Calculatio
         r.depotWay  = QStringLiteral("Aktueller Depotstand − Einzahlung (gesamt)");
         r.depotFigures = minus(t.depotCurValue, t.depotPurchase, t.depotProfit);
         r.usedIn    = both(kRowPerf, kColPerf, QStringLiteral("oben"));
+        r.usedIn << kDepotHeldChart + QStringLiteral(" (Depotwert)");
         rows.append(r);
     }
     {   // 5
@@ -567,6 +583,7 @@ QList<CalculationBreakdownRow> CalculationBreakdown::footerRows(const Calculatio
         r.marketWay = QStringLiteral("Σ Kpl. Marktwert aller Aktien");
         r.depotWay  = QStringLiteral("Σ Kpl. Wert aller Aktien");
         r.usedIn    = both(kRowDepot, kColComplete);
+        r.usedIn << kMarketCompleteChart + QStringLiteral(" (Marktwert)");
         rows.append(r);
     }
     {   // 9
@@ -614,8 +631,10 @@ CalculationTotalChecks CalculationBreakdown::totalChecks(const CalculationReport
         // Kursunterschied als Erklärung. Seit v1.29.0 nur noch Aktien ohne
         // Tageswerte UND ohne Transaktionen (sonst Ersatzkurse).
         if (s.chartExcluded) {
-            result.excludedCurValue += s.values.curValue;
-            result.excludedProfit   += s.values.completeProfitLoss;
+            result.excludedCurValue       += s.values.curValue;
+            result.excludedProfit         += s.values.completeProfitLoss;
+            result.excludedHeldProfit     += s.values.profitLossFinal;
+            result.excludedCompleteMarket += s.values.completeCurValueMarket;
         }
     }
 
@@ -633,7 +652,14 @@ CalculationTotalChecks CalculationBreakdown::totalChecks(const CalculationReport
               result.excludedProfit),
         check(total, QStringLiteral("Depotwert: Footer \"Aktueller Depotstand\""),
               t.depotCurValue, ct.holdingsValue, false, false, result.byPrice,
-              result.excludedCurValue)
+              result.excludedCurValue),
+        // Zweite Linien beider Charts (ergänzt 01.11.2026).
+        check(total, QStringLiteral("Depotwert: Footer \"Entwicklung (gesamt)\""),
+              t.depotProfit, ct.developmentHeld, false, false, result.byPrice,
+              result.excludedHeldProfit),
+        check(total, QStringLiteral("Marktwert: Footer \"Kpl. Marktwert\""),
+              t.marketCompleteValue, ct.marketValueComplete, false, false, result.byPrice,
+              result.excludedCompleteMarket)
     };
     return result;
 }

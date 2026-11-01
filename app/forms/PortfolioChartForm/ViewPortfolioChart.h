@@ -21,6 +21,7 @@
 #include <QDateTimeAxis>
 #include <QPointF>
 
+class QCheckBox;
 class QLineSeries;
 class QWheelEvent;
 
@@ -54,6 +55,15 @@ class QWheelEvent;
  * Einfärbung, Y-Achse "Marktwert (€)" ohne erzwungene Null, Tooltip "Datum /
  * Wert €" ohne Prozent, eigener Dateiname beim Diagnose-Export. Zeitraum-
  * Einstellung und Diagnose-Schalter teilen sich beide Charts.
+ *
+ * @note Zwei Linien je Chart (ergänzt 01.11.2026, Nessies Vorgabe): jede
+ * View zeigt die beiden Spaltengruppen der Tabellen, "Komplett (alle Aktien)"
+ * und "Aktuell (im Depot)". Ein Block "Kurven" unter "Zeitraum" blendet sie
+ * einzeln ein und aus; die Häkchen tragen die Farbe ihrer Linie und ersetzen
+ * die Legende. Mindestens eine Linie bleibt immer sichtbar. Die Auswahl wird
+ * je Chart in AppSettings gespeichert, wie Interval und Anzahl beim
+ * Schließen. Das Ein- und Ausblenden zeichnet nur neu, ohne den Presenter zu
+ * fragen — die Punkte tragen immer beide Linien.
  */
 class ViewPortfolioChart : public QWidget, public IViewPortfolioChart
 {
@@ -110,6 +120,15 @@ public:
      *  wie ViewChart::eventFilter(). */
     bool eventFilter(QObject* watched, QEvent* event) override;
 
+    /** Linie "Komplett (alle Aktien)" sichtbar (ergänzt 01.11.2026). Im
+     *  Depotwert-Chart die bisherige Entwicklungslinie, im Marktwert-Chart
+     *  die neue Linie "Kpl. Marktwert". */
+    bool completeCurveVisible() const;
+    /** Linie "Aktuell (im Depot)" sichtbar (ergänzt 01.11.2026). Im
+     *  Marktwert-Chart die bisherige Marktwert-Linie, im Depotwert-Chart die
+     *  neue Linie "Aktuelle Entwicklung". */
+    bool heldCurveVisible() const;
+
 signals:
     /** Reicht setRangeInfo() an MainWindow weiter. */
     void titleInfoChanged(const QString& infoText);
@@ -117,13 +136,20 @@ signals:
 private:
     void setupUi();
     QGroupBox* setupZeitraumBox();
+    QGroupBox* setupKurvenBox();
+    /** Zeichnet die Linien aus m_points neu, je nach Häkchen (01.11.2026). */
+    void redraw();
+    /** Häkchen geändert: mindestens eine Linie bleibt an, dann neu zeichnen. */
+    void onCurveToggled(QCheckBox* changed, QCheckBox* other);
     void rebuildAxes(const QList<PortfolioChartPoint>& points);
     void applyWheelStep(QWheelEvent* event);
 
 private slots:
     /**
-     * @brief Tooltip "Datum / Entwicklung € / Entwicklung %" beim Hovern der
-     * Kurve, im Marktwert-Modus "Datum / Wert €" (ergänzt 17.10.2026). Als private slot deklariert, damit Tests die Formatierung per
+     * @brief Tooltip beim Hovern der Kurve: Datum, darunter je sichtbarer
+     * Linie Bezeichnung und Wert — im Depotwert-Chart mit Prozent, im
+     * Marktwert-Chart ohne (zwei Linien seit 01.11.2026; vorher "Datum /
+     * Entwicklung € / Entwicklung %" bzw. "Datum / Wert €"). Als private slot deklariert, damit Tests die Formatierung per
      * QMetaObject::invokeMethod() prüfen können, ohne ein Maus-Hover über die
      * im Offscreen-Testlauf nicht verlässlich vermessbare Zeichenfläche zu
      * simulieren — gleiche Begründung wie bei ViewChart::onSeriesHovered().
@@ -187,6 +213,12 @@ private:
     QDateEdit* m_startDateEdit = nullptr;
     QComboBox* m_intervalCombo = nullptr;
     QSpinBox*  m_countSpin     = nullptr;
+    // ── Kurven-Block (ergänzt 01.11.2026) ─────────────────────────────────
+    QCheckBox* m_completeCheck = nullptr; ///< "Komplett (alle Aktien)"
+    QCheckBox* m_heldCheck     = nullptr; ///< "Aktuell (im Depot)"
+    bool m_loadedShowComplete  = true;    ///< beim Öffnen gelesen, siehe Destruktor
+    bool m_loadedShowHeld      = true;
+
     QPushButton* m_exportButton = nullptr; ///< siehe onExportDiagnostics(); nur sichtbar
                                            ///< bei AppSettings::showDiagnostics() (19.09.2026)
 

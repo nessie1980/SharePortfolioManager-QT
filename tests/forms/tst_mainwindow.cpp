@@ -383,6 +383,10 @@ private slots:
         // Defaults zurück) — deshalb vor jedem Test auf die Defaults.
         AppSettings::instance().setShareChartInterval(QStringLiteral("Month"), 1);
         AppSettings::instance().setPortfolioChartInterval(QStringLiteral("Year"), 1);
+        // Sichtbare Linien der Portfolio-Charts (ergänzt 01.11.2026), gleiche
+        // Begründung: Vorgabe beide sichtbar.
+        AppSettings::instance().setDepotChartCurves(true, true);
+        AppSettings::instance().setMarketChartCurves(true, true);
         if (Database::instance().isOpen())
             Database::instance().close();
     }
@@ -3623,8 +3627,8 @@ private slots:
         const QDate d2(2026, 8, 27);
         PortfolioChartData data;
         data.points = {
-            { d1, 10.00, 1.00, 1000.00 },
-            { d2, 25.50, 2.50, 1234.56 }
+            { d1, 10.00, 1.00, 1000.00, false, 0.0, 0.0, 1000.00 },
+            { d2, 25.50, 2.50, 1234.56, false, 0.0, 0.0, 1500.00 }
         };
         view.setChartData(data);
 
@@ -3632,14 +3636,114 @@ private slots:
         QMetaObject::invokeMethod(&view, "onSeriesHovered", Qt::DirectConnection,
                                    Q_ARG(QPointF, QPointF(x, 0.0)), Q_ARG(bool, true));
 
+        // Seit 01.11.2026 beide Linien, je mit Bezeichnung, ohne Prozent.
         const QString text = QToolTip::text();
         const QString expected = d2.toString(QStringLiteral("dd.MM.yyyy")) + QStringLiteral("\n")
-                               + QLocale().toString(1234.56, 'f', 2) + QStringLiteral(" €");
+                               + QStringLiteral("Aktuell: ")
+                               + QLocale().toString(1234.56, 'f', 2) + QStringLiteral(" €\n")
+                               + QStringLiteral("Komplett: ")
+                               + QLocale().toString(1500.00, 'f', 2) + QStringLiteral(" €");
         QCOMPARE(text, expected);
         QVERIFY(!text.contains(QStringLiteral("%")));
 
         QMetaObject::invokeMethod(&view, "onSeriesHovered", Qt::DirectConnection,
                                    Q_ARG(QPointF, QPointF(x, 0.0)), Q_ARG(bool, false));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Zwei Linien je Portfolio-Chart (ergänzt 01.11.2026, Nessies Vorgaben):
+    // Block "Kurven" mit zwei Häkchen, Vorgabe beide sichtbar, mindestens
+    // eine bleibt an, Auswahl je Chart gespeichert, Tooltip je sichtbarer
+    // Linie eine Zeile.
+    // ─────────────────────────────────────────────────────────────────────
+
+    static PortfolioChartData twoCurveData(const QDate& d1, const QDate& d2)
+    {
+        PortfolioChartData data;
+        data.points = {
+            { d1,  10.00, 1.00, 1000.00, false, -5.00, -0.50, 1000.00 },
+            { d2,  25.50, 2.50, 1234.56, false, 12.25,  1.25, 1500.00 }
+        };
+        return data;
+    }
+
+    void test_portfolioCharts_bothCurvesVisibleByDefault()
+    {
+        openMemoryDb();
+        for (const PortfolioChartMode mode : { PortfolioChartMode::Development,
+                                               PortfolioChartMode::MarketValue }) {
+            ViewPortfolioChart view(mode);
+            auto* complete = view.findChild<QCheckBox*>(QStringLiteral("portfolioChartCompleteCheck"));
+            auto* held     = view.findChild<QCheckBox*>(QStringLiteral("portfolioChartHeldCheck"));
+            QVERIFY(complete && held);
+            QVERIFY(complete->isChecked() && held->isChecked());
+            QCOMPARE(complete->text(), QStringLiteral("Komplett (alle Aktien)"));
+            QCOMPARE(held->text(),     QStringLiteral("Aktuell (im Depot)"));
+            QVERIFY(!complete->icon().isNull() && !held->icon().isNull());
+        }
+    }
+
+    void test_portfolioCharts_lastVisibleCurveCannotBeHidden()
+    {
+        openMemoryDb();
+        ViewPortfolioChart view;
+        auto* complete = view.findChild<QCheckBox*>(QStringLiteral("portfolioChartCompleteCheck"));
+        auto* held     = view.findChild<QCheckBox*>(QStringLiteral("portfolioChartHeldCheck"));
+        QVERIFY(complete && held);
+
+        held->setChecked(false);
+        QVERIFY(!view.heldCurveVisible());
+        complete->setChecked(false); // die letzte — bleibt an
+        QVERIFY(view.completeCurveVisible());
+    }
+
+    void test_depotChart_tooltipShowsBothCurvesAndHidesUnchecked()
+    {
+        openMemoryDb();
+        ViewPortfolioChart view;
+        const QDate d1(2026, 10, 29), d2(2026, 10, 30);
+        view.setChartData(twoCurveData(d1, d2));
+
+        const double x = static_cast<double>(QDateTime(d2, QTime(0, 0)).toMSecsSinceEpoch());
+        const auto hover = [&view, x]() {
+            QMetaObject::invokeMethod(&view, "onSeriesHovered", Qt::DirectConnection,
+                                      Q_ARG(QPointF, QPointF(x, 0.0)), Q_ARG(bool, true));
+            const QString text = QToolTip::text();
+            QMetaObject::invokeMethod(&view, "onSeriesHovered", Qt::DirectConnection,
+                                      Q_ARG(QPointF, QPointF(x, 0.0)), Q_ARG(bool, false));
+            return text;
+        };
+        const QLocale loc;
+        const QString both = hover();
+        QCOMPARE(both, d2.toString(QStringLiteral("dd.MM.yyyy")) + QStringLiteral("\n")
+                       + QStringLiteral("Komplett: %1 € (%2 %)\n").arg(loc.toString(25.50, 'f', 2),
+                                                                      loc.toString(2.50, 'f', 2))
+                       + QStringLiteral("Aktuell: %1 € (%2 %)").arg(loc.toString(12.25, 'f', 2),
+                                                                   loc.toString(1.25, 'f', 2)));
+
+        view.findChild<QCheckBox*>(QStringLiteral("portfolioChartCompleteCheck"))->setChecked(false);
+        const QString heldOnly = hover();
+        QVERIFY2(!heldOnly.contains(QStringLiteral("Komplett")), qPrintable(heldOnly));
+        QVERIFY2(heldOnly.contains(QStringLiteral("Aktuell")), qPrintable(heldOnly));
+    }
+
+    void test_portfolioCharts_curveSelectionSavedPerChartOnClose()
+    {
+        openMemoryDb();
+        {
+            ViewPortfolioChart depot;
+            depot.findChild<QCheckBox*>(QStringLiteral("portfolioChartHeldCheck"))->setChecked(false);
+            QVERIFY(AppSettings::instance().depotChartShowHeld()); // erst beim Schließen
+        }
+        QVERIFY(AppSettings::instance().depotChartShowComplete());
+        QVERIFY(!AppSettings::instance().depotChartShowHeld());
+        // Der Marktwert-Chart hat eigene Schlüssel und bleibt unberührt.
+        QVERIFY(AppSettings::instance().marketChartShowHeld());
+        QVERIFY(AppSettings::instance().marketChartShowComplete());
+
+        ViewPortfolioChart again;
+        QVERIFY(!again.heldCurveVisible());
+        QVERIFY(again.completeCurveVisible());
     }
 
     void test_portfolioCharts_tooltipMarksCurrentPrice()

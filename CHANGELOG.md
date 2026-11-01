@@ -10,6 +10,27 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 Zurzeit keine unveroeffentlichten Aenderungen.
 
+## [1.30.0] - 2026-11-01
+
+### Added
+
+- Depotwert- und Marktwert-Chart zeigen je zwei Linien, entsprechend den
+  Spaltengruppen der Tabellen: "Komplett (alle Aktien)" und "Aktuell (im
+  Depot)". Neu sind im Depotwert-Chart die Entwicklung der am jeweiligen Tag
+  gehaltenen Stuecke (wie "Aktuelle Entwicklung", inkl. anteiliger
+  Kaufkosten, ohne Dividenden; endet auf "Entwicklung (gesamt)") und im
+  Marktwert-Chart der Marktwert plus alle Verkaeufe brutto (wie "Kpl.
+  Marktwert"; endet auf dem gleichnamigen Footer).
+- Block "Kurven" unter "Zeitraum" mit zwei Haekchen zum Ein- und Ausblenden
+  der Linien; Farbsymbole statt Legende, mindestens eine Linie bleibt
+  sichtbar, die Auswahl wird je Chart gespeichert.
+- Die neue Depotwert-Linie ist nach Vorzeichen dunkelblau bzw. hellblau
+  eingefaerbt, die neue Marktwert-Linie grau-gruen.
+- Tooltip und Tab-Tooltip nennen die Werte beider Linien; der
+  Diagnose-Export hat Spalten fuer die neuen Linien.
+- Berechnungsbericht und Tab "Depot- vs. Marktwert" gleichen die neuen
+  Linien je Aktie und gegen die Footer ab.
+
 ## [1.29.1] - 2026-10-31
 
 ### Fixed

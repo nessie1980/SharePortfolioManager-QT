@@ -112,6 +112,8 @@ struct CalculationTotalChecks
     double byPrice          = 0.0;   ///< Σ Kurseffekt je Aktie
     double excludedCurValue = 0.0;   ///< Kurswert der Aktien ohne Kursdaten (nicht im Chart)
     double excludedProfit   = 0.0;   ///< Kompl. Entwicklung der Aktien ohne Kursdaten (nicht im Chart)
+    double excludedHeldProfit = 0.0;   ///< Aktuelle Entwicklung (Depotwert) dieser Aktien (01.11.2026)
+    double excludedCompleteMarket = 0.0; ///< Kpl. Marktwert dieser Aktien (01.11.2026)
 };
 
 /**
@@ -170,7 +172,16 @@ public:
     static double chartDevelopment(const PortfolioSharePoint& point);
 
     /**
-     * @brief Abgleich Tabelle gegen Chart einer Aktie (fünf Zeilen).
+     * @brief Entwicklung einer Aktie auf der Depotwert-Linie "Aktuell (im
+     * Depot)" (ergänzt 01.11.2026): Bestandswert minus Einzahlung der
+     * gehaltenen Stücke inklusive anteiliger Kaufkosten — dieselbe Formel
+     * wie PortfolioSeriesCalculator::compute() für die Summe.
+     */
+    static double chartDevelopmentHeld(const PortfolioSharePoint& point);
+
+    /**
+     * @brief Abgleich Tabelle gegen Chart einer Aktie (sieben Zeilen, seit
+     * 01.11.2026 mit den zweiten Linien beider Charts).
      * @return Leer, wenn die Aktie keine Tageswerte oder keinen Chartpunkt hat.
      */
     static QList<CalculationCheck> shareChecks(const CalculationReportShare& share);
@@ -192,7 +203,8 @@ public:
      */
     static QList<CalculationBreakdownRow> footerRows(const CalculationFooterTotals& totals);
 
-    /// Abgleich Footer gegen Chart (drei Zeilen), siehe CalculationTotalChecks.
+    /// Abgleich Footer gegen Chart (fünf Zeilen seit 01.11.2026), siehe
+    /// CalculationTotalChecks.
     static CalculationTotalChecks totalChecks(const CalculationReportInput& input,
                                               const CalculationFooterTotals& totals);
 

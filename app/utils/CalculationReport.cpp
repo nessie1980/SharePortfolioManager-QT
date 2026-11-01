@@ -556,6 +556,14 @@ QString buildShareSection(const CalculationReportShare& s)
     out += valueLine(QStringLiteral("Depotwert-Chart: Entwicklung"), euro(chartDev),
                      QStringLiteral("Bestandswert + realisiert + Dividenden − Kosten − Kaufwert gehalten"));
     out += valueLine(QStringLiteral("Marktwert-Chart: Marktwert"), euro(c.marketValue));
+    // Zweite Linien beider Charts (ergänzt 01.11.2026).
+    out += valueLine(QStringLiteral("Einzahlung gehalten mit Kaufkosten"), euro(c.purchaseValueHeldFinal),
+                     QStringLiteral("Reststück × Kaufkurs + anteilige Kaufkosten je Kauf"));
+    out += valueLine(QStringLiteral("Depotwert-Chart: Entwicklung im Depot"),
+                     euro(CalculationBreakdown::chartDevelopmentHeld(c)),
+                     QStringLiteral("Bestandswert − Einzahlung gehalten mit Kaufkosten"));
+    out += valueLine(QStringLiteral("Marktwert-Chart: Kpl. Marktwert"), euro(c.marketValueComplete),
+                     QStringLiteral("Marktwert + Verkäufe brutto %1").arg(money(c.salesGross)));
 
     // ── Abgleich ──────────────────────────────────────────────────────────
     out += heading(QStringLiteral("Abgleich Tabelle gegen Chart"));
@@ -692,6 +700,11 @@ QString buildTotals(const CalculationReportInput& input)
     out += valueLine(QStringLiteral("Depotwert-Chart: Entwicklung"), euro(ct.development),
                      QStringLiteral("%1 %").arg(ValueFormatter::formatPercent(ct.developmentPct)));
     out += valueLine(QStringLiteral("Marktwert-Chart: Marktwert"), euro(ct.marketValue));
+    // Zweite Linien beider Charts (ergänzt 01.11.2026).
+    out += valueLine(QStringLiteral("Einzahlung gehalten mit Kaufkosten"), euro(ct.purchaseValueHeldFinal));
+    out += valueLine(QStringLiteral("Depotwert-Chart: Entwicklung im Depot"), euro(ct.developmentHeld),
+                     QStringLiteral("%1 %").arg(ValueFormatter::formatPercent(ct.developmentHeldPct)));
+    out += valueLine(QStringLiteral("Marktwert-Chart: Kpl. Marktwert"), euro(ct.marketValueComplete));
 
     // ── Abgleich Footer gegen Chart ───────────────────────────────────────
     // Aktien ohne Kursdaten zählen im Footer, fehlen aber im Chart (Nessies
@@ -714,6 +727,10 @@ QString buildTotals(const CalculationReportInput& input)
     out += valueLine(QStringLiteral("Aktien ohne Kursdaten: Kurswert"), euro(excludedCurValue),
                      QStringLiteral("ohne Tageswerte und Transaktionen, nicht im Chart"));
     out += valueLine(QStringLiteral("Aktien ohne Kursdaten: Kompl. Entw."), euro(excludedProfit),
+                     QStringLiteral("ohne Tageswerte und Transaktionen, nicht im Chart"));
+    out += valueLine(QStringLiteral("Aktien ohne Kursdaten: Akt. Entw."), euro(totals.excludedHeldProfit),
+                     QStringLiteral("ohne Tageswerte und Transaktionen, nicht im Chart"));
+    out += valueLine(QStringLiteral("Aktien ohne Kursdaten: Kpl. Marktw."), euro(totals.excludedCompleteMarket),
                      QStringLiteral("ohne Tageswerte und Transaktionen, nicht im Chart"));
 
     return out;

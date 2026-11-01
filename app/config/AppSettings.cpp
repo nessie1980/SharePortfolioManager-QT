@@ -113,6 +113,10 @@ void AppSettings::load(const QString& path)
     m_shareChartIntervalCount     = std::max(1, settings.value(QStringLiteral("Charts/ShareIntervalCount"),     m_shareChartIntervalCount).toInt());
     m_portfolioChartIntervalUnit  = settings.value(QStringLiteral("Charts/PortfolioIntervalUnit"),  m_portfolioChartIntervalUnit).toString();
     m_portfolioChartIntervalCount = std::max(1, settings.value(QStringLiteral("Charts/PortfolioIntervalCount"), m_portfolioChartIntervalCount).toInt());
+    m_depotChartShowComplete      = settings.value(QStringLiteral("Charts/DepotShowComplete"),  m_depotChartShowComplete).toBool();
+    m_depotChartShowHeld          = settings.value(QStringLiteral("Charts/DepotShowHeld"),      m_depotChartShowHeld).toBool();
+    m_marketChartShowHeld         = settings.value(QStringLiteral("Charts/MarketShowHeld"),     m_marketChartShowHeld).toBool();
+    m_marketChartShowComplete     = settings.value(QStringLiteral("Charts/MarketShowComplete"), m_marketChartShowComplete).toBool();
 }
 
 void AppSettings::save()
@@ -177,6 +181,10 @@ void AppSettings::save()
     settings.setValue(QStringLiteral("Charts/ShareIntervalCount"),     m_shareChartIntervalCount);
     settings.setValue(QStringLiteral("Charts/PortfolioIntervalUnit"),  m_portfolioChartIntervalUnit);
     settings.setValue(QStringLiteral("Charts/PortfolioIntervalCount"), m_portfolioChartIntervalCount);
+    settings.setValue(QStringLiteral("Charts/DepotShowComplete"),  m_depotChartShowComplete);
+    settings.setValue(QStringLiteral("Charts/DepotShowHeld"),      m_depotChartShowHeld);
+    settings.setValue(QStringLiteral("Charts/MarketShowHeld"),     m_marketChartShowHeld);
+    settings.setValue(QStringLiteral("Charts/MarketShowComplete"), m_marketChartShowComplete);
 }
 
 // ── Setters ───────────────────────────────────────────────────────────────────
@@ -340,6 +348,20 @@ void AppSettings::setPortfolioChartInterval(const QString& unit, int count)
 {
     m_portfolioChartIntervalUnit  = unit;
     m_portfolioChartIntervalCount = std::max(1, count);
+    save();
+}
+
+void AppSettings::setDepotChartCurves(bool showComplete, bool showHeld)
+{
+    m_depotChartShowComplete = showComplete;
+    m_depotChartShowHeld     = showHeld;
+    save();
+}
+
+void AppSettings::setMarketChartCurves(bool showHeld, bool showComplete)
+{
+    m_marketChartShowHeld     = showHeld;
+    m_marketChartShowComplete = showComplete;
     save();
 }
 

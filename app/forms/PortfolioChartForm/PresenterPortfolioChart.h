@@ -90,9 +90,12 @@ public:
     /**
      * @brief Kopfzeile für den Tab-Tooltip.
      *
-     * Depotwert-Chart: "Zeitraum: ... / Entwicklung: X € (Y %)".
-     * Marktwert-Chart (ergänzt 17.10.2026): "Zeitraum: ... / Marktwert: X €",
-     * ohne Prozent — der Marktwert hat keine natürliche Bezugsgröße.
+     * Depotwert-Chart: "Zeitraum: ... / Entwicklung: X € (Y %) / im Depot:
+     * X € (Y %)". Marktwert-Chart (ergänzt 17.10.2026): "Zeitraum: ... /
+     * Marktwert: X € / Kpl. Marktwert: X €", ohne Prozent — der Marktwert hat
+     * keine natürliche Bezugsgröße. Die jeweils zweite Angabe ist die zweite
+     * Linie des Charts (ergänzt 01.11.2026), unabhängig davon, ob sie gerade
+     * eingeblendet ist.
      *
      * @param from    Beginn des Zeitraums.
      * @param to      Ende des Zeitraums.
