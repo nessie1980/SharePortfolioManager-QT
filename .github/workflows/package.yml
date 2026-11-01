@@ -22,9 +22,20 @@ jobs:
         with:
           version: '6.8.3'
           # msvc2022 statt msvc2019 seit Qt 6.8 (01.11.2026): ab 6.8 gibt es
-          # nur noch Pakete fuer MSVC 2022. windows-latest hat VS 2022 bereits.
+          # nur noch Pakete fuer MSVC 2022. Sie laufen auch mit dem Compiler
+          # von VS 2026 auf dem Image windows-2025-vs2026 (MSVC 19.51,
+          # binaerkompatibel; erster gruener Lauf 01.11.2026).
           arch: 'win64_msvc2022_64'
           modules: 'qtcharts qtmultimedia qtpdf'
+          # cache: legt die Qt-Installation im Actions-Cache ab; der Schluessel
+          # haengt an Version, Plattform und Modulen, ein Qt-Upgrade legt
+          # also von selbst einen neuen an (01.11.2026).
+          cache: true
+          # Eigener Praefix, damit sich package.yml und build.yml keinen
+          # Qt-Cache teilen: package-linux loescht weiter unten die nicht
+          # benoetigten SQL-Treiber aus der Qt-Installation, und dieser
+          # Zustand soll nicht in den Cache des Build-Jobs geraten.
+          cache-key-prefix: 'install-qt-action-package'
 
       # vs-shell statt ilammy/msvc-dev-cmd@v1 (18.09.2026): msvc-dev-cmd
       # zielt auch in der neuesten Fassung auf Node 20 und lief nach dessen
@@ -49,8 +60,12 @@ jobs:
       - name: Configure (Release)
         run: cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
 
+      # --parallel 4 statt 2 (01.11.2026): fuer oeffentliche Repositories
+      # haben die Linux- und Windows-Runner 4 Kerne und 16 GB. Die 2 stammte
+      # aus der Anfangszeit mit 2-Kern-Runnern und 7 GB, auf denen mehr
+      # parallele Uebersetzungen mit Exit-Code 143 (Speicher) abbrachen.
       - name: Build (Release)
-        run: cmake --build build --parallel 2
+        run: cmake --build build --parallel 4
 
       - name: Prepare deploy directory
         shell: pwsh
@@ -109,10 +124,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Install build tools & poppler-utils
+      # Nur poppler-utils (01.11.2026): cmake und build-essential sind auf
+      # den GitHub-Images vorinstalliert, das neuere CMake des Images liegt
+      # in /usr/local/bin und wird ohnehin vorgezogen. Siehe ARCHITECTURE.md,
+      # "Laufzeit der Build-Pipeline verkuerzen".
+      - name: Install poppler-utils
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential poppler-utils
+          sudo apt-get install -y poppler-utils
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
@@ -122,12 +141,22 @@ jobs:
           target: 'desktop'
           arch: 'linux_gcc_64'
           modules: 'qtcharts qtmultimedia qtpdf'
+          # cache: legt die Qt-Installation im Actions-Cache ab; der Schluessel
+          # haengt an Version, Plattform und Modulen, ein Qt-Upgrade legt
+          # also von selbst einen neuen an (01.11.2026).
+          cache: true
+          # Eigener Praefix, damit sich package.yml und build.yml keinen
+          # Qt-Cache teilen: package-linux loescht weiter unten die nicht
+          # benoetigten SQL-Treiber aus der Qt-Installation, und dieser
+          # Zustand soll nicht in den Cache des Build-Jobs geraten.
+          cache-key-prefix: 'install-qt-action-package'
 
       - name: Configure (Release)
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
+      # --parallel 4, siehe package-windows.
       - name: Build (Release)
-        run: cmake --build build --parallel 2
+        run: cmake --build build --parallel 4
 
       - name: Assemble AppDir
         run: |

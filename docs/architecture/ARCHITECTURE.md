@@ -5522,6 +5522,72 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
+### Laufzeit der Build-Pipeline verkürzen (26.10.2026, Teil A umgesetzt 01.11.2026)
+
+Ausgangspunkt waren lange Läufe von `build.yml`. Ausgewertet wurden die
+Zeitstempel je Schritt aus zwei grünen Läufen: 26.10.2026 (Qt 6.7.0,
+`ubuntu-24.04`) und 01.11.2026 (Qt 6.8.3, `ubuntu-26.04` bzw.
+`windows-2025-vs2026`). Zeiten in Minuten:Sekunden, Pakete per apt nur
+unter Linux:
+
+| Schritt | Linux 26.10. | Linux 01.11. | Windows 26.10. | Windows 01.11. |
+|---|---|---|---|---|
+| Pakete per apt | 7:05 | 0:08 | - | - |
+| Install Qt | 5:00 | 0:41 | 1:08 | 1:15 |
+| Build | 11:16 | 16:14 | 16:27 | 28:46 |
+| Test | 0:39 | 0:39 | 1:03 | 1:00 |
+| Gesamt | 24:07 | 17:50 | 19:04 | 31:35 |
+
+Befund:
+
+- Am 26.10. lieferte der Ubuntu-Paketserver nur etwa 40 kB/s; das traf den
+  apt-Schritt und die Systembibliotheken, die `install-qt-action` nachlädt.
+  Der eigentliche Qt-Download dauerte etwa 10 Sekunden. Mit dem
+  Ubuntu-26-Image ist dieser Engpass verschwunden (20,5 MB in einer
+  Sekunde).
+- Seitdem bestimmt der Build die Laufzeit, und er ist langsamer geworden:
+  unter Linux etwa 35 % mehr Zeit je Übersetzung (1,16 s statt 0,86 s,
+  dazu 837 statt 787 Übersetzungen), unter Windows insgesamt 75 % mehr.
+  Ob das an den neuen Compilern (GCC 15.2, MSVC 19.51), den Qt-6.8-Headern
+  oder an Schwankungen der Runner liegt, lässt sich aus dem Log nicht
+  trennen.
+- Gebaut wurde mit `--parallel 2`, obwohl die Runner für öffentliche
+  Repositories 4 Kerne haben.
+- 693 der 837 Übersetzungen unter Linux sind `app/`-Quellen, die jedes
+  Testziel für sich neu übersetzt, z. B. `BuyObject.cpp` 26-mal;
+  `tst_mainwindow` und `tst_backupform` übersetzen je über 80 Dateien.
+
+Teil A, umgesetzt 01.11.2026 (nur Workflows, kein Versionssprung):
+
+- apt installiert nur noch `poppler-utils` (in `build.yml` und
+  `package.yml`). `cmake` und `build-essential` sind auf den Images
+  vorinstalliert.
+- `--parallel 4` in allen vier Jobs. Die frühere 2 stammte aus der Zeit
+  mit 2-Kern-Runnern und 7 GB, auf denen mehr parallele Übersetzungen mit
+  Exit-Code 143 abbrachen.
+- ccache in beiden Jobs von `build.yml` (`hendrikmuhs/ccache-action@v1.2`,
+  ab v1.2.21 auf Node 24, je Job bis 1 GB, Schlüssel je Job mit
+  Zeitstempel). Eingebunden über `CMAKE_CXX_COMPILER_LAUNCHER`; ein
+  eigener Schritt gibt danach die Trefferquote aus. Unter Windows setzt das
+  den Ninja-Generator und einen Build ohne `/Zi` voraus, beides ist im
+  Release-Build erfüllt. `package.yml` bekommt bewusst keinen ccache, weil
+  es zu selten läuft.
+- Qt-Cache (`cache: true`) in allen vier Jobs. `package.yml` nutzt einen
+  eigenen Schlüssel-Präfix, damit der Zustand nach dem Entfernen der
+  SQL-Treiber in `package-linux` nicht in den Cache von `build.yml` gerät.
+- Der apt-Cache aus der Empfehlung vom 26.10. entfällt, weil der
+  Paketserver nicht mehr bremst.
+
+@note Die Wirkung ist erst nach zwei Läufen beurteilbar: der erste füllt
+ccache und Qt-Cache, erst der zweite zeigt die Zeiten mit warmem Cache.
+Nach jedem Lauf zeigt der Schritt "ccache statistics" die Trefferquote.
+
+Teil B, offen: eine gemeinsame Bibliothek für die `app/`-Quellen, die die
+Testziele heute einzeln übersetzen. Das verkürzt als einzige Maßnahme auch
+den lokalen Build. Größerer Umbau der CMake-Struktur der Tests (siehe
+"Build-Struktur (CMake)"), daher eigener Entwurf mit Entscheidungspunkten
+und eigener Commit.
+
 ### Zählung der Testziele in "Build-Struktur" veraltet (offen, 30.10.2026)
 
 Die Kette der @note-Absätze unter "Build-Struktur (CMake)" endet bei 48
@@ -5878,8 +5944,14 @@ unverändert ist):
 
 @note Lokal braucht der Build dieselbe Version: Qt 6.8.3 mit Charts,
 Multimedia und Qt PDF über das Maintenance Tool installieren und das Kit in
-Qt Creator umstellen. Die genaue GCC-Version des neuen Runners steht in der
-CMake-Ausgabe des Jobs ("The CXX compiler identification is GNU ...").
+Qt Creator umstellen.
+
+Nachtrag 01.11.2026, erster Lauf nach dem Upgrade: beide Jobs grün, je 55
+von 55 Tests. `build-linux` lief auf dem Image `ubuntu-26.04` mit GCC
+15.2.0. `build-windows` lief bereits auf dem neuen Image
+`windows-2025-vs2026` mit MSVC 19.51 (Compiler von VS 2026); die
+Qt-Pakete für MSVC 2022 sind damit binärkompatibel und funktionieren
+unverändert.
 
 @note Freie Patch-Versionen für 6.8 kommen nicht mehr. Steht wieder ein
 Compiler- oder Runner-Problem an, ist der nächste Schritt eine neuere

@@ -18,6 +18,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   auf `ubuntu-24.04`. Qt 6.7.0 scheiterte mit dem GCC von Ubuntu 26 am
   Linker; der Fehler ist ab Qt 6.7.3 behoben. Der AppImage-Build bleibt
   bewusst auf `ubuntu-22.04` (Linux Mint 21).
+- Build-Pipeline beschleunigt: apt installiert nur noch `poppler-utils`,
+  gebaut wird mit `--parallel 4` statt 2, die Build-Jobs nutzen ccache und
+  alle Jobs einen Qt-Cache. Paketierung ohne ccache, mit eigenem
+  Qt-Cache.
 
 ## [1.30.0] - 2026-11-01
 
