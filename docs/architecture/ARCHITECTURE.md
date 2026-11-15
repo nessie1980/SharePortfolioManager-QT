@@ -5522,7 +5522,7 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### Gemeinsame Bibliothek für die app-Quellen der Testziele (Teil B, offen, 01.11.2026)
+### Gemeinsame Bibliothek für die app-Quellen der Testziele (Teil B, zurückgestellt 15.11.2026)
 
 Rest aus "Laufzeit der Build-Pipeline verkürzen" (siehe "Erledigt /
 Archiv"). Jedes Testziel übersetzt die `app/`-Quellen, die es braucht,
@@ -5536,6 +5536,23 @@ vor allem den lokalen Build verkürzen.
 Größerer Umbau der CMake-Struktur der Tests (siehe "Build-Struktur
 (CMake)"), daher eigener Entwurf mit Entscheidungspunkten und eigener
 Commit.
+
+Zurückgestellt am 15.11.2026 (Nessies Entscheidung): Ein längerer lokaler
+Build ist akzeptabel, und in der Pipeline fängt ccache die Wiederholungen
+bei warmem Cache ab. Der Entwurf für eine spätere Umsetzung liegt als
+Claude Doc "Entwurf: Gemeinsame Bibliothek für die Testziele (Teil B)" vor:
+Ist-Zahlen vom 15.11.2026, Nachteile, Zuschnitt in zwei Stufen (AppCore aus
+models, repositories, utils, config und core; optional AppForms) und fünf
+Entscheidungspunkte. Die Zahlen sind vor einer Umsetzung neu zu erheben.
+
+@note Beim Entwurf aufgefallen: `CalculationReport.cpp` in `app/utils`
+bindet `forms/PortfolioChartForm/ModelPortfolioChart.h` ein, also eine
+Abhängigkeit von utils auf forms. Sie stört heute nicht, muss aber vor
+einer gemeinsamen Bibliothek aufgelöst oder bewusst hingenommen werden
+(Entscheidungspunkt 2 im Entwurf).
+
+Wieder aufgreifen, wenn der lokale Build stört, viele neue Testziele
+hinzukommen oder die Pipeline oft mit leerem Cache läuft.
 
 ### Zählung der Testziele in "Build-Struktur" veraltet (offen, 30.10.2026)
 
