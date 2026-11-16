@@ -6186,6 +6186,15 @@ jede Linie entspricht einer Spaltengruppe und endet auf ihrer Footer-Summe;
 die Depotwert-Linie "Aktuell (im Depot)" enthält keine Dividenden; die
 Marktwert-Linie "Komplett (alle Aktien)" behält den Verkaufswert brutto.
 
+@note Prüfung mit Nessies echtem Portfolio (Berechnungsbericht v1.30.0,
+festgehalten 15.11.2026): 0 Abweichungen, alle 226 Abgleichzeilen in
+Ordnung, die Footer-Summen stimmen mit den Endwerten beider Charts überein.
+Einziger Hinweis im Bericht: eine Aktie ohne Tageswerte wird mit
+Ersatzkursen aus ihren eigenen Käufen und Verkäufen bewertet — gewollt, siehe
+v1.29.0. Damit ist die ganze Reihe ab dem Befund vom 19.10.2026 (Summe im
+Tab "Kompletter Marktwert" passt nicht zum Marktwert-Chart) an echten Daten
+abgeschlossen.
+
 ### Marktwert-Chart (05.08.2026, erledigt 17.10.2026)
 
 Ein eigener Tab "Marktwert-Chart" direkt hinter "Kompletter Marktwert", als

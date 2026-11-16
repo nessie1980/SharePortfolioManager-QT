@@ -5013,6 +5013,56 @@ muss bereits offen sein).
 
 ---
 
+### Auslagerung einer Testklasse: Vorgehen und Prüfungen (22.08.2026)
+
+Fünfmal so gelaufen (Buys, Dividend, Sales, OwnMessageBox, Backup) und jedes
+Mal bis zur grünen Pipeline durchgezogen. Gilt für jede weitere Testklasse,
+die ein eigenes Ziel bekommt. Hintergrund und Einzelfälle stehen in
+ARCHITECTURE.md, "tst_mainwindow.cpp in eigene Testdateien aufteilen".
+
+1. Grenzen im Original bestimmen: die Klasse, ihre Stubs und die nur von ihr
+   benutzten Dateihelfer. Gegenprobe in beide Richtungen — werden diese
+   Stubs und Helfer außerhalb des Klassenblocks benutzt, und benutzt der
+   Block fremde Stubs? Beides muss null ergeben, sonst ist der Schnitt nicht
+   sauber. Auch "keine eigenen Stubs" ist ein Ergebnis dieses Schritts, kein
+   Grund, ihn auszulassen.
+2. Blockweise kopieren, nie nachbauen. Der teuerste Fehler der
+   SalesForm-Auslagerung war ein von Hand geschriebener statt kopierter Stub:
+   abweichende Signaturen, rund 40 Compilerfehler.
+3. Aus der Ursprungsdatei entfernen: Klassenblock, Stubs, verwaiste Helfer
+   und den `QTest::qExec`-Aufruf im gemeinsamen `main()`.
+4. CMake-Quellenliste von einem Vorbild mit passender Abhängigkeitstiefe
+   ableiten. Die meisten Formulare brauchen nur ihr MVP-Trio plus
+   Repositories; wer ein echtes `MainWindow` konstruiert (`tst_backupform`),
+   braucht praktisch die Quellenliste von `tst_mainwindow`.
+5. Doku nachziehen: ARCHITECTURE.md (Abhängigkeitsblock unter
+   "Build-Struktur", Zählung, Querverweise), hier Startbefehl, Zählung und
+   Abschnitt der Form — vorher prüfen, ob es den Abschnitt schon gibt —,
+   CHANGELOG.md unter "Unreleased". Schon veröffentlichte Einträge, auch
+   frühere "Unreleased"-Einträge derselben Kette, bleiben unverändert.
+6. Erst nach lokalem Build, Testlauf und grüner Pipeline gilt die
+   Auslagerung als abgeschlossen.
+
+Zwei Prüfungen haben Fehler schon vor dem ersten Build gefunden:
+
+- Testmethoden-Bilanz: verbleibende plus ausgelagerte Testmethoden ergeben
+  genau die Zahl vor der Auslagerung.
+- Include-Abschluss der Quellenliste: für jede gelistete `.cpp` die
+  `#include "…"` rekursiv auflösen; gibt es zu einem Header eine `.cpp` im
+  `app/`-Baum, muss sie in der Liste stehen (`app/core/Database.cpp`
+  ausgenommen, sie kommt aus der Bibliothek `Database`). Ein kleines Skript
+  ist dafür zuverlässiger als der Blick von Hand.
+
+@note Stolperstellen: `DividendRepository` gehört in jedes Ziel, das
+`DocumentRootMigrator.cpp` übersetzt, weil `collectAllDocuments()` die Belege
+aller Buchungsarten sammelt. `QLocale::setDefault(QLocale::German)` muss vor
+der `QApplication` ins eigene `main()`, sobald formatierte Beträge verglichen
+werden oder ein `MainWindow` entsteht; reine Vergleiche fester Texte kommen
+mit `QTEST_MAIN` aus. `Version.h` und `${CMAKE_BINARY_DIR}/app` braucht nur
+der Versionstest des Fenstertitels in `TestMainWindow`.
+
+---
+
 ### tests/xml-importer/ — XML-Importer Unit-/Integrationstests
 
 @note `tools/xml-importer` ist ein eigenständiges Console-Tool (kein Teil des

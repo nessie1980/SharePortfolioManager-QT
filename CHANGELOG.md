@@ -16,6 +16,10 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Repositorys standen, sind dort nachgetragen. Die Zählung der Testziele ist
   abgeglichen (55) und in beiden Dokumenten korrigiert. Am Programm ändert
   sich nichts.
+- Dokumentation: Das Vorgehen beim Auslagern einer Testklasse in ein eigenes
+  Ziel steht jetzt in `TESTING.md` unter "Konventionen", das Ergebnis der
+  Prüfung von v1.30.0 mit echten Daten in `ARCHITECTURE.md`. Beides stand
+  bisher nur in Notizen ausserhalb des Repositorys.
 - Qt in allen Jobs von Build-Pipeline und Paketierung von 6.7.0 auf 6.8.3
   (LTS) angehoben; Windows-Jobs nutzen dafuer das MSVC-2022-Paket statt
   MSVC 2019. Installer und AppImage enthalten damit Qt 6.8.3. Am Verhalten
