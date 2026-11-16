@@ -5549,7 +5549,7 @@ Archiv" und streicht die Zeile.
 
 Stufen: Hoch = als Naechstes, Mittel = bei Gelegenheit oder spaetestens zum
 genannten Anlass, Niedrig = spaeter, Ruht = erst wenn der genannte Anlass
-eintritt. Die Einstufung ist Claudes Vorschlag vom 16.11.2026.
+eintritt. Die Einstufung hat Nessie am 16.11.2026 festgelegt.
 
 | Punkt | Art | Priorität | Anlass bzw. nächster Schritt |
 | --- | --- | --- | --- |
@@ -5573,7 +5573,8 @@ der Übersicht nicht fehlt.
 ### Gemeinsame Bibliothek für die app-Quellen der Testziele (Teil B, zurückgestellt 15.11.2026)
 
 Rest aus "Laufzeit der Build-Pipeline verkürzen" (siehe "Erledigt /
-Archiv"). Jedes Testziel übersetzt die `app/`-Quellen, die es braucht,
+Archiv"); in der Laufzeitanalyse vom 26.10.2026 als Maßnahme 6 geführt.
+Jedes Testziel übersetzt die `app/`-Quellen, die es braucht,
 selbst: unter Linux sind 693 der 837 Übersetzungen solche Quellen, z. B.
 `BuyObject.cpp` 26-mal; `tst_mainwindow` und `tst_backupform` übersetzen
 je über 80 Dateien. In der Pipeline fängt ccache das seit Teil A
