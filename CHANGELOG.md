@@ -37,6 +37,13 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Qt-Cache. Gemessen: Build & Test mit warmem Cache 2:44 (Linux) bzw.
   4:01 (Windows) statt 17:50 bzw. 31:35.
 
+### Removed
+
+- Der Platzhalter `app/forms/ChartForm/ChartForm.h`/`.cpp` ist entfernt. Er
+  enthielt nur einen Kommentar, stand in keiner `CMakeLists.txt` und wurde
+  nirgends eingebunden; der Aktien-Chart liegt in `ModelChart`,
+  `PresenterChart` und `ViewChart`. Am Programm ändert sich nichts.
+
 ## [1.30.0] - 2026-11-01
 
 ### Added

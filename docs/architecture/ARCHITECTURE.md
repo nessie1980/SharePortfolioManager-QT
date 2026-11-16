@@ -5557,7 +5557,6 @@ eintritt. Die Einstufung hat Nessie am 16.11.2026 festgelegt.
 | Breite Belegkennungen gewinnen gegen den Dialog-Fallback | Robustheit | Mittel | Spätestens, wenn Consors-Verkäufe konfiguriert werden; nur an echten Belegen zu prüfen |
 | Berechnungsbericht: CSV-Export und dauerhafter Menüeintrag | Feature | Niedrig | Bei Bedarf; der Bericht ist seit v1.28.0 über den Tab erreichbar |
 | Kennzahl Gewinn seit Kauf auf Netto-Kapital | Feature | Niedrig | Vorher Kosten des Verkaufs vom 27.02.2020 am Beleg prüfen; dann entscheiden, ob die Kennzahl kommt |
-| ChartForm-Platzhalter wird nirgends verwendet | Aufräumen | Niedrig | Zwei Dateien löschen; passt in jeden Commit |
 | Gemeinsame Bibliothek für die app-Quellen der Testziele (Teil B) | Build | Niedrig | Zurückgestellt 15.11.2026; vorher die Abhängigkeit von CalculationReport auf ModelPortfolioChart klären |
 | Parsing von Split-Mitteilungen der Banken prüfen | Feature | Ruht | Zwei, drei echte Split-Mitteilungen liegen vor |
 | Consors-Themen | Robustheit | Ruht | Echte Consors-Belege; derzeit kein Handel über Consors |
@@ -5791,20 +5790,6 @@ Vergleich der Charts stehen im Claude Doc "Analyse: Gewinnberechnung
 anderes Tool vs. SharePortfolioManager" (09.11.2026). Er dient nur als
 Nachschlagewerk; die offenen Fragen werden ausschließlich hier geführt.
 
-### ChartForm-Platzhalter wird nirgends verwendet (offen, 16.11.2026)
-
-`app/forms/ChartForm/ChartForm.h` und `ChartForm.cpp` enthalten nur je einen
-Kommentar ("Placeholder, not yet implemented") aus der Anfangszeit des
-Projekts. Sie stehen in keiner `CMakeLists.txt` und werden nirgends
-eingebunden; der Aktien-Chart ist längst als MVP-Trio `ModelChart`,
-`PresenterChart`, `ViewChart` im selben Ordner umgesetzt. Zu tun: beide
-Dateien löschen.
-
-@note Bis zum 16.11.2026 war in Notizen ausserhalb des Repositorys von einem
-"toten ShareDetailsForm-Stub" die Rede. Einen solchen gibt es nicht —
-`ShareDetailsForm` ist vollständig in Gebrauch. Gemeint war vermutlich
-dieser Platzhalter.
-
 ### Parsing von Split-Mitteilungen der Banken prüfen (08.08.2026)
 
 Seit Phase 3a kann einem Split ein Beleg zugeordnet werden, ausgewertet wird er
@@ -5973,6 +5958,21 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### ChartForm-Platzhalter wird nirgends verwendet (16.11.2026, erledigt 17.11.2026)
+
+`app/forms/ChartForm/ChartForm.h` und `ChartForm.cpp` enthielten nur je einen
+Kommentar ("Placeholder, not yet implemented") aus der Anfangszeit des
+Projekts. Sie standen in keiner `CMakeLists.txt` und wurden nirgends
+eingebunden; der Aktien-Chart ist längst als MVP-Trio `ModelChart`,
+`PresenterChart`, `ViewChart` im selben Ordner umgesetzt. Am 17.11.2026
+gelöscht. Da beide Dateien nie übersetzt wurden, ändert sich am Programm
+nichts, daher kein Versionssprung.
+
+@note Bis zum 16.11.2026 war in Notizen ausserhalb des Repositorys von einem
+"toten ShareDetailsForm-Stub" die Rede. Einen solchen gibt es nicht —
+`ShareDetailsForm` ist vollständig in Gebrauch. Gemeint war dieser
+Platzhalter.
 
 ### Zählung der Testziele in "Build-Struktur" veraltet (30.10.2026, erledigt 16.11.2026)
 
