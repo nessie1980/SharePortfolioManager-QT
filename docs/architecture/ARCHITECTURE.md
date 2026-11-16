@@ -5556,6 +5556,7 @@ eintritt. Die Einstufung hat Nessie am 16.11.2026 festgelegt.
 | Tab Depot- vs. Marktwert: weitere Ausbaustufen | Feature | Hoch | Nächster Schritt nach v1.30.0; vorher klären, wie "Rechenweg anzeigen" und der Rechtsklick fürs ChartPopup zusammengehen |
 | Breite Belegkennungen gewinnen gegen den Dialog-Fallback | Robustheit | Mittel | Spätestens, wenn Consors-Verkäufe konfiguriert werden; nur an echten Belegen zu prüfen |
 | Berechnungsbericht: CSV-Export und dauerhafter Menüeintrag | Feature | Niedrig | Bei Bedarf; der Bericht ist seit v1.28.0 über den Tab erreichbar |
+| Kennzahl Gewinn seit Kauf auf Netto-Kapital | Feature | Niedrig | Vorher Kosten des Verkaufs vom 27.02.2020 am Beleg prüfen; dann entscheiden, ob die Kennzahl kommt |
 | ChartForm-Platzhalter wird nirgends verwendet | Aufräumen | Niedrig | Zwei Dateien löschen; passt in jeden Commit |
 | Gemeinsame Bibliothek für die app-Quellen der Testziele (Teil B) | Build | Niedrig | Zurückgestellt 15.11.2026; vorher die Abhängigkeit von CalculationReport auf ModelPortfolioChart klären |
 | Parsing von Split-Mitteilungen der Banken prüfen | Feature | Ruht | Zwei, drei echte Split-Mitteilungen liegen vor |
@@ -5750,6 +5751,45 @@ dort nur als Randbemerkung festgehalten:
 
 Kein Anlass absehbar; erst aufgreifen, wenn eine Auswertung in einer
 Tabellenkalkulation gebraucht wird.
+
+### Kennzahl Gewinn seit Kauf auf Netto-Kapital (offen, 09.11.2026)
+
+Anlass: Nessie hat die Werte einer Aktie (im Bericht v1.30.0 "Aktie 3")
+mit einem anderen Depot-Programm verglichen. Dort stehen 11.590,35 € und
+209,91 % "seit Kauf", bei uns beim selben Kurs je nach Sicht zwischen
+10.926,54 € und 11.851,98 €, mit 188,41 % bis 189,85 % ("Aktuell") oder
+27,70 % bis 30,17 % ("Komplett").
+
+Ergebnis der Analyse: Unsere Berechnung ist richtig, jeder Wert des anderen
+Programms lässt sich auf den Cent aus unseren Daten nachrechnen. Der Betrag
+"seit Kauf" ist unser "Marktwert: Komplette Entwicklung" minus alle
+Orderkosten, also eine Mischung aus Marktwert (keine Steuern) und Depotwert
+(alle Kosten). Der große Unterschied beim Prozentwert kommt allein von der
+Basis: Das andere Programm teilt durch das noch gebundene Netto-Kapital
+(Käufe minus Verkäufe plus Kosten), wir teilen durch die Einzahlung der
+gehaltenen Stücke ("Aktuell") oder aller Käufe ("Komplett").
+
+Offen ist, ob wir diese Sicht zusätzlich anbieten:
+
+1. Vorfrage, nur am Beleg zu klären: Beim Verkauf vom 27.02.2020 führen wir
+   31,37 € Kosten (23,06 € Provision, 5,81 € Makler, 2,50 € Börse), das
+   andere Programm nur die 23,06 € Provision. Welcher Betrag stimmt laut
+   Abrechnung? Stimmen unsere 31,37 €, ist bei uns nichts zu tun.
+2. Kommt eine Kennzahl "Gewinn seit Kauf (Netto-Kapital)"? Betrag wie
+   "Marktwert: Komplette Entwicklung" minus alle Kosten, Prozent auf Käufe
+   minus Verkäufe plus Kosten. Mögliche Orte: eine Spalte im Tab "Kompletter
+   Depotwert", eine Zeile im Tab "Depot- vs. Marktwert" und im
+   Berechnungsbericht.
+3. Falls ja: Rechnet sie wie das andere Programm ohne Steuern und
+   Dividenden oder wie unser Depotwert mit?
+4. Falls ja: Was zeigt der Prozentwert, wenn das Netto-Kapital nahe null
+   oder negativ ist (mehr verkauft als investiert)? Dann ist ein Prozentwert
+   nicht sinnvoll.
+
+@note Die vollständigen Rechenwege, die Überleitung auf den Cent und der
+Vergleich der Charts stehen im Claude Doc "Analyse: Gewinnberechnung
+anderes Tool vs. SharePortfolioManager" (09.11.2026). Er dient nur als
+Nachschlagewerk; die offenen Fragen werden ausschließlich hier geführt.
 
 ### ChartForm-Platzhalter wird nirgends verwendet (offen, 16.11.2026)
 

@@ -20,6 +20,9 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
   Ziel steht jetzt in `TESTING.md` unter "Konventionen", das Ergebnis der
   Prüfung von v1.30.0 mit echten Daten in `ARCHITECTURE.md`. Beides stand
   bisher nur in Notizen ausserhalb des Repositorys.
+- Dokumentation: Neuer offener Punkt "Kennzahl Gewinn seit Kauf auf
+  Netto-Kapital" aus dem Vergleich mit einem anderen Depot-Programm
+  (09.11.2026), samt Ergebnis der Analyse: keine Korrektur nötig.
 - Qt in allen Jobs von Build-Pipeline und Paketierung von 6.7.0 auf 6.8.3
   (LTS) angehoben; Windows-Jobs nutzen dafuer das MSVC-2022-Paket statt
   MSVC 2019. Installer und AppImage enthalten damit Qt 6.8.3. Am Verhalten
