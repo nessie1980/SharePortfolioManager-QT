@@ -148,6 +148,11 @@ tst_calculationoverviewform ← PresenterCalculationOverview über Fake-View/Fak
 tst_calculationreport / tst_calculationbreakdown ← CalculationReport bzw. CalculationBreakdown + ModelPortfolioChart, PortfolioSeriesCalculator, SaleFifoAllocator, alle Repositories (23.10. bzw. 27.10.2026)
 tst_documentssettingsform ← DocumentsSettingsForm + DocumentRootMigrator + AppSettings
 tst_documentsxml        ← DocumentsConfig + echte Belege (Phase 5, 21.08.2026, Regression-Prüfung für Documents.xml)
+tst_appsettings         ← AppSettings, linkt Database (26.08.2026, Auslagerung aus tst_mainwindow)
+tst_brokeragesform      ← BrokeragesForm (ModelBrokerageEdit, PresenterBrokerageEdit, ViewBrokerageEdit) + OverviewTabWidget, DocumentPreviewPanel, OwnMessageBox, DocumentClassifier, PdfTextExtractor + alle Repositories außer DailyValues (26.08.2026, Auslagerung aus tst_mainwindow)
+tst_shareaddform        ← ShareAddForm (ModelShareAdd, PresenterShareAdd, ViewShareAdd) + WebSitesConfig, DocumentFieldNames, OverviewTabWidget, DocumentPreviewPanel, OwnMessageBox, DocumentClassifier, PdfTextExtractor + alle Repositories außer DailyValues (26.08.2026, Auslagerung aus tst_mainwindow)
+tst_splitratiochecker   ← nur Qt6::Test + SplitRatioChecker, ShareSplitAdjuster, BuyObject, SaleObject, ShareSplitObject — zustandslos, datenbankfrei (22.08.2026)
+tst_valueformatter / tst_numberparser / tst_chartpointsearch ← nur Qt6::Test — header-only Hilfsklassen ohne app-Quellen (05.09., 06.09. bzw. 19.09.2026)
 tst_traysettingsform    ← TraySettingsForm + AppSettings, IconProvider
 tst_appstartup / tst_iconprovider / tst_singleinstanceguard  ← AppStartup, IconProvider bzw. SingleInstanceGuard
 tst_sharesplitsform     ← ShareSplitsForm MVP (ModelShareSplitEdit, PresenterShareSplitEdit, ViewShareSplitEdit) — Phase 3a, 08.08.2026
@@ -192,6 +197,17 @@ AppSettings-Faelle herausgeloest — drei neue Ziele (`tst_brokeragesform`,
 `tst_shareaddform`, `tst_appsettings`), damit 48. `TestMainWindow` haelt
 noch 114 der urspruenglich 255 Testmethoden. Details im selben Abschnitt
 weiter unten.
+
+@note Abgleich 16.11.2026: 55 `qt_add_executable(tst_…)`-Ziele in den neun
+`tests/`-Unterverzeichnissen. Die Kette oben endete bei 48 und lag dabei um
+eins zu niedrig, weil `tst_splitratiochecker` (22.08.2026) nie mitgezählt
+wurde — am 26.08.2026 waren es also 49. Danach kamen `tst_valueformatter`
+(05.09.2026), `tst_numberparser` (06.09.2026), `tst_chartpointsearch`
+(19.09.2026), `tst_calculationreport` (23.10.2026) sowie
+`tst_calculationbreakdown` und `tst_calculationoverviewform` (27.10.2026)
+hinzu: 55. Im Block oben fehlten sieben Ziele, sie sind nachgetragen. Die
+Startbefehl-Liste in TESTING.md ist in beide Richtungen abgeglichen; dort
+fehlten drei Einträge.
 
 ---
 
@@ -5522,6 +5538,38 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
+### Übersicht und Priorität (Stand 16.11.2026)
+
+Diese Tabelle ist die einzige Liste der offenen Punkte des Projekts.
+Notizen ausserhalb des Repositorys (Claude-Projekt, Claude Docs) verweisen
+nur hierher und führen keine eigene Liste (Nessies Vorgabe, 16.11.2026).
+Wer einen Punkt anlegt, schreibt einen Abschnitt darunter und eine Zeile in
+die Tabelle; wer ihn erledigt, verschiebt den Abschnitt nach "Erledigt /
+Archiv" und streicht die Zeile.
+
+Stufen: Hoch = als Naechstes, Mittel = bei Gelegenheit oder spaetestens zum
+genannten Anlass, Niedrig = spaeter, Ruht = erst wenn der genannte Anlass
+eintritt. Die Einstufung ist Claudes Vorschlag vom 16.11.2026.
+
+| Punkt | Art | Priorität | Anlass bzw. nächster Schritt |
+| --- | --- | --- | --- |
+| Tab Depot- vs. Marktwert: weitere Ausbaustufen | Feature | Hoch | Nächster Schritt nach v1.30.0; vorher klären, wie "Rechenweg anzeigen" und der Rechtsklick fürs ChartPopup zusammengehen |
+| Breite Belegkennungen gewinnen gegen den Dialog-Fallback | Robustheit | Mittel | Spätestens, wenn Consors-Verkäufe konfiguriert werden; nur an echten Belegen zu prüfen |
+| Berechnungsbericht: CSV-Export und dauerhafter Menüeintrag | Feature | Niedrig | Bei Bedarf; der Bericht ist seit v1.28.0 über den Tab erreichbar |
+| ChartForm-Platzhalter wird nirgends verwendet | Aufräumen | Niedrig | Zwei Dateien löschen; passt in jeden Commit |
+| Gemeinsame Bibliothek für die app-Quellen der Testziele (Teil B) | Build | Niedrig | Zurückgestellt 15.11.2026; vorher die Abhängigkeit von CalculationReport auf ModelPortfolioChart klären |
+| Parsing von Split-Mitteilungen der Banken prüfen | Feature | Ruht | Zwei, drei echte Split-Mitteilungen liegen vor |
+| Consors-Themen | Robustheit | Ruht | Echte Consors-Belege; derzeit kein Handel über Consors |
+| Aktien ohne verfügbare Tageswert-Quelle dauerhaft ausnehmen | Feature | Ruht | Der Fall tritt in einem realen Depot auf |
+| Übersetzung ist vollständig offen | Feature | Ruht | Entscheidung, ob Englisch ein Ziel ist |
+| Spin-offs und Kapitalmaßnahmen mit Barkomponente | Feature | Ruht | Bewusst nicht abgedeckt; erst bei einem realen Fall |
+| Manuelles Theme, GitHub-Release-Automatisierung, konfigurierbare Locale | Backlog-Idee | Ruht | Keine konkrete Anfrage |
+
+@note Ohne eigenen Abschnitt, weil es eine Entscheidung und kein offener
+Punkt ist: die `pdftotext`-Codepfade sind bewusst nicht automatisiert
+getestet (siehe TESTING.md). Der Vermerk steht hier nur, damit die Lücke in
+der Übersicht nicht fehlt.
+
 ### Gemeinsame Bibliothek für die app-Quellen der Testziele (Teil B, zurückgestellt 15.11.2026)
 
 Rest aus "Laufzeit der Build-Pipeline verkürzen" (siehe "Erledigt /
@@ -5553,16 +5601,6 @@ einer gemeinsamen Bibliothek aufgelöst oder bewusst hingenommen werden
 
 Wieder aufgreifen, wenn der lokale Build stört, viele neue Testziele
 hinzukommen oder die Pipeline oft mit leerem Cache läuft.
-
-### Zählung der Testziele in "Build-Struktur" veraltet (offen, 30.10.2026)
-
-Die Kette der @note-Absätze unter "Build-Struktur (CMake)" endet bei 48
-Testzielen (26.08.2026). Seitdem kamen mehrere Ziele hinzu, u. a.
-`tst_calculationreport` (23.10.2026) sowie `tst_calculationbreakdown` und
-`tst_calculationoverviewform` (27.10.2026), ohne dass die Zahl nachgeführt
-wurde. Zu tun: alle `add_test()` in `tests/` zählen, die Zahl korrigieren
-und gegen die Startbefehl-Liste in TESTING.md abgleichen. Aufgefallen beim
-Abschluss von v1.28.0, bewusst nicht in diesem Commit.
 
 ### Tab Depot- vs. Marktwert: weitere Ausbaustufen (offen, 27.10.2026)
 
@@ -5696,6 +5734,35 @@ findet inzwischen nachweislich den Consors-Regelsatz, aber ob dessen
 `Brokerage`-Regeln auf einem echten Kostenbeleg greifen, ist damit nicht
 gezeigt. Das laesst sich ohne ein Exemplar auch nicht zeigen — die
 Zuordnung ist die Vorbedingung der Feldpruefung, nicht ihr Ersatz.
+
+### Berechnungsbericht: CSV-Export und dauerhafter Menüeintrag (zurückgestellt, 23.10.2026)
+
+Aus Nessies Vorgaben zum Berechnungsbericht (siehe "Berechnungsbericht"),
+dort nur als Randbemerkung festgehalten:
+
+1. Der Bericht erscheint nur als Text (`.txt`); CSV kann bei Bedarf folgen.
+2. Der Menüeintrag Hilfe → "Berechnungsbericht speichern…" liegt weiterhin
+   hinter `Debug/ShowDiagnostics`. Seit v1.28.0 ist der Bericht ohne
+   Debug-Schalter über den Knopf "Bericht speichern…" im Tab "Depot- vs.
+   Marktwert" erreichbar; ein dauerhafter Menüeintrag wäre damit nur noch
+   ein zweiter Weg zum selben Ziel.
+
+Kein Anlass absehbar; erst aufgreifen, wenn eine Auswertung in einer
+Tabellenkalkulation gebraucht wird.
+
+### ChartForm-Platzhalter wird nirgends verwendet (offen, 16.11.2026)
+
+`app/forms/ChartForm/ChartForm.h` und `ChartForm.cpp` enthalten nur je einen
+Kommentar ("Placeholder, not yet implemented") aus der Anfangszeit des
+Projekts. Sie stehen in keiner `CMakeLists.txt` und werden nirgends
+eingebunden; der Aktien-Chart ist längst als MVP-Trio `ModelChart`,
+`PresenterChart`, `ViewChart` im selben Ordner umgesetzt. Zu tun: beide
+Dateien löschen.
+
+@note Bis zum 16.11.2026 war in Notizen ausserhalb des Repositorys von einem
+"toten ShareDetailsForm-Stub" die Rede. Einen solchen gibt es nicht —
+`ShareDetailsForm` ist vollständig in Gebrauch. Gemeint war vermutlich
+dieser Platzhalter.
 
 ### Parsing von Split-Mitteilungen der Banken prüfen (08.08.2026)
 
@@ -5865,6 +5932,21 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Zählung der Testziele in "Build-Struktur" veraltet (30.10.2026, erledigt 16.11.2026)
+
+Die Kette der @note-Absätze unter "Build-Struktur (CMake)" endete bei 48
+Testzielen (26.08.2026); seitdem hinzugekommene Ziele, u. a.
+`tst_calculationreport` (23.10.2026) sowie `tst_calculationbreakdown` und
+`tst_calculationoverviewform` (27.10.2026), waren nicht nachgeführt.
+Aufgefallen beim Abschluss von v1.28.0.
+
+Ergebnis des Abgleichs am 16.11.2026: 55 Ziele. Die Kette lag zusätzlich um
+eins zu niedrig (`tst_splitratiochecker` nie mitgezählt). Im
+Abhängigkeitsblock fehlten sieben Ziele, in der Startbefehl-Liste von
+TESTING.md drei (`tst_appsettings`, `tst_brokeragesform`,
+`tst_shareaddform`). Alles nachgetragen, siehe die Note "Abgleich
+16.11.2026" unter "Build-Struktur (CMake)".
 
 ### Laufzeit der Build-Pipeline verkürzen (26.10.2026, Teil A erledigt 01.11.2026)
 

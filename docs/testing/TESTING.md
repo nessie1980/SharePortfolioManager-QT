@@ -37,6 +37,7 @@ ctest --output-on-failure
 ./bin/tst_singleinstanceguard
 ./bin/tst_websitesconfig
 ./bin/tst_documentsconfig
+./bin/tst_appsettings
 ./bin/tst_documentsxml
 ./bin/tst_documentclassifier
 ./bin/tst_sharecalculator
@@ -57,6 +58,8 @@ ctest --output-on-failure
 ./bin/tst_shareupdaterules
 ./bin/tst_mainwindow
 ./bin/tst_shareeditform
+./bin/tst_shareaddform
+./bin/tst_brokeragesform
 ./bin/tst_sharesplitsform
 ./bin/tst_sharedetailsform
 ./bin/tst_chartform
@@ -117,6 +120,16 @@ Der Abgleich in beide Richtungen wurde am 22.08.2026 wiederholt: 42
 42 Einträge in der Liste oben, deckungsgleich. Die Liste selbst war also nie
 falsch, nur die Prosa-Zahl daneben. Mit `tst_salesform` (noch am selben Tag)
 sind es 43.
+
+@note Abgleich 16.11.2026: 55 `qt_add_executable(tst_…)`-Ziele, 55 Einträge
+in der Liste oben, in beide Richtungen deckungsgleich. Diesmal war die Liste
+selbst unvollständig: `tst_appsettings`, `tst_brokeragesform` und
+`tst_shareaddform` (26.08.2026, Auslagerung aus `tst_mainwindow`) fehlten
+und sind nachgetragen. Fortschreibung der Zahl ab 46: mit diesen dreien 49,
+dann `tst_valueformatter` (05.09.2026), `tst_numberparser` (06.09.2026),
+`tst_chartpointsearch` (19.09.2026), `tst_calculationreport` (23.10.2026)
+sowie `tst_calculationbreakdown` und `tst_calculationoverviewform`
+(27.10.2026): 55.
 
 ---
 

@@ -10,6 +10,12 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ### Changed
 
+- Dokumentation: Die offenen Punkte stehen jetzt an genau einer Stelle,
+  unter "Offene Punkte" in `ARCHITECTURE.md`, mit einer Übersichtstabelle
+  samt Priorität. Zwei Punkte, die bisher nur in Notizen ausserhalb des
+  Repositorys standen, sind dort nachgetragen. Die Zählung der Testziele ist
+  abgeglichen (55) und in beiden Dokumenten korrigiert. Am Programm ändert
+  sich nichts.
 - Qt in allen Jobs von Build-Pipeline und Paketierung von 6.7.0 auf 6.8.3
   (LTS) angehoben; Windows-Jobs nutzen dafuer das MSVC-2022-Paket statt
   MSVC 2019. Installer und AppImage enthalten damit Qt 6.8.3. Am Verhalten
