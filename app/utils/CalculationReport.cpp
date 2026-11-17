@@ -3,8 +3,6 @@
 #include "CalculationReport.h"
 
 #include "CalculationBreakdown.h"
-#include "SaleFifoAllocator.h"
-#include "ShareSplitAdjuster.h"
 #include "ValueFormatter.h"
 
 #include "../repositories/ShareRepository.h"
@@ -24,7 +22,6 @@
 #include <QTextStream>
 
 #include <algorithm>
-#include <numeric>
 
 namespace {
 
@@ -232,28 +229,18 @@ QString buildShareSection(const CalculationReportShare& s)
     }
 
     // ── Käufe ─────────────────────────────────────────────────────────────
-    const QList<double> fifoSold = CalculationReport::replayFifoSold(s.buys, s.sales, s.splits);
-
+    // Zahlen seit v1.30.1 aus CalculationBreakdown::buyTable(), gemeinsam
+    // mit dem Tab "Depot- vs. Marktwert" (Refactor 17.11.2026). Hier bleibt
+    // nur die Textdarstellung.
     out += heading(QStringLiteral("Käufe"));
     if (s.buys.isEmpty()) {
         out += QStringLiteral("  keine\n");
     } else {
-        // Kosten je Kauf (Nessies Wunsch 23.10.2026): der dem Kauf
-        // zugeordnete Kosteneintrag, Gebühren abzüglich Rabatt. Zuordnung
-        // über BrokerageObject::buyGuid() oder BuyObject::brokerageGuid().
-        const auto costsOf = [&s](const BuyObject& b) {
-            double sum = 0.0;
-            for (const BrokerageObject& k : s.brokerages) {
-                if (k.buyGuid() == b.guid()
-                    || (!b.brokerageGuid().isEmpty() && k.guid() == b.brokerageGuid()))
-                    sum += k.brokerageReduction();
-            }
-            return sum;
-        };
+        const CalculationBuyTable buys = CalculationBreakdown::buyTable(s);
 
         // Spalten in heutiger Skala nur, wenn es überhaupt Splits gibt —
         // sonst wären sie identisch mit Stück und Kurs.
-        const bool withSplits = !s.splits.isEmpty();
+        const bool withSplits = buys.withSplits;
 
         QList<TextTable::Column> columns = {
             { QStringLiteral("Datum"),             10, false },
@@ -275,29 +262,13 @@ QString buildShareSection(const CalculationReportShare& s)
         const auto eur = [](double v) { return euro(v); };
         const auto px  = [](double v) { return price(v) + QStringLiteral(" €"); };
 
-        double sumVolume = 0.0, sumVolumeToday = 0.0, sumValue = 0.0, sumCosts = 0.0;
-        double sumSoldStored = 0.0, sumSoldFifo = 0.0;
-        for (int i = 0; i < s.buys.size(); ++i) {
-            const BuyObject& b = s.buys.at(i);
-            const double value  = ShareCalculator::roundAway(b.volume() * b.price());
-            const double costs  = costsOf(b);
-            const double adjVol = ShareSplitAdjuster::adjustedVolume(b.volume(), s.splits, b.date());
-
-            QStringList row = { dateText(b.date()), b.depotNumber(), stk(b.volume()), px(b.price()),
-                                eur(value), eur(costs), eur(value + costs),
-                                stk(b.volumeSold()), stk(fifoSold.value(i)) };
-            if (withSplits) {
-                row << stk(adjVol)
-                    << px(ShareSplitAdjuster::adjustedTransactionPrice(b.price(), s.splits, b.date()));
-            }
+        for (const CalculationBuyRow& b : buys.rows) {
+            QStringList row = { dateText(b.date), b.depotNumber, stk(b.volume), px(b.price),
+                                eur(b.value), eur(b.costs), eur(b.valueWithCosts),
+                                stk(b.soldStored), stk(b.soldFifo) };
+            if (withSplits)
+                row << stk(b.volumeToday) << px(b.priceToday);
             t.addRow(row);
-
-            sumVolume      += b.volume();
-            sumVolumeToday += adjVol;
-            sumValue       += value;
-            sumCosts       += costs;
-            sumSoldStored  += ShareSplitAdjuster::adjustedVolume(b.volumeSold(), s.splits, b.date());
-            sumSoldFifo    += ShareSplitAdjuster::adjustedVolume(fifoSold.value(i), s.splits, b.date());
         }
 
         // Summenzeile. Mit Splits liegen die Stückzahlen der Käufe in
@@ -307,11 +278,11 @@ QString buildShareSection(const CalculationReportShare& s)
         // die heutige Skala umgerechnet.
         t.addRule();
         QStringList sumRow = { QStringLiteral("Summe"), QString(),
-                               withSplits ? QString() : stk(sumVolume), QString(),
-                               eur(sumValue), eur(sumCosts), eur(sumValue + sumCosts),
-                               stk(sumSoldStored), stk(sumSoldFifo) };
+                               withSplits ? QString() : stk(buys.sumVolume), QString(),
+                               eur(buys.sumValue), eur(buys.sumCosts), eur(buys.sumValueWithCosts),
+                               stk(buys.sumSoldStoredToday), stk(buys.sumSoldFifoToday) };
         if (withSplits)
-            sumRow << stk(sumVolumeToday) << QString();
+            sumRow << stk(buys.sumVolumeToday) << QString();
         t.addRow(sumRow);
 
         out += t.render();
@@ -329,6 +300,8 @@ QString buildShareSection(const CalculationReportShare& s)
     if (s.sales.isEmpty()) {
         out += QStringLiteral("  keine\n");
     } else {
+        const CalculationSaleTable sales = CalculationBreakdown::saleTable(s);
+
         TextTable t({ { QStringLiteral("Datum"),        10, false },
                       { QStringLiteral("Depot"),        10, false },
                       { QStringLiteral("Stück"),        14, true  },
@@ -342,30 +315,19 @@ QString buildShareSection(const CalculationReportShare& s)
         const auto stk = [](double v) { return vol(v) + QStringLiteral(" Stk."); };
         const auto px  = [](double v) { return price(v) + QStringLiteral(" €"); };
 
-        double sumVolumeToday = 0.0, sumValue = 0.0, sumFees = 0.0, sumReduction = 0.0;
-        double sumTax = 0.0, sumPayout = 0.0;
-        for (const SaleObject& sale : s.sales) {
-            const double saleValue = ShareCalculator::roundAway(sale.volume() * sale.salePrice());
-            const double payout    = saleValue - sale.brokerage() + sale.reduction() - sale.taxSum();
-            t.addRow({ dateText(sale.date()), sale.depotNumber(), stk(sale.volume()),
-                       px(sale.salePrice()), euro(saleValue), euro(sale.brokerage()),
-                       euro(sale.reduction()), euro(sale.taxSum()), euro(payout) });
-
-            sumVolumeToday += ShareSplitAdjuster::adjustedVolume(sale.volume(), s.splits, sale.date());
-            sumValue       += saleValue;
-            sumFees        += sale.brokerage();
-            sumReduction   += sale.reduction();
-            sumTax         += sale.taxSum();
-            sumPayout      += payout;
+        for (const CalculationSaleRow& sale : sales.rows) {
+            t.addRow({ dateText(sale.date), sale.depotNumber, stk(sale.volume), px(sale.price),
+                       euro(sale.value), euro(sale.fees), euro(sale.reduction), euro(sale.taxes),
+                       euro(sale.payout) });
         }
 
         // Summenzeile (Nessies Wunsch 23.10.2026), wie bei den Käufen. Die
         // Stückzahl wird auf die heutige Skala umgerechnet — ohne Splits ist
         // das dieselbe Summe.
         t.addRule();
-        t.addRow({ QStringLiteral("Summe"), QString(), stk(sumVolumeToday), QString(),
-                   euro(sumValue), euro(sumFees), euro(sumReduction), euro(sumTax),
-                   euro(sumPayout) });
+        t.addRow({ QStringLiteral("Summe"), QString(), stk(sales.sumVolumeToday), QString(),
+                   euro(sales.sumValue), euro(sales.sumFees), euro(sales.sumReduction),
+                   euro(sales.sumTaxes), euro(sales.sumPayout) });
         out += t.render();
         if (!s.splits.isEmpty())
             out += QStringLiteral("  Summe der Stückzahlen in heutiger Skala.\n");
@@ -376,6 +338,8 @@ QString buildShareSection(const CalculationReportShare& s)
     if (s.dividends.isEmpty()) {
         out += QStringLiteral("  keine\n");
     } else {
+        const CalculationDividendTable dividends = CalculationBreakdown::dividendTable(s);
+
         // Steuern aufgeschlüsselt, Einheiten und Summenzeile wie bei Käufen
         // und Verkäufen (Nessies Wunsch 23.10.2026).
         TextTable t({ { QStringLiteral("Zahltag"),        10, false },
@@ -388,31 +352,20 @@ QString buildShareSection(const CalculationReportShare& s)
                       { QStringLiteral("Steuern ges."),   13, true  },
                       { QStringLiteral("Netto"),          13, true  } });
 
-        double sumGross = 0.0, sumSource = 0.0, sumCapital = 0.0, sumSoli = 0.0;
-        double sumTax = 0.0, sumNet = 0.0;
-        for (const DividendObject& d : s.dividends) {
-            t.addRow({ dateText(d.date()), vol(d.volume()) + QStringLiteral(" Stk."),
-                       // Satz je Stück in der Währung des Belegs — bei
-                       // Fremdwährung z. B. USD, nicht Euro (Bugfix 24.10.2026).
-                       price(d.rate()) + QLatin1Char(' ')
-                           + (d.enableForeignCurrency() && !d.currency().isEmpty()
-                                  ? d.currency() : QStringLiteral("€")),
-                       euro(d.dividendPayout()),
-                       euro(d.taxAtSource()), euro(d.capitalGainsTax()), euro(d.solidarityTax()),
-                       euro(d.taxSum()), euro(d.dividendPayoutWithTaxes()) });
-            sumGross   += d.dividendPayout();
-            sumSource  += d.taxAtSource();
-            sumCapital += d.capitalGainsTax();
-            sumSoli    += d.solidarityTax();
-            sumTax     += d.taxSum();
-            sumNet     += d.dividendPayoutWithTaxes();
+        for (const CalculationDividendRow& d : dividends.rows) {
+            t.addRow({ dateText(d.date), vol(d.volume) + QStringLiteral(" Stk."),
+                       price(d.rate) + QLatin1Char(' ') + d.currency,
+                       euro(d.gross), euro(d.taxAtSource), euro(d.capitalGainsTax),
+                       euro(d.solidarityTax), euro(d.taxes), euro(d.net) });
         }
 
         // Stückzahl und Satz je Stück lassen sich über mehrere Zahltage
         // nicht sinnvoll addieren — deshalb in der Summe leer.
         t.addRule();
-        t.addRow({ QStringLiteral("Summe"), QString(), QString(), euro(sumGross), euro(sumSource),
-                   euro(sumCapital), euro(sumSoli), euro(sumTax), euro(sumNet) });
+        t.addRow({ QStringLiteral("Summe"), QString(), QString(), euro(dividends.sumGross),
+                   euro(dividends.sumTaxAtSource), euro(dividends.sumCapitalGainsTax),
+                   euro(dividends.sumSolidarityTax), euro(dividends.sumTaxes),
+                   euro(dividends.sumNet) });
         out += t.render();
         out += QStringLiteral("  Brutto bei Fremdwährung in Euro umgerechnet; Netto = Brutto − "
                               "Steuern ges.\n");
@@ -423,6 +376,8 @@ QString buildShareSection(const CalculationReportShare& s)
     if (s.brokerages.isEmpty()) {
         out += QStringLiteral("  keine\n");
     } else {
+        const CalculationBrokerageTable brokerages = CalculationBreakdown::brokerageTable(s);
+
         // Einheiten und Summenzeile wie in den übrigen Tabellen (23.10.2026).
         TextTable t({ { QStringLiteral("Datum"),      10, false },
                       { QStringLiteral("Zuordnung"),  12, false },
@@ -432,47 +387,35 @@ QString buildShareSection(const CalculationReportShare& s)
                       { QStringLiteral("Brutto"),     12, true  },
                       { QStringLiteral("Rabatt"),     11, true  },
                       { QStringLiteral("Netto"),      12, true  } });
-        double sumProvision = 0.0, sumBroker = 0.0, sumTrader = 0.0, sumGross = 0.0;
-        double sumReduction = 0.0, sumNet = 0.0;
-        for (const BrokerageObject& b : s.brokerages) {
-            const QString assignment = !b.buyGuid().isEmpty()  ? QStringLiteral("Kauf")
-                                     : !b.saleGuid().isEmpty() ? QStringLiteral("Verkauf")
-                                                               : QStringLiteral("freistehend");
-            t.addRow({ dateText(b.date()), assignment, euro(b.provision()), euro(b.brokerFee()),
-                       euro(b.traderFee()), euro(b.brokerage()), euro(b.reduction()),
-                       euro(b.brokerageReduction()) });
-            sumProvision += b.provision();
-            sumBroker    += b.brokerFee();
-            sumTrader    += b.traderFee();
-            sumGross     += b.brokerage();
-            sumReduction += b.reduction();
-            sumNet       += b.brokerageReduction();
+        for (const CalculationBrokerageRow& b : brokerages.rows) {
+            QString assignment;
+            switch (b.assignment) {
+            case CalculationBrokerageAssignment::Buy:        assignment = QStringLiteral("Kauf");        break;
+            case CalculationBrokerageAssignment::Sale:       assignment = QStringLiteral("Verkauf");     break;
+            case CalculationBrokerageAssignment::Standalone: assignment = QStringLiteral("freistehend"); break;
+            }
+            t.addRow({ dateText(b.date), assignment, euro(b.provision), euro(b.brokerFee),
+                       euro(b.traderFee), euro(b.gross), euro(b.reduction), euro(b.net) });
         }
         t.addRule();
-        t.addRow({ QStringLiteral("Summe"), QString(), euro(sumProvision), euro(sumBroker),
-                   euro(sumTrader), euro(sumGross), euro(sumReduction), euro(sumNet) });
+        t.addRow({ QStringLiteral("Summe"), QString(), euro(brokerages.sumProvision),
+                   euro(brokerages.sumBrokerFee), euro(brokerages.sumTraderFee),
+                   euro(brokerages.sumGross), euro(brokerages.sumReduction),
+                   euro(brokerages.sumNet) });
         out += t.render();
         out += QStringLiteral("  Brutto = Provision + Makler + Börse; Netto = Brutto − Rabatt.\n");
     }
 
     // ── Bestand ───────────────────────────────────────────────────────────
-    double boughtToday = 0.0, soldToday = 0.0, heldFifoToday = 0.0;
-    for (int i = 0; i < s.buys.size(); ++i) {
-        const BuyObject& b = s.buys.at(i);
-        boughtToday   += ShareSplitAdjuster::adjustedVolume(b.volume(), s.splits, b.date());
-        heldFifoToday += ShareSplitAdjuster::adjustedVolume(b.volume() - fifoSold.value(i),
-                                                            s.splits, b.date());
-    }
-    for (const SaleObject& sale : s.sales)
-        soldToday += ShareSplitAdjuster::adjustedVolume(sale.volume(), s.splits, sale.date());
+    const CalculationStockSummary stock = CalculationBreakdown::stockSummary(s);
 
     out += heading(QStringLiteral("Bestand (heutige Skala)"));
-    out += valueLine(QStringLiteral("Gekauft gesamt"), vol(boughtToday));
-    out += valueLine(QStringLiteral("Verkauft gesamt"), vol(soldToday));
-    out += valueLine(QStringLiteral("Bestand rechnerisch"), vol(boughtToday - soldToday),
+    out += valueLine(QStringLiteral("Gekauft gesamt"), vol(stock.bought));
+    out += valueLine(QStringLiteral("Verkauft gesamt"), vol(stock.sold));
+    out += valueLine(QStringLiteral("Bestand rechnerisch"), vol(stock.computed),
                      QStringLiteral("gekauft − verkauft"));
-    out += valueLine(QStringLiteral("Bestand nach FIFO-Nachrechnung"), vol(heldFifoToday));
-    out += valueLine(QStringLiteral("Bestand Tabelle"), vol(v.volume),
+    out += valueLine(QStringLiteral("Bestand nach FIFO-Nachrechnung"), vol(stock.fifo));
+    out += valueLine(QStringLiteral("Bestand Tabelle"), vol(stock.table),
                      QStringLiteral("Σ (Stück − verk. gespeichert) je Kauf"));
 
     // ── Tabellen "Kompletter Marktwert" und "Kompletter Depotwert" ────────
@@ -744,58 +687,9 @@ QList<double> CalculationReport::replayFifoSold(const QList<BuyObject>& buys,
                                                 const QList<SaleObject>& sales,
                                                 const QList<ShareSplitObject>& splits)
 {
-    // Arbeitskopien mit leerem "verkauft" — die Nachrechnung beginnt bei null,
-    // unabhängig davon, was in der Datenbank steht.
-    QList<BuyObject> work = buys;
-    for (BuyObject& b : work)
-        b.setVolumeSold(0.0);
-
-    QList<int> buyOrder(work.size());
-    std::iota(buyOrder.begin(), buyOrder.end(), 0);
-    std::stable_sort(buyOrder.begin(), buyOrder.end(), [&work](int a, int b) {
-        return work.at(a).date() < work.at(b).date();
-    });
-
-    QList<SaleObject> sortedSales = sales;
-    std::stable_sort(sortedSales.begin(), sortedSales.end(),
-                     [](const SaleObject& a, const SaleObject& b) { return a.date() < b.date(); });
-
-    for (const SaleObject& sale : sortedSales) {
-        const QString depot = sale.depotNumber().trimmed();
-
-        QList<BuyObject> available;
-        QList<int>       availableIndex;
-        for (int idx : buyOrder) {
-            const BuyObject& b = work.at(idx);
-            if (b.date() > sale.date())
-                continue;
-            if (!depot.isEmpty() && b.depotNumber().trimmed() != depot)
-                continue;
-            if (b.volume() - b.volumeSold() <= 0.0)
-                continue;
-            available.append(b);
-            availableIndex.append(idx);
-        }
-
-        const QList<FifoAllocationRow> rows =
-            SaleFifoAllocator::allocate(sale.volume(), sale.date(), available, splits);
-
-        for (const FifoAllocationRow& row : rows) {
-            for (int i = 0; i < available.size(); ++i) {
-                if (available.at(i).guid() == row.buyGuid) {
-                    BuyObject& target = work[availableIndex.at(i)];
-                    target.setVolumeSold(target.volumeSold() + row.volume);
-                    break;
-                }
-            }
-        }
-    }
-
-    QList<double> result;
-    result.reserve(work.size());
-    for (const BuyObject& b : work)
-        result.append(b.volumeSold());
-    return result;
+    // Seit v1.30.1 in CalculationBreakdown, damit die Transaktionstabellen
+    // dort ohne CalculationReport.cpp auskommen (Refactor 17.11.2026).
+    return CalculationBreakdown::replayFifoSold(buys, sales, splits);
 }
 
 // ── collect ───────────────────────────────────────────────────────────────────

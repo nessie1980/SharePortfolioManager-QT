@@ -144,7 +144,7 @@ tst_salefifoallocator   ← nur Qt6::Test + BuyObject, ShareSplitObject — zust
 tst_dividendvolumechecker ← nur Qt6::Test + BuyObject, SaleObject, ShareSplitObject, ShareSplitAdjuster — zustandslos, datenbankfrei, kein QApplication
 tst_overviewtabwidget   ← nur OverviewTabWidget, keine DB, kein ShareCalculator (korrigiert 07.08.2026)
 tst_portfoliochartform  ← PortfolioChartForm-Trio + ModelPortfolioChart + PortfolioSeriesCalculator + alle Repositories (zwei Testklassen seit Phase 2b, 07.08.2026 — TestPortfolioChartForm + TestModelPortfolioChart, eigener main() statt QTEST_MAIN)
-tst_calculationoverviewform ← PresenterCalculationOverview über Fake-View/Fake-Model + CalculationBreakdown, ShareCalculator und dessen Repositories (27.10.2026, Tab "Depot- vs. Marktwert")
+tst_calculationoverviewform ← PresenterCalculationOverview über Fake-View/Fake-Model + CalculationBreakdown, SaleFifoAllocator, ShareCalculator und dessen Repositories (27.10.2026, Tab "Depot- vs. Marktwert"; SaleFifoAllocator seit v1.30.1)
 tst_calculationreport / tst_calculationbreakdown ← CalculationReport bzw. CalculationBreakdown + ModelPortfolioChart, PortfolioSeriesCalculator, SaleFifoAllocator, alle Repositories (23.10. bzw. 27.10.2026)
 tst_documentssettingsform ← DocumentsSettingsForm + DocumentRootMigrator + AppSettings
 tst_documentsxml        ← DocumentsConfig + echte Belege (Phase 5, 21.08.2026, Regression-Prüfung für Documents.xml)
@@ -4511,7 +4511,11 @@ Seit 27.10.2026 kommen die Gegenüberstellung Marktwert/Depotwert, die
 Footer-Werte, der Abgleich gegen die Charts und die Auffälligkeiten (Teil 3)
 aus `CalculationBreakdown`, demselben Zeilenmodell wie der Tab
 "Depot- vs. Marktwert" (siehe dort). Der Berichtstext ist dabei unverändert
-geblieben. Der Tab hat einen eigenen Knopf "Bericht speichern…", der
+geblieben. Seit v1.30.1 (17.11.2026) gilt das auch für die Zahlen der
+Tabellen Käufe, Verkäufe, Dividenden, Kosten und des Blocks "Bestand
+(heutige Skala)" sowie für die FIFO-Nachrechnung; `buildShareSection()`
+formatiert sie nur noch (siehe "Gemeinsames Zeilenmodell" unter "Tab
+Depot- vs. Marktwert"). Der Tab hat einen eigenen Knopf "Bericht speichern…", der
 `onSaveCalculationReport()` aufruft; damit ist der Bericht auch ohne
 `Debug/ShowDiagnostics` erreichbar, der Menüeintrag bleibt hinter dem
 Schalter.
@@ -4587,6 +4591,11 @@ später auseinander, wie damals die `parseDouble()`-Kopien.
   dann Footer gegen Chart — Teil 3 des Berichts.
 - Formatierung (`money()`, `euro()`, `volume()`, `price()`, `percent()`)
   mit der Null-Bereinigung vom 24.10.2026.
+- Transaktionstabellen je Aktie (ergänzt 17.11.2026, v1.30.1):
+  `buyTable()`, `saleTable()`, `dividendTable()`, `brokerageTable()` und
+  `stockSummary()` liefern die Zeilen samt Summen als reine Zahlen;
+  `replayFifoSold()` spielt die Verkäufe FIFO nach. Siehe "Transaktionen
+  und Bestand" unten.
 
 Der Bericht rendert diese Zeilen als Text, der Tab als Qt-Tabellen. Die
 Zahlenrechnung (`marketFigures`/`depotFigures`) und "Fließt ein in"
@@ -4617,6 +4626,43 @@ geschrieben:
 (Konstanten `kCol…`, `kRow…` und die Helfer `cell()`, `footer()`,
 `footerCell()`). Wer eine Spalte in
 `MainWindow::setupCentralWidget()` umbenennt, ändert sie dort mit.
+
+### Transaktionen und Bestand (Refactor 17.11.2026, v1.30.1)
+
+Bis v1.30.0 rechnete `CalculationReport::buildShareSection()` die Zahlen
+seiner Tabellen Käufe, Verkäufe, Dividenden und Kosten und des Blocks
+"Bestand (heutige Skala)" direkt beim Erzeugen des Textes. Damit der Tab
+"Depot- vs. Marktwert" diese Tabellen ebenfalls zeigen kann (siehe offener
+Punkt "Tab Depot- vs. Marktwert: weitere Ausbaustufen", Teil 3), liegt die
+Rechnung seit v1.30.1 in `CalculationBreakdown`. Der Bericht formatiert nur
+noch; sein Text ist Zeichen für Zeichen gleich geblieben. Rechnungen und
+Summierreihenfolge sind unverändert übernommen, damit auch Rundungen gleich
+ausfallen.
+
+| Funktion | Rechnung |
+| --- | --- |
+| `buyTable()` | Kaufwert = Stück x Kurs, kaufmännisch gerundet; Kosten je Kauf = Kosteneinträge mit `buyGuid` des Kaufs oder der Eintrag aus `BuyObject::brokerageGuid()`, je Gebühren minus Rabatt; verkauft gespeichert und nach FIFO; Rest nach FIFO; Stück und Kurs in heutiger Skala; Summen (verkaufte Mengen immer in heutiger Skala) |
+| `saleTable()` | Verkaufswert gerundet; Auszahlung = Verkaufswert - Gebühren + Rabatt - Steuern; Stück-Summe in heutiger Skala |
+| `dividendTable()` | Satz je Stück in der Belegwährung; Steuern aufgeschlüsselt; Summen ohne Stück und Satz |
+| `brokerageTable()` | Zuordnung Kauf, Verkauf oder freistehend; Brutto und Netto; Summen |
+| `stockSummary()` | gekauft, verkauft, rechnerisch, nach FIFO, Tabelle (heutige Skala) |
+| `replayFifoSold()` | FIFO-Nachrechnung wie die Verkaufsmaske |
+
+Zeilen in Beleg-Skala, Felder mit `Today` in heutiger Skala. Die Splits
+selbst zeigt der Bericht direkt aus `ShareSplitObject`; dort wird nichts
+gerechnet, deshalb gibt es keine eigene Funktion dafür.
+
+`replayFifoSold()` ist mit umgezogen, damit `CalculationBreakdown.cpp` ohne
+`CalculationReport.cpp` auskommt — sonst bräuchte `tst_calculationoverviewform`
+die Repositories und `ModelPortfolioChart`, die `collect()` einbindet.
+`CalculationReport::replayFifoSold()` bleibt als Weiterleitung bestehen.
+Das Testziel `tst_calculationoverviewform` übersetzt dafür zusätzlich
+`SaleFifoAllocator.cpp`.
+
+Geprüft durch sieben neue Fälle in `tst_calculationbreakdown` und die
+unveränderten Fälle in `tst_calculationreport`. Weil diese nur Ausschnitte
+des Textes prüfen, gehört zur Abnahme zusätzlich je ein Bericht vor und nach
+dem Umbau (Realwerte und anonymisiert); beide Paare müssen gleich sein.
 
 ### Umsetzung
 
@@ -5553,7 +5599,7 @@ eintritt. Die Einstufung hat Nessie am 16.11.2026 festgelegt.
 
 | Punkt | Art | Priorität | Anlass bzw. nächster Schritt |
 | --- | --- | --- | --- |
-| Tab Depot- vs. Marktwert: weitere Ausbaustufen | Feature | Hoch | Nächster Schritt nach v1.30.0; vorher klären, wie "Rechenweg anzeigen" und der Rechtsklick fürs ChartPopup zusammengehen |
+| Tab Depot- vs. Marktwert: weitere Ausbaustufen | Feature | Hoch | In Arbeit (17.11.2026): nur noch Teil 3, Vorarbeit in v1.30.1, Umsetzung als v1.31.0 |
 | Breite Belegkennungen gewinnen gegen den Dialog-Fallback | Robustheit | Mittel | Spätestens, wenn Consors-Verkäufe konfiguriert werden; nur an echten Belegen zu prüfen |
 | Berechnungsbericht: CSV-Export und dauerhafter Menüeintrag | Feature | Niedrig | Bei Bedarf; der Bericht ist seit v1.28.0 über den Tab erreichbar |
 | Kennzahl Gewinn seit Kauf auf Netto-Kapital | Feature | Niedrig | Vorher Kosten des Verkaufs vom 27.02.2020 am Beleg prüfen; dann entscheiden, ob die Kennzahl kommt |

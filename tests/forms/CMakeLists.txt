@@ -953,6 +953,8 @@ qt_add_executable(tst_calculationoverviewform tst_calculationoverviewform.cpp
     ../../app/forms/CalculationOverviewForm/PresenterCalculationOverview.cpp
     ../../app/utils/CalculationBreakdown.h
     ../../app/utils/CalculationBreakdown.cpp
+    ../../app/utils/SaleFifoAllocator.h
+    ../../app/utils/SaleFifoAllocator.cpp
     ../../app/utils/ShareCalculator.cpp
     ../../app/utils/ShareSplitAdjuster.cpp
     ../../app/models/ShareObject.cpp

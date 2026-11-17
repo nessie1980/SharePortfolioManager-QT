@@ -6,7 +6,9 @@
 // siehe ARCHITECTURE.md, "Tab Depot- vs. Marktwert").
 //
 // Datenbankfrei mit von Hand befüllten Eingangsdaten, gleiche Muster-Aktie
-// wie tst_calculationreport. Dass der Berichtstext durch den Umbau gleich
+// wie tst_calculationreport. Seit v1.30.1 (17.11.2026) auch die
+// Transaktionstabellen je Aktie (buyTable() bis stockSummary()), die der
+// Bericht bis dahin selbst gerechnet hat. Dass der Berichtstext durch den Umbau gleich
 // geblieben ist, sichern die unveränderten Tests in tst_calculationreport;
 // hier geht es um das Zeilenmodell selbst und darum, dass Bericht und Tab
 // dieselben Auffälligkeiten sehen.
@@ -89,6 +91,51 @@ private:
     }
 
     static QString money(double v) { return QLocale().toString(v, 'f', 2); }
+
+    // ── Bausteine für die Transaktionstabellen (ergänzt 17.11.2026) ───────
+
+    static QString iso(const QDate& date)
+    {
+        return QDateTime(date, QTime(10, 0)).toString(Qt::ISODate);
+    }
+
+    static BuyObject buy(const QString& guid, const QDate& date, double volume, double price,
+                         double volumeSold = 0.0, const QString& brokerageGuid = QString())
+    {
+        return BuyObject(guid, QStringLiteral("share-1"), QStringLiteral("D1"),
+                         QStringLiteral("ord-") + guid, iso(date), volume, volumeSold, price,
+                         brokerageGuid);
+    }
+
+    static SaleObject sale(const QString& guid, const QDate& date, double volume, double price)
+    {
+        return SaleObject(guid, QStringLiteral("share-1"), QStringLiteral("D1"),
+                          QStringLiteral("ord-") + guid, iso(date), volume, price, {});
+    }
+
+    /// Aktie ohne Werte, nur mit Transaktionen — für die Tabellenfunktionen.
+    static CalculationReportShare plainShare()
+    {
+        CalculationReportShare s;
+        s.share = ShareObject(QStringLiteral("share-1"), QStringLiteral("A0ABCD"),
+                              QStringLiteral("DE000A0ABCD0"), QStringLiteral("Aktie A"));
+        return s;
+    }
+
+    /**
+     * Zwei Käufe (10 und 5 Stück), ein Verkauf über 12 Stück. Nach FIFO
+     * gehen 10 Stück aus dem ersten und 2 aus dem zweiten Kauf; gespeichert
+     * sind absichtlich 8 und 4, damit gespeichert und FIFO auseinanderliegen.
+     */
+    static CalculationReportShare fifoShare()
+    {
+        CalculationReportShare s = plainShare();
+        s.buys  = { buy(QStringLiteral("b1"), d(2026, 1, 10), 10.0, 50.0, 8.0),
+                    buy(QStringLiteral("b2"), d(2026, 2, 10),  5.0, 60.0, 4.0) };
+        s.sales = { sale(QStringLiteral("s1"), d(2026, 3, 1), 12.0, 70.0) };
+        s.values.volume = 3.0;
+        return s;
+    }
 
 private slots:
 
@@ -354,6 +401,185 @@ private slots:
         s.chart.price         = 61.0;
         s.chart.holdingsValue = 732.0;
         QCOMPARE(CalculationBreakdown::priceEffect(s), 12.0); // 12 × (62,00 − 61,00)
+    }
+
+    // ── Transaktionstabellen (Refactor 17.11.2026, v1.30.1) ──────────────
+
+    void test_buyTable_valuesCostsAndSums()
+    {
+        // b1: Kosten über BrokerageObject::buyGuid() (10 + 2 − 2 = 10,00),
+        // b2: Kosten über BuyObject::brokerageGuid() (4 + 1 − 0 = 5,00).
+        // Ein freistehender Eintrag zählt bei keinem Kauf.
+        CalculationReportShare s = plainShare();
+        s.buys = { buy(QStringLiteral("b1"), d(2026, 1, 10), 12.0, 50.0),
+                   buy(QStringLiteral("b2"), d(2026, 2, 10),  4.0, 25.5, 0.0, QStringLiteral("k2")) };
+        s.brokerages = {
+            BrokerageObject(QStringLiteral("k1"), QStringLiteral("share-1"), QStringLiteral("b1"),
+                            QString(), iso(d(2026, 1, 10)), 10.0, 2.0, 0.0, 2.0),
+            BrokerageObject(QStringLiteral("k2"), QStringLiteral("share-1"), QString(),
+                            QString(), iso(d(2026, 2, 10)), 4.0, 1.0, 0.0, 0.0),
+            BrokerageObject(QStringLiteral("k3"), QStringLiteral("share-1"), QString(),
+                            QString(), iso(d(2026, 3, 1)), 7.0) };
+
+        const CalculationBuyTable t = CalculationBreakdown::buyTable(s);
+        QCOMPARE(t.rows.size(), 2);
+        QVERIFY(!t.withSplits);
+
+        const CalculationBuyRow& r1 = t.rows.at(0);
+        QCOMPARE(r1.date, d(2026, 1, 10));
+        QCOMPARE(r1.depotNumber, QStringLiteral("D1"));
+        QCOMPARE(r1.value, 600.0);
+        QCOMPARE(r1.costs, 10.0);
+        QCOMPARE(r1.valueWithCosts, 610.0);
+
+        const CalculationBuyRow& r2 = t.rows.at(1);
+        QCOMPARE(r2.value, 102.0);   // 4 × 25,50
+        QCOMPARE(r2.costs, 5.0);
+        QCOMPARE(r2.valueWithCosts, 107.0);
+
+        QCOMPARE(t.sumVolume, 16.0);
+        QCOMPARE(t.sumVolumeToday, 16.0);
+        QCOMPARE(t.sumValue, 702.0);
+        QCOMPARE(t.sumCosts, 15.0);
+        QCOMPARE(t.sumValueWithCosts, 717.0);
+    }
+
+    void test_buyTable_fifoSoldMatchesReplay()
+    {
+        const CalculationReportShare s = fifoShare();
+        const CalculationBuyTable t = CalculationBreakdown::buyTable(s);
+        const QList<double> replay = CalculationReport::replayFifoSold(s.buys, s.sales, s.splits);
+
+        QCOMPARE(t.rows.size(), 2);
+        QCOMPARE(t.rows.at(0).soldFifo, replay.at(0));
+        QCOMPARE(t.rows.at(1).soldFifo, replay.at(1));
+        QCOMPARE(t.rows.at(0).soldFifo, 10.0);
+        QCOMPARE(t.rows.at(1).soldFifo, 2.0);
+
+        // Gespeichert bleibt, was in der Datenbank steht.
+        QCOMPARE(t.rows.at(0).soldStored, 8.0);
+        QCOMPARE(t.rows.at(1).soldStored, 4.0);
+
+        QCOMPARE(t.rows.at(0).remainingFifo, 0.0);
+        QCOMPARE(t.rows.at(1).remainingFifo, 3.0);
+        QCOMPARE(t.sumSoldStoredToday, 12.0);
+        QCOMPARE(t.sumSoldFifoToday, 12.0);
+    }
+
+    void test_buyTable_withSplits_todayColumnsAndSums()
+    {
+        // Kauf vor einem 2:1-Split: 10 Stück à 50,00 sind heute 20 Stück à
+        // 25,00. Der Kauf danach bleibt unverändert.
+        CalculationReportShare s = plainShare();
+        s.buys   = { buy(QStringLiteral("b1"), d(2026, 1, 10), 10.0, 50.0, 4.0),
+                     buy(QStringLiteral("b2"), d(2026, 6, 10),  6.0, 30.0) };
+        s.splits = { ShareSplitObject(QStringLiteral("x1"), QStringLiteral("share-1"),
+                                      d(2026, 3, 1), 2.0, 1.0) };
+
+        const CalculationBuyTable t = CalculationBreakdown::buyTable(s);
+        QVERIFY(t.withSplits);
+        QCOMPARE(t.rows.at(0).volume, 10.0);       // Beleg-Skala bleibt
+        QCOMPARE(t.rows.at(0).volumeToday, 20.0);
+        QCOMPARE(t.rows.at(0).priceToday, 25.0);
+        QCOMPARE(t.rows.at(1).volumeToday, 6.0);
+        QCOMPARE(t.rows.at(1).priceToday, 30.0);
+
+        QCOMPARE(t.sumVolumeToday, 26.0);
+        QCOMPARE(t.sumSoldStoredToday, 8.0);       // 4 Stück vor dem Split
+    }
+
+    void test_saleTable_payoutAndSums()
+    {
+        // Verkauf 10 × 70,00 = 700,00, Gebühren 9 + 1 = 10,00, Rabatt 2,00,
+        // Steuern 20 + 1,10 = 21,10 → Auszahlung 700 − 10 + 2 − 21,10 = 670,90.
+        CalculationReportShare s = plainShare();
+        s.sales = {
+            SaleObject(QStringLiteral("s1"), QStringLiteral("share-1"), QStringLiteral("D1"),
+                       QStringLiteral("ord-s1"), iso(d(2026, 4, 1)), 10.0, 70.0, {},
+                       0.0, 20.0, 1.10, QStringLiteral("k1"), 9.0, 1.0, 0.0, 2.0),
+            sale(QStringLiteral("s2"), d(2026, 5, 1), 2.0, 80.0) };
+
+        const CalculationSaleTable t = CalculationBreakdown::saleTable(s);
+        QCOMPARE(t.rows.size(), 2);
+
+        const CalculationSaleRow& r = t.rows.at(0);
+        QCOMPARE(r.value, 700.0);
+        QCOMPARE(r.fees, 10.0);
+        QCOMPARE(r.reduction, 2.0);
+        QCOMPARE(r.taxes, 21.10);
+        QCOMPARE(r.payout, 700.0 - 10.0 + 2.0 - 21.10);
+
+        QCOMPARE(t.sumVolumeToday, 12.0);
+        QCOMPARE(t.sumValue, 860.0);
+        QCOMPARE(t.sumPayout, r.payout + 160.0);
+    }
+
+    void test_dividendTable_foreignCurrencyAndSums()
+    {
+        CalculationReportShare s = plainShare();
+        s.dividends = {
+            DividendObject(QStringLiteral("d1"), QStringLiteral("share-1"), iso(d(2026, 3, 10)),
+                           1.0, 12.0, 1.0, 2.0, 0.11),
+            DividendObject(QStringLiteral("d2"), QStringLiteral("share-1"), iso(d(2024, 6, 17)),
+                           0.2, 200.0, 5.57, 3.71, 0.20, 0.0, true, 1.0778,
+                           QStringLiteral("USD")) };
+
+        const CalculationDividendTable t = CalculationBreakdown::dividendTable(s);
+        QCOMPARE(t.rows.size(), 2);
+
+        // Euro-Beleg: Satz in €, Steuern 3,11, Netto 8,89.
+        QCOMPARE(t.rows.at(0).currency, QStringLiteral("€"));
+        QCOMPARE(t.rows.at(0).gross, 12.0);
+        QCOMPARE(t.rows.at(0).taxes, s.dividends.at(0).taxSum());
+        QCOMPARE(t.rows.at(0).net, s.dividends.at(0).dividendPayoutWithTaxes());
+
+        // Fremdwährung: Satz in der Belegwährung, Beträge wie DividendObject.
+        QCOMPARE(t.rows.at(1).currency, QStringLiteral("USD"));
+        QCOMPARE(t.rows.at(1).rate, 0.2);
+        QCOMPARE(t.rows.at(1).gross, s.dividends.at(1).dividendPayout());
+
+        QCOMPARE(t.sumGross, s.dividends.at(0).dividendPayout() + s.dividends.at(1).dividendPayout());
+        QCOMPARE(t.sumTaxes, s.dividends.at(0).taxSum() + s.dividends.at(1).taxSum());
+        QCOMPARE(t.sumNet, s.dividends.at(0).dividendPayoutWithTaxes()
+                               + s.dividends.at(1).dividendPayoutWithTaxes());
+    }
+
+    void test_brokerageTable_assignmentAndSums()
+    {
+        CalculationReportShare s = plainShare();
+        s.brokerages = {
+            BrokerageObject(QStringLiteral("k1"), QStringLiteral("share-1"), QStringLiteral("b1"),
+                            QString(), iso(d(2026, 1, 10)), 10.0, 2.0, 1.0, 2.0),
+            BrokerageObject(QStringLiteral("k2"), QStringLiteral("share-1"), QString(),
+                            QStringLiteral("s1"), iso(d(2026, 4, 1)), 9.0, 1.0),
+            BrokerageObject(QStringLiteral("k3"), QStringLiteral("share-1"), QString(),
+                            QString(), iso(d(2026, 5, 1)), 5.0) };
+
+        const CalculationBrokerageTable t = CalculationBreakdown::brokerageTable(s);
+        QCOMPARE(t.rows.size(), 3);
+        QVERIFY(t.rows.at(0).assignment == CalculationBrokerageAssignment::Buy);
+        QVERIFY(t.rows.at(1).assignment == CalculationBrokerageAssignment::Sale);
+        QVERIFY(t.rows.at(2).assignment == CalculationBrokerageAssignment::Standalone);
+
+        QCOMPARE(t.rows.at(0).gross, 13.0);  // 10 + 2 + 1
+        QCOMPARE(t.rows.at(0).net, 11.0);    // − 2 Rabatt
+
+        QCOMPARE(t.sumProvision, 24.0);
+        QCOMPARE(t.sumBrokerFee, 3.0);
+        QCOMPARE(t.sumTraderFee, 1.0);
+        QCOMPARE(t.sumGross, 28.0);
+        QCOMPARE(t.sumReduction, 2.0);
+        QCOMPARE(t.sumNet, 26.0);
+    }
+
+    void test_stockSummary_fiveValues()
+    {
+        const CalculationStockSummary st = CalculationBreakdown::stockSummary(fifoShare());
+        QCOMPARE(st.bought, 15.0);
+        QCOMPARE(st.sold, 12.0);
+        QCOMPARE(st.computed, 3.0);
+        QCOMPARE(st.fifo, 3.0);
+        QCOMPARE(st.table, 3.0);
     }
 };
 

@@ -3192,6 +3192,15 @@ Dass der Berichtstext durch den Umbau gleich geblieben ist, sichert das
 unveränderte `tst_calculationreport`. `main()` setzt
 `QLocale::setDefault(German)`.
 
+Seit v1.30.1 (17.11.2026) auch die Transaktionstabellen je Aktie
+(`buyTable()` bis `stockSummary()`, siehe ARCHITECTURE.md "Transaktionen und
+Bestand"). Dafür gibt es die Helfer `buy()`, `sale()`, `plainShare()` (Aktie
+nur mit Transaktionen) und `fifoShare()`: zwei Käufe zu 10 und 5 Stück, ein
+Verkauf über 12 Stück, gespeichert absichtlich 8 und 4 statt FIFO 10 und 2.
+Weil `tst_calculationreport` nur Ausschnitte prüft, gehört zur Abnahme des
+Umbaus zusätzlich ein Vergleich je eines Berichts vor und nach dem Umbau
+(Realwerte und anonymisiert).
+
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_shareRows_fourteenRowsInReportOrder` | Zeilen je Aktie | 14 Bezeichnungen in Berichtsreihenfolge |
@@ -3211,6 +3220,13 @@ unveränderte `tst_calculationreport`. `main()` setzt
 | `test_shareChecks_soldShare_priceDifferenceIsNotReported` (**31.10.2026**, Punkt A) | Bestand 0, Kurs 27,52 gegen Schlusskurs 167,70 | Kurszeile "ohne Bestand", ok; keine Auffälligkeit |
 | `test_shareChecks_heldShare_priceDifferenceStaysHint` (**31.10.2026**) | Bestand 12, Schlusskurs 61,50 | Kurszeile bleibt Hinweis |
 | `test_shareFindings_substitutePricesIsHintNotDeviation` (**31.10.2026**) | Aktie mit Ersatzkursen | Ein Hinweis "keine Tageswerte, in den Charts mit Kauf- und Verkaufskursen bewertet (Ersatzkurse)", keine Abweichung |
+| `test_buyTable_valuesCostsAndSums` (**17.11.2026**) | Zwei Käufe, Kosten über `buyGuid` und über `BuyObject::brokerageGuid()`, ein freistehender Eintrag | Kaufwert 600,00 und 102,00; Kosten 10,00 und 5,00, der freistehende zählt nicht; Summen 702,00 / 15,00 / 717,00 |
+| `test_buyTable_fifoSoldMatchesReplay` (**17.11.2026**) | `fifoShare()` | FIFO 10 und 2 wie `replayFifoSold()`, gespeichert 8 und 4 unverändert, Rest 0 und 3 |
+| `test_buyTable_withSplits_todayColumnsAndSums` (**17.11.2026**) | Kauf vor einem 2:1-Split, Kauf danach | Beleg-Skala bleibt; heute 20 Stück à 25,00; Summe 26 Stück; verkauft gespeichert in heutiger Skala |
+| `test_saleTable_payoutAndSums` (**17.11.2026**) | Verkauf mit Gebühren, Rabatt und Steuern | Auszahlung = 700,00 − 10,00 + 2,00 − 21,10; Summen über zwei Verkäufe |
+| `test_dividendTable_foreignCurrencyAndSums` (**17.11.2026**) | Euro- und USD-Dividende | Währung "€" bzw. "USD", Beträge wie `DividendObject`, Summen |
+| `test_brokerageTable_assignmentAndSums` (**17.11.2026**) | Kauf-, Verkaufs- und freistehender Eintrag | Zuordnung, Brutto 13,00, Netto 11,00, alle sechs Summen |
+| `test_stockSummary_fiveValues` (**17.11.2026**) | `fifoShare()` | gekauft 15, verkauft 12, rechnerisch 3, FIFO 3, Tabelle 3 |
 
 ---
 
@@ -5347,6 +5363,10 @@ kein `QWidget`. Der Fake-Model liefert von Hand befüllte Eingangsdaten und
 zählt die Ladevorgänge; die Fake-View hält Liste, Auswahl, Kopfzeile und
 Detail fest. Die Zahlen selbst prüft `tst_calculationbreakdown`, die echte
 View `tst_mainwindow`.
+
+Seit v1.30.1 (17.11.2026) übersetzt das Ziel zusätzlich
+`SaleFifoAllocator.cpp`, weil `CalculationBreakdown` die FIFO-Nachrechnung
+selbst enthält (vorher in `CalculationReport.cpp`).
 
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|

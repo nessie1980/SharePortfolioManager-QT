@@ -103,6 +103,11 @@ struct CalculationReportInput
  * CalculationBreakdown — demselben Zeilenmodell, aus dem der Tab
  * "Depot- vs. Marktwert" seine Tabellen füllt. Der Berichtstext selbst ist
  * dabei unverändert geblieben.
+ *
+ * @note Seit v1.30.1 (17.11.2026) kommen auch die Zahlen der Tabellen
+ * Käufe, Verkäufe, Dividenden, Kosten und des Bestandsblocks aus
+ * CalculationBreakdown (buyTable() bis stockSummary()); der Bericht
+ * formatiert sie nur noch. Auch hier ist der Text unverändert.
  */
 class CalculationReport
 {
@@ -184,6 +189,9 @@ public:
      * einschließlich Verkaufsdatum, älteste zuerst. Dient dem Vergleich mit
      * dem gespeicherten BuyObject::volumeSold(), aus dem ShareCalculator den
      * Bestand ableitet.
+     *
+     * @note Seit v1.30.1 nur noch eine Weiterleitung auf
+     * CalculationBreakdown::replayFifoSold() (Refactor 17.11.2026).
      *
      * @return Gleiche Reihenfolge wie @p buys.
      */

@@ -4,6 +4,7 @@
 
 #include "CalculationReport.h"
 
+#include <QDate>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -116,6 +117,164 @@ struct CalculationTotalChecks
     double excludedCompleteMarket = 0.0; ///< Kpl. Marktwert dieser Aktien (01.11.2026)
 };
 
+// ── Transaktionstabellen je Aktie (ergänzt 17.11.2026, v1.30.1) ─────────────
+//
+// Reine Zahlen ohne Formatierung. Bis v1.30.0 rechnete
+// CalculationReport::buildShareSection() diese Werte direkt beim Erzeugen
+// des Textes; seit v1.30.1 holt der Bericht sie von hier, damit der Tab
+// "Depot- vs. Marktwert" dieselben Zahlen zeigen kann, ohne sie ein zweites
+// Mal zu rechnen. Stückzahlen und Kurse der Zeilen stehen in Beleg-Skala,
+// die Felder "...Today" in heutiger Skala (siehe ShareSplitAdjuster).
+
+/**
+ * @brief Ein Kauf mit Kosten und FIFO-Nachrechnung.
+ */
+struct CalculationBuyRow
+{
+    QDate   date;
+    QString depotNumber;
+    double  volume         = 0.0;  ///< Stück, Beleg-Skala
+    double  price          = 0.0;  ///< Kurs, Beleg-Skala
+    double  value          = 0.0;  ///< Stück × Kurs, kaufmännisch gerundet
+    double  costs          = 0.0;  ///< zugeordnete Kosten: Gebühren − Rabatt
+    double  valueWithCosts = 0.0;  ///< value + costs
+    double  soldStored     = 0.0;  ///< BuyObject::volumeSold(), Beleg-Skala
+    double  soldFifo       = 0.0;  ///< nach FIFO neu zugeteilt, Beleg-Skala
+    double  remainingFifo  = 0.0;  ///< volume − soldFifo, Beleg-Skala
+    double  volumeToday    = 0.0;  ///< volume in heutiger Skala
+    double  priceToday     = 0.0;  ///< price in heutiger Skala
+    double  remainingFifoToday = 0.0; ///< remainingFifo in heutiger Skala
+};
+
+/**
+ * @brief Alle Käufe einer Aktie samt Summen.
+ *
+ * Mit Splits liegen die Stückzahlen der Käufe in verschiedenen Beleg-Skalen
+ * und lassen sich nicht addieren; maßgeblich ist dann sumVolumeToday. Die
+ * verkauften Mengen werden für die Summen immer in heutige Skala umgerechnet.
+ */
+struct CalculationBuyTable
+{
+    QList<CalculationBuyRow> rows;      ///< Reihenfolge wie CalculationReportShare::buys
+    bool   withSplits         = false;  ///< die Aktie hat mindestens einen Split
+    double sumVolume          = 0.0;    ///< Σ Stück in Beleg-Skala (nur ohne Splits aussagekräftig)
+    double sumVolumeToday     = 0.0;
+    double sumValue           = 0.0;
+    double sumCosts           = 0.0;
+    double sumValueWithCosts  = 0.0;    ///< sumValue + sumCosts
+    double sumSoldStoredToday = 0.0;
+    double sumSoldFifoToday   = 0.0;
+};
+
+/**
+ * @brief Ein Verkauf mit Auszahlung.
+ */
+struct CalculationSaleRow
+{
+    QDate   date;
+    QString depotNumber;
+    double  volume    = 0.0;  ///< Stück, Beleg-Skala
+    double  price     = 0.0;  ///< Verkaufskurs, Beleg-Skala
+    double  value     = 0.0;  ///< Stück × Kurs, kaufmännisch gerundet
+    double  fees      = 0.0;  ///< Gebühren
+    double  reduction = 0.0;  ///< Rabatt
+    double  taxes     = 0.0;  ///< Steuern gesamt
+    double  payout    = 0.0;  ///< value − fees + reduction − taxes
+};
+
+/// Alle Verkäufe einer Aktie samt Summen.
+struct CalculationSaleTable
+{
+    QList<CalculationSaleRow> rows;   ///< Reihenfolge wie CalculationReportShare::sales
+    double sumVolumeToday = 0.0;      ///< Σ Stück in heutiger Skala
+    double sumValue       = 0.0;
+    double sumFees        = 0.0;
+    double sumReduction   = 0.0;
+    double sumTaxes       = 0.0;
+    double sumPayout      = 0.0;
+};
+
+/**
+ * @brief Eine Dividendenzahlung.
+ */
+struct CalculationDividendRow
+{
+    QDate   date;              ///< Zahltag
+    double  volume   = 0.0;    ///< Stück am Zahltag
+    double  rate     = 0.0;    ///< je Stück, in der Währung des Belegs
+    QString currency;          ///< "€" oder die Fremdwährung des Belegs, z. B. "USD"
+    double  gross    = 0.0;    ///< Brutto in Euro
+    double  taxAtSource     = 0.0;
+    double  capitalGainsTax = 0.0;
+    double  solidarityTax   = 0.0;
+    double  taxes    = 0.0;    ///< Steuern gesamt
+    double  net      = 0.0;    ///< Brutto − Steuern gesamt
+};
+
+/**
+ * @brief Alle Dividenden einer Aktie samt Summen.
+ *
+ * Stückzahl und Satz je Stück lassen sich über mehrere Zahltage nicht
+ * sinnvoll addieren und haben deshalb keine Summe.
+ */
+struct CalculationDividendTable
+{
+    QList<CalculationDividendRow> rows;  ///< Reihenfolge wie CalculationReportShare::dividends
+    double sumGross           = 0.0;
+    double sumTaxAtSource     = 0.0;
+    double sumCapitalGainsTax = 0.0;
+    double sumSolidarityTax   = 0.0;
+    double sumTaxes           = 0.0;
+    double sumNet             = 0.0;
+};
+
+/// Wozu ein Kosteneintrag gehört.
+enum class CalculationBrokerageAssignment
+{
+    Buy,         ///< BrokerageObject::buyGuid() gesetzt
+    Sale,        ///< saleGuid() gesetzt
+    Standalone   ///< keins von beiden
+};
+
+/**
+ * @brief Ein Kosteneintrag.
+ */
+struct CalculationBrokerageRow
+{
+    QDate  date;
+    CalculationBrokerageAssignment assignment = CalculationBrokerageAssignment::Standalone;
+    double provision = 0.0;
+    double brokerFee = 0.0;   ///< Makler
+    double traderFee = 0.0;   ///< Börse
+    double gross     = 0.0;   ///< Provision + Makler + Börse
+    double reduction = 0.0;   ///< Rabatt
+    double net       = 0.0;   ///< Brutto − Rabatt
+};
+
+/// Alle Kosteneinträge einer Aktie samt Summen.
+struct CalculationBrokerageTable
+{
+    QList<CalculationBrokerageRow> rows;  ///< Reihenfolge wie CalculationReportShare::brokerages
+    double sumProvision = 0.0;
+    double sumBrokerFee = 0.0;
+    double sumTraderFee = 0.0;
+    double sumGross     = 0.0;
+    double sumReduction = 0.0;
+    double sumNet       = 0.0;
+};
+
+/**
+ * @brief Der Block "Bestand (heutige Skala)" des Berichts.
+ */
+struct CalculationStockSummary
+{
+    double bought     = 0.0;  ///< gekauft gesamt
+    double sold       = 0.0;  ///< verkauft gesamt
+    double computed   = 0.0;  ///< bought − sold
+    double fifo       = 0.0;  ///< Σ Rest je Kauf nach FIFO-Nachrechnung
+    double table      = 0.0;  ///< Bestand der Tabelle (ShareValues::volume)
+};
+
 /**
  * @brief Gemeinsames Zeilenmodell von Berechnungsbericht und Tab
  * "Depot- vs. Marktwert" (ergänzt 27.10.2026).
@@ -191,6 +350,39 @@ public:
 
     /// Anzeigename: Name, ersatzweise die GUID.
     static QString shareTitle(const CalculationReportShare& share);
+
+    // ── Transaktionen je Aktie (ergänzt 17.11.2026, v1.30.1) ─────────────
+    /**
+     * @brief Alle Käufe mit zugeordneten Kosten, gespeicherter und nach FIFO
+     * nachgerechneter Verkaufsmenge, Werten in heutiger Skala und Summen.
+     *
+     * Kosten je Kauf: alle Kosteneinträge mit BrokerageObject::buyGuid() des
+     * Kaufs oder der Kosteneintrag aus BuyObject::brokerageGuid(), jeweils
+     * Gebühren abzüglich Rabatt. FIFO über replayFifoSold().
+     */
+    static CalculationBuyTable buyTable(const CalculationReportShare& share);
+    /**
+     * @brief Spielt alle Verkäufe einer Aktie FIFO gegen ihre Käufe nach und
+     * liefert je Kauf die verkaufte Menge in dessen Beleg-Skala.
+     *
+     * Wie die Verkaufsmaske (ModelSaleEdit/SaleFifoAllocator): je Verkauf nur
+     * Käufe desselben Depots (leere Depotnummer = alle) mit Kaufdatum bis
+     * einschließlich Verkaufsdatum, älteste zuerst. Bis v1.30.0 in
+     * CalculationReport; dort bleibt replayFifoSold() als Weiterleitung.
+     *
+     * @return Gleiche Reihenfolge wie @p buys.
+     */
+    static QList<double> replayFifoSold(const QList<BuyObject>& buys,
+                                        const QList<SaleObject>& sales,
+                                        const QList<ShareSplitObject>& splits);
+    /// Alle Verkäufe mit Auszahlung und Summen.
+    static CalculationSaleTable saleTable(const CalculationReportShare& share);
+    /// Alle Dividenden mit aufgeschlüsselten Steuern und Summen.
+    static CalculationDividendTable dividendTable(const CalculationReportShare& share);
+    /// Alle Kosteneinträge mit Zuordnung und Summen.
+    static CalculationBrokerageTable brokerageTable(const CalculationReportShare& share);
+    /// Bestand in heutiger Skala: gekauft, verkauft, rechnerisch, nach FIFO, Tabelle.
+    static CalculationStockSummary stockSummary(const CalculationReportShare& share);
 
     // ── Gesamt ────────────────────────────────────────────────────────────
 

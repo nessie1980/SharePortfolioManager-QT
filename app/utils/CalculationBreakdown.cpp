@@ -2,10 +2,14 @@
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "CalculationBreakdown.h"
 
+#include "SaleFifoAllocator.h"
 #include "ShareCalculator.h"
+#include "ShareSplitAdjuster.h"
 #include "ValueFormatter.h"
 
+#include <algorithm>
 #include <cmath>
+#include <numeric>
 
 namespace {
 
@@ -308,6 +312,223 @@ double CalculationBreakdown::chartDevelopmentHeld(const PortfolioSharePoint& p)
 QString CalculationBreakdown::shareTitle(const CalculationReportShare& s)
 {
     return s.share.name().isEmpty() ? s.share.guid() : s.share.name();
+}
+
+// ── Transaktionen je Aktie ────────────────────────────────────────────────────
+// Bis v1.30.0 direkt in CalculationReport::buildShareSection(); seit v1.30.1
+// hier, damit der Tab "Depot- vs. Marktwert" dieselben Zahlen zeigen kann
+// (Refactor 17.11.2026). Rechnungen und Summierreihenfolge sind unverändert
+// übernommen — der Berichtstext muss Zeichen für Zeichen gleich bleiben.
+
+QList<double> CalculationBreakdown::replayFifoSold(const QList<BuyObject>& buys,
+                                                   const QList<SaleObject>& sales,
+                                                   const QList<ShareSplitObject>& splits)
+{
+    // Arbeitskopien mit leerem "verkauft" — die Nachrechnung beginnt bei null,
+    // unabhängig davon, was in der Datenbank steht.
+    QList<BuyObject> work = buys;
+    for (BuyObject& b : work)
+        b.setVolumeSold(0.0);
+
+    QList<int> buyOrder(work.size());
+    std::iota(buyOrder.begin(), buyOrder.end(), 0);
+    std::stable_sort(buyOrder.begin(), buyOrder.end(), [&work](int a, int b) {
+        return work.at(a).date() < work.at(b).date();
+    });
+
+    QList<SaleObject> sortedSales = sales;
+    std::stable_sort(sortedSales.begin(), sortedSales.end(),
+                     [](const SaleObject& a, const SaleObject& b) { return a.date() < b.date(); });
+
+    for (const SaleObject& sale : sortedSales) {
+        const QString depot = sale.depotNumber().trimmed();
+
+        QList<BuyObject> available;
+        QList<int>       availableIndex;
+        for (int idx : buyOrder) {
+            const BuyObject& b = work.at(idx);
+            if (b.date() > sale.date())
+                continue;
+            if (!depot.isEmpty() && b.depotNumber().trimmed() != depot)
+                continue;
+            if (b.volume() - b.volumeSold() <= 0.0)
+                continue;
+            available.append(b);
+            availableIndex.append(idx);
+        }
+
+        const QList<FifoAllocationRow> rows =
+            SaleFifoAllocator::allocate(sale.volume(), sale.date(), available, splits);
+
+        for (const FifoAllocationRow& row : rows) {
+            for (int i = 0; i < available.size(); ++i) {
+                if (available.at(i).guid() == row.buyGuid) {
+                    BuyObject& target = work[availableIndex.at(i)];
+                    target.setVolumeSold(target.volumeSold() + row.volume);
+                    break;
+                }
+            }
+        }
+    }
+
+    QList<double> result;
+    result.reserve(work.size());
+    for (const BuyObject& b : work)
+        result.append(b.volumeSold());
+    return result;
+}
+
+CalculationBuyTable CalculationBreakdown::buyTable(const CalculationReportShare& s)
+{
+    CalculationBuyTable table;
+    table.withSplits = !s.splits.isEmpty();
+
+    const QList<double> fifoSold = replayFifoSold(s.buys, s.sales, s.splits);
+
+    // Kosten je Kauf (Nessies Wunsch 23.10.2026): der dem Kauf zugeordnete
+    // Kosteneintrag, Gebühren abzüglich Rabatt. Zuordnung über
+    // BrokerageObject::buyGuid() oder BuyObject::brokerageGuid().
+    const auto costsOf = [&s](const BuyObject& b) {
+        double sum = 0.0;
+        for (const BrokerageObject& k : s.brokerages) {
+            if (k.buyGuid() == b.guid()
+                || (!b.brokerageGuid().isEmpty() && k.guid() == b.brokerageGuid()))
+                sum += k.brokerageReduction();
+        }
+        return sum;
+    };
+
+    table.rows.reserve(s.buys.size());
+    for (int i = 0; i < s.buys.size(); ++i) {
+        const BuyObject& b = s.buys.at(i);
+
+        CalculationBuyRow r;
+        r.date           = b.date();
+        r.depotNumber    = b.depotNumber();
+        r.volume         = b.volume();
+        r.price          = b.price();
+        r.value          = ShareCalculator::roundAway(b.volume() * b.price());
+        r.costs          = costsOf(b);
+        r.valueWithCosts = r.value + r.costs;
+        r.soldStored     = b.volumeSold();
+        r.soldFifo       = fifoSold.value(i);
+        r.remainingFifo  = b.volume() - r.soldFifo;
+        r.volumeToday    = ShareSplitAdjuster::adjustedVolume(b.volume(), s.splits, b.date());
+        r.priceToday     = ShareSplitAdjuster::adjustedTransactionPrice(b.price(), s.splits, b.date());
+        r.remainingFifoToday = ShareSplitAdjuster::adjustedVolume(r.remainingFifo, s.splits, b.date());
+        table.rows.append(r);
+
+        table.sumVolume          += r.volume;
+        table.sumVolumeToday     += r.volumeToday;
+        table.sumValue           += r.value;
+        table.sumCosts           += r.costs;
+        table.sumSoldStoredToday += ShareSplitAdjuster::adjustedVolume(r.soldStored, s.splits, b.date());
+        table.sumSoldFifoToday   += ShareSplitAdjuster::adjustedVolume(r.soldFifo, s.splits, b.date());
+    }
+    table.sumValueWithCosts = table.sumValue + table.sumCosts;
+    return table;
+}
+
+CalculationSaleTable CalculationBreakdown::saleTable(const CalculationReportShare& s)
+{
+    CalculationSaleTable table;
+    table.rows.reserve(s.sales.size());
+    for (const SaleObject& sale : s.sales) {
+        CalculationSaleRow r;
+        r.date        = sale.date();
+        r.depotNumber = sale.depotNumber();
+        r.volume      = sale.volume();
+        r.price       = sale.salePrice();
+        r.value       = ShareCalculator::roundAway(sale.volume() * sale.salePrice());
+        r.fees        = sale.brokerage();
+        r.reduction   = sale.reduction();
+        r.taxes       = sale.taxSum();
+        r.payout      = r.value - r.fees + r.reduction - r.taxes;
+        table.rows.append(r);
+
+        // Stückzahl in heutiger Skala — ohne Splits dieselbe Summe.
+        table.sumVolumeToday += ShareSplitAdjuster::adjustedVolume(sale.volume(), s.splits, sale.date());
+        table.sumValue       += r.value;
+        table.sumFees        += r.fees;
+        table.sumReduction   += r.reduction;
+        table.sumTaxes       += r.taxes;
+        table.sumPayout      += r.payout;
+    }
+    return table;
+}
+
+CalculationDividendTable CalculationBreakdown::dividendTable(const CalculationReportShare& s)
+{
+    CalculationDividendTable table;
+    table.rows.reserve(s.dividends.size());
+    for (const DividendObject& d : s.dividends) {
+        CalculationDividendRow r;
+        r.date     = d.date();
+        r.volume   = d.volume();
+        r.rate     = d.rate();
+        // Satz je Stück in der Währung des Belegs — bei Fremdwährung z. B.
+        // USD, nicht Euro (Bugfix 24.10.2026).
+        r.currency = (d.enableForeignCurrency() && !d.currency().isEmpty())
+                         ? d.currency() : QStringLiteral("€");
+        r.gross           = d.dividendPayout();
+        r.taxAtSource     = d.taxAtSource();
+        r.capitalGainsTax = d.capitalGainsTax();
+        r.solidarityTax   = d.solidarityTax();
+        r.taxes           = d.taxSum();
+        r.net             = d.dividendPayoutWithTaxes();
+        table.rows.append(r);
+
+        table.sumGross           += r.gross;
+        table.sumTaxAtSource     += r.taxAtSource;
+        table.sumCapitalGainsTax += r.capitalGainsTax;
+        table.sumSolidarityTax   += r.solidarityTax;
+        table.sumTaxes           += r.taxes;
+        table.sumNet             += r.net;
+    }
+    return table;
+}
+
+CalculationBrokerageTable CalculationBreakdown::brokerageTable(const CalculationReportShare& s)
+{
+    CalculationBrokerageTable table;
+    table.rows.reserve(s.brokerages.size());
+    for (const BrokerageObject& b : s.brokerages) {
+        CalculationBrokerageRow r;
+        r.date       = b.date();
+        r.assignment = !b.buyGuid().isEmpty()  ? CalculationBrokerageAssignment::Buy
+                     : !b.saleGuid().isEmpty() ? CalculationBrokerageAssignment::Sale
+                                               : CalculationBrokerageAssignment::Standalone;
+        r.provision  = b.provision();
+        r.brokerFee  = b.brokerFee();
+        r.traderFee  = b.traderFee();
+        r.gross      = b.brokerage();
+        r.reduction  = b.reduction();
+        r.net        = b.brokerageReduction();
+        table.rows.append(r);
+
+        table.sumProvision += r.provision;
+        table.sumBrokerFee += r.brokerFee;
+        table.sumTraderFee += r.traderFee;
+        table.sumGross     += r.gross;
+        table.sumReduction += r.reduction;
+        table.sumNet       += r.net;
+    }
+    return table;
+}
+
+CalculationStockSummary CalculationBreakdown::stockSummary(const CalculationReportShare& s)
+{
+    const CalculationBuyTable  buys  = buyTable(s);
+    const CalculationSaleTable sales = saleTable(s);
+
+    CalculationStockSummary summary;
+    summary.bought = buys.sumVolumeToday;
+    summary.sold   = sales.sumVolumeToday;
+    for (const CalculationBuyRow& r : buys.rows)
+        summary.fifo += r.remainingFifoToday;
+    summary.computed = summary.bought - summary.sold;
+    summary.table    = s.values.volume;
+    return summary;
 }
 
 // ── check ─────────────────────────────────────────────────────────────────────

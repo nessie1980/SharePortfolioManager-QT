@@ -8,8 +8,17 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [1.30.1] - 2026-11-17
+
 ### Changed
 
+- Umbau ohne Verhaltensänderung: Die Zahlen der Tabellen Käufe, Verkäufe,
+  Dividenden und Kosten sowie des Blocks "Bestand (heutige Skala)" im
+  Berechnungsbericht rechnet jetzt `CalculationBreakdown` (`buyTable()`,
+  `saleTable()`, `dividendTable()`, `brokerageTable()`, `stockSummary()`);
+  auch die FIFO-Nachrechnung (`replayFifoSold()`) liegt jetzt dort. Der
+  Bericht formatiert nur noch, sein Text bleibt unverändert. Vorbereitung
+  dafür, dass der Tab "Depot- vs. Marktwert" dieselben Tabellen zeigt.
 - Dokumentation: Die offenen Punkte stehen jetzt an genau einer Stelle,
   unter "Offene Punkte" in `ARCHITECTURE.md`, mit einer Übersichtstabelle
   samt Priorität. Zwei Punkte, die bisher nur in Notizen ausserhalb des
