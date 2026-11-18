@@ -8,6 +8,12 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+### Changed
+
+- Build: `widgets/CollapsibleSection.h` in `app/CMakeLists.txt` aufgeführt
+  wie die übrigen Header unter `widgets/`, damit er im Projektbaum der IDE
+  erscheint. Am Programm ändert sich nichts.
+
 ## [1.31.1] - 2026-11-18
 
 ### Changed

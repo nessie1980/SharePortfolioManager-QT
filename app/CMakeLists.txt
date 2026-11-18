@@ -101,6 +101,9 @@ set(APP_SOURCES
     # Header-only — App-weite Grid-Selektionsfarbe (29.07.2026). Nur gelistet,
     # damit der Header in der IDE auftaucht; am Bau aendert sich nichts.
     widgets/GridStyle.h
+    # Header-only — Gruppe zum Aufklappen im Tab "Depot- vs. Marktwert"
+    # (v1.31.0). Ebenfalls nur gelistet, damit er in der IDE auftaucht.
+    widgets/CollapsibleSection.h
     widgets/OverviewTabWidget.h
     widgets/OverviewTabWidget.cpp
     widgets/DocumentPreviewPanel.h
