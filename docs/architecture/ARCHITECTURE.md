@@ -4540,10 +4540,12 @@ Nessies Entscheidungen vom 27.10.2026:
   Tabellen.
 - Je Aktie vorerst nur die Gegenüberstellung und der Abgleich gegen die
   Charts. Transaktionen und FIFO-Bestandsabgleich stehen weiter nur im
-  Bericht (offener Punkt).
-- "Fließt ein in" als reiner Text (Variante a). Anklickbar (Variante b) ist
-  ein offener Punkt, zusammen mit einem Kontextmenü "Rechenweg anzeigen" in
-  den Tabellen, das in den Tab springt.
+  Bericht (offener Punkt; seit v1.31.0 umgesetzt, siehe "Transaktionen und
+  FIFO im Tab").
+- "Fließt ein in" als reiner Text (Variante a). Anklickbar (Variante b)
+  und ein Kontextmenü "Rechenweg anzeigen" in den Tabellen, das in den Tab
+  springt, waren als offener Punkt vorgesehen; beides hat Nessie am
+  17.11.2026 gestrichen.
 - Der Bericht bekommt die Spalte "Fließt ein in" nicht (Variante b); sein
   Text bleibt unverändert.
 - Refactoring und Tab in einem Commit.
@@ -4664,6 +4666,88 @@ unveränderten Fälle in `tst_calculationreport`. Weil diese nur Ausschnitte
 des Textes prüfen, gehört zur Abnahme zusätzlich je ein Bericht vor und nach
 dem Umbau (Realwerte und anonymisiert); beide Paare müssen gleich sein.
 
+### Transaktionen und FIFO im Tab (ergänzt 18.11.2026, v1.31.0)
+
+Rest des offenen Punkts "Tab Depot- vs. Marktwert: weitere Ausbaustufen"
+(Teil 3, siehe "Erledigt / Archiv"). Der Bericht zeigte je Aktie die
+Transaktionen und den FIFO-Bestandsabgleich, der Tab bisher nicht.
+
+Nessies Entscheidungen vom 17.11.2026 (nach drei Skizzen: Reiter, Gruppen
+zum Aufklappen, Mischform):
+
+1. Mischform: Die Gegenüberstellung bleibt oben, der Teiler bleibt. Unter
+   dem Teiler steht ein eigener Bildlaufbereich mit Gruppen zum Aufklappen
+   (`CollapsibleSection`), deren Kopfzeile auch zugeklappt eine Kurzinfo
+   zeigt.
+2. Der Auf-/Zu-Zustand wird nicht gespeichert; bei jeder Auswahl und jedem
+   Neuladen gilt wieder der Ausgangszustand.
+3. Ausgangszustand: "Abgleich Tabelle gegen Chart" offen; "Auffälligkeiten"
+   offen, sobald es einen Eintrag gibt, auch nur einen Hinweis; jede Gruppe
+   mit Abweichung offen; alle anderen zu.
+4. Je Art eine Gruppe mit den Spalten und Summenzeilen des Berichts: Käufe,
+   Verkäufe, Dividenden, Kosten, Splits; dazu "Bestand / FIFO". Leere Arten
+   bleiben sichtbar ("Käufe (0)", Kurzinfo "keine").
+5. "verk. gespeich." und "verk. FIFO" stehen wie im Bericht auch in den
+   Käufen, nicht nur in "Bestand / FIFO".
+6. Eine FIFO-Abweichung wird keine Auffälligkeit und ändert das Symbol der
+   Aktie links nicht; sie zeigt sich nur in der Gruppe (rote Zelle,
+   Kurzinfo, aufgeklappt). Bericht und Liste der Auffälligkeiten bleiben
+   unverändert.
+7. Die Teile 1 und 2 des offenen Punkts (Navigation aus den Tabellen und
+   anklickbares "Fließt ein in") entfallen.
+
+Kurzinfos der Kopfzeilen:
+
+| Gruppe | Kurzinfo |
+| --- | --- |
+| Abgleich | "alles ok", sonst Anzahl Abweichungen und Hinweise; ohne Abgleich "kein Abgleich möglich" |
+| Auffälligkeiten | "keine", sonst Anzahl Abweichungen und Hinweise |
+| Käufe | Stück (heutige Skala) und Kaufwert mit Kosten |
+| Verkäufe | Stück (heutige Skala) und Auszahlung |
+| Dividenden, Kosten | Netto-Summe |
+| Splits | Faktor und Ex-Tag je Split |
+| Bestand / FIFO | "n Käufe abweichend" (falls ja) und "Bestand ok" bzw. "Bestand abweichend" |
+
+"Bestand / FIFO" zeigt zwei Tabellen: je Kauf Stück, verkauft gespeichert,
+verkauft nach FIFO, Differenz (gespeichert − FIFO) und Rest nach FIFO, mit
+Summenzeile; darunter die fünf Zeilen des Berichtsblocks "Bestand (heutige
+Skala)". Abweichend heißt: eine Differenz je Kauf, ein FIFO-Bestand
+ungleich dem rechnerischen oder ein Tabellenbestand ungleich einem der
+beiden (Toleranz `kVolumeTolerance`).
+
+Alle Zahlen kommen aus `CalculationBreakdown` (`buyTable()` bis
+`stockSummary()`, seit v1.30.1 gemeinsam mit dem Bericht, siehe
+"Transaktionen und Bestand"). Der Presenter formatiert sie in
+`CalculationOverviewGroup`/`CalculationOverviewTable` und legt den
+Auf-/Zu-Zustand fest (`applyGroupStates()` für Abgleich und
+Auffälligkeiten, je Gruppe in `buildShareDetail()`); "Gesamt / Footer" hat
+keine Gruppen. Die View baut die Gruppen bei jedem `showDetail()` neu auf.
+Die Tabellen darin sind so hoch wie ihr Inhalt, gescrollt wird nur der
+Bildlaufbereich darum. Zur Breite siehe "Spaltenverteilung" unten.
+
+`CollapsibleSection` (`app/widgets/CollapsibleSection.h`) ist header-only
+ohne `Q_OBJECT` wie `GridStyle.h`: Kopfzeile mit Pfeil, Titel und Kurzinfo,
+`setExpanded()`, `bodyLayout()`.
+
+Rahmen (v1.31.1, Nessies Entscheidung 18.11.2026): In v1.31.0 umschloss
+die Groupbox nur die Gegenüberstellung; Teiler und Gruppen standen frei
+darunter. Seit v1.31.1 liegen Teiler und Bildlaufbereich mit in derselben
+Groupbox (Variante A). Eine zweite Groupbox nur für die Gruppen (Variante B)
+hat Nessie verworfen, weil sie Platz und eine zweite Überschrift kostet.
+
+Spaltenverteilung (v1.31.1, Nessies Entscheidung 18.11.2026): In v1.31.0
+waren die Tabellen der Gruppen fest so breit wie ihr Inhalt und standen
+links, während die Abgleich-Tabelle die volle Breite füllt. Seit v1.31.1
+füllen auch sie die Breite (Variante 2): Textspalten (linksbündig, z. B.
+Datum, Depot, Zuordnung) bleiben so breit wie ihr Inhalt, die
+Zahlenspalten (rechtsbündig) teilen sich den Rest zu gleichen Teilen.
+Ausnahme ist die Tabelle "Bestand (heutige Skala)" mit nur einer
+Zahlenspalte: dort nimmt wie beim Abgleich die Textspalte den Rest auf.
+Mindestbreite ist der Text plus je Zahlenspalte die Breite der breitesten
+Zahlenspalte, damit beim gleichmäßigen Verteilen nichts abgeschnitten wird;
+ist der Bereich schmaler, scrollt er als Ganzes waagerecht. Die Variante mit
+gleich breiten Spalten für alles (Variante 1) hat Nessie verworfen.
+
 ### Umsetzung
 
 Eigenes MVP-Tripel unter `app/forms/CalculationOverviewForm/`:
@@ -4691,7 +4775,8 @@ Tests: `tst_calculationbreakdown` (Zeilenmodell, Footer, Abgleich, gleiche
 Auffälligkeiten wie Teil 3 des Berichts), `tst_calculationoverviewform`
 (Presenter über Fake-View/Fake-Model) und in `tst_mainwindow` Position,
 verzögerte Erzeugung und Inhalt des Tabs. `tst_calculationreport` ist
-unverändert und sichert den Berichtstext.
+unverändert und sichert den Berichtstext. Seit v1.31.0 prüft `tst_calculationoverviewform`
+auch die Gruppen: Reihenfolge, Spalten, Kurzinfos und den Ausgangszustand.
 
 ---
 
@@ -5584,7 +5669,7 @@ nach einem Reset unbelegt ist.
 
 ## Offene Punkte
 
-### Übersicht und Priorität (Stand 16.11.2026)
+### Übersicht und Priorität (Stand 18.11.2026)
 
 Diese Tabelle ist die einzige Liste der offenen Punkte des Projekts.
 Notizen ausserhalb des Repositorys (Claude-Projekt, Claude Docs) verweisen
@@ -5599,7 +5684,6 @@ eintritt. Die Einstufung hat Nessie am 16.11.2026 festgelegt.
 
 | Punkt | Art | Priorität | Anlass bzw. nächster Schritt |
 | --- | --- | --- | --- |
-| Tab Depot- vs. Marktwert: weitere Ausbaustufen | Feature | Hoch | In Arbeit (17.11.2026): nur noch Teil 3, Vorarbeit in v1.30.1, Umsetzung als v1.31.0 |
 | Breite Belegkennungen gewinnen gegen den Dialog-Fallback | Robustheit | Mittel | Spätestens, wenn Consors-Verkäufe konfiguriert werden; nur an echten Belegen zu prüfen |
 | Berechnungsbericht: CSV-Export und dauerhafter Menüeintrag | Feature | Niedrig | Bei Bedarf; der Bericht ist seit v1.28.0 über den Tab erreichbar |
 | Kennzahl Gewinn seit Kauf auf Netto-Kapital | Feature | Niedrig | Vorher Kosten des Verkaufs vom 27.02.2020 am Beleg prüfen; dann entscheiden, ob die Kennzahl kommt |
@@ -5648,25 +5732,6 @@ einer gemeinsamen Bibliothek aufgelöst oder bewusst hingenommen werden
 
 Wieder aufgreifen, wenn der lokale Build stört, viele neue Testziele
 hinzukommen oder die Pipeline oft mit leerem Cache läuft.
-
-### Tab Depot- vs. Marktwert: weitere Ausbaustufen (offen, 27.10.2026)
-
-Bei der Umsetzung des Tabs bewusst zurückgestellt (Nessies Entscheidungen
-vom 27.10.2026, siehe "Tab Depot- vs. Marktwert"):
-
-1. Navigation aus den Tabellen: ein Kontextmenüeintrag "Rechenweg anzeigen"
-   in "Kompletter Depotwert" und "Kompletter Marktwert" springt in den Tab
-   und wählt die Aktie vor. Der Rechtsklick öffnet dort heute das
-   ChartPopup — vor der Umsetzung klären, wie beides zusammengeht.
-2. "Fließt ein in" anklickbar (Variante b): ein Klick wechselt in den
-   Ziel-Tab und markiert Zeile und Zelle der Aktie bzw. die Footer-Zelle.
-   Braucht eine Zuordnung Aktie zu Tabellenzeile, die auch nach dem
-   Umsortieren stimmt, und eine Zuordnung der Footer-Zellen; beim Chart den
-   Cursor auf dem letzten Tag. Dieselbe Navigation wie Punkt 1, nur in
-   Gegenrichtung — sinnvoll gemeinsam umzusetzen.
-3. Detailansicht je Aktie um die Transaktionen (Käufe, Verkäufe,
-   Dividenden, Kosten, Splits) und den FIFO-Bestandsabgleich erweitern,
-   zugeklappt unter der Gegenüberstellung — heute nur im Bericht.
 
 ### Breite Belegkennungen gewinnen gegen den Dialog-Fallback (offen, 02.09.2026)
 
@@ -6004,6 +6069,33 @@ Vorschlagsregel) gelten fuer den Code weiter, auch wenn die Arbeit erledigt
 ist. Was von der Aktiensplit-Behandlung bewusst NICHT abgedeckt ist, steht
 weiterhin unter "Offene Punkte" — Spin-offs, Kapitalmassnahmen mit
 Barkomponente und das Parsing der Split-Mitteilungen.
+
+### Tab Depot- vs. Marktwert: weitere Ausbaustufen (27.10.2026, erledigt 18.11.2026)
+
+Bei der Umsetzung des Tabs bewusst zurückgestellt (Nessies Entscheidungen
+vom 27.10.2026, siehe "Tab Depot- vs. Marktwert"):
+
+1. Navigation aus den Tabellen: ein Kontextmenüeintrag "Rechenweg anzeigen"
+   in "Kompletter Depotwert" und "Kompletter Marktwert" springt in den Tab
+   und wählt die Aktie vor. Der Rechtsklick öffnet dort heute das
+   ChartPopup — vor der Umsetzung klären, wie beides zusammengeht.
+2. "Fließt ein in" anklickbar (Variante b): ein Klick wechselt in den
+   Ziel-Tab und markiert Zeile und Zelle der Aktie bzw. die Footer-Zelle.
+   Braucht eine Zuordnung Aktie zu Tabellenzeile, die auch nach dem
+   Umsortieren stimmt, und eine Zuordnung der Footer-Zellen; beim Chart den
+   Cursor auf dem letzten Tag. Dieselbe Navigation wie Punkt 1, nur in
+   Gegenrichtung — sinnvoll gemeinsam umzusetzen.
+3. Detailansicht je Aktie um die Transaktionen (Käufe, Verkäufe,
+   Dividenden, Kosten, Splits) und den FIFO-Bestandsabgleich erweitern,
+   zugeklappt unter der Gegenüberstellung — heute nur im Bericht.
+
+Erledigt mit v1.31.0 (18.11.2026). Nessies Entscheidung vom 17.11.2026:
+Gebraucht wird nur Teil 3; die Teile 1 und 2 entfallen ersatzlos. Damit
+stellt sich auch die Frage nicht mehr, wie "Rechenweg anzeigen" und der
+Rechtsklick fürs ChartPopup zusammengehen. Teil 3 ist als Mischform
+umgesetzt (siehe "Tab Depot- vs. Marktwert", "Transaktionen und FIFO im
+Tab"); die Rechnung dafür ist vorab mit v1.30.1 nach `CalculationBreakdown`
+gezogen worden (siehe dort, "Transaktionen und Bestand").
 
 ### ChartForm-Platzhalter wird nirgends verwendet (16.11.2026, erledigt 17.11.2026)
 

@@ -23,6 +23,293 @@ bool isSold(const CalculationReportShare& share)
     return share.values.volume <= CalculationReport::kVolumeTolerance;
 }
 
+// ── Gruppen zum Aufklappen (ergänzt 18.11.2026, v1.31.0) ─────────────────────
+// Spalten, Summenzeilen und Fußnoten wie die Tabellen des Berechnungsberichts;
+// die Zahlen kommen aus CalculationBreakdown (seit v1.30.1 gemeinsam mit dem
+// Bericht).
+
+QString stk(double v) { return B::volume(v) + QStringLiteral(" Stk."); }
+QString px(double v)  { return B::price(v) + QStringLiteral(" €"); }
+
+bool differs(double a, double b)
+{
+    return std::abs(a - b) >= CalculationReport::kVolumeTolerance;
+}
+
+/// Tabelle mit Spaltenköpfen; @p right markiert die rechtsbündigen Spalten.
+CalculationOverviewTable makeTable(const QStringList& headers, const QList<bool>& right)
+{
+    CalculationOverviewTable t;
+    t.headers      = headers;
+    t.rightAligned = right;
+    return t;
+}
+
+QString groupTitle(const QString& name, qsizetype count)
+{
+    return QStringLiteral("%1 (%2)").arg(name).arg(count);
+}
+
+CalculationOverviewGroup buysGroup(const CalculationReportShare& s)
+{
+    CalculationOverviewGroup g;
+    g.kind  = CalculationOverviewGroup::Kind::Buys;
+    g.title = groupTitle(QStringLiteral("Käufe"), s.buys.size());
+    if (s.buys.isEmpty()) {
+        g.summary = QStringLiteral("keine");
+        return g;
+    }
+
+    const CalculationBuyTable buys = B::buyTable(s);
+    QStringList headers = { QStringLiteral("Datum"), QStringLiteral("Depot"), QStringLiteral("Stück"),
+                            QStringLiteral("Kurs"), QStringLiteral("Kaufwert o. Kosten"),
+                            QStringLiteral("Kosten"), QStringLiteral("Kaufwert m. Kosten"),
+                            QStringLiteral("verk. gespeich."), QStringLiteral("verk. FIFO") };
+    QList<bool> right = { false, false, true, true, true, true, true, true, true };
+    if (buys.withSplits) {
+        headers << QStringLiteral("Stück heute") << QStringLiteral("Kurs heute");
+        right   << true << true;
+    }
+    CalculationOverviewTable t = makeTable(headers, right);
+
+    for (const CalculationBuyRow& b : buys.rows) {
+        QStringList row = { dateText(b.date), b.depotNumber, stk(b.volume), px(b.price),
+                            B::euro(b.value), B::euro(b.costs), B::euro(b.valueWithCosts),
+                            stk(b.soldStored), stk(b.soldFifo) };
+        if (buys.withSplits)
+            row << stk(b.volumeToday) << px(b.priceToday);
+        t.rows.append(row);
+    }
+    // Wie im Bericht: mit Splits steht die Stück-Summe in "Stück heute".
+    t.sumRow = { QStringLiteral("Summe"), QString(),
+                 buys.withSplits ? QString() : stk(buys.sumVolume), QString(),
+                 B::euro(buys.sumValue), B::euro(buys.sumCosts), B::euro(buys.sumValueWithCosts),
+                 stk(buys.sumSoldStoredToday), stk(buys.sumSoldFifoToday) };
+    if (buys.withSplits)
+        t.sumRow << stk(buys.sumVolumeToday) << QString();
+
+    t.note = QStringLiteral("\"Kosten\" = dem Kauf zugeordnete Gebühren abzüglich Rabatt. "
+                            "\"verk. gespeich.\" = in der Datenbank gespeichert, daraus rechnet die "
+                            "Tabelle den Bestand; \"verk. FIFO\" = alle Verkäufe neu nach FIFO "
+                            "zugeteilt.");
+    if (buys.withSplits)
+        t.note += QStringLiteral(" Summen der Stückzahlen in heutiger Skala.");
+    g.tables.append(t);
+
+    g.summary = QStringLiteral("%1 · %2").arg(stk(buys.sumVolumeToday), B::euro(buys.sumValueWithCosts));
+    return g;
+}
+
+CalculationOverviewGroup salesGroup(const CalculationReportShare& s)
+{
+    CalculationOverviewGroup g;
+    g.kind  = CalculationOverviewGroup::Kind::Sales;
+    g.title = groupTitle(QStringLiteral("Verkäufe"), s.sales.size());
+    if (s.sales.isEmpty()) {
+        g.summary = QStringLiteral("keine");
+        return g;
+    }
+
+    const CalculationSaleTable sales = B::saleTable(s);
+    CalculationOverviewTable t = makeTable(
+        { QStringLiteral("Datum"), QStringLiteral("Depot"), QStringLiteral("Stück"),
+          QStringLiteral("Kurs"), QStringLiteral("Verkaufswert"), QStringLiteral("Gebühren"),
+          QStringLiteral("Rabatt"), QStringLiteral("Steuern"), QStringLiteral("Auszahlung") },
+        { false, false, true, true, true, true, true, true, true });
+    for (const CalculationSaleRow& r : sales.rows) {
+        t.rows.append(QStringList{ dateText(r.date), r.depotNumber, stk(r.volume), px(r.price),
+                        B::euro(r.value), B::euro(r.fees), B::euro(r.reduction),
+                        B::euro(r.taxes), B::euro(r.payout) });
+    }
+    t.sumRow = { QStringLiteral("Summe"), QString(), stk(sales.sumVolumeToday), QString(),
+                 B::euro(sales.sumValue), B::euro(sales.sumFees), B::euro(sales.sumReduction),
+                 B::euro(sales.sumTaxes), B::euro(sales.sumPayout) };
+    t.note = QStringLiteral("Auszahlung = Verkaufswert − Gebühren + Rabatt − Steuern.");
+    if (!s.splits.isEmpty())
+        t.note += QStringLiteral(" Summe der Stückzahlen in heutiger Skala.");
+    g.tables.append(t);
+
+    g.summary = QStringLiteral("%1 · Auszahlung %2").arg(stk(sales.sumVolumeToday),
+                                                          B::euro(sales.sumPayout));
+    return g;
+}
+
+CalculationOverviewGroup dividendsGroup(const CalculationReportShare& s)
+{
+    CalculationOverviewGroup g;
+    g.kind  = CalculationOverviewGroup::Kind::Dividends;
+    g.title = groupTitle(QStringLiteral("Dividenden"), s.dividends.size());
+    if (s.dividends.isEmpty()) {
+        g.summary = QStringLiteral("keine");
+        return g;
+    }
+
+    const CalculationDividendTable dividends = B::dividendTable(s);
+    CalculationOverviewTable t = makeTable(
+        { QStringLiteral("Zahltag"), QStringLiteral("Stück"), QStringLiteral("je Stück"),
+          QStringLiteral("Brutto"), QStringLiteral("Quellensteuer"),
+          QStringLiteral("Kapitalertragst."), QStringLiteral("Soli"),
+          QStringLiteral("Steuern ges."), QStringLiteral("Netto") },
+        { false, true, true, true, true, true, true, true, true });
+    for (const CalculationDividendRow& d : dividends.rows) {
+        t.rows.append(QStringList{ dateText(d.date), stk(d.volume),
+                        B::price(d.rate) + QLatin1Char(' ') + d.currency,
+                        B::euro(d.gross), B::euro(d.taxAtSource), B::euro(d.capitalGainsTax),
+                        B::euro(d.solidarityTax), B::euro(d.taxes), B::euro(d.net) });
+    }
+    t.sumRow = { QStringLiteral("Summe"), QString(), QString(), B::euro(dividends.sumGross),
+                 B::euro(dividends.sumTaxAtSource), B::euro(dividends.sumCapitalGainsTax),
+                 B::euro(dividends.sumSolidarityTax), B::euro(dividends.sumTaxes),
+                 B::euro(dividends.sumNet) };
+    t.note = QStringLiteral("Brutto bei Fremdwährung in Euro umgerechnet; Netto = Brutto − "
+                            "Steuern ges.");
+    g.tables.append(t);
+
+    g.summary = QStringLiteral("netto %1").arg(B::euro(dividends.sumNet));
+    return g;
+}
+
+CalculationOverviewGroup brokeragesGroup(const CalculationReportShare& s)
+{
+    CalculationOverviewGroup g;
+    g.kind  = CalculationOverviewGroup::Kind::Brokerages;
+    g.title = groupTitle(QStringLiteral("Kosten"), s.brokerages.size());
+    if (s.brokerages.isEmpty()) {
+        g.summary = QStringLiteral("keine");
+        return g;
+    }
+
+    const CalculationBrokerageTable brokerages = B::brokerageTable(s);
+    CalculationOverviewTable t = makeTable(
+        { QStringLiteral("Datum"), QStringLiteral("Zuordnung"), QStringLiteral("Provision"),
+          QStringLiteral("Makler"), QStringLiteral("Börse"), QStringLiteral("Brutto"),
+          QStringLiteral("Rabatt"), QStringLiteral("Netto") },
+        { false, false, true, true, true, true, true, true });
+    for (const CalculationBrokerageRow& b : brokerages.rows) {
+        QString assignment;
+        switch (b.assignment) {
+        case CalculationBrokerageAssignment::Buy:        assignment = QStringLiteral("Kauf");        break;
+        case CalculationBrokerageAssignment::Sale:       assignment = QStringLiteral("Verkauf");     break;
+        case CalculationBrokerageAssignment::Standalone: assignment = QStringLiteral("freistehend"); break;
+        }
+        t.rows.append(QStringList{ dateText(b.date), assignment, B::euro(b.provision), B::euro(b.brokerFee),
+                        B::euro(b.traderFee), B::euro(b.gross), B::euro(b.reduction),
+                        B::euro(b.net) });
+    }
+    t.sumRow = { QStringLiteral("Summe"), QString(), B::euro(brokerages.sumProvision),
+                 B::euro(brokerages.sumBrokerFee), B::euro(brokerages.sumTraderFee),
+                 B::euro(brokerages.sumGross), B::euro(brokerages.sumReduction),
+                 B::euro(brokerages.sumNet) };
+    t.note = QStringLiteral("Brutto = Provision + Makler + Börse; Netto = Brutto − Rabatt.");
+    g.tables.append(t);
+
+    g.summary = QStringLiteral("netto %1").arg(B::euro(brokerages.sumNet));
+    return g;
+}
+
+CalculationOverviewGroup splitsGroup(const CalculationReportShare& s)
+{
+    CalculationOverviewGroup g;
+    g.kind  = CalculationOverviewGroup::Kind::Splits;
+    g.title = groupTitle(QStringLiteral("Splits"), s.splits.size());
+    if (s.splits.isEmpty()) {
+        g.summary = QStringLiteral("keine");
+        return g;
+    }
+
+    // Splits sind Stammdaten ohne Rechnung — direkt aus ShareSplitObject,
+    // wie im Bericht.
+    CalculationOverviewTable t = makeTable(
+        { QStringLiteral("Ex-Tag"), QStringLiteral("Verhältnis"), QStringLiteral("Faktor") },
+        { false, true, true });
+    QStringList brief;
+    for (const ShareSplitObject& split : s.splits) {
+        const QString ratio = QStringLiteral("%1 : %2").arg(B::volume(split.ratioNew()),
+                                                            B::volume(split.ratioOld()));
+        t.rows.append(QStringList{ dateText(split.date()), ratio, B::volume(split.factor()) });
+        brief << QStringLiteral("Faktor %1 am %2").arg(B::volume(split.factor()),
+                                                        dateText(split.date()));
+    }
+    t.note = QStringLiteral("Käufe und Verkäufe stehen in Beleg-Skala; die Spalten \"heute\" "
+                            "rechnen in heutige Skala um.");
+    g.tables.append(t);
+
+    g.summary = brief.join(QStringLiteral(", "));
+    return g;
+}
+
+/**
+ * Bestand / FIFO: je Kauf gespeichert gegen FIFO, darunter die fünf
+ * Bestandszeilen. Eine Abweichung färbt die Zellen und klappt die Gruppe auf
+ * (Nessie, 17.11.2026, Punkt 1b), wird aber keine Auffälligkeit (Punkt 4b).
+ */
+CalculationOverviewGroup stockGroup(const CalculationReportShare& s)
+{
+    using Tone = CalculationOverviewTone;
+
+    CalculationOverviewGroup g;
+    g.kind  = CalculationOverviewGroup::Kind::Stock;
+    g.title = QStringLiteral("Bestand / FIFO");
+
+    const CalculationBuyTable     buys  = B::buyTable(s);
+    const CalculationStockSummary stock = B::stockSummary(s);
+
+    int deviatingBuys = 0;
+    if (!buys.rows.isEmpty()) {
+        CalculationOverviewTable t = makeTable(
+            { QStringLiteral("Kauf vom"), QStringLiteral("Depot"), QStringLiteral("Stück"),
+              QStringLiteral("verkauft gespeichert"), QStringLiteral("verkauft FIFO"),
+              QStringLiteral("Differenz"), QStringLiteral("Rest FIFO") },
+            { false, false, true, true, true, true, true });
+        for (const CalculationBuyRow& b : buys.rows) {
+            const double diff = b.soldStored - b.soldFifo;
+            const bool   bad  = differs(b.soldStored, b.soldFifo);
+            if (bad)
+                ++deviatingBuys;
+            t.rows.append(QStringList{ dateText(b.date), b.depotNumber, stk(b.volume), stk(b.soldStored),
+                            stk(b.soldFifo), B::volume(diff), stk(b.remainingFifo) });
+            t.tones.append(QList<Tone>{ Tone::Normal, Tone::Normal, Tone::Normal, Tone::Normal, Tone::Normal,
+                             bad ? Tone::Deviation : Tone::Ok, Tone::Normal });
+        }
+        t.sumRow = { QStringLiteral("Summe"), QString(),
+                     buys.withSplits ? QString() : stk(buys.sumVolume),
+                     stk(buys.sumSoldStoredToday), stk(buys.sumSoldFifoToday),
+                     B::volume(buys.sumSoldStoredToday - buys.sumSoldFifoToday), stk(stock.fifo) };
+        t.note = QStringLiteral("Differenz = gespeichert − FIFO. Je Kauf in Beleg-Skala");
+        t.note += buys.withSplits ? QStringLiteral(", Summen in heutiger Skala.")
+                                  : QStringLiteral(".");
+        g.tables.append(t);
+    }
+
+    // Die fünf Bestandszeilen wie im Bericht ("Bestand (heutige Skala)").
+    const bool fifoBad  = differs(stock.fifo, stock.computed);
+    const bool tableBad = differs(stock.table, stock.computed) || differs(stock.table, stock.fifo);
+    CalculationOverviewTable summary = makeTable(
+        { QStringLiteral("Bestand (heutige Skala)"), QStringLiteral("Stück") }, { false, true });
+    summary.rows = { { QStringLiteral("Gekauft gesamt"), B::volume(stock.bought) },
+                     { QStringLiteral("Verkauft gesamt"), B::volume(stock.sold) },
+                     { QStringLiteral("Bestand rechnerisch (gekauft − verkauft)"),
+                       B::volume(stock.computed) },
+                     { QStringLiteral("Bestand nach FIFO-Nachrechnung"), B::volume(stock.fifo) },
+                     { QStringLiteral("Bestand Tabelle"), B::volume(stock.table) } };
+    summary.tones = { {}, {}, {},
+                      { Tone::Normal, fifoBad ? Tone::Deviation : Tone::Normal },
+                      { Tone::Normal, tableBad ? Tone::Deviation : Tone::Ok } };
+    g.tables.append(summary);
+
+    QStringList parts;
+    if (deviatingBuys > 0) {
+        parts << (deviatingBuys == 1 ? QStringLiteral("1 Kauf abweichend")
+                                     : QStringLiteral("%1 Käufe abweichend").arg(deviatingBuys));
+    }
+    parts << ((fifoBad || tableBad) ? QStringLiteral("Bestand abweichend")
+                                    : QStringLiteral("Bestand ok"));
+    g.summary  = parts.join(QStringLiteral(" · "));
+    g.tone     = (deviatingBuys > 0 || fifoBad || tableBad) ? Tone::Deviation : Tone::Ok;
+    g.expanded = (g.tone == Tone::Deviation);
+    return g;
+}
+
 } // namespace
 
 // ── Konstruktor ───────────────────────────────────────────────────────────────
@@ -192,6 +479,12 @@ CalculationOverviewDetail PresenterCalculationOverview::buildShareDetail(
     }
 
     d.findings = toFindings(B::shareFindings(s));
+    applyGroupStates(d);
+
+    // Transaktionen und Bestand (ergänzt 18.11.2026, v1.31.0), in dieser
+    // Reihenfolge (Nessies Entscheidung 17.11.2026).
+    d.groups = { buysGroup(s), salesGroup(s), dividendsGroup(s), brokeragesGroup(s),
+                 splitsGroup(s), stockGroup(s) };
     return d;
 }
 
@@ -239,7 +532,46 @@ CalculationOverviewDetail PresenterCalculationOverview::buildTotalDetail(
     }
 
     d.findings = toFindings(B::findings(input));
+    applyGroupStates(d);
     return d;
+}
+
+// ── applyGroupStates ──────────────────────────────────────────────────────────
+
+void PresenterCalculationOverview::applyGroupStates(CalculationOverviewDetail& d)
+{
+    using Tone = CalculationOverviewTone;
+
+    // Abgleich: immer offen (Nessie, 17.11.2026, Punkt 7). Die Kurzinfo zählt
+    // Abweichungen und Hinweise; ohne Abgleich nennt sie den Grund.
+    int deviations = 0, hints = 0;
+    for (const CalculationOverviewCheckRow& c : d.checks) {
+        if (c.tone == Tone::Deviation) ++deviations;
+        if (c.tone == Tone::Hint)      ++hints;
+    }
+    if (d.checks.isEmpty()) {
+        d.checkSummary = QStringLiteral("kein Abgleich möglich");
+        d.checkTone    = Tone::Hint;
+    } else {
+        CalculationFindings counts;
+        for (int i = 0; i < deviations; ++i) counts.deviations << QString();
+        for (int i = 0; i < hints; ++i)      counts.hints      << QString();
+        d.checkSummary = (deviations == 0 && hints == 0) ? QStringLiteral("alles ok")
+                                                         : findingsText(counts);
+        d.checkTone    = toneOf(counts);
+    }
+    d.checkExpanded = true;
+
+    // Auffälligkeiten: offen, sobald es einen Eintrag gibt — auch wenn es nur
+    // Hinweise sind (Nessie, 17.11.2026, Punkt 8a).
+    CalculationFindings counts;
+    for (const CalculationOverviewFinding& f : d.findings) {
+        if (f.tone == Tone::Deviation) counts.deviations << f.text;
+        else                           counts.hints      << f.text;
+    }
+    d.findingsSummary  = d.findings.isEmpty() ? QStringLiteral("keine") : findingsText(counts);
+    d.findingsTone     = toneOf(counts);
+    d.findingsExpanded = !d.findings.isEmpty();
 }
 
 // ── toComparisonRow ───────────────────────────────────────────────────────────

@@ -5364,6 +5364,13 @@ zählt die Ladevorgänge; die Fake-View hält Liste, Auswahl, Kopfzeile und
 Detail fest. Die Zahlen selbst prüft `tst_calculationbreakdown`, die echte
 View `tst_mainwindow`.
 
+Seit v1.31.0 (18.11.2026) auch die Gruppen zum Aufklappen: Reihenfolge,
+Spalten, Kurzinfos und welche Gruppe der Presenter aufklappt. Helfer
+`shareWithBuy()` (stimmige Aktie mit passendem Kauf) und `fifoShare()` (zwei
+Käufe, gespeichert 8 und 4 statt FIFO 10 und 2). Die View mit
+`CollapsibleSection` selbst wird wie bisher nur über `tst_mainwindow`
+aufgebaut.
+
 Seit v1.30.1 (17.11.2026) übersetzt das Ziel zusätzlich
 `SaleFifoAllocator.cpp`, weil `CalculationBreakdown` die FIFO-Nachrechnung
 selbst enthält (vorher in `CalculationReport.cpp`).
@@ -5382,6 +5389,14 @@ selbst enthält (vorher in `CalculationReport.cpp`).
 | `test_comparisonRow_waysAndDash` | `toComparisonRow()` | "beide:" bei gleichem Rechenweg, sonst zwei Zeilen; "–" ohne Wert; Tooltip nur für vorhandene Sicht |
 | `test_totalDetail_withoutChartPoint_showsNote` | Kein Chartpunkt | Kein Abgleich, Hinweis "Kein Chartpunkt" |
 | `test_emptyPortfolio_onlyTotalEntry` | Keine Aktien | Nur "Gesamt / Footer", Kopfzeile "0 Aktien" |
+| `test_shareDetail_sixGroupsInOrder` (**18.11.2026**) | Aktie ohne Transaktionen | Sechs Gruppen in der Reihenfolge Käufe, Verkäufe, Dividenden, Kosten, Splits, Bestand / FIFO; Titel mit Anzahl; leere Arten mit "keine" und ohne Tabelle |
+| `test_totalDetail_noTransactionGroups` (**18.11.2026**) | "Gesamt / Footer" | Keine Gruppen; Abgleich offen, "alles ok" |
+| `test_defaultExpansion_onlyCheckOpen` (**18.11.2026**) | Stimmige Aktie mit passendem Kauf | Abgleich offen und "alles ok"; Auffälligkeiten zu und "keine"; alle Gruppen zu; "Bestand ok" |
+| `test_findings_hintOnly_expandsFindings` (**18.11.2026**) | Schlusskurs 61,50 | Auffälligkeiten offen mit "1 Hinweis" (Nessies Punkt 8a); Abgleich "1 Hinweis" |
+| `test_checkDeviation_keepsCheckOpen_summaryNamesIt` (**18.11.2026**) | Chart-Bestand weicht ab | Abgleich offen, Bewertung Abweichung, Kurzinfo nennt sie; Auffälligkeiten offen |
+| `test_fifoDeviation_expandsStockGroup_notInFindings` (**18.11.2026**) | Zwei Käufe, gespeichert 8 und 4 statt FIFO 10 und 2 | "Bestand / FIFO" offen, "2 Käufe abweichend · Bestand ok", Differenz −2 rot; keine Auffälligkeit, Aktie links ok (Punkt 4b) |
+| `test_buysGroup_soldColumnsAndSumRow` (**18.11.2026**) | Dieselbe Aktie | Käufe mit "verk. gespeich." und "verk. FIFO" (Punkt 3b), ohne "Stück heute"; Summe 800,00; Kurzinfo Stück und Betrag; zu |
+| `test_splits_addTodayColumns` (**18.11.2026**) | Kauf vor einem 2:1-Split | Elf Spalten, "Stück heute" 24; Gruppe "Splits (1)" mit Faktor in der Kurzinfo |
 
 ---
 

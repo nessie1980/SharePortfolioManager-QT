@@ -21,8 +21,11 @@
  * CalculationBreakdown.
  *
  * Umfang nach Nessies Entscheidung vom 27.10.2026: je Aktie die
- * Vergleichstabelle und der Abgleich gegen die Charts; Transaktionen und
- * FIFO-Bestandsabgleich stehen weiter nur im Bericht (offener Punkt).
+ * Vergleichstabelle und der Abgleich gegen die Charts. Seit v1.31.0
+ * (18.11.2026) zusätzlich je Aktie die Transaktionen und der
+ * FIFO-Bestandsabgleich als Gruppen zum Aufklappen
+ * (CalculationOverviewDetail::groups); was davon aufgeklappt ist, legt der
+ * Presenter bei jeder Auswahl neu fest (Nessies Entscheidungen 17.11.2026).
  *
  * @note Die Daten werden in loadAndDisplay() einmal geladen und gehalten.
  * Ein Wechsel der Auswahl rechnet nichts neu. MainWindow ruft reload() nach
@@ -59,7 +62,9 @@ public:
     /// Kopfzeile "Stand … · n Aktien (m im Bestand) · Auffälligkeiten".
     static QString buildSummary(const CalculationReportInput& input);
 
-    /// Detail einer Aktie: Gegenüberstellung (14 Zeilen) und Abgleich.
+    /// Detail einer Aktie: Gegenüberstellung (14 Zeilen), Abgleich und seit
+    /// v1.31.0 die Gruppen Käufe, Verkäufe, Dividenden, Kosten, Splits und
+    /// Bestand / FIFO.
     static CalculationOverviewDetail buildShareDetail(const CalculationReportShare& share);
 
     /// Detail "Gesamt / Footer": beide Footer (10 Zeilen), Abgleich, alle Auffälligkeiten.
@@ -75,6 +80,9 @@ public slots:
 
 private:
     void showDetailFor(const QString& key);
+    /// Kurzinfo und Auf-/Zu-Zustand von Abgleich und Auffälligkeiten
+    /// (ergänzt 18.11.2026, Nessies Punkte 7 und 8a vom 17.11.2026).
+    static void applyGroupStates(CalculationOverviewDetail& detail);
 
     static CalculationOverviewTone toneOf(const CalculationFindings& findings);
     static QString findingsText(const CalculationFindings& findings);

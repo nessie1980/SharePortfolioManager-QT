@@ -7,7 +7,8 @@
 // Fake-View/Fake-Model-Paar wie tst_portfoliochartform: keine Datenbank,
 // kein QWidget. Geprüft wird, was der Presenter in Liste und Detail schreibt
 // und wie er die Auswahl über ein Neuladen hinweg hält. Die Zahlen selbst
-// prüft tst_calculationbreakdown.
+// prüft tst_calculationbreakdown. Seit v1.31.0 (18.11.2026) auch die Gruppen
+// zum Aufklappen: Reihenfolge, Kurzinfo und welche aufgeklappt sind.
 
 #include <QtTest>
 #include <QCoreApplication>
@@ -103,6 +104,58 @@ private:
             t.marketValueComplete += s.chart.marketValueComplete;
         }
         return input;
+    }
+
+    // ── Bausteine für die Gruppen (ergänzt 18.11.2026) ────────────────────
+
+    static QString iso(const QDate& date)
+    {
+        return QDateTime(date, QTime(10, 0)).toString(Qt::ISODate);
+    }
+
+    static BuyObject buy(const QString& guid, const QDate& date, double volume, double price,
+                         double volumeSold = 0.0)
+    {
+        return BuyObject(guid, QStringLiteral("g1"), QStringLiteral("D1"),
+                         QStringLiteral("ord-") + guid, iso(date), volume, volumeSold, price);
+    }
+
+    static SaleObject sale(const QString& guid, const QDate& date, double volume, double price)
+    {
+        return SaleObject(guid, QStringLiteral("g1"), QStringLiteral("D1"),
+                          QStringLiteral("ord-") + guid, iso(date), volume, price, {});
+    }
+
+    /// Stimmige Aktie mit dem passenden Kauf: 12 Stück à 50,00.
+    static CalculationReportShare shareWithBuy()
+    {
+        CalculationReportShare s = share(QStringLiteral("g1"), QStringLiteral("Aktie A"));
+        s.buys = { buy(QStringLiteral("b1"), d(2026, 1, 10), 12.0, 50.0) };
+        return s;
+    }
+
+    /**
+     * Bestand 3 Stück, Tabelle und Chart passen. Zwei Käufe (10 und 5), ein
+     * Verkauf über 12: nach FIFO 10 und 2, gespeichert absichtlich 8 und 4.
+     */
+    static CalculationReportShare fifoShare()
+    {
+        CalculationReportShare s = share(QStringLiteral("g1"), QStringLiteral("Aktie A"), 3.0);
+        s.buys  = { buy(QStringLiteral("b1"), d(2026, 1, 10), 10.0, 50.0, 8.0),
+                    buy(QStringLiteral("b2"), d(2026, 2, 10),  5.0, 60.0, 4.0) };
+        s.sales = { sale(QStringLiteral("s1"), d(2026, 3, 1), 12.0, 70.0) };
+        return s;
+    }
+
+    static const CalculationOverviewGroup& group(const CalculationOverviewDetail& detail,
+                                                 CalculationOverviewGroup::Kind kind)
+    {
+        for (const CalculationOverviewGroup& g : detail.groups) {
+            if (g.kind == kind)
+                return g;
+        }
+        static const CalculationOverviewGroup none;
+        return none;
     }
 
 private slots:
@@ -308,6 +361,148 @@ private slots:
         QCOMPARE(view.entries.size(), 1);
         QCOMPARE(view.detail.title, QStringLiteral("Gesamt / Footer"));
         QVERIFY(view.summary.contains(QStringLiteral("0 Aktien")));
+    }
+
+    // ── Gruppen zum Aufklappen (ergänzt 18.11.2026, v1.31.0) ─────────────
+
+    void test_shareDetail_sixGroupsInOrder()
+    {
+        using K = CalculationOverviewGroup::Kind;
+        const CalculationOverviewDetail detail = PresenterCalculationOverview::buildShareDetail(
+            share(QStringLiteral("g1"), QStringLiteral("Aktie A")));
+
+        QCOMPARE(detail.groups.size(), 6);
+        const QList<K> kinds = { K::Buys, K::Sales, K::Dividends, K::Brokerages, K::Splits, K::Stock };
+        for (int i = 0; i < kinds.size(); ++i)
+            QVERIFY2(detail.groups.at(i).kind == kinds.at(i), qPrintable(QString::number(i)));
+
+        QCOMPARE(detail.groups.at(0).title, QStringLiteral("Käufe (0)"));
+        QCOMPARE(detail.groups.at(2).title, QStringLiteral("Dividenden (0)"));
+        QCOMPARE(detail.groups.at(5).title, QStringLiteral("Bestand / FIFO"));
+
+        // Leere Arten bleiben sichtbar, mit "keine" und ohne Tabelle.
+        for (int i = 0; i < 5; ++i) {
+            QCOMPARE(detail.groups.at(i).summary, QStringLiteral("keine"));
+            QVERIFY(detail.groups.at(i).tables.isEmpty());
+        }
+    }
+
+    void test_totalDetail_noTransactionGroups()
+    {
+        const CalculationOverviewDetail detail = PresenterCalculationOverview::buildTotalDetail(
+            inputFor({ shareWithBuy() }));
+        QVERIFY(detail.groups.isEmpty());
+        QVERIFY(detail.checkExpanded);
+        QCOMPARE(detail.checkSummary, QStringLiteral("alles ok"));
+    }
+
+    void test_defaultExpansion_onlyCheckOpen()
+    {
+        // Nessie, 17.11.2026, Punkt 7: der Abgleich ist offen, alles andere
+        // zu, solange nichts abweicht.
+        const CalculationOverviewDetail detail =
+            PresenterCalculationOverview::buildShareDetail(shareWithBuy());
+
+        QVERIFY(detail.checkExpanded);
+        QCOMPARE(detail.checkSummary, QStringLiteral("alles ok"));
+        QVERIFY(detail.checkTone == CalculationOverviewTone::Ok);
+        QVERIFY(!detail.findingsExpanded);
+        QCOMPARE(detail.findingsSummary, QStringLiteral("keine"));
+        for (const CalculationOverviewGroup& g : detail.groups)
+            QVERIFY2(!g.expanded, qPrintable(g.title));
+        QCOMPARE(group(detail, CalculationOverviewGroup::Kind::Stock).summary,
+                 QStringLiteral("Bestand ok"));
+    }
+
+    void test_findings_hintOnly_expandsFindings()
+    {
+        // Punkt 8a: offen, sobald es einen Eintrag gibt — auch nur ein Hinweis.
+        CalculationReportShare s = shareWithBuy();
+        s.chart.price = 61.5;
+
+        const CalculationOverviewDetail detail = PresenterCalculationOverview::buildShareDetail(s);
+        QVERIFY(detail.findingsExpanded);
+        QCOMPARE(detail.findingsSummary, QStringLiteral("1 Hinweis"));
+        QVERIFY(detail.findingsTone == CalculationOverviewTone::Hint);
+        QCOMPARE(detail.checkSummary, QStringLiteral("1 Hinweis"));
+    }
+
+    void test_checkDeviation_keepsCheckOpen_summaryNamesIt()
+    {
+        CalculationReportShare s = shareWithBuy();
+        s.chart.volume = 10.0; // Bestand weicht ab
+
+        const CalculationOverviewDetail detail = PresenterCalculationOverview::buildShareDetail(s);
+        QVERIFY(detail.checkExpanded);
+        QVERIFY(detail.checkTone == CalculationOverviewTone::Deviation);
+        QVERIFY2(detail.checkSummary.contains(QStringLiteral("Abweichung")),
+                 qPrintable(detail.checkSummary));
+        QVERIFY(detail.findingsExpanded);
+    }
+
+    void test_fifoDeviation_expandsStockGroup_notInFindings()
+    {
+        // Punkt 1b: die Gruppe geht bei einer Abweichung auf. Punkt 4b: die
+        // FIFO-Abweichung wird keine Auffälligkeit, das Symbol links bleibt.
+        const CalculationReportShare s = fifoShare();
+        const CalculationOverviewDetail detail = PresenterCalculationOverview::buildShareDetail(s);
+
+        const CalculationOverviewGroup& stock = group(detail, CalculationOverviewGroup::Kind::Stock);
+        QVERIFY(stock.expanded);
+        QVERIFY(stock.tone == CalculationOverviewTone::Deviation);
+        QCOMPARE(stock.summary, QStringLiteral("2 Käufe abweichend · Bestand ok"));
+
+        QCOMPARE(stock.tables.size(), 2);
+        const CalculationOverviewTable& perBuy = stock.tables.at(0);
+        QCOMPARE(perBuy.rows.size(), 2);
+        QCOMPARE(perBuy.rows.at(0).at(5), CalculationBreakdown::volume(-2.0)); // 8 − 10
+        QVERIFY(perBuy.tones.at(0).at(5) == CalculationOverviewTone::Deviation);
+
+        QVERIFY(detail.findings.isEmpty());
+        QVERIFY(!detail.findingsExpanded);
+        const QList<CalculationOverviewEntry> entries =
+            PresenterCalculationOverview::buildEntries(inputFor({ s }));
+        QVERIFY(entries.at(1).tone == CalculationOverviewTone::Ok);
+    }
+
+    void test_buysGroup_soldColumnsAndSumRow()
+    {
+        // Punkt 3b: "verk. gespeich." und "verk. FIFO" auch in den Käufen.
+        const CalculationOverviewDetail detail =
+            PresenterCalculationOverview::buildShareDetail(fifoShare());
+        const CalculationOverviewGroup& buys = group(detail, CalculationOverviewGroup::Kind::Buys);
+
+        QCOMPARE(buys.title, QStringLiteral("Käufe (2)"));
+        QCOMPARE(buys.tables.size(), 1);
+        const CalculationOverviewTable& t = buys.tables.at(0);
+        QVERIFY(t.headers.contains(QStringLiteral("verk. gespeich.")));
+        QVERIFY(t.headers.contains(QStringLiteral("verk. FIFO")));
+        QVERIFY(!t.headers.contains(QStringLiteral("Stück heute")));
+        QCOMPARE(t.rows.size(), 2);
+        QCOMPARE(t.sumRow.value(0), QStringLiteral("Summe"));
+        QCOMPARE(t.sumRow.value(6), CalculationBreakdown::euro(800.0)); // 500 + 300, ohne Kosten
+
+        QCOMPARE(buys.summary, CalculationBreakdown::volume(15.0) + QStringLiteral(" Stk. · ")
+                                   + CalculationBreakdown::euro(800.0));
+        QVERIFY(!buys.expanded);
+    }
+
+    void test_splits_addTodayColumns()
+    {
+        CalculationReportShare s = shareWithBuy();
+        s.splits = { ShareSplitObject(QStringLiteral("x1"), QStringLiteral("g1"),
+                                      d(2026, 3, 1), 2.0, 1.0) };
+
+        const CalculationOverviewDetail detail = PresenterCalculationOverview::buildShareDetail(s);
+        const CalculationOverviewTable& t =
+            group(detail, CalculationOverviewGroup::Kind::Buys).tables.at(0);
+        QCOMPARE(t.headers.size(), 11);
+        QCOMPARE(t.headers.at(9), QStringLiteral("Stück heute"));
+        QCOMPARE(t.rows.at(0).at(9), CalculationBreakdown::volume(24.0) + QStringLiteral(" Stk."));
+
+        const CalculationOverviewGroup& splits = group(detail, CalculationOverviewGroup::Kind::Splits);
+        QCOMPARE(splits.title, QStringLiteral("Splits (1)"));
+        QVERIFY2(splits.summary.contains(QStringLiteral("Faktor")), qPrintable(splits.summary));
     }
 };
 

@@ -8,6 +8,41 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [1.31.1] - 2026-11-18
+
+### Changed
+
+- Tab "Depot- vs. Marktwert": Teiler und Gruppen zum Aufklappen liegen jetzt
+  mit in der Groupbox der Gegenüberstellung, statt frei darunter zu stehen.
+  Ein Rahmen umschließt damit den ganzen Block; Verhalten und Inhalt sind
+  unverändert.
+- Die Tabellen in den Gruppen füllen die volle Breite: Textspalten wie
+  Datum und Depot bleiben so breit wie ihr Inhalt, die Zahlenspalten teilen
+  sich den übrigen Platz gleichmäßig. In "Bestand (heutige Skala)" nimmt
+  die Textspalte den Rest auf.
+
+## [1.31.0] - 2026-11-18
+
+### Added
+
+- Tab "Depot- vs. Marktwert": Unter dem Teiler steht ein eigener
+  Bildlaufbereich mit Gruppen zum Aufklappen. Neu sind je Aktie die Gruppen
+  Käufe, Verkäufe, Dividenden, Kosten und Splits mit den Spalten und
+  Summenzeilen des Berechnungsberichts sowie "Bestand / FIFO" mit
+  gespeicherter und nach FIFO nachgerechneter Verkaufsmenge je Kauf und den
+  fünf Bestandszeilen. Jede Kopfzeile zeigt auch zugeklappt eine Kurzinfo,
+  z. B. Anzahl und Summe oder "2 Käufe abweichend".
+
+### Changed
+
+- Abgleich und Auffälligkeiten des Tabs sind ebenfalls Gruppen. Bei jeder
+  Auswahl gilt: Abgleich offen, Auffälligkeiten offen, sobald es einen
+  Eintrag gibt, jede Gruppe mit Abweichung offen, alle übrigen zu. Der
+  Zustand wird nicht gespeichert.
+- Eine Abweichung zwischen gespeicherter und nach FIFO nachgerechneter
+  Verkaufsmenge zeigt sich nur in "Bestand / FIFO"; sie zählt nicht als
+  Auffälligkeit, Bericht und Symbole der Aktienliste bleiben unverändert.
+
 ## [1.30.1] - 2026-11-17
 
 ### Changed

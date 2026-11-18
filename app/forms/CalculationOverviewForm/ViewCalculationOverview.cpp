@@ -4,6 +4,7 @@
 
 #include "../../IconProvider.h"
 #include "../../config/AppSettings.h"
+#include "../../widgets/CollapsibleSection.h"
 #include "../../widgets/GridStyle.h"
 
 #include <QFont>
@@ -13,12 +14,15 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QTableWidget>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
+
+#include <utility>
 
 namespace {
 
@@ -136,25 +140,41 @@ void ViewCalculationOverview::setupUi()
     m_comparisonTable->horizontalHeaderItem(CUsedIn)->setToolTip(
         tr("Wo der Wert in den Tabs \"Kompletter Depotwert\" und \"Kompletter Marktwert\" "
            "steht. \"→ Footer\" meint die Footer-Zeile in derselben Spalte."));
-    comparisonLayout->addWidget(m_comparisonTable);
 
-    // Gegenüberstellung oben, Abgleich und Auffälligkeiten unten — über einen
-    // Teiler, damit sich der Platz nach Bedarf verschieben lässt.
+    // Gegenüberstellung oben, darunter die Gruppen zum Aufklappen — über
+    // einen Teiler, damit sich der Platz nach Bedarf verschieben lässt.
+    // Seit v1.31.1 liegen Teiler und Gruppen mit in der Groupbox der
+    // Gegenüberstellung (Variante A, Nessies Entscheidung 18.11.2026): ein
+    // Rahmen um alles, keine zweite Überschrift, kein Platz für eine zweite
+    // Box.
     auto* verticalSplitter = new QSplitter(Qt::Vertical);
+    verticalSplitter->setObjectName(QStringLiteral("calculationDetailSplitter"));
     verticalSplitter->setChildrenCollapsible(false);
-    verticalSplitter->addWidget(m_comparisonBox);
+    verticalSplitter->addWidget(m_comparisonTable);
+
+    // Unten ein eigener Bildlaufbereich (Mischform, Nessies Entscheidung
+    // 17.11.2026): Abgleich, Auffälligkeiten und die Gruppen je Aktie
+    // untereinander. Die Tabellen darin sind so hoch wie ihr Inhalt und
+    // füllen die Breite (seit v1.31.1); gescrollt wird nur hier, nicht in
+    // den einzelnen Tabellen.
+    auto* lowerScroll = new QScrollArea();
+    lowerScroll->setObjectName(QStringLiteral("calculationGroupsScrollArea"));
+    lowerScroll->setWidgetResizable(true);
+    lowerScroll->setFrameShape(QFrame::NoFrame);
     auto* lower       = new QWidget();
     auto* lowerLayout = new QVBoxLayout(lower);
-    lowerLayout->setContentsMargins(0, 0, 0, 0);
+    lowerLayout->setContentsMargins(0, 0, 4, 0);
     lowerLayout->setSpacing(4);
-    verticalSplitter->addWidget(lower);
+    lowerScroll->setWidget(lower);
+    verticalSplitter->addWidget(lowerScroll);
     verticalSplitter->setStretchFactor(0, 3);
-    verticalSplitter->setStretchFactor(1, 1);
-    detailLayout->addWidget(verticalSplitter, 1);
+    verticalSplitter->setStretchFactor(1, 2);
+    comparisonLayout->addWidget(verticalSplitter);
+    detailLayout->addWidget(m_comparisonBox, 1);
 
     // Abgleich gegen die Charts
-    m_checkBox = new QGroupBox();
-    auto* checkLayout = new QVBoxLayout(m_checkBox);
+    m_checkSection = new CollapsibleSection();
+    m_checkSection->setObjectName(QStringLiteral("calculationCheckSection"));
     m_checkTable = makeTable(KCount,
                              { tr("Wert"), tr("Tabelle"), tr("Chart"), tr("Differenz"), tr("Ergebnis") },
                              QStringLiteral("calculationCheckTable"));
@@ -162,21 +182,32 @@ void ViewCalculationOverview::setupUi()
     kh->setSectionResizeMode(QHeaderView::ResizeToContents);
     kh->setSectionResizeMode(KLabel, QHeaderView::Stretch);
     m_checkTable->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    checkLayout->addWidget(m_checkTable);
+    m_checkSection->bodyLayout()->addWidget(m_checkTable);
     m_checkNotesLabel = new QLabel();
     m_checkNotesLabel->setObjectName(QStringLiteral("calculationCheckNotes"));
     m_checkNotesLabel->setWordWrap(true);
-    checkLayout->addWidget(m_checkNotesLabel);
-    lowerLayout->addWidget(m_checkBox, 0);
+    m_checkSection->bodyLayout()->addWidget(m_checkNotesLabel);
+    lowerLayout->addWidget(m_checkSection);
 
     // Auffälligkeiten
-    auto* findingsBox    = new QGroupBox(tr("Auffälligkeiten"));
-    auto* findingsLayout = new QVBoxLayout(findingsBox);
+    m_findingsSection = new CollapsibleSection(tr("Auffälligkeiten"));
+    m_findingsSection->setObjectName(QStringLiteral("calculationFindingsSection"));
     m_findingsList = new QListWidget();
     m_findingsList->setObjectName(QStringLiteral("calculationFindingsList"));
     m_findingsList->setWordWrap(true);
-    findingsLayout->addWidget(m_findingsList);
-    lowerLayout->addWidget(findingsBox, 1);
+    m_findingsList->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_findingsSection->bodyLayout()->addWidget(m_findingsList);
+    lowerLayout->addWidget(m_findingsSection);
+
+    // Gruppen je Aktie (Transaktionen, Bestand / FIFO) — bei jedem
+    // showDetail() neu aufgebaut.
+    auto* groups = new QWidget();
+    groups->setObjectName(QStringLiteral("calculationGroups"));
+    m_groupsLayout = new QVBoxLayout(groups);
+    m_groupsLayout->setContentsMargins(0, 0, 0, 0);
+    m_groupsLayout->setSpacing(4);
+    lowerLayout->addWidget(groups);
+    lowerLayout->addStretch(1);
 
     splitter->addWidget(detail);
     splitter->setStretchFactor(0, 0);
@@ -297,7 +328,8 @@ void ViewCalculationOverview::showDetail(const CalculationOverviewDetail& detail
     m_comparisonTable->resizeRowsToContents();
 
     // ── Abgleich ──────────────────────────────────────────────────────────
-    m_checkBox->setTitle(detail.checkTitle);
+    m_checkSection->setTitle(detail.checkTitle);
+    m_checkSection->setSummary(detail.checkSummary, toneColor(detail.checkTone));
     m_checkTable->setRowCount(0);
     for (const CalculationOverviewCheckRow& r : detail.checks) {
         const int row = m_checkTable->rowCount();
@@ -316,8 +348,10 @@ void ViewCalculationOverview::showDetail(const CalculationOverviewDetail& detail
     fitHeightToRows(m_checkTable);
     m_checkNotesLabel->setText(detail.checkNotes.join(QLatin1Char('\n')));
     m_checkNotesLabel->setVisible(!detail.checkNotes.isEmpty());
+    m_checkSection->setExpanded(detail.checkExpanded);
 
     // ── Auffälligkeiten ───────────────────────────────────────────────────
+    m_findingsSection->setSummary(detail.findingsSummary, toneColor(detail.findingsTone));
     m_findingsList->clear();
     if (detail.findings.isEmpty()) {
         auto* item = new QListWidgetItem(toneIcon(CalculationOverviewTone::Ok),
@@ -329,6 +363,145 @@ void ViewCalculationOverview::showDetail(const CalculationOverviewDetail& detail
         item->setForeground(toneColor(f.tone));
         m_findingsList->addItem(item);
     }
+    fitHeightToRows(m_findingsList);
+    m_findingsSection->setExpanded(detail.findingsExpanded);
+
+    // ── Gruppen je Aktie ──────────────────────────────────────────────────
+    // Neu aufgebaut, damit der vom Presenter vorgegebene Zustand gilt — ein
+    // Auf- oder Zuklappen von Hand gilt nur bis zur nächsten Auswahl
+    // (Nessie, 17.11.2026, Punkt 1a b).
+    for (CollapsibleSection* section : std::as_const(m_groupSections)) {
+        m_groupsLayout->removeWidget(section);
+        section->hide();
+        section->deleteLater();
+    }
+    m_groupSections.clear();
+    for (const CalculationOverviewGroup& g : detail.groups) {
+        CollapsibleSection* section = makeGroupSection(g);
+        m_groupsLayout->addWidget(section);
+        m_groupSections.append(section);
+    }
+}
+
+// ── Gruppen ───────────────────────────────────────────────────────────────────
+
+CollapsibleSection* ViewCalculationOverview::makeGroupSection(const CalculationOverviewGroup& group)
+{
+    auto* section = new CollapsibleSection(group.title);
+    section->setObjectName(QStringLiteral("calculationGroupSection"));
+    section->setSummary(group.summary, toneColor(group.tone));
+
+    if (group.tables.isEmpty()) {
+        auto* none = new QLabel(tr("Keine Einträge."));
+        section->bodyLayout()->addWidget(none);
+    }
+    for (const CalculationOverviewTable& t : group.tables) {
+        section->bodyLayout()->addWidget(makeGroupTable(t));
+        if (!t.note.isEmpty()) {
+            auto* note = new QLabel(t.note);
+            note->setWordWrap(true);
+            section->bodyLayout()->addWidget(note);
+        }
+    }
+    section->setExpanded(group.expanded);
+    return section;
+}
+
+QTableWidget* ViewCalculationOverview::makeGroupTable(const CalculationOverviewTable& t)
+{
+    auto* table = makeTable(int(t.headers.size()), t.headers,
+                            QStringLiteral("calculationGroupTable"));
+    table->setSelectionMode(QAbstractItemView::NoSelection);
+    table->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    table->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    table->setWordWrap(false);
+
+    const auto alignmentOf = [&t](int column) {
+        return t.rightAligned.value(column, false) ? kRight : Qt::AlignLeft | Qt::AlignVCenter;
+    };
+
+    for (int r = 0; r < t.rows.size(); ++r) {
+        const QStringList& cells = t.rows.at(r);
+        const QList<CalculationOverviewTone> tones = t.tones.value(r);
+        table->insertRow(r);
+        for (int c = 0; c < t.headers.size(); ++c) {
+            auto* item = makeItem(cells.value(c), alignmentOf(c));
+            const CalculationOverviewTone tone = tones.value(c, CalculationOverviewTone::Normal);
+            if (tone != CalculationOverviewTone::Normal) {
+                item->setForeground(toneColor(tone));
+                if (tone == CalculationOverviewTone::Deviation) {
+                    QFont font = item->font();
+                    font.setBold(true);
+                    item->setFont(font);
+                }
+            }
+            table->setItem(r, c, item);
+        }
+    }
+
+    // Summenzeile fett, wie die Footer der Übersichtstabellen.
+    if (!t.sumRow.isEmpty()) {
+        const int r = table->rowCount();
+        table->insertRow(r);
+        for (int c = 0; c < t.headers.size(); ++c) {
+            auto* item = makeItem(t.sumRow.value(c), alignmentOf(c));
+            QFont font = item->font();
+            font.setBold(true);
+            item->setFont(font);
+            table->setItem(r, c, item);
+        }
+    }
+
+    // Spaltenverteilung (v1.31.1, Variante 2, Nessies Entscheidung
+    // 18.11.2026): Die Tabelle füllt die volle Breite wie die
+    // Abgleich-Tabelle. Textspalten (linksbündig) bleiben so breit wie ihr
+    // Inhalt, die Zahlenspalten (rechtsbündig) teilen sich den Rest zu
+    // gleichen Teilen. Ausnahme: Hat die Tabelle nur eine Zahlenspalte —
+    // "Bestand (heutige Skala)" —, nimmt wie beim Abgleich die erste
+    // Textspalte den Rest auf.
+    QHeaderView* header = table->horizontalHeader();
+    header->setStretchLastSection(false);
+    table->resizeColumnsToContents();
+
+    const int columns = int(t.headers.size());
+    int numericCount  = 0;
+    for (int c = 0; c < columns; ++c) {
+        if (t.rightAligned.value(c, false))
+            ++numericCount;
+    }
+    const bool stretchText = (numericCount == 1 && columns > 1);
+
+    // Mindestbreite: Bei gleich breiten Zahlenspalten braucht jede so viel
+    // Platz wie die breiteste von ihnen, sonst würde diese abgeschnitten.
+    // Ist der Bereich schmaler, scrollt er als Ganzes waagerecht.
+    int textWidth = 0, widestNumeric = 0;
+    for (int c = 0; c < columns; ++c) {
+        if (t.rightAligned.value(c, false))
+            widestNumeric = qMax(widestNumeric, table->columnWidth(c));
+        else
+            textWidth += table->columnWidth(c);
+    }
+    const int minimum = stretchText ? header->length()
+                                    : textWidth + numericCount * widestNumeric;
+    table->setMinimumWidth(minimum + 2 * table->frameWidth());
+
+    bool textStretched = false;
+    for (int c = 0; c < columns; ++c) {
+        const bool numeric = t.rightAligned.value(c, false);
+        QHeaderView::ResizeMode mode = QHeaderView::ResizeToContents;
+        if (stretchText) {
+            if (!numeric && !textStretched) {
+                mode          = QHeaderView::Stretch;
+                textStretched = true;
+            }
+        } else if (numeric) {
+            mode = QHeaderView::Stretch;
+        }
+        header->setSectionResizeMode(c, mode);
+    }
+
+    fitHeightToRows(table);
+    return table;
 }
 
 // ── Hilfsfunktionen ───────────────────────────────────────────────────────────
@@ -359,11 +532,21 @@ QIcon ViewCalculationOverview::toneIcon(CalculationOverviewTone tone)
 
 void ViewCalculationOverview::fitHeightToRows(QTableWidget* table)
 {
-    // Höchstens fünf Zeilen: genau so hoch wie der Inhalt, damit die
-    // Gegenüberstellung darüber den restlichen Platz bekommt.
+    // Genau so hoch wie der Inhalt, damit nur der Bildlaufbereich darum
+    // scrollt und nicht jede Tabelle für sich.
     table->resizeRowsToContents();
     int height = table->horizontalHeader()->sizeHint().height() + 2 * table->frameWidth();
     for (int r = 0; r < table->rowCount(); ++r)
         height += table->rowHeight(r);
     table->setFixedHeight(height);
+}
+
+void ViewCalculationOverview::fitHeightToRows(QListWidget* list)
+{
+    // Wie bei den Tabellen: genau so hoch wie die Einträge (ergänzt
+    // 18.11.2026, seit die Liste in einer Gruppe im Bildlaufbereich steht).
+    int height = 2 * list->frameWidth();
+    for (int r = 0; r < list->count(); ++r)
+        height += list->sizeHintForRow(r);
+    list->setFixedHeight(height);
 }

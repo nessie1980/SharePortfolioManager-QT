@@ -79,6 +79,44 @@ struct CalculationOverviewFinding
 };
 
 /**
+ * @brief Eine Tabelle in einer Gruppe, fertig formatiert (ergänzt 18.11.2026).
+ *
+ * Für die Transaktionen und den Bestand je Aktie. Die View legt daraus eine
+ * Qt-Tabelle an, so hoch wie ihr Inhalt; die Summenzeile steht fett darunter.
+ */
+struct CalculationOverviewTable
+{
+    QStringList        headers;
+    QList<bool>        rightAligned;  ///< je Spalte; fehlt ein Eintrag, linksbündig
+    QList<QStringList> rows;
+    QStringList        sumRow;        ///< leer = keine Summenzeile
+    /// Bewertung je Zelle, gleiche Form wie @c rows; fehlt ein Eintrag, Normal.
+    QList<QList<CalculationOverviewTone>> tones;
+    QString            note;          ///< Fußnote unter der Tabelle, leer = keine
+};
+
+/**
+ * @brief Eine Gruppe zum Aufklappen unter dem Abgleich (ergänzt 18.11.2026).
+ *
+ * Nessies Entscheidungen vom 17.11.2026: je Art eine Gruppe (Käufe,
+ * Verkäufe, Dividenden, Kosten, Splits) und "Bestand / FIFO"; die Kopfzeile
+ * zeigt Anzahl und Kurzinfo. Ob sie aufgeklappt ist, entscheidet der
+ * Presenter — die View übernimmt es bei jeder neuen Auswahl.
+ */
+struct CalculationOverviewGroup
+{
+    /// Art der Gruppe, in der Reihenfolge der Anzeige.
+    enum class Kind { Buys, Sales, Dividends, Brokerages, Splits, Stock };
+
+    Kind    kind = Kind::Buys;
+    QString title;    ///< z. B. "Käufe (3)"
+    QString summary;  ///< Kurzinfo rechts in der Kopfzeile, z. B. "290,0000 Stk. · 8.717,30 €"
+    CalculationOverviewTone tone = CalculationOverviewTone::Normal;  ///< Farbe der Kurzinfo
+    bool    expanded = false;
+    QList<CalculationOverviewTable> tables;  ///< leer = keine Einträge
+};
+
+/**
  * @brief Alles, was die rechte Seite für eine Auswahl zeigt.
  */
 struct CalculationOverviewDetail
@@ -94,4 +132,14 @@ struct CalculationOverviewDetail
     QStringList checkNotes;   ///< Zeilen unter dem Abgleich (Kurseffekt, fehlende Tageswerte)
 
     QList<CalculationOverviewFinding> findings;  ///< leer = keine Auffälligkeiten
+
+    // ── Gruppen zum Aufklappen (ergänzt 18.11.2026, v1.31.0) ─────────────
+    QString checkSummary;     ///< Kurzinfo des Abgleichs, z. B. "alles ok"
+    CalculationOverviewTone checkTone = CalculationOverviewTone::Normal;
+    bool    checkExpanded = true;      ///< immer offen (Nessie, 17.11.2026)
+    QString findingsSummary;  ///< z. B. "keine" oder "1 Abweichung, 2 Hinweise"
+    CalculationOverviewTone findingsTone = CalculationOverviewTone::Normal;
+    bool    findingsExpanded = false;  ///< offen, sobald es einen Eintrag gibt
+    /// Transaktionen und Bestand je Aktie; leer bei "Gesamt / Footer".
+    QList<CalculationOverviewGroup> groups;
 };
