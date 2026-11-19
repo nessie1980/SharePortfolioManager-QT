@@ -2110,7 +2110,8 @@ Test. Keine Datenbank nötig.
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
 | `test_populateOverview_countWidgetTabText` | 2 Jahre (2025, 2024) | `count()` = 3, `widget(0..2)` nicht null, `widget(3)` null, `tabText(0)` = "Übersicht", `tabText(1/2)` = "2025"/"2024" |
-| `test_populateOverview_emptyYears_leavesNoTabs` | Leere Jahres-Liste | `count()` = 0 |
+| `test_populateOverview_emptyYears_leavesNoTabs` | Leere Jahres-Liste ohne `emptyText` | `count()` = 0 |
+| `test_populateOverview_emptyYearsWithText_showsHintRow` (**19.11.2026**) | Leere Jahres-Liste mit `emptyText` | `count()` = 1, Titel wie übergeben, Gesamt-Zeile befüllt, eine Zeile mit dem Text, `Qt::NoItemFlags`, Span über alle 3 Spalten, Klick bleibt auf Index 0 |
 | `test_setCurrentIndex_switchesStackAndBothBars` | `setCurrentIndex(2)` dann `setCurrentIndex(0)` | `currentIndex()`, `yearsBar->currentIndex()` und `pinnedBar->currentIndex()` (immer 0) synchron |
 | `test_setCurrentIndex_outOfRange_isIgnored` | `setCurrentIndex(99)` bzw. `(-1)` | Aktueller Index bleibt unverändert |
 | `test_pinnedTabClick_afterYearTabClick_returnsToOverview` | Regressionstest Bugfix 1: Klick auf Jahres-Tab, dann Klick auf Übersicht-Tab | `currentIndex()` wechselt zurück auf 0 — vor dem Fix (`currentChanged` statt `tabBarClicked`) blieb der Übersicht-Tab unanwählbar, da `m_pinnedBar` nur einen, nie wechselnden Index hat |
@@ -2459,7 +2460,7 @@ bleibt unveraendert, da es jetzt `OverviewTabWidget` intern uebernimmt.
 
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
-| `test_viewSaleEdit_populateOverview_emptyList_noTabs` | Leere Liste → kein Tab | `tabs->count()` = 0 |
+| `test_viewSaleEdit_populateOverview_emptyList_overviewWithHint` (**19.11.2026**, vorher `_emptyList_noTabs`) | Leere Liste → Übersicht mit Hinweis | `tabs->count()` = 1, Titel "Übersicht (…)", eine Zeile "Keine Verkäufe vorhanden." |
 | `test_viewSaleEdit_populateOverview_singleYear_twoTabs` | 1 Verkauf in 2024 → 2 Tabs | Tab 0 = "Übersicht", Tab 1 enthält "2024" |
 | `test_viewSaleEdit_populateOverview_twoYears_threeTabs` | Verkäufe in 2023 + 2024 → 3 Tabs | `count()` = 3 |
 | `test_viewSaleEdit_populateOverview_jahresTabsDescendingByYear` | Neuestes Jahr zuerst | Tab 1 = 2024, Tab 2 = 2022 |
@@ -2751,7 +2752,7 @@ ViewDividendEdit:
 | `test_viewDividendEdit_clearForm_resetsDerivedFields` | `clearForm()` nach gesetzten Werten | alle read-only-Felder zeigen 0,00 |
 | `test_viewDividendEdit_clearForm_resetsParseStatusBar` | `clearForm()` nach `setParseProgress()` | Kein Absturz |
 | `test_viewDividendEdit_setParseProgress_showsValues` | `setParseProgress(50, "...")` | `QProgressBar::value()` = 50 |
-| `test_viewDividendEdit_populateOverview_emptyList_noTabs` | Leere Liste → kein Tab | `tabs->count()` = 0 |
+| `test_viewDividendEdit_populateOverview_emptyList_overviewWithHint` (**19.11.2026**, vorher `_emptyList_noTabs`) | Leere Liste → Übersicht mit Hinweis | `tabs->count()` = 1, Titel "Übersicht (…)", eine Zeile "Keine Dividenden vorhanden." |
 | `test_viewDividendEdit_populateOverview_singleYear_twoTabs` | 1 Dividende in 2024 → 2 Tabs | Tab 0 = "Übersicht", Tab 1 enthält "2024" |
 | `test_viewDividendEdit_populateOverview_twoYears_threeTabs` | Dividenden in 2023 + 2024 → 3 Tabs | `count()` = 3 |
 | `test_viewDividendEdit_populateOverview_jahresTabsDescendingByYear` | Neuestes Jahr zuerst | Tab 1 = 2024, Tab 2 = 2022 |
@@ -2918,7 +2919,8 @@ Breite auf 36px vereinheitlicht") fix `36`px, ohne Spaltenkopf-Text.
 
 | Test | Beschreibung | Prüft |
 |------|--------------|-------|
-| `test_viewBrokerageEdit_populateOverview_emptyList_noTabs` | Leere Liste → kein Tab | `tabs->count()` = 0 |
+| `test_viewBrokerageEdit_populateOverview_emptyList_overviewWithHint` (**19.11.2026**, vorher `_emptyList_noTabs`) | Leere Liste → Übersicht mit Hinweis | `tabs->count()` = 1, Titel "Übersicht (…)", eine Zeile "Keine Kosten vorhanden." |
+| `test_viewBrokerageEdit_populateOverview_amountsWithEuroAndFooterDash` (**19.11.2026**) | Ein Eintrag 2024 | Ges. Gebühren, Rabatt, Netto-Kosten enden auf " €" (vorher ohne); Fußzeile Netto mit " €", Dokument-Spalte "-" (vorher leer) |
 | `test_viewBrokerageEdit_populateOverview_singleYear_twoTabs` | 1 Eintrag in 2024 → 2 Tabs | Tab 0 = "Übersicht", Tab 1 enthält "2024" |
 | `test_viewBrokerageEdit_populateOverview_twoYears_threeTabs` | Einträge in 2023 + 2024 → 3 Tabs | `count()` = 3 |
 | `test_viewBrokerageEdit_populateOverview_jahresTabsDescendingByYear` | Neuestes Jahr zuerst | Tab 1 = 2024, Tab 2 = 2022 |

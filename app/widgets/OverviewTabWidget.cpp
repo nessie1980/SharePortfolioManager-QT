@@ -341,7 +341,8 @@ void OverviewTabWidget::populateOverview(
     const std::function<QString(int year)>& jahresTitleForYear,
     const std::function<void(int year, QTableWidget* data)>& populateJahresData,
     const std::function<void(int year, QTableWidget* footer)>& populateJahresFooter,
-    int jahresDocColumn)
+    int jahresDocColumn,
+    const QString& emptyText)
 {
     m_suppressTabSignal = true;
 
@@ -357,7 +358,36 @@ void OverviewTabWidget::populateOverview(
     }
     m_tabYears.clear();
 
+    if (years.isEmpty() && emptyText.isEmpty()) {
+        m_suppressTabSignal = false;
+        return;
+    }
+
+    // Leere Liste mit Hinweis (ergänzt 19.11.2026, v1.31.2, Nessies
+    // Entscheidung): nur der Übersicht-Tab, eine einzige graue Zeile über
+    // alle Spalten, darunter die Gesamt-Zeile des Aufrufers. Die Zeile ist
+    // weder auswähl- noch anklickbar und trägt kein Jahr im Qt::UserRole —
+    // ein Klick springt also nirgends hin.
     if (years.isEmpty()) {
+        const int columns = int(uebersichtHeaders.size());
+        auto* container = buildFrozenTable(
+            columns, uebersichtHeaders, uebersichtColWidths,
+            [&emptyText, columns](QTableWidget* dataTable) {
+                dataTable->setRowCount(1);
+                auto* item = new QTableWidgetItem(emptyText);
+                item->setTextAlignment(Qt::AlignCenter);
+                item->setFlags(Qt::NoItemFlags);
+                dataTable->setItem(0, 0, item);
+                if (columns > 1)
+                    dataTable->setSpan(0, 0, 1, columns);
+            },
+            populateUebersichtFooter);
+
+        m_stack->addWidget(container);
+        m_pinnedBar->addTab(uebersichtTitle);
+        m_tabYears.append(-1); // kein Jahr für den Übersicht-Tab
+
+        setCurrentIndex(0);
         m_suppressTabSignal = false;
         return;
     }

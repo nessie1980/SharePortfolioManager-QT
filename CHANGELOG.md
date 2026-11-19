@@ -8,8 +8,20 @@ Versionierung nach [SemVer](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [1.31.2] - 2026-11-19
+
 ### Changed
 
+- Umbau: Die Übersichten der Verkäufe, Dividenden und Kosten (Übersicht nach
+  Jahren und Jahres-Tabs) standen doppelt im Code, je einmal im
+  Editier-Dialog und nachgebaut im Aktiendetails-Dialog. Beide nutzen jetzt
+  dieselbe Klasse `OverviewTabFiller`. Die Berechnungen bleiben unverändert.
+- Dabei angeglichen: Ohne Einträge zeigen beide Dialoge jetzt die Übersicht
+  mit "0,00 €" und dem Hinweis "Keine Verkäufe vorhanden." (bzw. Dividenden,
+  Kosten) statt eines leeren Bereichs. In den Kosten-Jahres-Tabs des
+  Editier-Dialogs stehen die Beträge mit " €" und in der Fußzeile "-" in der
+  Dokument-Spalte; im Aktiendetails-Dialog ist die Spalte "Jahr" der
+  Kosten-Übersicht so breit wie in den übrigen Übersichten.
 - Build: `widgets/CollapsibleSection.h` in `app/CMakeLists.txt` aufgeführt
   wie die übrigen Header unter `widgets/`, damit er im Projektbaum der IDE
   erscheint. Am Programm ändert sich nichts.

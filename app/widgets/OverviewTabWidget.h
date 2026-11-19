@@ -123,7 +123,8 @@ public:
     /**
      * @brief Baut Übersicht-Tab (Index 0) und Jahres-Tabs (Index 1..n, in der
      * von @p years vorgegebenen Reihenfolge) komplett neu auf. Vorherige Tabs
-     * werden entfernt. Eine leere @p years-Liste räumt lediglich auf (keine Tabs).
+     * werden entfernt. Eine leere @p years-Liste räumt lediglich auf (keine Tabs),
+     * außer @p emptyText ist gesetzt (siehe dort).
      *
      * @param years                     Jahre in der gewünschten Tab-Reihenfolge
      *                                  (Konvention im Projekt: absteigend).
@@ -155,6 +156,15 @@ public:
      *                                  der Dokumentpfad muss dazu im
      *                                  Qt::UserRole des jeweiligen
      *                                  Zell-Items stehen.
+     * @param emptyText                 Hinweis für eine leere @p years-Liste
+     *                                  (ergänzt 19.11.2026, v1.31.2). Leer
+     *                                  (Standard): keine Tabs wie bisher.
+     *                                  Gesetzt: nur der Übersicht-Tab mit
+     *                                  @p uebersichtTitle, einer einzigen
+     *                                  grauen, nicht anklickbaren Zeile mit
+     *                                  diesem Text über alle Spalten und der
+     *                                  Gesamt-Zeile aus
+     *                                  @p populateUebersichtFooter.
      */
     void populateOverview(
         const QList<int>& years,
@@ -168,7 +178,8 @@ public:
         const std::function<QString(int year)>& jahresTitleForYear,
         const std::function<void(int year, QTableWidget* data)>& populateJahresData,
         const std::function<void(int year, QTableWidget* footer)>& populateJahresFooter,
-        int jahresDocColumn = -1);
+        int jahresDocColumn = -1,
+        const QString& emptyText = QString());
 
     /** Entfernt alle Tabs (z.B. für eine leere Datenliste). */
     void clear();

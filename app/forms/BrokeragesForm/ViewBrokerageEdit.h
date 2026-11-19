@@ -119,8 +119,8 @@ private:
      */
     static double  parseDouble(const QString& text, bool* ok = nullptr);
 
-    // Doc icon helper (same logic as BuysForm / SalesForm)
-    static QWidget* makeDocIconWidget(const QString& path);
+    // Dokument-Icon seit v1.31.2 über OverviewTabFiller::documentIconWidget()
+    // (Refactor 19.11.2026).
 
     // ── Kostendaten GroupBox ──────────────────────────────────────────────
     QGroupBox*  m_kostendatenGroup = nullptr; ///< Title changes per edit mode

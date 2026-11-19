@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "ViewBrokerageEdit.h"
+#include "../../widgets/OverviewTabFiller.h"
 #include "PresenterBrokerageEdit.h"
 #include "ModelBrokerageEdit.h"
 #include "../../IconProvider.h"
@@ -439,158 +440,11 @@ void ViewBrokerageEdit::clearPdfPreview()
 
 void ViewBrokerageEdit::populateOverview(const QList<BrokerageObject>& brokerages)
 {
-    if (brokerages.isEmpty()) {
-        m_overviewTabs->clear();
-        return;
-    }
-
-    // ── Collect years (descending) ────────────────────────────────────────
-    QList<int> years;
-    for (const auto& b : brokerages) {
-        if (!years.contains(b.year()))
-            years.append(b.year());
-    }
-    std::sort(years.begin(), years.end(), std::greater<int>());
-
-    double totalNetto = 0.0;
-    for (const auto& b : brokerages)
-        totalNetto += b.brokerageReduction();
-
-    const QString uebersichtTitle = tr("Übersicht (%1 €)").arg(ValueFormatter::formatMoney(totalNetto));
-
-    auto populateUebersichtData = [this, brokerages, years](QTableWidget* dataTable) {
-        dataTable->setRowCount(years.size());
-        for (int i = 0; i < years.size(); ++i) {
-            const int yr = years.at(i);
-            double netto = 0.0;
-            for (const auto& b : brokerages)
-                if (b.year() == yr) netto += b.brokerageReduction();
-
-            auto* iYear = new QTableWidgetItem(QString::number(yr));
-            iYear->setData(Qt::UserRole, yr);
-            iYear->setTextAlignment(Qt::AlignCenter);
-            auto* iNetto = new QTableWidgetItem(ValueFormatter::formatMoney(netto) + QStringLiteral(" €"));
-            iNetto->setTextAlignment(Qt::AlignCenter);
-            dataTable->setItem(i, 0, iYear);
-            dataTable->setItem(i, 1, iNetto);
-        }
-    };
-
-    auto populateUebersichtFooter = [this, totalNetto](QTableWidget* footer) {
-        auto* iLabel = new QTableWidgetItem(tr("Gesamt:"));
-        auto* iValue = new QTableWidgetItem(ValueFormatter::formatMoney(totalNetto) + QStringLiteral(" €"));
-        iLabel->setTextAlignment(Qt::AlignCenter);
-        iValue->setTextAlignment(Qt::AlignCenter);
-        footer->setItem(0, 0, iLabel);
-        footer->setItem(0, 1, iValue);
-    };
-
-    const QStringList jahresHeaders = {
-        tr("Datum"), tr("Typ"), tr("Ges. Gebühren"), tr("Rabatt"), tr("Netto-Kosten"), QString()
-    };
-    constexpr int kColDate  = 0;
-    constexpr int kColTyp   = 1;
-    constexpr int kColGeb   = 2;
-    constexpr int kColRab   = 3;
-    constexpr int kColNetto = 4;
-    constexpr int kColDoc   = 5;
-
-    auto jahresTitleForYear = [this, brokerages](int year) {
-        double yearNetto = 0.0;
-        for (const auto& b : brokerages)
-            if (b.year() == year) yearNetto += b.brokerageReduction();
-        return tr("%1 (%2 €)").arg(year).arg(ValueFormatter::formatMoney(yearNetto));
-    };
-
-    auto populateJahresData = [this, brokerages, kColDate, kColTyp, kColGeb, kColRab, kColNetto, kColDoc]
-                              (int year, QTableWidget* dataTable) {
-        QList<BrokerageObject> yearBrokerages;
-        for (const auto& b : brokerages)
-            if (b.year() == year) yearBrokerages.append(b);
-
-        dataTable->setRowCount(yearBrokerages.size());
-        for (int i = 0; i < yearBrokerages.size(); ++i) {
-            const BrokerageObject& b = yearBrokerages.at(i);
-
-            // "Typ": Kauf (buyGuid gesetzt) / Verkauf (saleGuid gesetzt) /
-            // Sonstig (Standalone-Eintrag) — identisch zu ViewShareDetails.
-            const QString typ = !b.buyGuid().isEmpty()   ? tr("Kauf")
-                              : !b.saleGuid().isEmpty()  ? tr("Verkauf")
-                                                           : tr("Sonstig");
-
-            auto setCell = [&](int col, const QString& txt) {
-                auto* it = new QTableWidgetItem(txt);
-                it->setTextAlignment(Qt::AlignCenter);
-                it->setFlags(it->flags() & ~Qt::ItemIsEditable);
-                dataTable->setItem(i, col, it);
-            };
-
-            auto* dateItem = new QTableWidgetItem(b.dateAsStr());
-            dateItem->setData(Qt::UserRole, b.guid());
-            dateItem->setTextAlignment(Qt::AlignCenter);
-            dateItem->setFlags(dateItem->flags() & ~Qt::ItemIsEditable);
-            dataTable->setItem(i, kColDate, dateItem);
-
-            setCell(kColTyp,   typ);
-            setCell(kColGeb,   ValueFormatter::formatMoney(b.brokerage()));
-            setCell(kColRab,   ValueFormatter::formatMoney(b.reduction()));
-            setCell(kColNetto, ValueFormatter::formatMoney(b.brokerageReduction()));
-
-            const QString doc = b.document();
-            if (!doc.isEmpty()) {
-                auto* docItem = new QTableWidgetItem;
-                docItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-                docItem->setData(Qt::UserRole, doc);
-                dataTable->setItem(i, kColDoc, docItem);
-                dataTable->setCellWidget(i, kColDoc, makeDocIconWidget(doc));
-            } else {
-                setCell(kColDoc, QStringLiteral("-"));
-            }
-        }
-    };
-
-    auto populateJahresFooter = [this, brokerages, kColDate, kColTyp, kColGeb, kColRab, kColNetto, kColDoc]
-                                (int year, QTableWidget* footer) {
-        double sumGeb = 0.0, sumRabatt = 0.0, sumNetto = 0.0;
-        for (const auto& b : brokerages) {
-            if (b.year() != year) continue;
-            sumGeb    += b.brokerage();
-            sumRabatt += b.reduction();
-            sumNetto  += b.brokerageReduction();
-        }
-        auto setFooter = [&](int col, const QString& txt) {
-            auto* it = new QTableWidgetItem(txt);
-            it->setTextAlignment(Qt::AlignCenter);
-            footer->setItem(0, col, it);
-        };
-        setFooter(kColDate,  tr("Gesamt:"));
-        setFooter(kColTyp,   QStringLiteral("-"));
-        setFooter(kColGeb,   ValueFormatter::formatMoney(sumGeb));
-        setFooter(kColRab,   ValueFormatter::formatMoney(sumRabatt));
-        setFooter(kColNetto, ValueFormatter::formatMoney(sumNetto));
-        setFooter(kColDoc,   QStringLiteral(""));
-    };
-
-    // Dokument-Spalte fest auf 36px, reine Icon-Spalte ohne Textinhalt und
-    // ohne Spaltenüberschrift (16.07.2026, Nessies Vorgabe zur globalen
-    // Vereinheitlichung aller Dokument-Spalten — siehe ARCHITECTURE.md,
-    // "Dokument-Spalten: Breite verkleinern + Header"; löst den vorherigen
-    // 120px-Zwischenstand ab). kColDoc wird weiterhin als jahresDocColumn
-    // übergeben, damit der Doppelklick documentActivated() auslöst.
-    constexpr int kDocColWidth = 36;
-    m_overviewTabs->populateOverview(
-        years,
-        uebersichtTitle,
-        { tr("Jahr"), tr("Netto-Kosten") },
-        { 100, -1 },
-        populateUebersichtData,
-        populateUebersichtFooter,
-        jahresHeaders,
-        { 100, -1, -1, -1, -1, kDocColWidth },
-        jahresTitleForYear,
-        populateJahresData,
-        populateJahresFooter,
-        kColDoc);
+    // Seit v1.31.2 gemeinsam mit dem Aktiendetails-Dialog (Tab "Kosten") über
+    // OverviewTabFiller (Refactor 19.11.2026). Dabei angeglichen: Beträge der
+    // Jahres-Tabs mit " €", "-" in der Dokument-Spalte der Fußzeile; leere
+    // Liste: Übersicht mit Hinweis "Keine Kosten vorhanden.".
+    OverviewTabFiller::fillBrokerages(m_overviewTabs, brokerages);
 }
 
 // ── showOverviewTab ───────────────────────────────────────────────────────────
@@ -729,23 +583,3 @@ double ViewBrokerageEdit::parseDouble(const QString& text, bool* ok)
     return NumberParser::parse(text, ok);
 }
 
-QWidget* ViewBrokerageEdit::makeDocIconWidget(const QString& path)
-{
-    const QString ext = QFileInfo(path).suffix().toLower();
-    IconProvider::IconName iconName;
-    if (ext == QStringLiteral("pdf")) {
-        iconName = IconProvider::DocPdfImage16;
-    } else if (ext == QStringLiteral("doc") || ext == QStringLiteral("docx")) {
-        iconName = IconProvider::DocWordImage16;
-    } else if (ext == QStringLiteral("xls") || ext == QStringLiteral("xlsx")) {
-        iconName = IconProvider::DocExcelImage16;
-    } else {
-        iconName = IconProvider::SearchFailed2;
-    }
-
-    auto* lbl = new QLabel;
-    lbl->setAlignment(Qt::AlignCenter);
-    lbl->setPixmap(IconProvider::icon(iconName).pixmap(16, 16));
-    lbl->setToolTip(path);
-    return lbl;
-}

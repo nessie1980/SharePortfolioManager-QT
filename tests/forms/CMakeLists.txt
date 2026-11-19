@@ -53,6 +53,8 @@ qt_add_executable(tst_mainwindow tst_mainwindow.cpp
     ../../app/forms/ShareDetailsForm/ViewShareDetails.cpp
     ../../app/widgets/OverviewTabWidget.h
     ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/widgets/OverviewTabFiller.h
+    ../../app/widgets/OverviewTabFiller.cpp
     ../../app/widgets/DocumentPreviewPanel.h
     ../../app/widgets/DocumentPreviewPanel.cpp
     ../../app/forms/ChartForm/ChartTypes.h
@@ -321,6 +323,8 @@ qt_add_executable(tst_brokeragesform tst_brokeragesform.cpp
     ../../app/forms/BrokeragesForm/ViewBrokerageEdit.cpp
     ../../app/widgets/OverviewTabWidget.h
     ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/widgets/OverviewTabFiller.h
+    ../../app/widgets/OverviewTabFiller.cpp
     ../../app/widgets/DocumentPreviewPanel.h
     ../../app/widgets/DocumentPreviewPanel.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
@@ -535,6 +539,8 @@ qt_add_executable(tst_shareeditform tst_shareeditform.cpp
     ../../app/forms/BrokeragesForm/ViewBrokerageEdit.cpp
     ../../app/widgets/OverviewTabWidget.h
     ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/widgets/OverviewTabFiller.h
+    ../../app/widgets/OverviewTabFiller.cpp
     ../../app/widgets/DocumentPreviewPanel.h
     ../../app/widgets/DocumentPreviewPanel.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
@@ -1097,6 +1103,8 @@ qt_add_executable(tst_dividendform tst_dividendform.cpp
     ../../app/forms/DividendForm/ViewDividendEdit.cpp
     ../../app/widgets/OverviewTabWidget.h
     ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/widgets/OverviewTabFiller.h
+    ../../app/widgets/OverviewTabFiller.cpp
     ../../app/widgets/DocumentPreviewPanel.h
     ../../app/widgets/DocumentPreviewPanel.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
@@ -1201,6 +1209,8 @@ qt_add_executable(tst_salesform tst_salesform.cpp
     ../../app/forms/SalesForm/ViewSaleEdit.cpp
     ../../app/widgets/OverviewTabWidget.h
     ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/widgets/OverviewTabFiller.h
+    ../../app/widgets/OverviewTabFiller.cpp
     ../../app/widgets/DocumentPreviewPanel.h
     ../../app/widgets/DocumentPreviewPanel.cpp
     ../../app/forms/OwnMessageBoxForm/OwnMessageBox.h
@@ -1367,6 +1377,8 @@ qt_add_executable(tst_backupform tst_backupform.cpp
     ../../app/forms/ShareDetailsForm/ViewShareDetails.cpp
     ../../app/widgets/OverviewTabWidget.h
     ../../app/widgets/OverviewTabWidget.cpp
+    ../../app/widgets/OverviewTabFiller.h
+    ../../app/widgets/OverviewTabFiller.cpp
     ../../app/widgets/DocumentPreviewPanel.h
     ../../app/widgets/DocumentPreviewPanel.cpp
     ../../app/forms/ChartForm/ChartTypes.h

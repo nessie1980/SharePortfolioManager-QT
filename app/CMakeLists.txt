@@ -106,6 +106,10 @@ set(APP_SOURCES
     widgets/CollapsibleSection.h
     widgets/OverviewTabWidget.h
     widgets/OverviewTabWidget.cpp
+    # Befüllt OverviewTabWidget mit Verkäufen, Dividenden und Kosten —
+    # gemeinsam für Editier-Dialoge und Aktiendetails (v1.31.2).
+    widgets/OverviewTabFiller.h
+    widgets/OverviewTabFiller.cpp
     widgets/DocumentPreviewPanel.h
     widgets/DocumentPreviewPanel.cpp
 

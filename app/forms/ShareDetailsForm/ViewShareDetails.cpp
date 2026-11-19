@@ -1,6 +1,7 @@
 // MIT License
 // Copyright (c) 2017 nessie1980 (nessie1980@gmx.de)
 #include "ViewShareDetails.h"
+#include "../../widgets/OverviewTabFiller.h"
 #include "../../utils/ShareSplitAdjuster.h"
 #include "../../utils/ShareSplitHint.h"
 #include "../../utils/ValueFormatter.h"
@@ -396,183 +397,14 @@ void ViewShareDetails::populateGewinneVerluste(const QList<SaleObject>&       sa
     if (!m_gewinneVerlusteTab)
         return; // defensiv — Tab wird seit 14.07.2026 immer in setupUi() angelegt
 
-    // Marktwert-Modus: "rein Kurs" (Nessies Rechenregel vom 25.10.2026,
-    // ARCHITECTURE.md "Rechenregeln Depotwert und Marktwert") — Auszahlung =
-    // Verkaufswert brutto (Stück x Verkaufskurs), Gewinn/Verlust =
-    // Verkaufswert - Kaufwert der verkauften Stücke, beides ohne Kosten UND
-    // ohne Steuern. Bis 25.10.2026 wurden hier payout()/profitLoss() verwendet,
-    // die die Steuer abziehen. Depotwert-Modus bleibt bei den
-    // *BrokerageReduction()-Feldern (verifiziert gegen
-    // ViewSaleEdit::populateOverview(), 13.07.2026).
-    const bool market = m_marketValueMode;
-    auto salePayout = [market](const SaleObject& s) {
-        return market ? s.saleValue() : s.payoutBrokerageReduction();
-    };
-    auto saleProfitLoss = [market](const SaleObject& s) {
-        return market ? s.saleValue() - s.buyValue() : s.profitLossBrokerageReduction();
-    };
-
-    QList<int> years;
-    for (const SaleObject& s : sales)
-        if (!years.contains(s.year()))
-            years.append(s.year());
-    std::sort(years.begin(), years.end(), std::greater<int>());
-
-    auto fmtMoney  = [](double v) { return ValueFormatter::formatMoney(v) + QStringLiteral(" €"); };
-    auto fmtVolume = [](double v) { return ValueFormatter::formatVolume(v) + QStringLiteral(" stk."); };
-
-    double totalPayout = 0.0;
-    for (const SaleObject& s : sales)
-        totalPayout += salePayout(s);
-
-    // ── Split-Behandlung (Phase 3c, 11.08.2026) ───────────────────────────
-    //
-    // Aggregate rechnen je Beleg über ShareSplitAdjuster::adjustedVolume()
-    // auf heutige Skala und summieren erst danach — niemals die Summe
-    // skalieren. Liegt vor dem ältesten Beleg einer Summe ein Split, war
-    // mindestens ein summierter Beleg umzurechnen; genau dann trägt die
-    // Zelle den Marker.
-    //
-    // @note Gilt für STÜCKZAHLEN, nicht für Geldbeträge. Auszahlung und
-    // Gewinn/Verlust werden unverändert summiert — ein Split schafft weder
-    // Gewinn noch Verlust. Siehe ARCHITECTURE.md, "Anteilige
-    // Kauf-Nebenkosten der FIFO-Zuteilung".
-    auto todayVolume = [&splits](const SaleObject& s) {
-        return ShareSplitAdjuster::adjustedVolume(s.volume(), splits, s.date());
-    };
-
-    QMap<int, QDate> yearEarliest;
-    QDate            earliestOverall;
-    for (const SaleObject& s : sales) {
-        const QDate d = s.date();
-        if (!d.isValid()) continue;
-        const int y = s.year();
-        if (!yearEarliest.contains(y) || d < yearEarliest.value(y))
-            yearEarliest[y] = d;
-        if (!earliestOverall.isValid() || d < earliestOverall)
-            earliestOverall = d;
-    }
-
-    auto yearVolAffected = [&splits, yearEarliest](int year) {
-        return ShareSplitHint::hasSplitAfter(splits, yearEarliest.value(year));
-    };
-    auto yearVolTooltip = [&splits, yearEarliest](int year) {
-        return ShareSplitHint::overviewAggregateTooltip(splits, yearEarliest.value(year));
-    };
-    const bool    totalVolAffected = ShareSplitHint::hasSplitAfter(splits, earliestOverall);
-    const QString totalVolTooltip  =
-        ShareSplitHint::overviewAggregateTooltip(splits, earliestOverall);
-
-    m_gewinneVerlusteTab->populateOverview(
-        years,
-        tr("Übersicht (%1)").arg(fmtMoney(totalPayout)),
-        { tr("Jahr"), tr("Anteile"), tr("Auszahlung"), tr("Gewinn / Verlust") },
-        { 100, -1, -1, -1 },
-        [&](QTableWidget* dataTable) {
-            dataTable->setRowCount(years.size());
-            for (int i = 0; i < years.size(); ++i) {
-                const int yr = years.at(i);
-                double volToday = 0.0, payout = 0.0, gv = 0.0;
-                for (const SaleObject& s : sales) {
-                    if (s.year() != yr) continue;
-                    volToday += todayVolume(s);
-                    payout   += salePayout(s);
-                    gv       += saleProfitLoss(s);
-                }
-                auto* iYear = centeredItem(QString::number(yr));
-                iYear->setData(Qt::UserRole, yr);
-                dataTable->setItem(i, 0, iYear);
-                auto* iVol = centeredItem(ShareSplitHint::withMarker(
-                    fmtVolume(volToday), yearVolAffected(yr)));
-                if (!yearVolTooltip(yr).isEmpty())
-                    iVol->setToolTip(yearVolTooltip(yr));
-                dataTable->setItem(i, 1, iVol);
-                dataTable->setItem(i, 2, centeredItem(fmtMoney(payout)));
-                dataTable->setItem(i, 3, centeredItem(fmtMoney(gv)));
-            }
-        },
-        [&](QTableWidget* footer) {
-            double totVolToday = 0.0, totGV = 0.0;
-            for (const SaleObject& s : sales) {
-                totVolToday += todayVolume(s);
-                totGV       += saleProfitLoss(s);
-            }
-            footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
-            auto* fVol = centeredItem(ShareSplitHint::withMarker(
-                fmtVolume(totVolToday), totalVolAffected));
-            if (!totalVolTooltip.isEmpty())
-                fVol->setToolTip(totalVolTooltip);
-            footer->setItem(0, 1, fVol);
-            footer->setItem(0, 2, centeredItem(fmtMoney(totalPayout)));
-            footer->setItem(0, 3, centeredItem(fmtMoney(totGV)));
-        },
-        { tr("Datum"), tr("Anteile"), tr("Auszahlung"), tr("Gewinn / Verlust"), QString() },
-        { 100, -1, -1, -1, 36 },
-        [&](int year) {
-            double yearPayout = 0.0;
-            for (const SaleObject& s : sales) if (s.year() == year) yearPayout += salePayout(s);
-            return QStringLiteral("%1 (%2)").arg(year).arg(fmtMoney(yearPayout));
-        },
-        [&](int year, QTableWidget* dataTable) {
-            QList<SaleObject> yearSales;
-            for (const SaleObject& s : sales) if (s.year() == year) yearSales.append(s);
-
-            dataTable->setRowCount(yearSales.size());
-            for (int i = 0; i < yearSales.size(); ++i) {
-                const SaleObject& s = yearSales.at(i);
-
-                auto* iDate = centeredItem(s.dateAsStr());
-                iDate->setData(Qt::UserRole, s.guid());
-                dataTable->setItem(i, 0, iDate);
-
-                // Belegzeile: bleibt in BELEG-Skala. Die Zeile ist eine
-                // Abschrift des Dokuments, das nach einem Zeilenklick rechts
-                // in der Vorschau erscheint — die Zahlen müssen sich decken.
-                const bool    volAffected = ShareSplitHint::hasSplitAfter(splits, s.date());
-                auto* iVol = centeredItem(ShareSplitHint::withMarker(
-                    fmtVolume(s.volume()), volAffected));
-                const QString volTooltip = ShareSplitHint::overviewRowTooltip(
-                    splits, s.date(), s.volume(), s.salePrice());
-                if (!volTooltip.isEmpty())
-                    iVol->setToolTip(volTooltip);
-                dataTable->setItem(i, 1, iVol);
-
-                dataTable->setItem(i, 2, centeredItem(fmtMoney(salePayout(s))));
-                dataTable->setItem(i, 3, centeredItem(fmtMoney(saleProfitLoss(s))));
-
-                if (!s.document().isEmpty()) {
-                    auto* docItem = new QTableWidgetItem;
-                    docItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-                    docItem->setData(Qt::UserRole, s.document());
-                    dataTable->setItem(i, 4, docItem);
-                    dataTable->setCellWidget(i, 4, documentIconWidget(s.document()));
-                } else {
-                    dataTable->setItem(i, 4, centeredItem(QStringLiteral("-")));
-                }
-            }
-        },
-        [&](int year, QTableWidget* footer) {
-            // Summe über die Belege eines Jahres: je Beleg umrechnen, dann
-            // summieren. Fällt ein Split mitten ins Jahr, mischte die frühere
-            // rohe Summe zwei Stückelungen und war damit bedeutungslos.
-            double volToday = 0.0, payout = 0.0, gv = 0.0;
-            for (const SaleObject& s : sales) {
-                if (s.year() != year) continue;
-                volToday += todayVolume(s);
-                payout   += salePayout(s);
-                gv       += saleProfitLoss(s);
-            }
-            footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
-            auto* fVol = centeredItem(ShareSplitHint::withMarker(
-                fmtVolume(volToday), yearVolAffected(year)));
-            if (!yearVolTooltip(year).isEmpty())
-                fVol->setToolTip(yearVolTooltip(year));
-            footer->setItem(0, 1, fVol);
-            footer->setItem(0, 2, centeredItem(fmtMoney(payout)));
-            footer->setItem(0, 3, centeredItem(fmtMoney(gv)));
-            footer->setItem(0, 4, centeredItem(QStringLiteral("-")));
-        },
-        /*jahresDocColumn=*/4);
+    // Seit v1.31.2 gemeinsam mit ViewSaleEdit über OverviewTabFiller
+    // (Refactor 19.11.2026). Marktwert-Modus "rein Kurs" (Nessies Rechenregel
+    // 25.10.2026): Auszahlung = Verkaufswert brutto, Gewinn/Verlust =
+    // Verkaufswert − Kaufwert, ohne Kosten und Steuern; Depotwert-Modus wie
+    // der Editier-Dialog.
+    OverviewTabFiller::fillSales(m_gewinneVerlusteTab, sales, splits,
+                                 m_marketValueMode ? OverviewTabFiller::SaleAmounts::Market
+                                                   : OverviewTabFiller::SaleAmounts::Depot);
 }
 
 void ViewShareDetails::populateDividenden(const QList<DividendObject>&   dividends,
@@ -581,124 +413,9 @@ void ViewShareDetails::populateDividenden(const QList<DividendObject>&   dividen
     if (!m_dividendenTab)
         return; // Marktwert-Modus — Tab existiert nicht, siehe setupUi()
 
-    QList<int> years;
-    for (const DividendObject& d : dividends)
-        if (!years.contains(d.year()))
-            years.append(d.year());
-    std::sort(years.begin(), years.end(), std::greater<int>());
-
-    auto fmtMoney  = [](double v) { return ValueFormatter::formatMoney(v) + QStringLiteral(" €"); };
-    auto fmtVolume = [](double v) { return ValueFormatter::formatVolume(v) + QStringLiteral(" stk."); };
-    // Dividende je Anteil liegt auf der Kurs-Skala (05.09.2026) — Ausgabe
-    // unveraendert, Genauigkeit haengt jetzt zentral an ValueFormatter.
-    auto fmtRate   = [](double v) { return ValueFormatter::formatPrice(v) + QStringLiteral(" €"); };
-
-    double totalVal = 0.0;
-    for (const DividendObject& d : dividends)
-        totalVal += d.dividendPayoutWithTaxes();
-
-    m_dividendenTab->populateOverview(
-        years,
-        tr("Übersicht (%1)").arg(fmtMoney(totalVal)),
-        { tr("Jahr"), tr("Dividende") },
-        { 100, -1 },
-        [&](QTableWidget* dataTable) {
-            dataTable->setRowCount(years.size());
-            for (int i = 0; i < years.size(); ++i) {
-                const int yr = years.at(i);
-                double yearVal = 0.0;
-                for (const DividendObject& d : dividends)
-                    if (d.year() == yr) yearVal += d.dividendPayoutWithTaxes();
-
-                auto* iYear = centeredItem(QString::number(yr));
-                iYear->setData(Qt::UserRole, yr);
-                dataTable->setItem(i, 0, iYear);
-                dataTable->setItem(i, 1, centeredItem(fmtMoney(yearVal)));
-            }
-        },
-        [&](QTableWidget* footer) {
-            footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
-            footer->setItem(0, 1, centeredItem(fmtMoney(totalVal)));
-        },
-        { tr("Datum"), tr("Dividendensatz"), tr("Anteile"), tr("Dividende"), QString() },
-        { 100, -1, -1, -1, 36 },
-        [&](int year) {
-            double yearTotal = 0.0;
-            for (const DividendObject& d : dividends) if (d.year() == year) yearTotal += d.dividendPayoutWithTaxes();
-            return QStringLiteral("%1 (%2)").arg(year).arg(fmtMoney(yearTotal));
-        },
-        [&](int year, QTableWidget* dataTable) {
-            QList<DividendObject> yearDivs;
-            for (const DividendObject& d : dividends) if (d.year() == year) yearDivs.append(d);
-
-            dataTable->setRowCount(yearDivs.size());
-            for (int i = 0; i < yearDivs.size(); ++i) {
-                const DividendObject& d = yearDivs.at(i);
-
-                auto* iDate = centeredItem(d.dateAsStr());
-                iDate->setData(Qt::UserRole, d.guid());
-                dataTable->setItem(i, 0, iDate);
-                dataTable->setItem(i, 1, centeredItem(fmtRate(d.rate())));
-
-                // Belegzeile: bleibt in BELEG-Skala. "Anteile am
-                // Auszahlungstag" ist die Stückzahl, auf die die Bank
-                // tatsächlich ausgeschüttet hat (Phase 3c, 11.08.2026).
-                //
-                // Massstab ist der EX-TAG, nicht der Zahltag (Phase 4 der
-                // Ex-Tag-Behandlung, 21.08.2026) — gleiche Begründung und
-                // gleiche Rückfallregel wie in ViewDividendEdit::
-                // populateOverview(). Beide Tabellen zeigen dieselbe
-                // Dividende und müssen sie deshalb gleich bewerten.
-                const QDate volRefDate = d.volumeReferenceDate();
-                const bool volAffected = ShareSplitHint::hasSplitAfter(splits, volRefDate);
-                auto* iVol = centeredItem(ShareSplitHint::withMarker(
-                    fmtVolume(d.volume()), volAffected));
-                const QString volTooltip = ShareSplitHint::overviewRowTooltip(
-                    splits, volRefDate, d.volume(), d.rate());
-                if (!volTooltip.isEmpty())
-                    iVol->setToolTip(volTooltip);
-                dataTable->setItem(i, 2, iVol);
-
-                dataTable->setItem(i, 3, centeredItem(fmtMoney(d.dividendPayoutWithTaxes())));
-
-                if (!d.document().isEmpty()) {
-                    auto* docItem = new QTableWidgetItem;
-                    docItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-                    docItem->setData(Qt::UserRole, d.document());
-                    dataTable->setItem(i, 4, docItem);
-                    dataTable->setCellWidget(i, 4, documentIconWidget(d.document()));
-                } else {
-                    dataTable->setItem(i, 4, centeredItem(QStringLiteral("-")));
-                }
-            }
-        },
-        [&](int year, QTableWidget* footer) {
-            double totDiv = 0.0;
-            for (const DividendObject& d : dividends) {
-                if (d.year() != year) continue;
-                totDiv += d.dividendPayoutWithTaxes();
-            }
-            footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
-            footer->setItem(0, 1, centeredItem(QStringLiteral("-")));
-
-            // Anteile-Summe bewusst "-" statt einer Zahl (Nessies
-            // Entscheidung 11.08.2026, Phase 3c). "Anteile am Auszahlungstag"
-            // bezieht sich auf je einen Stichtag; die Summe über mehrere
-            // Ausschüttungen beschreibt keinen Bestand, den es je gab. Anders
-            // als bei Verkäufen hilft hier auch eine Umrechnung auf heutige
-            // Skala nicht weiter — sie würde aus einer bedeutungslosen Zahl
-            // nur eine andere machen. Der Dividendensatz daneben steht aus
-            // demselben Grund schon immer auf "-". Identisch zu
-            // ViewDividendEdit::populateOverview().
-            auto* fVol = centeredItem(QStringLiteral("-"));
-            fVol->setToolTip(tr("Anteile beziehen sich auf verschiedene "
-                                "Auszahlungstage und lassen sich nicht summieren."));
-            footer->setItem(0, 2, fVol);
-
-            footer->setItem(0, 3, centeredItem(fmtMoney(totDiv)));
-            footer->setItem(0, 4, centeredItem(QStringLiteral("-")));
-        },
-        /*jahresDocColumn=*/4);
+    // Seit v1.31.2 gemeinsam mit ViewDividendEdit über OverviewTabFiller
+    // (Refactor 19.11.2026).
+    OverviewTabFiller::fillDividends(m_dividendenTab, dividends, splits);
 }
 
 void ViewShareDetails::populateKosten(const QList<BrokerageObject>& brokerages)
@@ -706,97 +423,10 @@ void ViewShareDetails::populateKosten(const QList<BrokerageObject>& brokerages)
     if (!m_kostenTab)
         return; // Marktwert-Modus — Tab existiert nicht, siehe setupUi()
 
-    QList<int> years;
-    for (const BrokerageObject& b : brokerages)
-        if (!years.contains(b.year()))
-            years.append(b.year());
-    std::sort(years.begin(), years.end(), std::greater<int>());
-
-    auto fmtMoney = [](double v) { return ValueFormatter::formatMoney(v) + QStringLiteral(" €"); };
-
-    double totalNetto = 0.0;
-    for (const BrokerageObject& b : brokerages)
-        totalNetto += b.brokerageReduction();
-
-    m_kostenTab->populateOverview(
-        years,
-        tr("Übersicht (%1)").arg(fmtMoney(totalNetto)),
-        { tr("Jahr"), tr("Netto-Kosten") },
-        { 80, -1 },
-        [&](QTableWidget* dataTable) {
-            dataTable->setRowCount(years.size());
-            for (int i = 0; i < years.size(); ++i) {
-                const int yr = years.at(i);
-                double netto = 0.0;
-                for (const BrokerageObject& b : brokerages)
-                    if (b.year() == yr) netto += b.brokerageReduction();
-
-                auto* iYear = centeredItem(QString::number(yr));
-                iYear->setData(Qt::UserRole, yr);
-                dataTable->setItem(i, 0, iYear);
-                dataTable->setItem(i, 1, centeredItem(fmtMoney(netto)));
-            }
-        },
-        [&](QTableWidget* footer) {
-            footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
-            footer->setItem(0, 1, centeredItem(fmtMoney(totalNetto)));
-        },
-        { tr("Datum"), tr("Typ"), tr("Ges. Gebühren"), tr("Rabatt"), tr("Netto-Kosten"), QString() },
-        { 100, -1, -1, -1, -1, 36 },
-        [&](int year) {
-            double yearNetto = 0.0;
-            for (const BrokerageObject& b : brokerages) if (b.year() == year) yearNetto += b.brokerageReduction();
-            return QStringLiteral("%1 (%2)").arg(year).arg(fmtMoney(yearNetto));
-        },
-        [&](int year, QTableWidget* dataTable) {
-            QList<BrokerageObject> yearBrokerages;
-            for (const BrokerageObject& b : brokerages) if (b.year() == year) yearBrokerages.append(b);
-
-            dataTable->setRowCount(yearBrokerages.size());
-            for (int i = 0; i < yearBrokerages.size(); ++i) {
-                const BrokerageObject& b = yearBrokerages.at(i);
-
-                // "Typ": Kauf (buyGuid gesetzt) / Verkauf (saleGuid gesetzt) /
-                // Sonstig (Standalone-Eintrag) — identisch zu ViewBrokerageEdit.
-                const QString typ = !b.buyGuid().isEmpty()  ? tr("Kauf")
-                                   : !b.saleGuid().isEmpty() ? tr("Verkauf")
-                                                              : tr("Sonstig");
-
-                auto* iDate = centeredItem(b.dateAsStr());
-                iDate->setData(Qt::UserRole, b.guid());
-                dataTable->setItem(i, 0, iDate);
-                dataTable->setItem(i, 1, centeredItem(typ));
-                dataTable->setItem(i, 2, centeredItem(fmtMoney(b.brokerage())));
-                dataTable->setItem(i, 3, centeredItem(fmtMoney(b.reduction())));
-                dataTable->setItem(i, 4, centeredItem(fmtMoney(b.brokerageReduction())));
-
-                if (!b.document().isEmpty()) {
-                    auto* docItem = new QTableWidgetItem;
-                    docItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
-                    docItem->setData(Qt::UserRole, b.document());
-                    dataTable->setItem(i, 5, docItem);
-                    dataTable->setCellWidget(i, 5, documentIconWidget(b.document()));
-                } else {
-                    dataTable->setItem(i, 5, centeredItem(QStringLiteral("-")));
-                }
-            }
-        },
-        [&](int year, QTableWidget* footer) {
-            double sumGeb = 0.0, sumRabatt = 0.0, sumNetto = 0.0;
-            for (const BrokerageObject& b : brokerages) {
-                if (b.year() != year) continue;
-                sumGeb    += b.brokerage();
-                sumRabatt += b.reduction();
-                sumNetto  += b.brokerageReduction();
-            }
-            footer->setItem(0, 0, centeredItem(tr("Gesamt:")));
-            footer->setItem(0, 1, centeredItem(QStringLiteral("-")));
-            footer->setItem(0, 2, centeredItem(fmtMoney(sumGeb)));
-            footer->setItem(0, 3, centeredItem(fmtMoney(sumRabatt)));
-            footer->setItem(0, 4, centeredItem(fmtMoney(sumNetto)));
-            footer->setItem(0, 5, centeredItem(QStringLiteral("-")));
-        },
-        /*jahresDocColumn=*/5);
+    // Seit v1.31.2 gemeinsam mit ViewBrokerageEdit über OverviewTabFiller
+    // (Refactor 19.11.2026); Spalte "Jahr" der Übersicht dabei von 80 auf
+    // 100 px angeglichen.
+    OverviewTabFiller::fillBrokerages(m_kostenTab, brokerages);
 }
 
 // ── IViewShareDetails: Fehler / Lifecycle ─────────────────────────────────────
@@ -865,32 +495,3 @@ void ViewShareDetails::populateBox(QGridLayout* grid, const CalculationRows& row
     }
 }
 
-QTableWidgetItem* ViewShareDetails::centeredItem(const QString& text)
-{
-    auto* item = new QTableWidgetItem(text);
-    item->setTextAlignment(Qt::AlignCenter);
-    item->setFlags(item->flags() & ~Qt::ItemIsEditable);
-    return item;
-}
-
-QWidget* ViewShareDetails::documentIconWidget(const QString& documentPath)
-{
-    // Identisch zur Icon-Auswahl-Logik in ViewDividendEdit::populateOverview()
-    // und ViewBrokerageEdit::makeDocIconWidget().
-    const QString ext = QFileInfo(documentPath).suffix().toLower();
-    IconProvider::IconName iconName;
-    if (ext == QStringLiteral("pdf"))
-        iconName = IconProvider::DocPdfImage16;
-    else if (ext == QStringLiteral("doc") || ext == QStringLiteral("docx"))
-        iconName = IconProvider::DocWordImage16;
-    else if (ext == QStringLiteral("xls") || ext == QStringLiteral("xlsx"))
-        iconName = IconProvider::DocExcelImage16;
-    else
-        iconName = IconProvider::SearchFailed2;
-
-    auto* label = new QLabel;
-    label->setAlignment(Qt::AlignCenter);
-    label->setPixmap(IconProvider::icon(iconName).pixmap(16, 16));
-    label->setToolTip(documentPath);
-    return label;
-}

@@ -167,6 +167,41 @@ private slots:
         QCOMPARE(w.count(), 0);
     }
 
+    void test_populateOverview_emptyYearsWithText_showsHintRow()
+    {
+        // Ergänzt 19.11.2026 (v1.31.2): mit emptyText bleibt die Übersicht
+        // stehen — eine graue, nicht anklickbare Zeile über alle Spalten und
+        // die Gesamt-Zeile des Aufrufers.
+        OverviewTabWidget w;
+        bool footerFilled = false;
+        w.populateOverview(
+            {}, QStringLiteral("Übersicht (0,00 €)"),
+            { QStringLiteral("Jahr"), QStringLiteral("A"), QStringLiteral("B") }, { 100, -1, -1 },
+            [](QTableWidget*) { QFAIL("Datenzeilen dürfen nicht befüllt werden"); },
+            [&footerFilled](QTableWidget* f) {
+                footerFilled = true;
+                f->setItem(0, 0, new QTableWidgetItem(QStringLiteral("Gesamt:")));
+            },
+            {}, {}, [](int y) { return QString::number(y); },
+            [](int, QTableWidget*) {}, [](int, QTableWidget*) {},
+            -1, QStringLiteral("Keine Einträge vorhanden."));
+
+        QCOMPARE(w.count(), 1);
+        QCOMPARE(w.tabText(0), QStringLiteral("Übersicht (0,00 €)"));
+        QVERIFY(footerFilled);
+
+        auto* tbl = dataTableOf(w.widget(0));
+        if (!tbl) QFAIL("dataTable nicht gefunden");
+        QCOMPARE(tbl->rowCount(), 1);
+        QCOMPARE(tbl->item(0, 0)->text(), QStringLiteral("Keine Einträge vorhanden."));
+        QCOMPARE(tbl->item(0, 0)->flags(), Qt::ItemFlags(Qt::NoItemFlags));
+        QCOMPARE(tbl->columnSpan(0, 0), 3);
+
+        // Ein Klick springt nirgends hin.
+        emit tbl->cellClicked(0, 0);
+        QCOMPARE(w.currentIndex(), 0);
+    }
+
     // ── Grid-Selektionsfarbe (Feature 29.07.2026, Nessies Vorgabe: wie im
     // Haupt-Grid, konsistent in allen Grids) ────────────────────────────────
 

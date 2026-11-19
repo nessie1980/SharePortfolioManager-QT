@@ -1099,14 +1099,21 @@ private slots:
         QCOMPARE(view.lastOverviewSplits.first().ratioNew(), 20.0);
     }
 
-    void test_viewDividendEdit_populateOverview_emptyList_noTabs()
+    void test_viewDividendEdit_populateOverview_emptyList_overviewWithHint()
     {
+        // Seit v1.31.2 (19.11.2026, Nessies Entscheidung): leere Liste zeigt
+        // die Übersicht mit Hinweis statt gar keiner Tabs.
         openMemoryDb();
         ViewDividendEdit dlg(makeShareGuid(), nullptr);
         dlg.populateOverview({}, {});
         auto* tabs = dlg.findChild<OverviewTabWidget*>();
         if (!tabs) QFAIL("OverviewTabWidget not found");
-        QCOMPARE(tabs->count(), 0);
+        QCOMPARE(tabs->count(), 1);
+        QVERIFY(tabs->tabText(0).startsWith(QStringLiteral("Übersicht (")));
+        auto* tbl = divDataTableOf(tabs->widget(0));
+        if (!tbl) QFAIL("dataTable not found");
+        QCOMPARE(tbl->rowCount(), 1);
+        QCOMPARE(tbl->item(0, 0)->text(), QStringLiteral("Keine Dividenden vorhanden."));
     }
 
     void test_viewDividendEdit_populateOverview_singleYear_twoTabs()

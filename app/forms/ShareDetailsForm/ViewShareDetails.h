@@ -165,12 +165,8 @@ private:
     /** Generic row rendering shared by all three calculation boxes. */
     static void populateBox(QGridLayout* grid, const CalculationRows& rows);
 
-    /** Erzeugt für eine Zeile einen zentrierten, nicht editierbaren QTableWidgetItem. */
-    static QTableWidgetItem* centeredItem(const QString& text);
-
-    /** Dokument-Icon (PDF/Word/Excel) bzw. "-" für die Dokument-Spalte, identisch
-     *  zur Icon-Auswahl-Logik in ViewDividendEdit/ViewBrokerageEdit. */
-    static QWidget* documentIconWidget(const QString& documentPath);
+    // centeredItem() und documentIconWidget() seit v1.31.2 in
+    // OverviewTabFiller (Refactor 19.11.2026).
 
     // ── MVP wiring ─────────────────────────────────────────────────────────
     ModelShareDetails     m_model;

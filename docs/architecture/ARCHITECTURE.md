@@ -3379,6 +3379,47 @@ View, identisch zum Muster in den Editier-Dialogen
 lokale Kopie des Musters haben — die vollständige Umstellung dieser Dialoge
 auf `OverviewTabWidget` ist noch offen, siehe unten).
 
+#### Gemeinsame Befüllung über OverviewTabFiller (Refactor 19.11.2026, v1.31.2)
+
+Bis v1.31.1 stand die Befüllung (Spalten, Summen, Split-Marker,
+Fußzeilen) zweimal im Code: in `ViewSaleEdit`, `ViewDividendEdit` und
+`ViewBrokerageEdit` je in `populateOverview()` und nachgebaut im
+Aktiendetails-Dialog in `populateGewinneVerluste()`, `populateDividenden()`
+und `populateKosten()`. Seit v1.31.2 rufen beide Seiten
+`OverviewTabFiller::fillSales()`, `fillDividends()` und `fillBrokerages()`
+auf (`app/widgets/OverviewTabFiller.h/.cpp`, Nessies Vorgabe 18.11.2026:
+gemeinsame Funktion statt Kopie). `fillSales()` hat den Parameter
+`SaleAmounts`: `Depot` (Editier-Dialog, Aktiendetails im Depotwert-Modus)
+oder `Market` (Aktiendetails im Marktwert-Modus, "rein Kurs"). Was ein Klick
+auf eine Zeile auslöst, bleibt Sache des Dialogs. Die Hilfen
+`ViewShareDetails::centeredItem()`/`documentIconWidget()` und
+`ViewBrokerageEdit::makeDocIconWidget()` sind dafür entfallen.
+
+Beim Zusammenführen angeglichen (Nessies Entscheidungen 18./19.11.2026):
+
+- Leere Liste: Beide Dialoge zeigten bis dahin gar keine Tabs. Jetzt gibt es
+  den Übersicht-Tab "Übersicht (0,00 €)" mit einer grauen, nicht
+  anklickbaren Zeile "Keine Verkäufe vorhanden." (bzw. Dividenden, Kosten)
+  über alle Spalten und die Gesamt-Zeile. Dafür hat
+  `OverviewTabWidget::populateOverview()` den optionalen Parameter
+  `emptyText`; ohne ihn bleibt es bei keinen Tabs (z. B. `ViewBuyEdit` bis
+  zur Umstellung mit dem Tab "Käufe").
+- Kosten, Jahres-Tabs: Beträge mit " €" wie überall sonst (im Editier-Dialog
+  vorher ohne).
+- Kosten, Fußzeile der Jahres-Tabs: "-" in der Dokument-Spalte (im
+  Editier-Dialog vorher leer).
+- Kosten, Übersicht: Spalte "Jahr" 100 px (im Aktiendetails-Dialog vorher
+  80 px).
+- Zellen durchgehend nicht bearbeitbar. Die Tabellen sind ohnehin über
+  `NoEditTriggers` schreibgeschützt; Auswählen und Laden in die Maske laufen
+  über `cellClicked` und `rowActivated()` und sind davon unberührt (geprüft
+  19.11.2026, der Kosten-Editier-Dialog setzte das Flag schon vorher).
+- Summen je Jahr gebildet und daraus die Gesamtsumme, statt teils direkt
+  über alle Einträge.
+
+Die Berechnungen selbst sind unverändert. Käufe folgen mit dem Tab "Käufe"
+im Aktiendetails-Dialog (v1.32.0) über dieselbe Klasse.
+
 @note **Fixierter Übersicht-Tab (14.07.2026, auf Nessies Vorgabe):** Bei
 vielen Jahren an Historie zeigte ein einzelnes `QTabWidget` Scroll-Pfeile an,
 sobald die Tab-Leiste zu breit wurde — dabei konnte der Übersicht-Tab
